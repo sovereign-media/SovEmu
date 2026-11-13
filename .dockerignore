@@ -1,0 +1,19 @@
+# The build context is the repository root (see SovEmu.Backend/Dockerfile). Only
+# SovEmu.Backend/ and scripts/ feed the image; keep everything heavy or private out.
+**/.git
+**/.DS_Store
+SovEmu.Backend/target
+cores
+roms
+system
+data
+headless-out
+test-results
+.claude
+.github
+docs
+
+# Future client submodules never feed the server image.
+SovEmu.Web
+SovEmu.Android
+SovEmu.iOS

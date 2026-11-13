@@ -1,0 +1,68 @@
+# SovEmu roadmap
+
+Tracked in sovereign-media/SovEmu#1. The design is in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Phase 0: headless spike (done)
+
+Prove the FFI and the run loop before any networking.
+
+- [x] Cargo workspace under `SovEmu.Backend/`, crates in Sovereign's `SovEmu.<Name>/` layout
+- [x] `SovEmu.LibretroFfi`: bindgen over the vendored `libretro.h`, plus a C shim for the
+      variadic log callback
+- [x] `SovEmu.RetroHost`: `Core::load` / `load_game` / `run_frame`, environment callback
+      (pixel formats, directories, logging, core options, geometry/AV changes, input bitmasks),
+      save states, reset, cheats, one-core-per-process guard
+- [x] `SovEmu.TestCore`: a deterministic cdylib core so tests dlopen a real library with no
+      downloads
+- [x] `sovemu-worker headless`: PNG frames, `audio.wav`, `summary.json` (per-frame core time,
+      audio sample accounting), scripted input (`--hold`), real-time pacing (`--realtime`)
+- [x] `scripts/fetch-cores.sh` for local testing against real cores
+- [x] Self-contained Alpine image: cores built from source at pinned commits
+      (`scripts/cores.list`), musl dynamically linked worker, every core probed at build time
+- [x] CI: fmt, clippy `-D warnings`, tests on Linux and macOS; tests on musl and the image build
+
+Measured on an M-series Mac with fceumm (nightly) and the 240p Test Suite: 0.15 ms mean per
+`retro_run` (p99 0.20 ms), audio within 0.004% of the expected sample count; real-time pacing
+held 59.93 fps over 300 frames with no resyncs.
+
+## Phase 1: first pixels in a browser
+
+- [ ] `SovEmu.Media`: pixel conversion to I420, VP8 encoder (libvpx realtime) behind an
+      `Encoder` trait, Opus encoder, resampling with `rubato`
+- [ ] `SovEmu.Protocol`: input packet (sequence number + full button state per port) and
+      signalling message types
+- [ ] Worker session mode: `str0m` peer, VP8 video track, Opus audio track, unreliable
+      unordered input DataChannel, real-time loop on the `Pacer`
+- [ ] A minimal web page (later the start of `SovEmu.Web`): keyboard and Gamepad API input,
+      nearest-neighbour scaling
+- [ ] Measure button-to-photon latency end to end
+
+## Phase 2: server
+
+- [ ] `SovEmu.Server`: axum, SQLite (WAL, sqlx migrations)
+- [ ] Auth: local accounts (argon2) with admin invites, plus optional OIDC
+- [ ] ROM library: scan `roms/`, hash, match to a system and core
+- [ ] Start and stop workers; IPC; WebSocket signalling relay; idle-session cleanup
+
+## Phase 3: persistence
+
+- [ ] SRAM autosave, save-state slots with screenshots, resuming a session
+
+## Phase 4: mobile clients
+
+- [ ] `SovEmu.Android` (Kotlin) then `SovEmu.iOS` (Swift), as submodules: touch overlay,
+      physical controllers, app lifecycle
+
+## Phase 5: features
+
+- [ ] Per-game controller remapping, client-side shaders
+- [ ] Rewind (ring buffer of compressed state deltas) and fast-forward
+- [ ] Cheats UI, RetroAchievements (rcheevos; needs `SET_MEMORY_MAPS`)
+
+## Phase 6: hardening
+
+- [ ] TURN (coturn), H.264 fallback negotiation, metrics, worker sandboxing
+
+## Later
+
+- Multiplayer and spectators; optional pixel-perfect raw-frame DataChannel mode for LAN

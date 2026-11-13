@@ -1,0 +1,18 @@
+# The libretro cores SovEmu ships, built from source by scripts/build-cores.sh (the container
+# image builds them this way: the buildbot's Linux cores are glibc builds and do not load on
+# Alpine's musl). One core per line:
+#
+#   <name>  <git repository>  <commit>  <build command, run from the checkout root>
+#
+# The build must leave <name>_libretro.so somewhere in the checkout. Pin full commit hashes;
+# bump them deliberately, and rebuild the image to check every core still loads (the build runs
+# `sovemu-worker probe` over all of them).
+#
+# Licences: fceumm, gambatte and mgba are GPL/MPL; snes9x and genesis_plus_gx are
+# non-commercial. SovEmu is non-commercial, so all are usable (see docs/ARCHITECTURE.md).
+
+fceumm           https://github.com/libretro/libretro-fceumm.git    e0f3086a8104f8fbbe49a2615b10401504a9533f  make -f Makefile.libretro
+snes9x           https://github.com/libretro/snes9x.git             fae2fea08f74180759ef540ee94259213f503480  make -C libretro
+mgba             https://github.com/libretro/mgba.git               7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6  cmake -B build -DLIBMGBA_ONLY=ON -DBUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
+gambatte         https://github.com/libretro/gambatte-libretro.git  77f2567d718b8973d02caa2daa8dce4953faf811  make -f Makefile.libretro
+genesis_plus_gx  https://github.com/libretro/Genesis-Plus-GX.git    b9c2316441978d4015ba30e9a95d9b0e6f8ee981  make -f Makefile.libretro
