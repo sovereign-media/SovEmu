@@ -1,0 +1,26 @@
+# macOS Finder metadata
+.DS_Store
+
+# Cargo build output
+SovEmu.Backend/target/
+
+# Libretro cores, fetched by scripts/fetch-cores.sh; never committed
+/cores/
+
+# ROMs and BIOS files are the admin's, never committed
+/roms/
+/system/
+
+# Headless worker output (sovemu-worker headless --out ...)
+headless-out/
+
+# SQLite files
+*.db
+*.db-shm
+*.db-wal
+
+# Scratch output for long-text files (see CLAUDE.md)
+/test-results/
+
+# The compose data volume (ROMs, BIOS, saves) mounted at /data
+/data/

@@ -1,0 +1,8 @@
+# Shell scripts must check out with LF everywhere, or the shebang and line continuations break.
+*.sh text eol=lf
+
+# Rust and C sources are LF in the repository and every working copy.
+*.rs text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.toml text eol=lf
