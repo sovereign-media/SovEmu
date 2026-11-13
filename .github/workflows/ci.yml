@@ -39,6 +39,15 @@ jobs:
         with:
           workspaces: SovEmu.Backend
 
+      # SovEmu.Media links the system libvpx and libopus through pkg-config.
+      - name: Codec libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libvpx-dev libopus-dev pkg-config
+
+      - name: Codec libraries (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libvpx opus pkgconf
+
       - name: Format
         run: cargo fmt --all --check
 
@@ -47,6 +56,29 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  web:
+    name: Web client (Astro)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SovEmu.Web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: SovEmu.Web/package-lock.json
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Check and build
+        run: npm run build
 
   image:
     # The shipped artefact: Alpine (musl), cores built from source. The `test` target runs the

@@ -1,16 +1,27 @@
-# Local development. Phase 0 has no long-running server yet, so the service runs the worker CLI:
+# Local development: build the image and run one game, playable at http://localhost:8080.
 #
 #   docker compose build
-#   docker compose run --rm sovemu probe
-#   docker compose run --rm sovemu headless --core /opt/sovemu/cores/fceumm_libretro.so \
-#       --rom roms/game.nes --frames 600 --out headless-out
+#   docker compose run --rm sovemu probe          # list the bundled cores
+#   SOVEMU_ROM=roms/game.nes docker compose up    # put the ROM in data/roms/ first
 #
-# ./data is mounted at /data: put ROMs in data/roms and BIOS files in data/system.
+# ./data is mounted at /data: ROMs in data/roms, BIOS files in data/system.
+#
+# WebRTC media goes to UDP 50000 at the address the server advertises. In a container the server
+# cannot see the host's address, so set SOVEMU_ADVERTISE_IP to the IP browsers reach this host
+# on (127.0.0.1 is fine for a browser on the same machine).
 services:
   sovemu:
     image: sovemu:dev
     build:
       context: .
       dockerfile: SovEmu.Backend/Dockerfile
+    command: ["serve"]
+    environment:
+      SOVEMU_CORE: ${SOVEMU_CORE:-/opt/sovemu/cores/fceumm_libretro.so}
+      SOVEMU_ROM: ${SOVEMU_ROM:-}
+      SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
+    ports:
+      - "8080:8080/tcp"
+      - "50000:50000/udp"
     volumes:
       - ./data:/data

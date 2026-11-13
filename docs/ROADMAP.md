@@ -27,19 +27,28 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 1: first pixels in a browser
 
-- [ ] `SovEmu.Media`: pixel conversion to I420, VP8 encoder (libvpx realtime) behind an
-      `Encoder` trait, Opus encoder, resampling with `rubato`
-- [ ] `SovEmu.Protocol`: input packet (sequence number + full button state per port) and
-      signalling message types
-- [ ] Worker session mode: `str0m` peer, VP8 video track, Opus audio track, unreliable
-      unordered input DataChannel, real-time loop on the `Pacer`
-- [ ] A minimal web page (later the start of `SovEmu.Web`): keyboard and Gamepad API input,
-      nearest-neighbour scaling
-- [ ] Measure button-to-photon latency end to end
+- [x] `SovEmu.Media`: RGBA→I420, VP8 (libvpx, real-time CBR, error resilient, keyframes on
+      request), Opus (restricted low delay, 10 ms packets), resampling any core rate to 48 kHz
+      with `rubato`
+- [x] `SovEmu.Protocol`: binary input packet (sequence number, client time, full button state per
+      port) and its ack; JSON session descriptions for non-trickle signalling
+- [x] `sovemu-worker serve`: `str0m` peer on one UDP port, VP8 and Opus tracks, unordered
+      no-retransmit input DataChannel, playout-delay hint, real-time loop on the `Pacer`;
+      emulation pauses while no client is connected
+- [x] `SovEmu.Web`, the first client: Astro + Tailwind, built to static files served by the same
+      Rust process as `/api/offer`; keyboard and Gamepad API input, pixelated scaling, live
+      latency stats (input round trip, network RTT, jitter buffer, decode)
+- [x] End-to-end test: a str0m client receives and decodes VP8 and Opus from `serve` over UDP and
+      gets acks for its input
+- [x] Image: web client built in a Node stage; libvpx and opus in the runtime; ports 8080/tcp and
+      50000/udp
+- [ ] Measure button-to-photon latency in a real browser against a real core (needs a person and
+      a camera, or a photodiode)
 
 ## Phase 2: server
 
-- [ ] `SovEmu.Server`: axum, SQLite (WAL, sqlx migrations)
+- [ ] `SovEmu.Server`: axum, SQLite (WAL, sqlx migrations); serves `SovEmu.Web` and the API, and
+      takes over `serve`'s HTTP side (the worker keeps only the media loop)
 - [ ] Auth: local accounts (argon2) with admin invites, plus optional OIDC
 - [ ] ROM library: scan `roms/`, hash, match to a system and core
 - [ ] Start and stop workers; IPC; WebSocket signalling relay; idle-session cleanup
@@ -50,7 +59,8 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 4: mobile clients
 
-- [ ] `SovEmu.Android` (Kotlin) then `SovEmu.iOS` (Swift), as submodules: touch overlay,
+- [ ] `SovEmu.Android` (Kotlin) then `SovEmu.iOS` (Swift), as submodules (and move `SovEmu.Web`
+      to its own repository as a submodule at the same time): touch overlay,
       physical controllers, app lifecycle
 
 ## Phase 5: features

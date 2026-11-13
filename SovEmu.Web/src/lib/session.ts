@@ -1,0 +1,102 @@
+// One WebRTC session with the SovEmu server: receive-only video and audio, plus the unordered,
+// no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle).
+import { InputState } from "./input";
+import { INPUT_CHANNEL, decodeAck, encodeInput } from "./protocol";
+
+/** Send at least this often even when nothing changed: the channel drops lost packets. */
+const HEARTBEAT_MS = 100;
+const ICE_GATHER_TIMEOUT_MS = 1500;
+
+export type SessionState = RTCPeerConnectionState | "idle";
+
+export interface SessionEvents {
+  onState?: (state: SessionState) => void;
+}
+
+export class Session {
+  readonly pc: RTCPeerConnection;
+  /** Recent input round trips (send -> server applies on a frame -> ack), in ms. */
+  readonly inputRtts: number[] = [];
+  private channel: RTCDataChannel;
+  private seq = 0;
+  private sent = -1;
+  private lastSend = 0;
+  private raf = 0;
+
+  constructor(
+    private readonly video: HTMLVideoElement,
+    private readonly input: InputState,
+    private readonly events: SessionEvents = {},
+  ) {
+    this.pc = new RTCPeerConnection();
+    this.pc.addTransceiver("video", { direction: "recvonly" });
+    this.pc.addTransceiver("audio", { direction: "recvonly" });
+    this.channel = this.pc.createDataChannel(INPUT_CHANNEL, { ordered: false, maxRetransmits: 0 });
+    this.channel.binaryType = "arraybuffer";
+    this.channel.onmessage = (e) => this.onAck(e.data as ArrayBuffer);
+
+    const stream = new MediaStream();
+    video.srcObject = stream;
+    this.pc.ontrack = (e) => {
+      // Ask for the smallest jitter buffer the browser allows: latency over smoothness.
+      const receiver = e.receiver as RTCRtpReceiver & { jitterBufferTarget?: number; playoutDelayHint?: number };
+      try { receiver.jitterBufferTarget = 0; } catch { /* unsupported */ }
+      try { receiver.playoutDelayHint = 0; } catch { /* unsupported */ }
+      stream.addTrack(e.track);
+    };
+    this.pc.onconnectionstatechange = () => this.events.onState?.(this.pc.connectionState);
+  }
+
+  async connect(): Promise<void> {
+    await this.pc.setLocalDescription(await this.pc.createOffer());
+    await this.iceGathered();
+    const res = await fetch("/api/offer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "offer", sdp: this.pc.localDescription?.sdp }),
+    });
+    if (!res.ok) throw new Error(`offer rejected (${res.status}): ${await res.text()}`);
+    await this.pc.setRemoteDescription(await res.json());
+    this.video.play().catch(() => { /* needs a user gesture; Connect is one */ });
+    this.raf = requestAnimationFrame(this.pump);
+  }
+
+  close(): void {
+    cancelAnimationFrame(this.raf);
+    this.pc.close();
+  }
+
+  private iceGathered(): Promise<void> {
+    if (this.pc.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve) => {
+      this.pc.addEventListener("icegatheringstatechange", () => {
+        if (this.pc.iceGatheringState === "complete") resolve();
+      });
+      setTimeout(resolve, ICE_GATHER_TIMEOUT_MS);
+    });
+  }
+
+  /** Every animation frame: send the input state if it changed or the heartbeat is due. */
+  private pump = () => {
+    if (this.channel.readyState === "open") {
+      const state = this.input.read();
+      const now = performance.now();
+      if (state !== this.sent || now - this.lastSend > HEARTBEAT_MS) {
+        this.seq = (this.seq + 1) >>> 0;
+        this.channel.send(encodeInput({ seq: this.seq, clientTimeMs: now32(), ports: [state] }));
+        this.sent = state;
+        this.lastSend = now;
+      }
+    }
+    this.raf = requestAnimationFrame(this.pump);
+  };
+
+  private onAck(data: ArrayBuffer) {
+    const ack = decodeAck(data);
+    if (!ack) return;
+    this.inputRtts.push((now32() - ack.clientTimeMs) >>> 0);
+    if (this.inputRtts.length > 60) this.inputRtts.shift();
+  }
+}
+
+const now32 = () => Math.floor(performance.now()) >>> 0;

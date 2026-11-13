@@ -50,8 +50,11 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 ### Repository layout
 
 The repository mirrors `sovereign-media/sovereign`. The backend is in-tree under
-`SovEmu.Backend/`, one directory per crate. Each client is a separate repository, checked out
-at the root as an unpinned submodule, so the server/client boundary is also a git boundary.
+`SovEmu.Backend/`, one directory per crate. Each client is a separate project at the root. The
+native clients will be separate repositories checked out as unpinned submodules, so the
+server/client boundary is also a git boundary. `SovEmu.Web`, the first client, lives in-tree
+for now. It is self-contained (its own package.json, tests and build), so it can move to its own
+repository later.
 
 ```
 SovEmu/
@@ -60,19 +63,32 @@ SovEmu/
     SovEmu.RetroHost/        safe frontend: load core, environment, run loop         [Phase 0]
     SovEmu.TestCore/         deterministic cdylib core for tests                     [Phase 0]
     SovEmu.Worker/           per-session binary (headless now, WebRTC later)         [Phase 0]
-    SovEmu.Media/            pixel conversion, Encoder trait (libvpx, x264), Opus    [Phase 1]
-    SovEmu.Protocol/         shared serde types: IPC, input packets, signalling      [Phase 1]
-    SovEmu.Server/           axum API, auth, SQLite, worker orchestration            [Phase 2]
-  SovEmu.Web/                submodule: TypeScript, browser WebRTC + Gamepad API
+    SovEmu.Media/            RGBA→I420, VP8 (libvpx), Opus, resampling               [Phase 1]
+    SovEmu.Protocol/         wire formats: input packets, signalling                 [Phase 1]
+    SovEmu.Server/           axum: web client + API, auth, SQLite, orchestration     [Phase 2]
+  SovEmu.Web/                Astro + Tailwind, static; served by the Rust server     [Phase 1]
   SovEmu.Android/            submodule: Kotlin, libwebrtc + InputDevice
   SovEmu.iOS/                submodule: Swift, WebRTC.framework + GameController
   docs/  scripts/  .claude/  .github/
   cores/  roms/  system/     gitignored: fetched cores, admin ROM library, BIOS
 ```
 
-Dependencies point one way. `Worker` uses `Media`, which uses `RetroHost`, which uses
-`LibretroFfi`. `Protocol` is shared by `Worker` and `Server`. `Server` never links a core: it
-starts `sovemu-worker` processes and talks to them over IPC.
+Dependencies point one way. `Worker` uses `RetroHost` (which uses `LibretroFfi`), `Media` and
+`Protocol`. `Media` knows nothing about libretro: it takes RGBA frames and interleaved samples.
+`Protocol` is shared by `Worker` and `Server`. `Server` never links a core: it starts
+`sovemu-worker` processes and talks to them over IPC.
+
+### Web client and signalling
+
+`SovEmu.Web` is Astro + Tailwind built to static files (no server runtime). The same Rust
+process that serves `/api/*` serves those files, so the page and the API share one origin. That
+process is `sovemu-worker serve` in Phase 1 and `SovEmu.Server` from Phase 2.
+
+Signalling is a single request. The browser gathers all its ICE candidates, then `POST`s the
+complete offer (`{"type":"offer","sdp":...}`) to `/api/offer`. The answer carries the server's
+host candidates. The server side is ICE-lite, and all media for every client goes through one
+UDP port (50000). The client offers receive-only video and audio plus the `input` DataChannel
+(unordered, no retransmits).
 
 ### Deployment: one Alpine container
 

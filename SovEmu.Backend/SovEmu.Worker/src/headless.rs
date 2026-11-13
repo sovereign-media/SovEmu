@@ -139,7 +139,7 @@ pub fn run(args: HeadlessArgs) -> Result<()> {
         timings.push(t.elapsed());
         frames_run += 1;
 
-        if out.av_changed {
+        if out.av_changed.is_some() {
             tracing::warn!("core changed geometry/timing at frame {n}; summary shows the initial");
         }
         if !out.video_updated {

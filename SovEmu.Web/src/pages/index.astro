@@ -1,0 +1,14 @@
+---
+import Base from "../layouts/Base.astro";
+import Player from "../components/Player.astro";
+---
+
+<Base title="Play">
+  <main class="mx-auto grid max-w-5xl gap-4 p-4">
+    <header class="flex items-baseline gap-3">
+      <h1 class="text-lg font-semibold">SovEmu</h1>
+      <span class="text-sm text-muted">streaming over WebRTC</span>
+    </header>
+    <Player />
+  </main>
+</Base>

@@ -1,0 +1,17 @@
+[package]
+name = "sovemu-protocol"
+description = "Wire formats shared by the SovEmu worker, server and clients: input packets and signalling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
