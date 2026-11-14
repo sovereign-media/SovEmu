@@ -303,7 +303,8 @@ function Games() {
         className="fixed inset-0 -z-10"
         style={{ background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${system.color} 25%, transparent), #0b0d12 55%)` }}
       />
-      <main className={cn("px-4 pt-10 pb-24 transition-[padding] duration-200 sm:px-8", open && "lg:pr-[31rem]")}>
+      {/* The panel floats over the grid; the grid never reflows for it. */}
+      <main className="px-4 pt-10 pb-24 sm:px-8">
         {/* The header: the system, and the chips beside it where there is room. */}
         <div className="mb-6 flex flex-col gap-4 pt-4 lg:flex-row lg:items-center lg:justify-between">
           <h1 className="flex flex-wrap items-baseline gap-3 text-3xl font-bold tracking-tight">

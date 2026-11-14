@@ -1,6 +1,7 @@
 // A game's details in a side panel over the grid: artwork (and its video snap), facts,
-// description, Continue / Start over or Play, save slots and play history. Not modal: the grid
-// stays usable, and choosing another card switches the panel to it.
+// description, Continue / Start over or Play, save slots and play history. A translucent overlay:
+// the grid shows through it and never reflows for it. Not modal: the grid stays usable, and
+// choosing another card switches the panel to it.
 import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useEffect, useState, type ReactNode } from "react";
@@ -41,7 +42,7 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
           className={cn("absolute inset-0 size-full object-cover", !playing && "hidden")}
         />
       )}
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-surface to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-surface/80 to-transparent" />
       {game.image && game.thumb && (
         <img src={game.thumb} alt="" className="absolute bottom-3 left-5 h-1/2 rounded-md object-contain shadow-2xl" />
       )}
@@ -89,7 +90,7 @@ export function GamePanel({
             if (target?.closest?.("[data-game-card], [data-radix-popper-content-wrapper], nav")) e.preventDefault();
           }}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed inset-y-3 right-3 z-30 flex w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-surface/95 shadow-2xl outline-none backdrop-blur-md"
+          className="fixed inset-y-3 right-3 z-30 flex w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/15 bg-surface/60 shadow-2xl outline-none backdrop-blur-xl backdrop-saturate-150"
         >
           {game && (
             <>
