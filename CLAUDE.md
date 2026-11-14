@@ -57,12 +57,17 @@ instead (as Sovereign's server takes its SPA).
   `SOVEMU_*` env var on `Config` (and a row in the README's table and a line in
   `.env.example`). Secrets join `SECRETS` in `main.rs` (so `<VAR>_FILE` works and the startup
   log redacts them). Anything an admin can do in the UI must also happen on its own from
-  configuration (the admin account, rescans, mirror syncs, metadata lookups); UI buttons are
-  shortcuts, never the only way.
+  configuration (accounts, rescans, mirror syncs, metadata lookups, per-system cores and
+  options); UI buttons are shortcuts, never the only way. Tunables are settings, not constants.
+  Lists and maps use Sovereign's `__` hierarchy (`SOVEMU_USERS__0__USERNAME`,
+  `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A new setting also gets
+  its place in `charts/sovemu` if it needs more than `settings:` (a secret, a volume, a port).
 - **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** `/metrics` stays off unless
   `SOVEMU_METRICS_TOKEN` is set; new operational routes follow the same pattern.
+- **The server shuts down on SIGTERM as on Ctrl-C**: it stops every worker (so saves are
+  written) before exiting. Kubernetes and `docker stop` send SIGTERM; never exit without it.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the
   Write tool to `test-results/<task>.md` and passed with `-F` / `--body-file`, never a heredoc.
 

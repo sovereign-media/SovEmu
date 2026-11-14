@@ -14,6 +14,7 @@ and iOS clients.
 | `SovEmu.Backend/` | The Rust workspace: libretro bindings, the frontend, the worker, the test core |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) |
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
+| `charts/sovemu/` | The Helm chart |
 | `SovEmu.Web/` | The web client: Astro + Tailwind, served by the Rust server |
 | `SovEmu.Android/`, `SovEmu.iOS/` | Native clients, as submodules (`git submodule update --init --remote`) |
 
@@ -89,6 +90,11 @@ effective configuration at startup, with secrets redacted.
 |---|---|---|
 | **Accounts** | | |
 | `SOVEMU_ADMIN_USERNAME`, `SOVEMU_ADMIN_PASSWORD` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
+| `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ADMIN` | none | More accounts, kept in step like the admin (see below) |
+| `SOVEMU_USERS_PRUNE` | off | Delete accounts not declared above at startup |
+| `SOVEMU_SESSION_DAYS` | `30` | How long a sign-in lasts |
+| `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
+| `SOVEMU_LOGIN_LOCKOUT_MINUTES` | `5` | How long the lockout lasts |
 | **Library** | | |
 | `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
 | `SOVEMU_ROMS_DIR` | `<data>/roms` | The library, one folder per system |
@@ -99,11 +105,18 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SCAN_INTERVAL_MINUTES` | `60` | Rescan period (0: startup only) |
 | `SOVEMU_MIRROR_INTERVAL_MINUTES` | `360` | `mirror` mode: sync period (0: startup only) |
 | `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
+| `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
+| `SOVEMU_COPY_THREADS` | `4` | Files copied at once (mirror sync, artwork cache) |
+| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, core options (see below) |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
 | `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD` | unset | ScreenScraper developer credentials |
 | `SOVEMU_SCREENSCRAPER_USER`, `_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |
+| `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
+| `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
+| `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests |
+| `SOVEMU_SCREENSCRAPER_URL`, `SOVEMU_THEGAMESDB_URL` | the services | API base URLs (mirrors, tests) |
 | **Streaming** | | |
 | `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
 | `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent session; publish the range |
@@ -113,6 +126,11 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_VIDEO_KBPS` | `2500` | Video bitrate cap (adaptation stays below it) |
 | `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |
 | `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
+| `SOVEMU_WORKER_START_TIMEOUT` | `120` | Seconds a game may take to load (disc images on a slow share) |
+| `SOVEMU_REWIND_SECONDS` | `60` | Rewind history (0: rewind off) |
+| `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
+| `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
+| `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
 | `SOVEMU_METRICS_TOKEN` | unset | Enables `GET /metrics` (Prometheus) for this bearer token |
@@ -124,8 +142,55 @@ effective configuration at startup, with secrets redacted.
 Game workers start with an empty environment, apart from `PATH`, `HOME`, `TMPDIR`, `LANG` and
 `RUST_LOG`. Cores are third-party code, so they never see credentials.
 
-`GET /health` answers `ok` while the database is reachable. Sign-in locks a username out for five
-minutes after five failed attempts.
+### Lists and maps
+
+Accounts and per-system settings don't fit in one variable each. They use the `__` hierarchy
+Sovereign uses for its own settings:
+
+```bash
+SOVEMU_USERS__0__USERNAME=kid
+SOVEMU_USERS__0__PASSWORD_FILE=/run/secrets/kid     # or __PASSWORD
+SOVEMU_USERS__1__USERNAME=dad
+SOVEMU_USERS__1__PASSWORD=...
+SOVEMU_USERS__1__ADMIN=true
+SOVEMU_USERS_PRUNE=true                             # nobody else keeps an account
+
+SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core option
+SOVEMU_SYSTEMS__nes__CORE=nestopia                  # use this core (if installed)
+SOVEMU_SYSTEMS__gamegear__ENABLED=false             # hide a system
+```
+
+Declared accounts are created at startup and kept in step: a changed password signs that user
+out, and the admin flag follows the variable. An unknown system id, or a mistyped setting, stops
+the server at startup with the variable's name.
+
+### Kubernetes
+
+[`charts/sovemu`](charts/sovemu) is a Helm chart that turns its values into these variables, so a
+deployment is reproduced from one values file and its secrets. It covers:
+
+- `settings` (any variable), `secrets` or `existingSecret`;
+- `admin`, `users` (each with a password or a `passwordSecret`), `pruneUsers`, `systems`, and
+  `iceServers`;
+- the library as a read-only NFS volume, an existing claim or a host path;
+- a persistent `/data`;
+- an Ingress (TLS turns on secure cookies).
+
+The media ports are a UDP `LoadBalancer` Service (MetalLB at home; `media.advertiseIP`, or the
+pinned `loadBalancerIP`), or `media.hostNetwork`. The pod runs as uid 1000 with a read-only root
+filesystem and no capabilities. On SIGTERM the server stops every session cleanly before
+exiting, so saves are written.
+
+```bash
+helm install sovemu charts/sovemu -f my-values.yaml
+```
+
+`charts/sovemu/ci/full-values.yaml` uses every option.
+
+### Health and sign-in
+
+`GET /health` answers `ok` while the database is reachable. Sign-in locks a username out after
+`SOVEMU_LOGIN_MAX_FAILURES` failed attempts, for `SOVEMU_LOGIN_LOCKOUT_MINUTES`.
 
 **Playing away from home:** sessions need UDP from the browser to the session ports. Expose
 8080 through an HTTPS reverse proxy (and set `SOVEMU_SECURE_COOKIES=1`). Then forward

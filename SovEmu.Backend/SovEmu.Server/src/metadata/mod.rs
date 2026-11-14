@@ -149,6 +149,7 @@ pub struct Metadata {
     pub media_dir: PathBuf,
     pub status: Mutex<JobStatus>,
     http: reqwest::Client,
+    screenscraper_delay: Duration,
 }
 
 impl std::fmt::Debug for Metadata {
@@ -162,6 +163,7 @@ impl Metadata {
         dir: PathBuf,
         screenscraper: Option<screenscraper::ScreenScraper>,
         thegamesdb: Option<thegamesdb::TheGamesDb>,
+        screenscraper_delay: Duration,
     ) -> Arc<Self> {
         let mut sources = vec!["fbneo"];
         if screenscraper.is_some() {
@@ -177,6 +179,7 @@ impl Metadata {
             media_dir: dir.join("media"),
             status: Mutex::new(JobStatus { sources, ..JobStatus::default() }),
             http: http_client(),
+            screenscraper_delay,
         })
     }
 
@@ -278,7 +281,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
                 }
             }
             // Be gentle: free ScreenScraper accounts get one request at a time.
-            tokio::time::sleep(Duration::from_millis(1200)).await;
+            tokio::time::sleep(meta.screenscraper_delay).await;
         }
         if use_tgdb && !info.complete() {
             let tgdb = meta.thegamesdb.as_ref().expect("checked");

@@ -77,7 +77,11 @@ pub fn walk(root: &Path) -> Vec<Found> {
             continue;
         }
         if is_dir(&entry) {
-            folders.push((path, systems::by_folder(&name)));
+            let system = systems::by_folder(&name);
+            if system.is_none() && systems::is_unsupported_folder(&name) {
+                continue;
+            }
+            folders.push((path, system));
         } else if let Some(system) = pick_system(&path, None) {
             candidates.push(Candidate { path, system, media: String::new() });
         }
@@ -265,6 +269,9 @@ mod tests {
             ("loose/mystery.bin", 8),
             (".hidden/game.nes", 8),
             ("n64/Game.z64", 8),
+            // Another console's discs: a .chd would otherwise be taken for PlayStation.
+            ("ps2/Spy Game (USA).chd", 8),
+            ("Dreamcast/Disc Game (USA).cue", 8),
         ] {
             let p = root.join(path);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();

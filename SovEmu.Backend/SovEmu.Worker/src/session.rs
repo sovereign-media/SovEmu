@@ -41,6 +41,10 @@ pub fn run(args: SessionArgs) -> Result<()> {
         variables: args.variables.clone(),
         video_kbps: args.video_kbps,
         audio_kbps: args.audio_kbps,
+        rewind_seconds: args.rewind_seconds,
+        rewind_max_mb: args.rewind_max_mb,
+        fast_forward: args.fast_forward,
+        keyframe_interval: args.keyframe_interval,
         state_dir: args.state_dir.clone(),
     })?;
     let (core, av) = session.describe();

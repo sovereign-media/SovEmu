@@ -1,0 +1,10 @@
+apiVersion: v2
+name: sovemu
+description: SovEmu, a self-hosted console emulation server streaming libretro cores over WebRTC.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/sovereign-media/SovEmu
+sources:
+  - https://github.com/sovereign-media/SovEmu
+keywords: [emulation, libretro, webrtc, retro]

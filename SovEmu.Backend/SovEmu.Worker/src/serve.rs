@@ -31,6 +31,10 @@ pub fn run(args: ServeArgs) -> Result<()> {
         variables: args.variables.clone(),
         video_kbps: args.video_kbps,
         audio_kbps: args.audio_kbps,
+        rewind_seconds: args.rewind_seconds,
+        rewind_max_mb: args.rewind_max_mb,
+        fast_forward: args.fast_forward,
+        keyframe_interval: args.keyframe_interval,
         state_dir: Some(args.save_dir.join("states")),
     })?;
 

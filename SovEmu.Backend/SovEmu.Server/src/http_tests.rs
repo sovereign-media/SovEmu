@@ -585,3 +585,87 @@ async fn the_admin_comes_from_the_environment() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+async fn declared_users_are_reconciled_and_pruned() {
+    let mut h = Harness::new("env-users", false).await;
+    h.sign_up_admin().await;
+    let dir = h.dir.display().to_string();
+    let restart = |users: Vec<crate::structured::UserSpec>, prune: bool| {
+        let mut config = Config::parse_from(["sovemu-server", "--data-dir", &dir]);
+        config.users = users;
+        config.users_prune = prune;
+        config
+    };
+    let user = |name: &str, pw: &str, admin: bool| crate::structured::UserSpec {
+        username: name.into(),
+        password: pw.into(),
+        admin,
+    };
+    // Declared users are created; the hand-made admin stays without pruning.
+    let config =
+        restart(vec![user("mum", "password-mum", true), user("kid", "password-kid", false)], false);
+    h.state = build_state(config).await.unwrap();
+    h.cookie = None;
+    let (code, me) = h
+        .call(
+            "POST",
+            "/api/auth/login",
+            Some(json!({"username": "kid", "password": "password-kid"})),
+        )
+        .await;
+    assert_eq!((code, me["is_admin"].clone()), (StatusCode::OK, json!(false)));
+    let names = |state: &AppState| {
+        let db = state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT username FROM users ORDER BY username")
+                .fetch_all(&db)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(names(&h.state).await.len(), 3);
+
+    // Pruning leaves exactly the declared users; kid is now an admin.
+    let config =
+        restart(vec![user("mum", "password-mum", true), user("kid", "password-kid", true)], true);
+    h.state = build_state(config).await.unwrap();
+    assert_eq!(names(&h.state).await, ["kid", "mum"]);
+    let admin: bool = sqlx::query_scalar("SELECT is_admin FROM users WHERE username = 'kid'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert!(admin);
+
+    // Pruning with nobody declared is refused rather than deleting everyone.
+    assert!(build_state(restart(Vec::new(), true)).await.is_err());
+}
+
+#[tokio::test]
+async fn system_overrides_hide_systems_and_choose_cores() {
+    let mut h = Harness::new_with("env-systems", false, Vec::new()).await;
+    h.sign_up_admin().await;
+    let mut config = (*h.state.config).clone();
+    config.systems = crate::structured::systems(&[
+        ("SOVEMU_SYSTEMS__gba__ENABLED".to_owned(), "false".to_owned()),
+        ("SOVEMU_SYSTEMS__nes__CORE".to_owned(), "nestopia".to_owned()),
+    ])
+    .unwrap();
+    h.state.config = std::sync::Arc::new(config);
+    let (_, systems) = h.call("GET", "/api/systems", None).await;
+    let ids: Vec<&str> =
+        systems.as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+    assert!(!ids.contains(&"gba"), "disabled systems are hidden");
+    assert_eq!(h.call("GET", "/api/systems/gba/games", None).await.0, StatusCode::NOT_FOUND);
+
+    // NES now needs nestopia: an fceumm core does not count.
+    let cores = h.state.config.cores_dir.clone();
+    std::fs::write(cores.join("fceumm_libretro.so"), b"").unwrap();
+    let (_, systems) = h.call("GET", "/api/systems", None).await;
+    let nes = systems.as_array().unwrap().iter().find(|s| s["id"] == "nes").unwrap().clone();
+    assert_eq!(nes["playable"], false);
+    std::fs::write(cores.join("nestopia_libretro.so"), b"").unwrap();
+    let (_, systems) = h.call("GET", "/api/systems", None).await;
+    let nes = systems.as_array().unwrap().iter().find(|s| s["id"] == "nes").unwrap().clone();
+    assert_eq!(nes["playable"], true);
+}

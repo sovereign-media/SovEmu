@@ -1,0 +1,169 @@
+{{- if and (not .Values.media.hostNetwork) (not (include "sovemu.advertiseIP" .)) }}
+{{- fail "media.advertiseIP (or media.service.loadBalancerIP) is required: browsers send game media to it. Or set media.hostNetwork." }}
+{{- end }}
+{{- if not (has .Values.library.type (list "none" "existingClaim" "nfs" "hostPath")) }}
+{{- fail "library.type must be none, existingClaim, nfs or hostPath" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sovemu.fullname" . }}
+  labels:
+    {{- include "sovemu.labels" . | nindent 4 }}
+spec:
+  # One instance: SQLite, and the media ports belong to one pod.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "sovemu.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sovemu.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include "sovemu.env" . | sha256sum }}
+        checksum/secret: {{ include "sovemu.secretEnv" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.media.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Time for every game session to write its saves before the pod goes.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: sovemu
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "sovemu.fullname" . }}
+            {{- if (include "sovemu.secretEnv" . | fromYaml) }}
+            - secretRef:
+                name: {{ include "sovemu.fullname" . }}
+            {{- end }}
+            {{- with .Values.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          env:
+            {{- if and .Values.media.hostNetwork (not (include "sovemu.advertiseIP" .)) }}
+            - name: SOVEMU_ADVERTISE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            {{- end }}
+            {{- with .Values.admin.passwordSecret }}
+            {{- if .name }}
+            - name: SOVEMU_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .key | default "password" }}
+            {{- end }}
+            {{- end }}
+            {{- range $i, $u := .Values.users }}
+            {{- with $u.passwordSecret }}
+            - name: SOVEMU_USERS__{{ $i }}__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .key | default "password" }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            {{- range $i := until (int .Values.media.ports) }}
+            - name: media-{{ $i }}
+              containerPort: {{ add $.Values.media.firstPort $i }}
+              protocol: UDP
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- if ne .Values.library.type "none" }}
+            - name: library
+              mountPath: /library
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "sovemu.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if eq .Values.library.type "existingClaim" }}
+        - name: library
+          persistentVolumeClaim:
+            claimName: {{ required "library.existingClaim is required" .Values.library.existingClaim }}
+            readOnly: true
+        {{- else if eq .Values.library.type "nfs" }}
+        - name: library
+          nfs:
+            server: {{ required "library.nfs.server is required" .Values.library.nfs.server }}
+            path: {{ required "library.nfs.path is required" .Values.library.nfs.path }}
+            readOnly: true
+        {{- else if eq .Values.library.type "hostPath" }}
+        - name: library
+          hostPath:
+            path: {{ required "library.hostPath is required" .Values.library.hostPath }}
+            type: Directory
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

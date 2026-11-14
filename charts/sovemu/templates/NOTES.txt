@@ -1,0 +1,12 @@
+SovEmu is starting.
+
+Web and API: {{ if .Values.ingress.enabled }}{{ range .Values.ingress.hosts }}http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/ {{ end }}{{ else }}kubectl port-forward svc/{{ include "sovemu.fullname" . }} 8080:{{ .Values.service.port }}, then http://127.0.0.1:8080/{{ end }}
+Game media: UDP {{ .Values.media.firstPort }}-{{ include "sovemu.lastPort" . }} on {{ include "sovemu.advertiseIP" . | default "the node's address (hostNetwork)" }}
+{{- if not .Values.admin.username }}
+
+No admin is declared (admin.username): the first visit creates one. Declare it to make the
+deployment reproducible from values alone.
+{{- end }}
+
+The effective configuration is in the startup log:
+  kubectl logs deploy/{{ include "sovemu.fullname" . }} | head -60

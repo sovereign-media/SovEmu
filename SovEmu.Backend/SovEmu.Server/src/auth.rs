@@ -19,7 +19,6 @@ use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 
 pub const COOKIE_NAME: &str = "sovemu_session";
-const SESSION_DAYS: i64 = 30;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct User {
@@ -97,7 +96,19 @@ pub async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<User> {
 /// otherwise its password and admin flag are brought in line (the environment is the source of
 /// truth, so rotating `SOVEMU_ADMIN_PASSWORD` rotates the password).
 pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> anyhow::Result<()> {
-    validate(username, password).map_err(|e| anyhow::anyhow!("SOVEMU_ADMIN_*: {}", e.message))?;
+    ensure_user(pool, username, password, true).await
+}
+
+/// Makes sure a declared user exists with the declared password and admin flag: created if
+/// missing, otherwise brought in line (the environment is the source of truth; a changed
+/// password signs that user's browsers out).
+pub async fn ensure_user(
+    pool: &SqlitePool,
+    username: &str,
+    password: &str,
+    admin: bool,
+) -> anyhow::Result<()> {
+    validate(username, password).map_err(|e| anyhow::anyhow!("user {username}: {}", e.message))?;
     let existing: Option<(i64, String, bool)> =
         sqlx::query_as("SELECT id, password_hash, is_admin FROM users WHERE username = ?")
             .bind(username)
@@ -105,17 +116,15 @@ pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> 
             .await?;
     match existing {
         None => {
-            create_user(
-                pool,
-                &NewUser {
-                    username: username.to_owned(),
-                    password: password.to_owned(),
-                    is_admin: true,
-                },
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("creating the admin: {}", e.message))?;
-            tracing::info!("created admin {username} from SOVEMU_ADMIN_USERNAME");
+            let new = NewUser {
+                username: username.to_owned(),
+                password: password.to_owned(),
+                is_admin: admin,
+            };
+            create_user(pool, &new)
+                .await
+                .map_err(|e| anyhow::anyhow!("creating {username}: {}", e.message))?;
+            tracing::info!("created user {username} (admin: {admin}) from the environment");
         }
         Some((id, hash, is_admin)) => {
             if !verify_password(password, &hash) {
@@ -124,15 +133,15 @@ pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> 
                     .bind(id)
                     .execute(pool)
                     .await?;
-                // A changed password signs every browser out.
                 sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?")
                     .bind(id)
                     .execute(pool)
                     .await?;
-                tracing::info!("updated admin {username}'s password from SOVEMU_ADMIN_PASSWORD");
+                tracing::info!("updated {username}'s password from the environment");
             }
-            if !is_admin {
-                sqlx::query("UPDATE users SET is_admin = 1 WHERE id = ?")
+            if is_admin != admin {
+                sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
+                    .bind(admin)
                     .bind(id)
                     .execute(pool)
                     .await?;
@@ -142,8 +151,28 @@ pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> 
     Ok(())
 }
 
+/// Deletes every user not in `keep` (the declared users), for `SOVEMU_USERS_PRUNE`.
+pub async fn prune_users(pool: &SqlitePool, keep: &[String]) -> anyhow::Result<u64> {
+    let all: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, username FROM users").fetch_all(pool).await?;
+    let mut removed = 0;
+    for (id, name) in all {
+        if !keep.iter().any(|k| k.eq_ignore_ascii_case(&name)) {
+            sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(pool).await?;
+            tracing::info!("removed user {name}: not declared in the environment");
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 /// Creates a sign-in session and returns the `Set-Cookie` value for it.
-async fn start_session(pool: &SqlitePool, user_id: i64, secure: bool) -> ApiResult<HeaderValue> {
+async fn start_session(
+    pool: &SqlitePool,
+    user_id: i64,
+    secure: bool,
+    days: u32,
+) -> ApiResult<HeaderValue> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(ApiError::internal)?;
     let token = hex::encode(bytes);
@@ -153,13 +182,13 @@ async fn start_session(pool: &SqlitePool, user_id: i64, secure: bool) -> ApiResu
     )
     .bind(token_hash(&token))
     .bind(user_id)
-    .bind(format!("+{SESSION_DAYS} days"))
+    .bind(format!("+{days} days"))
     .execute(pool)
     .await?;
     let secure = if secure { "; Secure" } else { "" };
     let cookie = format!(
         "{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}",
-        SESSION_DAYS * 86_400
+        u64::from(days) * 86_400
     );
     HeaderValue::from_str(&cookie).map_err(ApiError::internal)
 }
@@ -245,7 +274,9 @@ pub async fn setup(
         &NewUser { username: creds.username, password: creds.password, is_admin: true },
     )
     .await?;
-    let cookie = start_session(&state.db, user.id, state.config.secure_cookies).await?;
+    let cookie =
+        start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
+            .await?;
     Ok(([(SET_COOKIE, cookie)], Json(user)).into_response())
 }
 
@@ -277,7 +308,9 @@ pub async fn login(
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "wrong username or password"));
     };
     state.login_throttle.succeeded(&creds.username);
-    let cookie = start_session(&state.db, user.id, state.config.secure_cookies).await?;
+    let cookie =
+        start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
+            .await?;
     Ok(([(SET_COOKIE, cookie)], Json(user)).into_response())
 }
 

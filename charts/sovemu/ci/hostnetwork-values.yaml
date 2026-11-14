@@ -1,0 +1,7 @@
+media:
+  hostNetwork: true
+library:
+  type: hostPath
+  hostPath: /srv/emulation
+persistence:
+  enabled: false

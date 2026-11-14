@@ -95,6 +95,22 @@ struct SessionArgs {
     /// Exit after this many seconds with no client connected (0: never).
     #[arg(long, default_value_t = 300)]
     idle_timeout: u64,
+
+    /// Seconds of rewind history (0 turns rewind off).
+    #[arg(long, default_value_t = 60)]
+    rewind_seconds: u32,
+
+    /// At most this many MiB of rewind history.
+    #[arg(long, default_value_t = 64)]
+    rewind_max_mb: u32,
+
+    /// Frames emulated per frame shown while fast-forwarding.
+    #[arg(long, default_value_t = 4)]
+    fast_forward: u32,
+
+    /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
+    #[arg(long, default_value_t = 600)]
+    keyframe_interval: u32,
 }
 
 #[derive(Debug, clap::Args)]
@@ -144,6 +160,22 @@ struct ServeArgs {
     /// Directory the core may save into.
     #[arg(long, default_value = "saves")]
     save_dir: PathBuf,
+
+    /// Seconds of rewind history (0 turns rewind off).
+    #[arg(long, default_value_t = 60)]
+    rewind_seconds: u32,
+
+    /// At most this many MiB of rewind history.
+    #[arg(long, default_value_t = 64)]
+    rewind_max_mb: u32,
+
+    /// Frames emulated per frame shown while fast-forwarding.
+    #[arg(long, default_value_t = 4)]
+    fast_forward: u32,
+
+    /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
+    #[arg(long, default_value_t = 600)]
+    keyframe_interval: u32,
 }
 
 #[derive(Debug, clap::Args)]

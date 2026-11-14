@@ -46,7 +46,10 @@ pub async fn sync_then_scan(state: AppState) {
     }
     let (dest, only, status) =
         (state.config.roms_dir.clone(), state.config.mirror_systems.clone(), state.mirror.clone());
-    let _ = tokio::task::spawn_blocking(move || mirror::sync(&source, &dest, &only, &status)).await;
+    let threads = state.config.copy_threads;
+    let _ =
+        tokio::task::spawn_blocking(move || mirror::sync(&source, &dest, &only, threads, &status))
+            .await;
     scan_and_log(&state).await;
 }
 

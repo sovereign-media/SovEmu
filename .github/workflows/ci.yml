@@ -114,3 +114,36 @@ jobs:
         run: |
           docker run --rm sovemu:ci --version
           docker run --rm sovemu:ci probe
+
+  chart:
+    # charts/sovemu: lint and render every value set in ci/, and validate what it renders
+    # against the Kubernetes schemas.
+    name: Helm chart
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: charts/sovemu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: Lint and validate
+        run: |
+          for values in ci/*.yaml; do
+            echo "::group::$values"
+            helm lint . --strict -f "$values"
+            helm template sovemu . -f "$values" | kubeconform -strict -summary -kubernetes-version 1.31.0 -
+            echo "::endgroup::"
+          done
+
+      - name: Required settings are enforced
+        run: |
+          if helm template sovemu . >/dev/null 2>&1; then
+            echo "rendering without media.advertiseIP should fail"; exit 1
+          fi

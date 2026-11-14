@@ -16,18 +16,31 @@ use crate::AppState;
 use crate::auth::CurrentUser;
 use crate::error::{ApiError, ApiResult};
 
-/// Failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
+/// Default failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
 pub const MAX_FAILURES: u32 = 5;
 pub const LOCKOUT_WINDOW: Duration = Duration::from_secs(300);
 
 /// Counts failed sign-ins per username and locks a name out after too many. In memory: a
 /// restart forgets, which is fine for slowing down guessing on a home server.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct LoginThrottle {
     failures: Mutex<HashMap<String, (u32, Instant)>>,
+    max_failures: u32,
+    window: Duration,
+}
+
+impl Default for LoginThrottle {
+    fn default() -> Self {
+        Self::new(MAX_FAILURES, LOCKOUT_WINDOW)
+    }
 }
 
 impl LoginThrottle {
+    /// `max_failures` of 0 turns the throttle off.
+    pub fn new(max_failures: u32, window: Duration) -> Self {
+        Self { failures: Mutex::default(), max_failures, window }
+    }
+
     fn key(username: &str) -> String {
         username.trim().to_lowercase()
     }
@@ -37,9 +50,11 @@ impl LoginThrottle {
         let map = self.failures.lock().unwrap_or_else(|e| e.into_inner());
         match map.get(&Self::key(username)) {
             Some(&(count, since))
-                if count >= MAX_FAILURES && now.duration_since(since) < LOCKOUT_WINDOW =>
+                if self.max_failures > 0
+                    && count >= self.max_failures
+                    && now.duration_since(since) < self.window =>
             {
-                Err((LOCKOUT_WINDOW - now.duration_since(since)).as_secs().max(1))
+                Err((self.window - now.duration_since(since)).as_secs().max(1))
             }
             _ => Ok(()),
         }
@@ -48,12 +63,13 @@ impl LoginThrottle {
     pub fn failed(&self, username: &str, now: Instant) {
         let mut map = self.failures.lock().unwrap_or_else(|e| e.into_inner());
         let entry = map.entry(Self::key(username)).or_insert((0, now));
-        if now.duration_since(entry.1) >= LOCKOUT_WINDOW {
+        if now.duration_since(entry.1) >= self.window {
             *entry = (0, now);
         }
         entry.0 += 1;
         if map.len() > 10_000 {
-            map.retain(|_, (_, since)| now.duration_since(*since) < LOCKOUT_WINDOW);
+            let window = self.window;
+            map.retain(|_, (_, since)| now.duration_since(*since) < window);
         }
     }
 
@@ -159,6 +175,19 @@ mod tests {
         assert!(t.check("bruce", now + LOCKOUT_WINDOW).is_ok(), "the lockout expires");
         t.succeeded("bruce");
         assert!(t.check("bruce", now).is_ok(), "success clears it");
+    }
+
+    #[test]
+    fn the_throttle_is_configurable() {
+        let now = Instant::now();
+        let strict = LoginThrottle::new(1, Duration::from_secs(60));
+        strict.failed("a", now);
+        assert_eq!(strict.check("a", now), Err(60));
+        let off = LoginThrottle::new(0, Duration::from_secs(60));
+        for _ in 0..100 {
+            off.failed("a", now);
+        }
+        assert!(off.check("a", now).is_ok(), "0 turns it off");
     }
 
     #[test]

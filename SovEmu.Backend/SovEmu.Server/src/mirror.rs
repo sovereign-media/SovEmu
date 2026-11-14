@@ -16,8 +16,6 @@ use serde::Serialize;
 
 use crate::systems;
 
-const COPY_THREADS: usize = 4;
-
 /// Progress of the current (or last) sync, for `GET /api/library/status`.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct SyncStatus {
@@ -90,7 +88,13 @@ fn copy_file(src: &Path, dest: &Path) -> std::io::Result<()> {
 }
 
 /// Brings `dest` in line with `source`. Blocking; run it on a background thread.
-pub fn sync(source: &Path, dest: &Path, only: &[String], status: &Mutex<SyncStatus>) {
+pub fn sync(
+    source: &Path,
+    dest: &Path,
+    only: &[String],
+    threads: usize,
+    status: &Mutex<SyncStatus>,
+) {
     let set =
         |f: &dyn Fn(&mut SyncStatus)| f(&mut status.lock().unwrap_or_else(|e| e.into_inner()));
     set(&|s| *s = SyncStatus { running: true, ..SyncStatus::default() });
@@ -143,7 +147,7 @@ pub fn sync(source: &Path, dest: &Path, only: &[String], status: &Mutex<SyncStat
     let queue = Mutex::new(todo.into_iter());
     let (done, bytes, failed) = (AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0));
     std::thread::scope(|scope| {
-        for _ in 0..COPY_THREADS {
+        for _ in 0..threads.max(1) {
             scope.spawn(|| {
                 loop {
                     let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
@@ -227,21 +231,21 @@ mod tests {
         put(&src, "notes/readme.txt", b"not a system folder");
         let status = Mutex::new(SyncStatus::default());
 
-        sync(&src, &dst, &[], &status);
+        sync(&src, &dst, &[], 4, &status);
         let s = status.lock().unwrap().clone();
         assert_eq!((s.running, s.files_total, s.files_done, s.failed), (false, 3, 3, 0));
         assert_eq!(std::fs::read(dst.join("nes/images/A-thumb.png")).unwrap(), b"png");
         assert!(!dst.join("notes").exists(), "only system folders are mirrored");
 
         // Nothing changed: nothing to copy.
-        sync(&src, &dst, &[], &status);
+        sync(&src, &dst, &[], 4, &status);
         assert_eq!(status.lock().unwrap().files_total, 0);
 
         // A change, an addition and a deletion.
         put(&src, "nes/A.nes", b"changed!");
         put(&src, "nes/C.nes", b"c");
         std::fs::remove_file(src.join("snes/B.sfc")).unwrap();
-        sync(&src, &dst, &[], &status);
+        sync(&src, &dst, &[], 4, &status);
         let s = status.lock().unwrap().clone();
         assert_eq!((s.files_total, s.removed), (2, 1));
         assert_eq!(std::fs::read(dst.join("nes/A.nes")).unwrap(), b"changed!");
@@ -254,7 +258,7 @@ mod tests {
         put(&src, "nes/A.nes", b"a");
         put(&src, "genesis/B.md", b"b");
         let status = Mutex::new(SyncStatus::default());
-        sync(&src, &dst, &["megadrive".to_owned()], &status);
+        sync(&src, &dst, &["megadrive".to_owned()], 4, &status);
         assert!(dst.join("genesis/B.md").exists(), "folder aliases resolve to system ids");
         assert!(!dst.join("nes").exists());
     }
@@ -262,7 +266,7 @@ mod tests {
     #[test]
     fn reports_an_unreachable_source() {
         let status = Mutex::new(SyncStatus::default());
-        sync(Path::new("/nonexistent/share"), &tmp("dst-missing"), &[], &status);
+        sync(Path::new("/nonexistent/share"), &tmp("dst-missing"), &[], 4, &status);
         let s = status.lock().unwrap().clone();
         assert!(!s.running);
         assert!(s.error.unwrap().contains("not reachable"));
