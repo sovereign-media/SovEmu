@@ -40,6 +40,19 @@ export function moveFocus(focus: Focus, action: NavAction, rows: RowShape[]): Fo
   return { row: focus.row, cols };
 }
 
+/** How far one click of a row's arrow moves it: most of the visible width, keeping a card of
+ *  context. */
+export const SCROLL_STEP = 0.8;
+
+/** Where an arrow click takes a row scrolled to `left` (of `total`, `width` visible): a step
+ *  that way, and from either end round to the other, so a row loops as the hero does. */
+export function nextScroll(left: number, width: number, total: number, dir: -1 | 1): number {
+  const max = Math.max(0, total - width);
+  const atEnd = dir > 0 ? left >= max - 4 : left <= 4;
+  if (atEnd) return dir > 0 ? 0 : max;
+  return Math.min(max, Math.max(0, left + dir * width * SCROLL_STEP));
+}
+
 /** The hero's backdrop: a screenshot-style image if there is one, else the box art. */
 export function heroArt(g: Game): string | null {
   if (g.media.includes("image")) return mediaUrl(g.id, "image");

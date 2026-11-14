@@ -49,9 +49,10 @@ function HomeScreen() {
   const rows: RowShape[] = useMemo(
     () => [
       { length: feed?.featured.length ?? 0, wraps: true },
-      { length: feed?.recent.length ?? 0 },
-      { length: systems.length },
-      { length: feed?.added.length ?? 0 },
+      // Every row loops, like the hero: right on the last card comes back to the first.
+      { length: feed?.recent.length ?? 0, wraps: true },
+      { length: systems.length, wraps: true },
+      { length: feed?.added.length ?? 0, wraps: true },
     ],
     [feed, systems],
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { byline, cardArt, heroArt, moveFocus, startFocus, type RowShape } from "./home";
+import { byline, cardArt, heroArt, moveFocus, nextScroll, startFocus, type RowShape } from "./home";
 
 const game = (over: Partial<Game> = {}): Game => ({
   id: 7, system: "snes", title: "A Game", tags: "", path: "a.sfc", size: 1, last_played_at: null, play_count: null,
@@ -67,5 +67,25 @@ describe("home art", () => {
     expect(byline(game({ release_date: "1996-06-23", developer: "Nintendo", genre: "Platform" }))).toBe("1996 · Nintendo · Platform");
     expect(byline(game({ publisher: "Capcom" }))).toBe("Capcom");
     expect(byline(game())).toBe("");
+  });
+});
+
+describe("row arrows", () => {
+  // 1000 px of cards, 400 px visible: the row scrolls from 0 to 600.
+  it("steps most of a screen, stopping at the ends", () => {
+    expect(nextScroll(0, 400, 1000, 1)).toBe(320);
+    expect(nextScroll(500, 400, 1000, 1)).toBe(600);
+    expect(nextScroll(100, 400, 1000, -1)).toBe(0);
+  });
+
+  it("loops from either end to the other", () => {
+    expect(nextScroll(600, 400, 1000, 1)).toBe(0);
+    expect(nextScroll(0, 400, 1000, -1)).toBe(600);
+    expect(nextScroll(598, 400, 1000, 1)).toBe(0);
+  });
+
+  it("stays put when the row fits", () => {
+    expect(nextScroll(0, 400, 300, 1)).toBe(0);
+    expect(nextScroll(0, 400, 300, -1)).toBe(0);
   });
 });
