@@ -61,7 +61,17 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `scripts/fetch-free-roms.sh`: pinned, freely licensed homebrew for NES, SNES, GB, GBC and GBA
 - [x] Verified in Docker: Snes9x streaming *Castle Platformer* through the server to a WebRTC client
 - [ ] OIDC sign-in (deferred to Phase 6)
-- [ ] Connect the NAS library (`nas.blh.casa/emulation`, SMB with credentials)
+- [x] NAS library: `compose.nas.yaml` mounts the SMB share read-only (credentials in a gitignored
+      `.env`); Batocera artwork (box art, image, marquee, video snaps) is scanned and served with
+      range support; the game list shows it; scans run in the background, in parallel
+      (3,497 games over SMB in ~20 s)
+- [x] PlayStation (PCSX-ReARMed, CHD) and arcade / Neo Geo (FBNeo) cores; `SOVEMU_SYSTEM_DIR` for BIOS
+- [x] Remote library (Cloudflare Zero Trust, ~100 ms per request, a few MB/s): a local LRU cache
+      of played games and artwork (`SOVEMU_CACHE_GB`), disc images cached only after their first
+      session, system artwork prefetched, PlayStation CD read-ahead raised to 256 sectors, worker
+      load deadline raised to 2 minutes
+- [ ] Full titles for arcade sets (FBNeo's DAT maps `mslug` to *Metal Slug*)
+- [ ] Group multi-disc games (`(Disc N)`) into one entry
 
 ## Phase 3: persistence
 
@@ -76,9 +86,16 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 4: mobile clients
 
-- [ ] `SovEmu.Android` (Kotlin) then `SovEmu.iOS` (Swift), as submodules (and move `SovEmu.Web`
-      to its own repository as a submodule at the same time): touch overlay,
-      physical controllers, app lifecycle
+- [x] `SovEmu.Android` (sovereign-media/SovEmu.Android, submodule): Kotlin + Compose; `core` module
+      with the protocol and API models (shared byte vectors); sign-in, system carousel, game list,
+      player (Stream libwebrtc), gamepad by position and a touch controller, hotkeys, in-game menu
+      (save/load slot 1, continue, quit); CI builds a debug APK
+- [x] `SovEmu.iOS` (sovereign-media/SovEmu.iOS, submodule): SwiftUI + XcodeGen; `SovEmuKit` package
+      (Swift 6) with the protocol and API (shared byte vectors); the same screens and player
+      (stasel/WebRTC, GameController); CI runs the package tests and a simulator build
+- [ ] Run both on devices against a real server (not yet: no device or emulator on the build machine)
+- [ ] Parity with the web player: save-slot pickers with thumbnails, cheats, remapping, filters
+- [ ] Move `SovEmu.Web` to its own repository once the image takes a released web build
 
 ## Phase 5: features
 

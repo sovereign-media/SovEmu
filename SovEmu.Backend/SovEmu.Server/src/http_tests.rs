@@ -52,7 +52,11 @@ impl Harness {
     async fn new(name: &str, with_core: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("sovemu-server-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        for (path, bytes) in [("roms/nes/Test Game (USA).nes", 64), ("roms/gba/Other.gba", 32)] {
+        for (path, bytes) in [
+            ("roms/nes/Test Game (USA).nes", 64),
+            ("roms/nes/images/Test Game (USA)-thumb.png", 2048),
+            ("roms/gba/Other.gba", 32),
+        ] {
             let p = dir.join(path);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, vec![0u8; bytes]).unwrap();
@@ -81,6 +85,7 @@ impl Harness {
             args.extend(["--worker".into(), worker.display().to_string()]);
         }
         let state = build_state(Config::parse_from(args)).await.unwrap();
+        crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
         Self { state, dir, cookie: None }
     }
 
@@ -219,9 +224,22 @@ async fn browses_the_library() {
     assert_eq!(games[0]["title"], "Test Game");
     assert_eq!(games[0]["tags"], "USA");
     assert_eq!(games[0]["last_played_at"], Value::Null);
+    assert_eq!(games[0]["media"], json!(["thumb"]));
     let id = games[0]["id"].as_i64().unwrap();
+    assert_eq!(
+        h.call("GET", &format!("/api/games/{id}/media/thumb"), None).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        h.call("GET", &format!("/api/games/{id}/media/video"), None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        h.call("GET", &format!("/api/games/{id}/media/../../etc"), None).await.0,
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(h.call("GET", &format!("/api/games/{id}"), None).await.1["system"], "nes");
-    assert_eq!(h.call("GET", "/api/systems/psx/games", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.call("GET", "/api/systems/n64/games", None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(h.call("GET", "/api/games/9999", None).await.0, StatusCode::NOT_FOUND);
 
     // A new file appears after a rescan; a deleted one goes.

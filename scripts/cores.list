@@ -8,11 +8,13 @@
 # bump them deliberately, and rebuild the image to check every core still loads (the build runs
 # `sovemu-worker probe` over all of them).
 #
-# Licences: fceumm, gambatte and mgba are GPL/MPL; snes9x and genesis_plus_gx are
-# non-commercial. SovEmu is non-commercial, so all are usable (see docs/ARCHITECTURE.md).
+# Licences: fceumm, gambatte, mgba and pcsx_rearmed are GPL/MPL; snes9x, genesis_plus_gx and
+# fbneo are non-commercial. SovEmu is non-commercial, so all are usable (see docs/ARCHITECTURE.md).
 
 fceumm           https://github.com/libretro/libretro-fceumm.git    e0f3086a8104f8fbbe49a2615b10401504a9533f  make -f Makefile.libretro
 snes9x           https://github.com/libretro/snes9x.git             fae2fea08f74180759ef540ee94259213f503480  make -C libretro
 mgba             https://github.com/libretro/mgba.git               7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6  cmake -B build -DLIBMGBA_ONLY=ON -DBUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
 gambatte         https://github.com/libretro/gambatte-libretro.git  77f2567d718b8973d02caa2daa8dce4953faf811  make -f Makefile.libretro
 genesis_plus_gx  https://github.com/libretro/Genesis-Plus-GX.git    b9c2316441978d4015ba30e9a95d9b0e6f8ee981  make -f Makefile.libretro
+pcsx_rearmed     https://github.com/libretro/pcsx_rearmed.git       7b0e8f8fadfbce3d170d195b9d9eecaabfa08c8e  make -f Makefile.libretro
+fbneo            https://github.com/libretro/FBNeo.git              e6c7ee3d3a34b12f03054d669123ebe813397a8c  make -C src/burner/libretro

@@ -1,0 +1,25 @@
+# Use the NAS library instead of data/roms:
+#
+#   docker compose -f compose.yaml -f compose.nas.yaml up -d
+#
+# Mounts //$SOVEMU_NAS_HOST/$SOVEMU_NAS_PATH read-only. That folder holds a Batocera-style
+# library: roms/<system>/ (with images/ and videos/ artwork beside the ROMs) and bios/.
+# Credentials come from .env (gitignored; see .env.example), never from this file.
+services:
+  sovemu:
+    environment:
+      SOVEMU_ROMS_DIR: /nas/roms
+      SOVEMU_SYSTEM_DIR: /nas/bios
+      # The share is remote (a tunnel), so keep played games and artwork on local disk
+      # (data/cache), least recently used out past this many GiB.
+      SOVEMU_CACHE_GB: ${SOVEMU_CACHE_GB:-20}
+    volumes:
+      - nas:/nas:ro
+
+volumes:
+  nas:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//${SOVEMU_NAS_HOST:-nas.blh.casa}/${SOVEMU_NAS_PATH:-MEDIA/emulation}"
+      o: "ro,username=${SOVEMU_NAS_USER:?set SOVEMU_NAS_USER in .env},password=${SOVEMU_NAS_PASSWORD:?set SOVEMU_NAS_PASSWORD in .env},uid=1000,gid=1000,vers=3.0"

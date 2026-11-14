@@ -31,7 +31,11 @@ export interface Game {
   size: number;
   last_played_at: string | null;
   play_count: number | null;
+  /** Artwork available at mediaUrl(): "image", "thumb", "marquee", "video". */
+  media: string[];
 }
+
+export const mediaUrl = (gameId: number, kind: string) => `/api/games/${gameId}/media/${kind}`;
 
 export interface SessionInfo {
   id: string;

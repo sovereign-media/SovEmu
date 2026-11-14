@@ -7,10 +7,13 @@ design and the decisions behind it; [docs/ROADMAP.md](docs/ROADMAP.md) the phase
 issue is sovereign-media/SovEmu#1.
 
 The repository follows the layout of `sovereign-media/sovereign`: the backend lives in-tree
-under `SovEmu.Backend/`, and each client is a separate project at the root. `SovEmu.Web`
-(Astro + Tailwind) is the first client and lives in-tree for now; it is self-contained so it can
-become its own repository checked out as a submodule. `SovEmu.Android` and `SovEmu.iOS` will be
-submodules from the start.
+under `SovEmu.Backend/`, and each client is a separate project at the root. The native clients are
+their own repositories, checked out as **unpinned submodules** (`branch = main`, `ignore = all`;
+update with `git submodule update --remote`): `SovEmu.Android` (Kotlin + Compose) and
+`SovEmu.iOS` (SwiftUI + XcodeGen). Each has its own README, `.claude/rules/`, CI and PRs.
+`SovEmu.Web` (Astro + Tailwind) stays in-tree for now because the image builds it from source;
+it is self-contained so it can move to its own repository once the image takes a released build
+instead (as Sovereign's server takes its SPA).
 
 ## Critical rules
 
@@ -23,6 +26,9 @@ submodules from the start.
   there deadlocks. `callbacks::with` is for short reads and writes only.
 - **Never edit `SovEmu.LibretroFfi/include/libretro.h`** or the generated bindings. Update the
   header from upstream and record the commit in `include/README.md`.
+- **Never commit secrets.** NAS credentials live in `.env` (gitignored and dockerignored; see
+  `.env.example`), read by `compose.nas.yaml`. The NAS library is mounted read-only; SovEmu never
+  writes to a ROM library.
 - **Never commit cores, ROMs or BIOS files.** `cores/`, `roms/`, `system/` and `data/` are
   gitignored; `scripts/fetch-cores.sh` downloads cores for local testing. Tests use
   `SovEmu.TestCore`.

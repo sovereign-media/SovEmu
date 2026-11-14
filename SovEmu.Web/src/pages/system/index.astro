@@ -20,7 +20,11 @@ import HintBar from "../../components/HintBar.astro";
     </section>
 
     <aside data-details class="hidden self-center rounded-2xl border border-white/10 bg-panel/70 p-8 shadow-2xl backdrop-blur md:block">
-      <div data-art class="mb-6 grid aspect-[4/3] place-items-center rounded-xl text-6xl font-black text-white/90"></div>
+      <div data-art class="relative mb-6 grid aspect-[4/3] place-items-center overflow-hidden rounded-xl text-6xl font-black text-white/90">
+        <span data-art-label></span>
+        <img data-art-image alt="" class="absolute inset-0 hidden h-full w-full object-contain" />
+        <video data-art-video muted loop playsinline class="absolute inset-0 hidden h-full w-full object-contain"></video>
+      </div>
       <h2 data-title class="text-3xl font-black leading-tight"></h2>
       <div data-tags class="mt-3 flex flex-wrap gap-2"></div>
       <dl class="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
@@ -36,7 +40,7 @@ import HintBar from "../../components/HintBar.astro";
 </Base>
 
 <script>
-  import { api, formatAgo, formatSize, type Game } from "../../lib/api";
+  import { api, formatAgo, formatSize, mediaUrl, type Game } from "../../lib/api";
   import { listenNav } from "../../lib/nav";
 
   const params = new URLSearchParams(location.search);
@@ -57,7 +61,29 @@ import HintBar from "../../components/HintBar.astro";
   $("system").textContent = system?.name ?? "";
   $("count").textContent = `${games.length} game${games.length === 1 ? "" : "s"}`;
   $("art").style.background = `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 30%, black))`;
-  $("art").textContent = system?.short ?? "";
+  $("art-label").textContent = system?.short ?? "";
+  const artImage = $<HTMLImageElement>("art-image");
+  const artVideo = $<HTMLVideoElement>("art-video");
+  let videoTimer = 0;
+
+  /** Box art (or the composite image) at once; the video snap after a short pause, as on a
+   *  console frontend, so scrolling quickly does not start a dozen videos. */
+  function showArt(g: Game) {
+    clearTimeout(videoTimer);
+    artVideo.pause();
+    artVideo.classList.add("hidden");
+    artVideo.removeAttribute("src");
+    const still = g.media.includes("image") ? "image" : g.media.includes("thumb") ? "thumb" : null;
+    artImage.classList.toggle("hidden", !still);
+    if (still) artImage.src = mediaUrl(g.id, still);
+    if (g.media.includes("video")) {
+      videoTimer = window.setTimeout(() => {
+        artVideo.src = mediaUrl(g.id, "video");
+        artVideo.onplaying = () => artVideo.classList.remove("hidden");
+        artVideo.play().catch(() => {});
+      }, 900);
+    }
+  }
 
   const rememberKey = `sovemu.game.${systemId}`;
   let index = Math.max(0, games.findIndex((g) => String(g.id) === localStorage.getItem(rememberKey)));
@@ -95,6 +121,7 @@ import HintBar from "../../components/HintBar.astro";
     list.children[index]?.scrollIntoView({ block: "nearest" });
     $("details").classList.remove("hidden");
     $("title").textContent = g.title;
+    showArt(g);
     $("tags").replaceChildren(
       ...g.tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => {
         const chip = document.createElement("span");

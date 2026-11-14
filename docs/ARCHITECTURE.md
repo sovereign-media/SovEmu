@@ -67,8 +67,8 @@ SovEmu/
     SovEmu.Protocol/         wire formats: input packets, signalling                 [Phase 1]
     SovEmu.Server/           axum: web client + API, auth, SQLite, orchestration     [Phase 2]
   SovEmu.Web/                Astro + Tailwind, static; served by the Rust server     [Phase 1]
-  SovEmu.Android/            submodule: Kotlin, libwebrtc + InputDevice
-  SovEmu.iOS/                submodule: Swift, WebRTC.framework + GameController
+  SovEmu.Android/            submodule: Kotlin + Compose, Stream libwebrtc, gamepad + touch
+  SovEmu.iOS/                submodule: SwiftUI + XcodeGen, stasel/WebRTC, GameController + touch
   docs/  scripts/  .claude/  .github/
   cores/  roms/  system/     gitignored: fetched cores, admin ROM library, BIOS
 ```
@@ -93,6 +93,23 @@ Library folders follow the Recalbox/Batocera names (`nes/`, `snes/`, `megadrive/
 aliases (`genesis/`, No-Intro style names). A file outside a known folder is placed by its
 extension, but only when exactly one system claims that extension. A rescan updates rows in place
 by path, so game ids (and with them play history and saves) survive a rescan.
+
+### A remote library
+
+The library can sit on a share reached over a tunnel. That means about 100 ms per request and a
+few MB/s. Three things keep the slowness away from playing:
+- **Cartridge games:** a game is read into memory when it loads, so play itself never touches the
+  network.
+- **Disc games:** a disc is read during play on the core's own CD thread (PCSX-ReARMed, read-ahead
+  256 sectors).
+- **The cache:** `data/cache` holds what has been played and seen:
+  - a game is served from its copy once it has been played;
+  - small files are copied straight away; disc images are copied after their first session;
+  - least recently used files go first;
+  - files that refer to other files (`.cue`, `.m3u`) stay on the share.
+
+A copy counts as current when its size matches the original's and its modification time is within
+2 s. Filesystems store these times at different precisions.
 
 ### Saves
 

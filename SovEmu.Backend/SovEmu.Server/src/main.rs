@@ -6,6 +6,7 @@
 
 mod api;
 mod auth;
+mod cache;
 mod cheats;
 mod db;
 mod error;
@@ -47,8 +48,12 @@ pub struct Config {
     pub data_dir: PathBuf,
 
     /// The ROM library: one folder per system (`nes/`, `snes/`, …). Default: `<data-dir>/roms`.
-    #[arg(long, env = "SOVEMU_ROMS_DIR")]
+    #[arg(long = "roms-dir", env = "SOVEMU_ROMS_DIR")]
     roms: Option<PathBuf>,
+
+    /// BIOS and system files for cores. Default: `<data-dir>/system`.
+    #[arg(long = "system-dir", env = "SOVEMU_SYSTEM_DIR")]
+    system: Option<PathBuf>,
 
     /// Directory of libretro cores (`<name>_libretro.so`).
     #[arg(long, env = "SOVEMU_CORES_DIR", default_value = "cores")]
@@ -73,6 +78,11 @@ pub struct Config {
     /// The IP address browsers send media to: in a container, the host's address.
     #[arg(long, env = "SOVEMU_ADVERTISE_IP")]
     pub advertise_ip: Option<IpAddr>,
+
+    /// Keep up to this many GiB of the library (ROMs and artwork) on local disk, for a library
+    /// on a slow network share. 0 disables the cache.
+    #[arg(long, env = "SOVEMU_CACHE_GB", default_value_t = 0)]
+    pub cache_gb: u64,
 
     /// End a session after this many seconds with no client connected.
     #[arg(long, env = "SOVEMU_IDLE_TIMEOUT", default_value_t = 300)]
@@ -124,6 +134,7 @@ pub struct AppState {
     /// Verified against when a username does not exist, so failures take the same time.
     pub dummy_hash: String,
     pub login_throttle: Arc<ops::LoginThrottle>,
+    pub cache: Arc<cache::Cache>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -143,6 +154,7 @@ pub fn router(state: AppState) -> Router {
         .route("/systems", get(api::list_systems))
         .route("/systems/{id}/games", get(api::list_games))
         .route("/games/{id}", get(api::get_game))
+        .route("/games/{id}/media/{kind}", get(api::game_media))
         .route("/games/{id}/cheats", get(cheats::list).post(cheats::add))
         .route(
             "/games/{id}/cheats/{cheat}",
@@ -199,29 +211,51 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
     let db = db::open(&config.data_dir.join("sovemu.db")).await?;
-    let report = library::scan(&db, &config.roms_dir).await?;
-    tracing::info!(
-        "library {}: {} games ({} new, {} removed)",
-        config.roms_dir.display(),
-        report.found,
-        report.added,
-        report.removed
-    );
     let workers = Workers::new(WorkerConfig {
         worker_bin: config.worker.clone().unwrap_or_else(default_worker),
         ports: config.udp_ports,
         bind_ip: config.udp_bind,
         advertise_ip: config.advertise_ip,
-        system_dir: config.data_dir.join("system"),
+        system_dir: config.system.clone().unwrap_or_else(|| config.data_dir.join("system")),
         idle_timeout_secs: config.idle_timeout,
     });
+    let config_cache_dir = config.data_dir.join("cache");
+    let cache_bytes = config.cache_gb.saturating_mul(1 << 30);
+    if cache_bytes > 0 {
+        tracing::info!(
+            "caching up to {} GiB of the library in {}",
+            config.cache_gb,
+            config_cache_dir.display()
+        );
+    }
     Ok(AppState {
         db,
         config: Arc::new(config),
         workers,
         dummy_hash: auth::hash_password("x")?,
         login_throttle: Arc::default(),
+        cache: cache::Cache::new(config_cache_dir, cache_bytes),
     })
+}
+
+/// Scans the library in the background: a network library can take minutes, and the last
+/// scan's games are already in the database meanwhile.
+fn spawn_initial_scan(state: &AppState) {
+    let (scan_db, roms) = (state.db.clone(), state.config.roms_dir.clone());
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        match library::scan(&scan_db, &roms).await {
+            Ok(report) => tracing::info!(
+                "library {}: {} games ({} new, {} removed) in {:.1} s",
+                roms.display(),
+                report.found,
+                report.added,
+                report.removed,
+                started.elapsed().as_secs_f64()
+            ),
+            Err(e) => tracing::error!("library scan failed: {e}"),
+        }
+    });
 }
 
 #[tokio::main]
@@ -234,6 +268,7 @@ async fn main() -> Result<()> {
     let config = Config::parse();
     let addr = config.http;
     let state = build_state(config).await?;
+    spawn_initial_scan(&state);
     let workers = state.workers.clone();
     if state.config.web_dir.is_none() {
         tracing::warn!("no --web-dir: serving the API only");

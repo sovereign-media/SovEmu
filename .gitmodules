@@ -1,0 +1,10 @@
+[submodule "SovEmu.Android"]
+	path = SovEmu.Android
+	url = https://github.com/sovereign-media/SovEmu.Android.git
+	branch = main
+	ignore = all
+[submodule "SovEmu.iOS"]
+	path = SovEmu.iOS
+	url = https://github.com/sovereign-media/SovEmu.iOS.git
+	branch = main
+	ignore = all

@@ -24,6 +24,9 @@ pub struct System {
     /// Cores that can play it, best first, as `<name>_libretro.<so|dylib>` stems.
     #[serde(skip)]
     pub cores: &'static [&'static str],
+    /// Core options SovEmu sets for it (`key`, `value`).
+    #[serde(skip)]
+    pub options: &'static [(&'static str, &'static str)],
 }
 
 pub const SYSTEMS: &[System] = &[
@@ -37,6 +40,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["nes", "famicom", "nintendo - nintendo entertainment system", "nintendo - nes"],
         extensions: &["nes", "unf", "unif", "fds"],
         cores: &["fceumm"],
+        options: &[],
     },
     System {
         id: "snes",
@@ -48,6 +52,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["snes", "sfc", "superfamicom", "nintendo - super nintendo entertainment system"],
         extensions: &["sfc", "smc", "swc", "fig", "bs", "st"],
         cores: &["snes9x"],
+        options: &[],
     },
     System {
         id: "gb",
@@ -59,6 +64,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gb", "gameboy", "nintendo - game boy"],
         extensions: &["gb", "dmg"],
         cores: &["gambatte", "mgba"],
+        options: &[],
     },
     System {
         id: "gbc",
@@ -70,6 +76,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gbc", "gameboycolor", "nintendo - game boy color"],
         extensions: &["gbc"],
         cores: &["gambatte", "mgba"],
+        options: &[],
     },
     System {
         id: "gba",
@@ -81,6 +88,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gba", "gameboyadvance", "nintendo - game boy advance"],
         extensions: &["gba"],
         cores: &["mgba"],
+        options: &[],
     },
     System {
         id: "megadrive",
@@ -92,6 +100,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["megadrive", "genesis", "md", "sega - mega drive - genesis"],
         extensions: &["md", "gen", "smd"],
         cores: &["genesis_plus_gx"],
+        options: &[],
     },
     System {
         id: "mastersystem",
@@ -103,6 +112,46 @@ pub const SYSTEMS: &[System] = &[
         folders: &["mastersystem", "sms", "sega - master system - mark iii"],
         extensions: &["sms"],
         cores: &["genesis_plus_gx"],
+        options: &[],
+    },
+    System {
+        id: "psx",
+        name: "PlayStation",
+        short: "PS1",
+        manufacturer: "Sony",
+        year: 1994,
+        color: "#636e72",
+        folders: &["psx", "playstation", "ps1", "sony - playstation"],
+        // Not .bin/.iso: other systems use them too, and a .cue/.m3u names its tracks anyway.
+        extensions: &["chd", "cue", "pbp", "m3u", "ccd"],
+        cores: &["pcsx_rearmed"],
+        // Read 256 sectors (~600 KB) ahead on the core's CD thread, instead of 12: a library on
+        // a network share answers each read in tens to hundreds of milliseconds.
+        options: &[("pcsx_rearmed_cd_readahead", "256")],
+    },
+    System {
+        id: "fbneo",
+        name: "Arcade",
+        short: "ARC",
+        manufacturer: "FinalBurn Neo",
+        year: 1978,
+        color: "#e17055",
+        folders: &["fbneo", "arcade", "fba", "mame"],
+        extensions: &["zip", "7z"],
+        cores: &["fbneo"],
+        options: &[],
+    },
+    System {
+        id: "neogeo",
+        name: "Neo Geo",
+        short: "NEO",
+        manufacturer: "SNK",
+        year: 1990,
+        color: "#b8860b",
+        folders: &["neogeo", "snk - neo geo"],
+        extensions: &["zip", "7z"],
+        cores: &["fbneo"],
+        options: &[],
     },
     System {
         id: "gamegear",
@@ -114,6 +163,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gamegear", "gg", "sega - game gear"],
         extensions: &["gg"],
         cores: &["genesis_plus_gx"],
+        options: &[],
     },
 ];
 
@@ -193,7 +243,9 @@ mod tests {
         assert_eq!(by_folder("nes").unwrap().id, "nes");
         assert_eq!(by_folder("Genesis").unwrap().id, "megadrive");
         assert_eq!(by_folder("Nintendo - Game Boy Advance").unwrap().id, "gba");
-        assert!(by_folder("psx").is_none());
+        assert_eq!(by_folder("psx").unwrap().id, "psx");
+        assert_eq!(by_folder("arcade").unwrap().id, "fbneo");
+        assert!(by_folder("n64").is_none(), "GPU systems are not supported");
     }
 
     #[test]
@@ -201,7 +253,8 @@ mod tests {
         assert_eq!(by_extension("SFC").unwrap().id, "snes");
         assert_eq!(by_extension("gbc").unwrap().id, "gbc");
         assert!(by_extension("bin").is_none());
-        assert!(by_extension("zip").is_none());
+        assert!(by_extension("zip").is_none(), "arcade and Neo Geo both claim .zip");
+        assert_eq!(by_extension("chd").unwrap().id, "psx");
     }
 
     #[test]

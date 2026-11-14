@@ -21,3 +21,4 @@ SovEmu.Web/.astro
 # The native clients never feed the server image.
 SovEmu.Android
 SovEmu.iOS
+.env
