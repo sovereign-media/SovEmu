@@ -15,7 +15,7 @@ and iOS clients.
 | `docs/` | [Architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) |
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
 | `charts/sovemu/` | The Helm chart |
-| `SovEmu.Web/` | The web client: Astro + Tailwind, served by the Rust server |
+| `SovEmu.Web/` | The web client: Astro + Tailwind, React with Radix UI and Lucide icons, served by the Rust server |
 | `SovEmu.Android/`, `SovEmu.iOS/` | Native clients, as submodules (`git submodule update --init --remote`) |
 
 ## Container
@@ -198,6 +198,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
 | `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
 | `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
+| `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |
+| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added) |
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |

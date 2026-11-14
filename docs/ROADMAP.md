@@ -119,6 +119,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Cheats per user and game (stored in SQLite, applied by the worker at start and on every change)
 - [x] Controller remapping, keyboard and gamepad, per browser
 - [x] Display filters on a WebGL canvas: sharp pixels, smooth, CRT (scanlines + aperture mask)
+- [x] A home screen in Sovereign's style: a hero carousel of featured games (a new pick each day,
+      games with artwork and descriptions first) over rows of continue playing (the auto save's
+      screenshot), systems and recently added, from one `GET /api/home`
+- [x] The web client on React islands with Radix UI primitives and Lucide icons
 - [x] Verified: fast-forward over WebRTC ran 216 emulated frames/s against 61 normally
 - [ ] RetroAchievements (rcheevos in the worker, an RA account per user). Memory-region access
       (`Core::system_ram`) is in place for it

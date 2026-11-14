@@ -71,6 +71,18 @@ export interface Game {
   rating: number | null;
 }
 
+/** A game on the home screen's "Continue playing" row. */
+export interface RecentGame extends Game {
+  /** When the auto save's screenshot was taken (Unix seconds), if there is one. */
+  screenshot_at: number | null;
+}
+
+export interface HomeFeed {
+  featured: Game[];
+  recent: RecentGame[];
+  added: Game[];
+}
+
 export interface SyncStatus {
   running: boolean;
   files_total: number;
@@ -165,6 +177,7 @@ export const api = {
   login: (username: string, password: string) => call<User>("POST", "/auth/login", { username, password }),
   logout: () => call<void>("POST", "/auth/logout"),
   config: () => call<{ ice_servers: RTCIceServer[] }>("GET", "/config"),
+  home: () => call<HomeFeed>("GET", "/home"),
   systems: () => call<SystemSummary[]>("GET", "/systems"),
   games: (system: string) => call<Game[]>("GET", `/systems/${encodeURIComponent(system)}/games`),
   game: (id: number) => call<Game>("GET", `/games/${id}`),

@@ -14,7 +14,15 @@ paths:
 - **Tailwind v4 is CSS-first.** Theme tokens live in `@theme` in `src/styles/global.css`; there
   is no `tailwind.config.js`. A component `<style>` that uses `@apply` needs
   `@reference "../styles/global.css";` first.
-- **Structure.** Pages in `src/pages/`, layouts in `src/layouts/`, components in
+- **React islands, Radix UI, Lucide.** A page is a thin `.astro` file mounting one React
+  component with `client:only="react"` (no SSR: it still builds to static files). Controls come
+  from Radix UI (`radix-ui`), styled once in `src/components/ui/` (dialogs, confirm, select,
+  progress, dropdown menu, tooltip, scroll area, toggle chips, toast, `Button`); never hand-roll a
+  control Radix has, and never use `prompt()`/`confirm()`. Icons are `lucide-react`.
+- **Pad and keyboard first.** Console-style screens are driven by `listenNav` (`src/lib/nav.ts`)
+  with the focus logic in `src/lib/` (`home.ts`, `menu.ts`); Radix supplies the surfaces. Where
+  both would see a key (Escape, Enter), make sure only one acts.
+- **Structure.** Pages in `src/pages/`, layouts in `src/layouts/`, React components in
   `src/components/`, and plain TypeScript (no framework) in `src/lib/`: `protocol.ts` (wire
   format), `input.ts` (keyboard and gamepad), `session.ts` (WebRTC), `stats.ts`. Keep logic in
   `src/lib/` where Vitest can test it; components only wire it to the DOM.

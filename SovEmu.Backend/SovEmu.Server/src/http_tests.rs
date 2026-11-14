@@ -244,6 +244,13 @@ async fn browses_the_library() {
         StatusCode::NOT_FOUND
     );
     assert_eq!(h.call("GET", &format!("/api/games/{id}"), None).await.1["system"], "nes");
+
+    // The home feed: games with artwork are featured, every game is new, none played yet.
+    let (_, home) = h.call("GET", "/api/home", None).await;
+    assert_eq!(home["featured"].as_array().unwrap().len(), 1, "{home}");
+    assert_eq!(home["featured"][0]["title"], "Test Game");
+    assert_eq!(home["added"].as_array().unwrap().len(), 2);
+    assert_eq!(home["recent"], json!([]));
     assert_eq!(h.call("GET", "/api/systems/saturn/games", None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(h.call("GET", "/api/games/9999", None).await.0, StatusCode::NOT_FOUND);
 
@@ -357,6 +364,8 @@ async fn runs_a_game_session_in_a_worker() {
     // Play history is recorded.
     let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
     assert_eq!(games[0]["play_count"], 1);
+    let (_, home) = h.call("GET", "/api/home", None).await;
+    assert_eq!(home["recent"][0]["id"], id, "the game just played comes first: {home}");
 
     // Starting another game replaces the session; stopping ends it.
     let (_, second) = h.call("POST", "/api/sessions", Some(json!({"game_id": id}))).await;
@@ -671,6 +680,10 @@ async fn system_overrides_hide_systems_and_choose_cores() {
         systems.as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
     assert!(!ids.contains(&"gba"), "disabled systems are hidden");
     assert_eq!(h.call("GET", "/api/systems/gba/games", None).await.0, StatusCode::NOT_FOUND);
+    let (_, home) = h.call("GET", "/api/home", None).await;
+    let added: Vec<&str> =
+        home["added"].as_array().unwrap().iter().map(|g| g["system"].as_str().unwrap()).collect();
+    assert_eq!(added, ["nes"], "hidden systems stay off the home screen");
 
     // NES now needs nestopia: an fceumm core does not count.
     let cores = h.state.config.cores_dir.clone();

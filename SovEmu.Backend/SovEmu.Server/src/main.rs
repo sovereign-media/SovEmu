@@ -12,6 +12,7 @@ mod cheats;
 mod db;
 mod error;
 mod gpu;
+mod home;
 #[cfg(test)]
 mod http_tests;
 mod library;
@@ -201,6 +202,14 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_FAST_FORWARD", default_value_t = 4)]
     pub fast_forward: u32,
 
+    /// Games in the home screen's hero (0 hides it).
+    #[arg(long, env = "SOVEMU_HOME_FEATURED", default_value_t = 8)]
+    pub home_featured: u32,
+
+    /// Games in each of the home screen's rows (recently played, recently added).
+    #[arg(long, env = "SOVEMU_HOME_ROW", default_value_t = 20)]
+    pub home_row: u32,
+
     /// Frames between VP8 keyframes (lost packets recover sooner with fewer).
     #[arg(long, env = "SOVEMU_KEYFRAME_INTERVAL", default_value_t = 600)]
     pub keyframe_interval: u32,
@@ -378,7 +387,10 @@ impl Config {
                 self.fast_forward,
                 self.keyframe_interval
             ),
-            format!("gpu={}", self.gpu),
+            format!(
+                "gpu={} home_featured={} home_row={}",
+                self.gpu, self.home_featured, self.home_row
+            ),
             format!(
                 "cache_large_game_mb={} copy_threads={}",
                 self.cache_large_game_mb, self.copy_threads
@@ -458,6 +470,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/users", get(auth::list_users).post(auth::add_user))
+        .route("/home", get(home::home))
         .route("/systems", get(api::list_systems))
         .route("/systems/{id}/games", get(api::list_games))
         .route("/games/{id}", get(api::get_game))
