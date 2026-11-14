@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { bit, decodeAck, encodeInput } from "./protocol";
+import { bit, decodeAck, encodeHotkeys, encodeInput } from "./protocol";
 
 // The same vectors as `input_layout_is_stable` in SovEmu.Protocol/src/input.rs.
 describe("input protocol", () => {
   it("encodes input exactly like the Rust reference", () => {
     const bytes = new Uint8Array(encodeInput({ seq: 0x04030201, clientTimeMs: 0x08070605, ports: [0x0a09] }));
     expect([...bytes]).toEqual([0x01, 1, 1, 2, 3, 4, 5, 6, 7, 8, 1, 0x09, 0x0a]);
+  });
+
+  it("encodes hotkeys exactly like the Rust reference", () => {
+    expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: true }))]).toEqual([0x02, 1, 0b11]);
+    expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: false }))]).toEqual([0x02, 1, 0b01]);
+    expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: true }))]).toEqual([0x02, 1, 0b10]);
   });
 
   it("decodes the Rust reference ack", () => {

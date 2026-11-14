@@ -15,6 +15,17 @@
 //! The worker ignores any packet whose `seq` is not newer than the last it applied (comparison
 //! wraps), since the channel is unordered.
 //!
+//! ## Client → worker: [`Hotkeys`]
+//!
+//! | Offset | Size | Field |
+//! |---|---|---|
+//! | 0 | 1 | message type, `0x02` |
+//! | 1 | 1 | version |
+//! | 2 | 1 | flags: bit 0 fast-forward, bit 1 rewind (held while set) |
+//!
+//! Sent whenever the flags change, and with every input heartbeat while any is set; the worker
+//! clears them if none arrives for half a second, so a lost release cannot leave a game spinning.
+//!
 //! ## Worker → client: [`InputAck`]
 //!
 //! | Offset | Size | Field |
@@ -36,6 +47,7 @@ use crate::INPUT_VERSION;
 pub const MAX_PORTS: usize = 4;
 
 const TYPE_INPUT: u8 = 0x01;
+const TYPE_HOTKEYS: u8 = 0x02;
 const TYPE_ACK: u8 = 0x81;
 const INPUT_HEADER: usize = 11;
 const ACK_LEN: usize = 14;
@@ -107,6 +119,40 @@ impl InputPacket {
     }
 }
 
+/// Emulator hotkeys held on the client.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Hotkeys {
+    pub fast_forward: bool,
+    pub rewind: bool,
+}
+
+impl Hotkeys {
+    pub fn encode(&self) -> [u8; 3] {
+        [TYPE_HOTKEYS, INPUT_VERSION, u8::from(self.fast_forward) | (u8::from(self.rewind) << 1)]
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        check_header(bytes, TYPE_HOTKEYS, 3)?;
+        Ok(Self { fast_forward: bytes[2] & 1 != 0, rewind: bytes[2] & 2 != 0 })
+    }
+}
+
+/// A message from the client on the input channel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClientMessage {
+    Input(InputPacket),
+    Hotkeys(Hotkeys),
+}
+
+impl ClientMessage {
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        match bytes.first() {
+            Some(&TYPE_HOTKEYS) => Hotkeys::decode(bytes).map(Self::Hotkeys),
+            _ => InputPacket::decode(bytes).map(Self::Input),
+        }
+    }
+}
+
 /// Acknowledges that the frame `frame` consumed input packet `seq`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputAck {
@@ -174,6 +220,21 @@ mod tests {
         assert_eq!(bytes, [0x01, 1, 1, 2, 3, 4, 5, 6, 7, 8, 1, 0x09, 0x0a]);
         let ack = InputAck { seq: 1, client_time_ms: 2, frame: 3 }.encode();
         assert_eq!(ack, [0x81, 1, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+    }
+
+    #[test]
+    fn hotkeys_round_trip_and_dispatch() {
+        let both = Hotkeys { fast_forward: true, rewind: true };
+        assert_eq!(both.encode(), [0x02, 1, 0b11]);
+        assert_eq!(Hotkeys { fast_forward: true, rewind: false }.encode(), [0x02, 1, 0b01]);
+        assert_eq!(
+            Hotkeys::decode(&[0x02, 1, 0b10]),
+            Ok(Hotkeys { fast_forward: false, rewind: true })
+        );
+        assert_eq!(ClientMessage::decode(&both.encode()), Ok(ClientMessage::Hotkeys(both)));
+        let input = InputPacket { seq: 1, client_time_ms: 2, ports: vec![3] };
+        assert_eq!(ClientMessage::decode(&input.encode()), Ok(ClientMessage::Input(input)));
+        assert_eq!(Hotkeys::decode(&[0x02, 1]), Err(DecodeError::TooShort));
     }
 
     #[test]

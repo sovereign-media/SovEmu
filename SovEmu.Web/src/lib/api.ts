@@ -55,6 +55,13 @@ export interface SaveSlot {
 /** Slot 0 is the auto state, written whenever a session ends. */
 export const AUTO_SLOT = 0;
 
+export interface Cheat {
+  id: number;
+  description: string;
+  code: string;
+  enabled: boolean;
+}
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -99,6 +106,12 @@ export const api = {
   saveState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}`),
   loadState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}/load`),
   deleteState: (gameId: number, slot: number) => call<void>("DELETE", `/games/${gameId}/states/${slot}`),
+  cheats: (gameId: number) => call<Cheat[]>("GET", `/games/${gameId}/cheats`),
+  addCheat: (gameId: number, code: string, description: string) =>
+    call<Cheat[]>("POST", `/games/${gameId}/cheats`, { code, description }),
+  setCheat: (gameId: number, id: number, enabled: boolean) =>
+    call<Cheat[]>("PATCH", `/games/${gameId}/cheats/${id}`, { enabled }),
+  deleteCheat: (gameId: number, id: number) => call<void>("DELETE", `/games/${gameId}/cheats/${id}`),
 };
 
 /** A save slot's screenshot, cache-busted by when it was saved. */

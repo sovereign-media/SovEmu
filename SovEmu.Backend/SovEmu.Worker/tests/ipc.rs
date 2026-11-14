@@ -94,6 +94,9 @@ fn control_requests_and_save_states() {
     );
 
     assert_eq!(worker.send(Request::Reset { id: 1 }), Reply::Done { id: 1 });
+    let codes = vec!["SXIOPO".to_owned(), "AAAAAA".to_owned()];
+    assert_eq!(worker.send(Request::SetCheats { id: 7, codes }), Reply::Done { id: 7 });
+    assert_eq!(worker.send(Request::SetCheats { id: 8, codes: vec![] }), Reply::Done { id: 8 });
     match worker.send(Request::LoadState { id: 2, slot: 3 }) {
         Reply::Error { id: 2, message } => {
             assert!(message.contains("slot 3 is empty"), "{message}")

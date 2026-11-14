@@ -6,6 +6,7 @@ export const INPUT_CHANNEL = "input";
 export const MAX_PORTS = 4;
 
 const TYPE_INPUT = 0x01;
+const TYPE_HOTKEYS = 0x02;
 const TYPE_ACK = 0x81;
 
 /** RetroPad button ids (libretro RETRO_DEVICE_ID_JOYPAD_*): bit n of a port's state. */
@@ -42,6 +43,15 @@ export function encodeInput(packet: InputPacket): ArrayBuffer {
   view.setUint8(10, ports.length);
   ports.forEach((state, i) => view.setUint16(11 + 2 * i, state & 0xffff, true));
   return buf;
+}
+
+export interface Hotkeys {
+  fastForward: boolean;
+  rewind: boolean;
+}
+
+export function encodeHotkeys(h: Hotkeys): ArrayBuffer {
+  return new Uint8Array([TYPE_HOTKEYS, INPUT_VERSION, (h.fastForward ? 1 : 0) | (h.rewind ? 2 : 0)]).buffer;
 }
 
 /** Decodes an ack, or returns null for anything else. */

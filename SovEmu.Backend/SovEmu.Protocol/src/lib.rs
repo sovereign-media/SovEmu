@@ -12,7 +12,7 @@ pub mod input;
 pub mod ipc;
 pub mod signal;
 
-pub use input::{DecodeError, InputAck, InputPacket, MAX_PORTS};
+pub use input::{ClientMessage, DecodeError, Hotkeys, InputAck, InputPacket, MAX_PORTS};
 pub use signal::{SdpKind, SessionDescription};
 
 /// The version byte of the input channel's messages.

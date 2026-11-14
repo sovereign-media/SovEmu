@@ -44,7 +44,8 @@ submodules from the start.
   static files (`output: "static"`, no Astro server runtime, no Node in the image), and the Rust
   side serves them next to `/api/*`. Never add a Node server or an SSR adapter.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
-  `SovEmu.Web/src/lib/protocol.ts`, each tested against the same byte vectors. Change both in
+  `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, ack `0x81`), each tested
+  against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the
   Write tool to `test-results/<task>.md` and passed with `-F` / `--body-file`, never a heredoc.
@@ -79,7 +80,7 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
 Server ──► Protocol   (never links a core or a codec: it runs workers)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
-persist.rs (battery saves and states), headless.rs, probe.rs.
+persist.rs (battery saves and states), rewind.rs, headless.rs, probe.rs.
 ```
 
 Tests sit beside the code they test (`#[cfg(test)]` modules) and in each crate's `tests/`

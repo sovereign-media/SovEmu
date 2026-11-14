@@ -14,6 +14,7 @@ mod headless;
 mod pacing;
 mod persist;
 mod probe;
+mod rewind;
 mod schedule;
 mod serve;
 mod session;
