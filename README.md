@@ -4,8 +4,8 @@ Self-hosted console emulation streamed over WebRTC. A Rust server runs
 [libretro](https://www.libretro.com/) cores and streams video, audio and input to web, Android
 and iOS clients.
 
-> **Status:** Phase 1. One game streams to a browser over WebRTC (VP8 + Opus, input over a
-> DataChannel). There's no library, accounts or persistence yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** Phase 2. Sign in, pick a system and a game, and play in the browser over WebRTC.
+> Saving games comes in Phase 3. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Repository layout
 
@@ -24,16 +24,15 @@ source at pinned commits ([scripts/cores.list](scripts/cores.list)), and every c
 for loading during the build.
 
 ```bash
-docker compose build
-docker compose run --rm sovemu probe                  # list the bundled cores
-cp game.nes data/roms/
-SOVEMU_ROM=roms/game.nes docker compose up            # then open http://localhost:8080
+scripts/fetch-free-roms.sh            # free homebrew into data/roms, or add your own
+docker compose up --build             # then open http://localhost:8080
 ```
 
-`./data` is mounted at `/data`. Put ROMs in `data/roms/` and BIOS files in `data/system/`.
-Pick another core with `SOVEMU_CORE=/opt/sovemu/cores/snes9x_libretro.so`. Browsers on other
-machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`),
-plus UDP 50000 reachable.
+The first visit creates the admin account. `./data` is mounted at `/data`: the database,
+`data/roms/` (one folder per system: `nes/`, `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`,
+`mastersystem/`, `gamegear/`), `data/system/` for BIOS files and `data/saves/`. Browsers on other
+machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
+UDP 50000-50009 reachable.
 
 ## Building from source
 
@@ -51,7 +50,8 @@ On macOS: Xcode Command Line Tools and `brew install libvpx opus pkgconf`. On De
 cd SovEmu.Backend
 cargo test --workspace
 cargo build --release -p sovemu-worker
-target/release/sovemu-worker serve --core <core> --rom <game> --web-dir ../SovEmu.Web/dist
+cargo build --release -p sovemu-server
+target/release/sovemu-server --data-dir ../data --cores-dir ../cores --web-dir ../SovEmu.Web/dist
 ```
 
 ## Running a core headless

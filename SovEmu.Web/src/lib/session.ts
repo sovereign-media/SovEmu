@@ -1,5 +1,6 @@
-// One WebRTC session with the SovEmu server: receive-only video and audio, plus the unordered,
-// no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle).
+// One WebRTC connection to a game session: receive-only video and audio, plus the unordered,
+// no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle)
+// to the session's offer URL (`/api/sessions/{id}/offer`).
 import { InputState } from "./input";
 import { INPUT_CHANNEL, decodeAck, encodeInput } from "./protocol";
 
@@ -23,7 +24,11 @@ export class Session {
   private lastSend = 0;
   private raf = 0;
 
+  /** While true, the controller state is withheld (a menu is open): nothing is pressed. */
+  suspended = false;
+
   constructor(
+    private readonly offerUrl: string,
     private readonly video: HTMLVideoElement,
     private readonly input: InputState,
     private readonly events: SessionEvents = {},
@@ -50,7 +55,7 @@ export class Session {
   async connect(): Promise<void> {
     await this.pc.setLocalDescription(await this.pc.createOffer());
     await this.iceGathered();
-    const res = await fetch("/api/offer", {
+    const res = await fetch(this.offerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "offer", sdp: this.pc.localDescription?.sdp }),
@@ -79,7 +84,7 @@ export class Session {
   /** Every animation frame: send the input state if it changed or the heartbeat is due. */
   private pump = () => {
     if (this.channel.readyState === "open") {
-      const state = this.input.read();
+      const state = this.suspended ? 0 : this.input.read();
       const now = performance.now();
       if (state !== this.sent || now - this.lastSend > HEARTBEAT_MS) {
         this.seq = (this.seq + 1) >>> 0;

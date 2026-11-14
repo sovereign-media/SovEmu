@@ -11,7 +11,10 @@ paths:
 - **Dependency direction** is the graph in `CLAUDE.md`. `LibretroFfi` depends on nothing in the
   workspace, and nothing but `RetroHost` (and `TestCore`, for types) touches it: higher crates use
   the safe API. New crates join the graph as documented there; update the graph in the same PR.
-- **unsafe.** Only `LibretroFfi`, `RetroHost` and `TestCore` contain `unsafe`. Every `unsafe`
+- **Server.** `SovEmu.Server` depends on `Protocol` only. Database access is plain `sqlx::query`
+  / `query_as` with bound parameters (never format values into SQL); schema changes are new
+  files in `migrations/`. Handlers take `CurrentUser` / `AdminUser` extractors for auth.
+- **unsafe.** Only `LibretroFfi`, `RetroHost`, `Media` and `TestCore` contain `unsafe`. Every `unsafe`
   block gets a `// SAFETY:` comment saying why it holds; every `unsafe fn` gets a `# Safety`
   section. `unsafe_op_in_unsafe_fn` is denied.
 - **FFI callbacks** are `unsafe extern "C" fn`s in `RetroHost/src/callbacks.rs`. They read and

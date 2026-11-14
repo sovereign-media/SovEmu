@@ -31,6 +31,11 @@ submodules from the start.
   cores are built from source at the commits pinned in `scripts/cores.list`. Never build the
   worker with musl's default static linking (`crt-static`): a static binary cannot `dlopen`.
   Debian is the fallback only if a needed core cannot be made to work on musl.
+- **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
+  starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
+  `RetroHost` or `Media` into `SovEmu.Server`.
+- **Never write a migration's SQL into Rust.** Schema changes are a new numbered file in
+  `SovEmu.Server/migrations/`; never edit one that has shipped.
 - **The web client is served by the Rust process that serves the API**: `SovEmu.Web` builds to
   static files (`output: "static"`, no Astro server runtime, no Node in the image), and the Rust
   side serves them next to `/api/*`. Never add a Node server or an SSR adapter.
@@ -58,17 +63,16 @@ cargo test --workspace
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core (cdylib) that tests load with dlopen exactly like a real one. Never shipped. |
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
-| `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `serve` streams a core over WebRTC (str0m, one UDP port) and, in Phase 1, also serves the web client and `POST /api/offer`; `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
+| `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
+| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and `/api/*`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the systems table and library scanner (Recalbox folder names + aliases, extension fallback); one `sovemu-worker session` per game session with a UDP port from a pool. |
 | `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
-
-Planned: `SovEmu.Server` (axum: the web client, the API, auth, SQLite, worker orchestration and
-signalling relay; Phase 2 moves `serve`'s HTTP side there).
 
 ```
 LibretroFfi  (root — no workspace references)        Media     (no workspace references)
     ├── TestCore   (types only; default features off) Protocol  (no workspace references)
     └── RetroHost
             └── Worker ──► Media, Protocol
+Server ──► Protocol   (never links a core or a codec: it runs workers)
 ```
 
 Tests sit beside the code they test (`#[cfg(test)]` modules) and in each crate's `tests/`
@@ -92,11 +96,14 @@ so a core that cannot load fails the build. `compose.yaml` builds it, mounts `./
 ```bash
 docker build -f SovEmu.Backend/Dockerfile --target test .   # tests on musl
 docker compose build && docker compose run --rm sovemu probe
-SOVEMU_ROM=roms/game.nes docker compose up                    # then open http://localhost:8080
+scripts/fetch-free-roms.sh && docker compose up --build     # then open http://localhost:8080
 ```
 
-In a container the server cannot see the host's address, so `SOVEMU_ADVERTISE_IP` (default
-`127.0.0.1` in compose) must be the address browsers reach the host on.
+The container runs `sovemu-server` on 8080; each game session's worker streams on its own UDP
+port from 50000-50009 (`SOVEMU_UDP_PORTS`). In a container the server cannot see the host's
+address, so `SOVEMU_ADVERTISE_IP` (default `127.0.0.1` in compose) must be the address browsers
+reach the host on. `scripts/fetch-free-roms.sh` fills `data/roms` with freely licensed homebrew
+until the NAS library is connected.
 
 ## Running locally (macOS)
 
@@ -106,9 +113,11 @@ Needs `brew install libvpx opus pkgconf` and Node 22.23.4+.
 scripts/fetch-cores.sh fceumm                         # → cores/fceumm_libretro.dylib
 (cd SovEmu.Web && npm ci && npm run build)            # → SovEmu.Web/dist
 cd SovEmu.Backend && cargo build --release -p sovemu-worker
-target/release/sovemu-worker serve --core ../cores/fceumm_libretro.dylib \
-  --rom /path/to/game.nes --web-dir ../SovEmu.Web/dist --http 127.0.0.1:8080
-# open http://127.0.0.1:8080 and press Connect
+scripts/fetch-free-roms.sh                            # → data/roms/{nes,snes,gb,gbc,gba}
+cargo build --release -p sovemu-worker -p sovemu-server
+target/release/sovemu-server --data-dir ../data --cores-dir ../cores \
+  --web-dir ../SovEmu.Web/dist --http 127.0.0.1:8080
+# open http://127.0.0.1:8080: first visit creates the admin account
 
 target/release/sovemu-worker headless --core ../cores/fceumm_libretro.dylib \
   --rom /path/to/game.nes --frames 600 --hold 200-205:start --out ../headless-out

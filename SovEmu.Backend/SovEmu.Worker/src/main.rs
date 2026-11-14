@@ -1,9 +1,11 @@
 //! `sovemu-worker`: the per-session process that hosts one libretro core.
 //!
 //! Modes:
-//! - `serve` runs a core and streams it to a WebRTC client (VP8 + Opus, input over a
-//!   DataChannel). Phase 1 also serves the web client and signalling itself; Phase 2's server
-//!   takes those over and spawns this per session.
+//! - `session` runs one game session for `sovemu-server`: JSON-line requests on stdin (offers,
+//!   control), replies and events on stdout, media over WebRTC (VP8 + Opus, input over a
+//!   DataChannel).
+//! - `serve` is the same streaming loop standalone, serving the web client and taking offers
+//!   over HTTP itself; for development and tests.
 //! - `headless` runs a core with no client and writes what it produced to disk (PNG frames, a
 //!   WAV file and a timing summary).
 //! - `probe` loads cores and reports what they say about themselves.
@@ -13,6 +15,8 @@ mod pacing;
 mod probe;
 mod schedule;
 mod serve;
+mod session;
+mod stream;
 mod web;
 
 use std::net::{IpAddr, SocketAddr};
@@ -33,6 +37,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Run one game session for sovemu-server (JSON lines on stdin/stdout).
+    Session(SessionArgs),
     /// Run a core and stream it to a WebRTC client; serves the web client on --http.
     Serve(ServeArgs),
     /// Run a core with no client and dump its video, audio and timings to a directory.
@@ -40,6 +46,49 @@ enum Command {
     /// Load each core, print its name, version and extensions as JSON, and fail if any core
     /// cannot be loaded.
     Probe(ProbeArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct SessionArgs {
+    /// The libretro core library.
+    #[arg(long)]
+    core: PathBuf,
+
+    /// The content to load.
+    #[arg(long)]
+    rom: Option<PathBuf>,
+
+    /// UDP address for this session's WebRTC traffic.
+    #[arg(long)]
+    udp: SocketAddr,
+
+    /// The IP address clients send media to, if not the bound one.
+    #[arg(long = "advertise-ip")]
+    advertise: Option<IpAddr>,
+
+    /// BIOS and system files directory.
+    #[arg(long)]
+    system_dir: PathBuf,
+
+    /// Directory the core may save into (battery saves).
+    #[arg(long)]
+    save_dir: PathBuf,
+
+    /// VP8 target bitrate, kbit/s.
+    #[arg(long, default_value_t = 2500)]
+    video_kbps: u32,
+
+    /// Opus bitrate, kbit/s.
+    #[arg(long, default_value_t = 128)]
+    audio_kbps: u32,
+
+    /// Set a core option. Repeatable.
+    #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_key_value)]
+    variables: Vec<(String, String)>,
+
+    /// Exit after this many seconds with no client connected (0: never).
+    #[arg(long, default_value_t = 300)]
+    idle_timeout: u64,
 }
 
 #[derive(Debug, clap::Args)]
@@ -159,6 +208,7 @@ fn main() -> ExitCode {
 
     let cli = Cli::parse();
     let result = match cli.command {
+        Command::Session(args) => session::run(args),
         Command::Serve(mut args) => {
             // Read by hand so an empty value (compose's `${SOVEMU_ROM:-}`) means "no content".
             if args.rom.is_none() {

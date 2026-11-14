@@ -5,6 +5,7 @@ members = [
     "SovEmu.Media",
     "SovEmu.Protocol",
     "SovEmu.RetroHost",
+    "SovEmu.Server",
     "SovEmu.TestCore",
     "SovEmu.Worker",
 ]

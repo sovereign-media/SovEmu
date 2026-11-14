@@ -5,9 +5,10 @@
 //! POST the offer, apply the answer, then receive VP8 and Opus over a real UDP socket on
 //! loopback while sending input packets and collecting their acks.
 //!
-//! Set `SOVEMU_E2E_HTTP=host:port` to run the streaming test against an already running server
-//! instead (for example the container: `docker compose up`, then
-//! `SOVEMU_E2E_HTTP=127.0.0.1:8080 cargo test -p sovemu-worker --test session streams`).
+//! Set `SOVEMU_E2E_HTTP=host:port` to run the streaming test against an already running
+//! `sovemu-worker serve` instead. Against `sovemu-server` (for example `docker compose up`),
+//! also set `SOVEMU_E2E_LOGIN=user:password` and `SOVEMU_E2E_GAME=<game id>`: the test signs in,
+//! starts that game and sends its offer to the session.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
@@ -51,6 +52,8 @@ struct Worker {
     child: Option<Child>,
     http: SocketAddr,
     dir: PathBuf,
+    /// The session cookie, when talking to sovemu-server.
+    cookie: Option<String>,
 }
 
 impl Worker {
@@ -65,6 +68,7 @@ impl Worker {
                 child: None,
                 http: addr.parse().expect("SOVEMU_E2E_HTTP is host:port"),
                 dir: PathBuf::new(),
+                cookie: None,
             },
             Err(_) => Self::start(),
         }
@@ -103,22 +107,31 @@ impl Worker {
             }
         }
         std::thread::spawn(move || lines.for_each(drop));
-        Self { child: Some(child), http: http.expect("worker printed its HTTP address"), dir }
+        Self {
+            child: Some(child),
+            http: http.expect("worker printed its HTTP address"),
+            dir,
+            cookie: None,
+        }
     }
 
     /// Plain HTTP/1.1 so the test needs no HTTP client crate.
-    fn request(&self, method: &str, path: &str, body: &str) -> (u16, String) {
+    fn request(&mut self, method: &str, path: &str, body: &str) -> (u16, String) {
         let mut stream = TcpStream::connect(self.http).unwrap();
+        let cookie = self.cookie.as_ref().map(|c| format!("Cookie: {c}\r\n")).unwrap_or_default();
         write!(
             stream,
             "{method} {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\n\
-             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+             {cookie}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         )
         .unwrap();
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();
         let (head, body) = response.split_once("\r\n\r\n").unwrap();
+        if let Some(set) = head.lines().find_map(|l| l.strip_prefix("set-cookie: ")) {
+            self.cookie = Some(set.split(';').next().unwrap().to_owned());
+        }
         let status = head.split(' ').nth(1).unwrap().parse().unwrap();
         (status, body.to_owned())
     }
@@ -140,7 +153,7 @@ fn serves_the_web_client() {
     std::fs::create_dir_all(site.join("_astro")).unwrap();
     std::fs::write(site.join("index.html"), "<title>Play · SovEmu</title>").unwrap();
     std::fs::write(site.join("_astro/app.123.js"), "export {}").unwrap();
-    let worker = Worker::start_with(&["--web-dir".as_ref(), site.as_os_str()]);
+    let mut worker = Worker::start_with(&["--web-dir".as_ref(), site.as_os_str()]);
 
     let (status, body) = worker.request("GET", "/", "");
     assert_eq!((status, body.as_str()), (200, "<title>Play · SovEmu</title>"));
@@ -152,7 +165,7 @@ fn serves_the_web_client() {
 
 #[test]
 fn rejects_bad_offers_and_explains_a_missing_web_client() {
-    let worker = Worker::start();
+    let mut worker = Worker::start();
     let (status, body) = worker.request("GET", "/", "");
     assert_eq!(status, 200);
     assert!(body.contains("web client is not installed"));
@@ -166,7 +179,7 @@ fn rejects_bad_offers_and_explains_a_missing_web_client() {
 #[test]
 fn streams_video_and_audio_and_acknowledges_input() {
     str0m::crypto::from_feature_flags().install_process_default();
-    let worker = Worker::start_or_external();
+    let mut worker = Worker::start_or_external();
 
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let local = socket.local_addr().unwrap();
@@ -185,8 +198,22 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let (offer, pending) = api.apply().expect("an offer");
 
     let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+    let offer_path = match (std::env::var("SOVEMU_E2E_LOGIN"), std::env::var("SOVEMU_E2E_GAME")) {
+        (Ok(login), Ok(game)) => {
+            let (user, pass) = login.split_once(':').expect("SOVEMU_E2E_LOGIN is user:password");
+            let creds = serde_json::json!({"username": user, "password": pass}).to_string();
+            assert_eq!(worker.request("POST", "/api/auth/login", &creds).0, 200, "sign in");
+            let start = format!(r#"{{"game_id":{game}}}"#);
+            let (status, body) = worker.request("POST", "/api/sessions", &start);
+            assert_eq!(status, 201, "{body}");
+            let session: serde_json::Value = serde_json::from_str(&body).unwrap();
+            eprintln!("started {} on {}", session["title"], session["core"]);
+            format!("/api/sessions/{}/offer", session["id"].as_str().unwrap())
+        }
+        _ => "/api/offer".to_owned(),
+    };
     let (status, body) =
-        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+        worker.request("POST", &offer_path, &serde_json::to_string(&request).unwrap());
     assert_eq!(status, 200, "{body}");
     let answer: SessionDescription = serde_json::from_str(&body).unwrap();
     assert_eq!(answer.kind, SdpKind::Answer);

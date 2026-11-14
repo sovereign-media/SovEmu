@@ -1,0 +1,62 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Sign in">
+  <main class="grid min-h-dvh place-items-center bg-[radial-gradient(ellipse_at_top,#1e2a4a,transparent_60%)] p-6">
+    <form data-form class="grid w-full max-w-sm gap-4 rounded-2xl border border-edge bg-panel/80 p-8 shadow-2xl backdrop-blur">
+      <div>
+        <h1 class="text-3xl font-black tracking-tight">Sov<span class="text-accent">Emu</span></h1>
+        <p data-subtitle class="mt-1 text-sm text-muted">Sign in to play.</p>
+      </div>
+      <label class="grid gap-1 text-sm">
+        Username
+        <input name="username" autocomplete="username" required class="rounded-md border border-edge bg-surface px-3 py-2 outline-none focus:border-accent" />
+      </label>
+      <label class="grid gap-1 text-sm">
+        Password
+        <input name="password" type="password" autocomplete="current-password" required minlength="8" class="rounded-md border border-edge bg-surface px-3 py-2 outline-none focus:border-accent" />
+      </label>
+      <p data-error class="hidden rounded-md bg-red-500/15 px-3 py-2 text-sm text-red-300"></p>
+      <button data-submit class="rounded-md bg-accent px-4 py-2 font-semibold hover:brightness-110 disabled:opacity-50">Sign in</button>
+    </form>
+  </main>
+</Base>
+
+<script>
+  import { api, ApiError } from "../lib/api";
+
+  const form = document.querySelector<HTMLFormElement>("[data-form]")!;
+  const error = document.querySelector<HTMLElement>("[data-error]")!;
+  const submit = document.querySelector<HTMLButtonElement>("[data-submit]")!;
+  const next = new URLSearchParams(location.search).get("next") ?? "/";
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+
+  const status = await api.status();
+  if (status.user) location.replace(safeNext);
+  const setup = status.setup_required;
+  if (setup) {
+    document.querySelector<HTMLElement>("[data-subtitle]")!.textContent =
+      "First run: create the admin account.";
+    submit.textContent = "Create admin account";
+    form.querySelector<HTMLInputElement>("[name=password]")!.autocomplete = "new-password";
+  }
+  form.querySelector<HTMLInputElement>("[name=username]")!.focus();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    const username = String(data.get("username"));
+    const password = String(data.get("password"));
+    submit.disabled = true;
+    error.classList.add("hidden");
+    try {
+      await (setup ? api.setup(username, password) : api.login(username, password));
+      location.replace(safeNext);
+    } catch (err) {
+      error.textContent = err instanceof ApiError ? err.message : "Something went wrong.";
+      error.classList.remove("hidden");
+      submit.disabled = false;
+    }
+  });
+</script>
