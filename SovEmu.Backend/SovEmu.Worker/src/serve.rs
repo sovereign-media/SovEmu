@@ -23,21 +23,24 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn run(args: ServeArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
-    let session = Session::open(&SessionConfig {
-        core: args.core.clone(),
-        rom: args.rom.clone(),
-        system_dir: args.system_dir.clone(),
-        save_dir: args.save_dir.clone(),
-        variables: args.variables.clone(),
-        video_kbps: args.video_kbps,
-        audio_kbps: args.audio_kbps,
-        rewind_seconds: args.rewind_seconds,
-        rewind_max_mb: args.rewind_max_mb,
-        fast_forward: args.fast_forward,
-        keyframe_interval: args.keyframe_interval,
-        gpu: args.gpu.0.clone(),
-        state_dir: Some(args.save_dir.join("states")),
-    })?;
+    let session = Session::open(
+        &SessionConfig {
+            core: args.core.clone(),
+            rom: args.rom.clone(),
+            system_dir: args.system_dir.clone(),
+            save_dir: args.save_dir.clone(),
+            variables: args.variables.clone(),
+            video_kbps: args.video_kbps,
+            audio_kbps: args.audio_kbps,
+            rewind_seconds: args.rewind_seconds,
+            rewind_max_mb: args.rewind_max_mb,
+            fast_forward: args.fast_forward,
+            keyframe_interval: args.keyframe_interval,
+            gpu: args.gpu.0.clone(),
+            state_dir: Some(args.save_dir.join("states")),
+        },
+        &crate::loading::ignore,
+    )?;
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
     let udp_addr = socket.local_addr()?;

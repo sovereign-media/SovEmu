@@ -1,8 +1,8 @@
 //! Server ↔ worker messages: one JSON object per line on the worker's stdin and stdout.
 //!
 //! The server starts `sovemu-worker session …` per game session. Requests carry an `id` the
-//! worker echoes in its reply, so several can be in flight. Events (`ready`, `client_*`) carry
-//! none. The worker exits when its stdin closes, so a crashed server never leaves orphans.
+//! worker echoes in its reply, so several can be in flight. Events (`progress`, `ready`,
+//! `client_*`) carry none. The worker exits when its stdin closes, so a crashed server never leaves orphans.
 
 use serde::{Deserialize, Serialize};
 
@@ -40,10 +40,31 @@ impl Request {
     }
 }
 
+/// What a worker is doing before it is ready, reported in [`Reply::Progress`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadPhase {
+    /// Opening the emulator core.
+    Core,
+    /// The core is loading the game: SovEmu reading the file into memory, or the core reading
+    /// a disc itself (then there is no total).
+    Content,
+}
+
 /// Worker → server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Reply {
+    /// Loading, before [`Reply::Ready`]: sent when the phase changes and about four times a
+    /// second while it lasts. `read` is the bytes read so far in this phase (absent where the
+    /// platform cannot say), `total` how many it will read when that is known.
+    Progress {
+        phase: LoadPhase,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        read: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total: Option<u64>,
+    },
     /// The core is loaded and the worker is listening for WebRTC on `udp_port`.
     Ready {
         udp_port: u16,
@@ -98,5 +119,10 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(ready, Reply::Ready { udp_port: 50001, .. }));
+        let progress = Reply::Progress { phase: LoadPhase::Content, read: Some(5), total: None };
+        assert_eq!(
+            serde_json::to_string(&progress).unwrap(),
+            r#"{"type":"progress","phase":"content","read":5}"#
+        );
     }
 }

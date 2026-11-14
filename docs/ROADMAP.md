@@ -163,6 +163,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Analog sticks and triggers: input message `0x03` in Rust, TypeScript, Kotlin and Swift;
       the left stick stops doubling as the D-pad for 3D systems
 - [x] `compose.gpu.yaml`; Helm `gpu.resources` / `gpu.hostDevice`
+- [x] Loading progress: the worker reports its phases and the bytes it has read (`progress`
+      before `ready`); clients follow a start with `start_id` and
+      `GET /api/sessions/starting/{id}`; the web player shows a loading bar
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 

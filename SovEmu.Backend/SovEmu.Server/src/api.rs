@@ -1,6 +1,7 @@
 //! The library and session routes. Auth routes are in [`crate::auth`].
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -190,6 +191,9 @@ pub async fn scan(State(state): State<AppState>, _admin: AdminUser) -> ApiResult
 #[derive(Debug, Deserialize)]
 pub struct StartSession {
     game_id: i64,
+    /// Chosen by the client to follow the start's progress (`GET /sessions/starting/{id}`).
+    #[serde(default)]
+    start_id: Option<String>,
 }
 
 /// Starts a game. Ends the user's current session first.
@@ -198,7 +202,45 @@ pub async fn start_session(
     CurrentUser(user): CurrentUser,
     Json(start): Json<StartSession>,
 ) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
-    let game = fetch_game(&state, user.id, start.game_id).await?;
+    let start_id = match start.start_id.as_deref() {
+        Some(id) if !crate::starts::valid_id(id) => {
+            return Err(ApiError::bad_request("start_id: 8 to 64 letters, digits, - or _"));
+        }
+        id => id.map(str::to_owned),
+    };
+    let starts = &state.workers.starts;
+    if let Some(id) = &start_id {
+        starts.begin(id, user.id, Instant::now());
+    }
+    let result = launch(&state, &user, start.game_id, start_id.clone()).await;
+    if let Some(id) = &start_id {
+        starts.finish(id, result.as_ref().err().map(|e| e.message.clone()), Instant::now());
+    }
+    result
+}
+
+/// How far the start `start_id` has got (see [`crate::starts`]).
+pub async fn start_progress(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(start_id): Path<String>,
+) -> ApiResult<Json<crate::starts::StartStatus>> {
+    state
+        .workers
+        .starts
+        .get(&start_id, user.id, Instant::now())
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("start"))
+}
+
+async fn launch(
+    state: &AppState,
+    user: &crate::auth::User,
+    game_id: i64,
+    start_id: Option<String>,
+) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
+    let state = state.clone();
+    let game = fetch_game(&state, user.id, game_id).await?;
     let system = system_by_id(&state, &game.system)?;
     if system.needs_gpu && state.gpu.mode == crate::gpu::Mode::Off {
         return Err(ApiError::new(
@@ -255,6 +297,7 @@ pub async fn start_session(
             state_dir,
             variables: core_options(&state, system),
             after_exit,
+            start_id,
         })
         .await
         .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;

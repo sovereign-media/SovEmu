@@ -73,6 +73,17 @@ as `gpu`, `software` or `off`.
 - **Analog sticks:** for 3D systems, the web client sends the gamepad's sticks and triggers as
   analog values. For 2D systems the left stick still acts as a D-pad.
 
+## Loading progress
+
+Starting a game can take a while on a slow library, so the player shows a loading bar. It
+covers each step: saving the previous game, starting the emulator, opening the core and reading
+the game, with the megabytes read and the seconds taken. The bar is exact when SovEmu reads the
+file. When a core reads a disc itself, the bar eases forward while the megabytes count up.
+
+Clients send a `start_id` with `POST /api/sessions` and poll
+`GET /api/sessions/starting/{start_id}` while the request waits. Clients that don't send one
+work as before.
+
 ## A library on a NAS
 
 `compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a

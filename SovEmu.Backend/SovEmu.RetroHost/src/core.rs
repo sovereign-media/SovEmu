@@ -209,6 +209,25 @@ impl fmt::Debug for Core {
     }
 }
 
+/// Reads a whole file a megabyte at a time rather than in one call: on a network share one
+/// call can take seconds, and the bytes read only show (for a loading bar) as each returns.
+fn read_in_chunks(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    const CHUNK: usize = 1 << 20;
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+    let mut data = Vec::with_capacity(size);
+    loop {
+        let len = data.len();
+        data.resize(len + CHUNK, 0);
+        let n = file.read(&mut data[len..])?;
+        data.truncate(len + n);
+        if n == 0 {
+            return Ok(data);
+        }
+    }
+}
+
 fn c_path(path: &Path) -> Result<CString, Error> {
     CString::new(path.as_os_str().as_encoded_bytes())
         .map_err(|_| Error::InvalidPath(path.to_owned()))
@@ -359,7 +378,7 @@ impl Core {
                     if self.info.need_fullpath {
                         None
                     } else {
-                        Some(std::fs::read(path).map_err(|source| Error::ReadContent {
+                        Some(read_in_chunks(path).map_err(|source| Error::ReadContent {
                             path: path.to_owned(),
                             source,
                         })?)
