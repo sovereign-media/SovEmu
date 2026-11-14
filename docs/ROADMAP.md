@@ -66,6 +66,10 @@ held 59.93 fps over 300 frames with no resyncs.
       range support; the game list shows it; scans run in the background, in parallel
       (3,497 games over SMB in ~20 s)
 - [x] PlayStation (PCSX-ReARMed, CHD) and arcade / Neo Geo (FBNeo) cores; `SOVEMU_SYSTEM_DIR` for BIOS
+- [x] Remote library (Cloudflare Zero Trust, ~100 ms per request, a few MB/s): a local LRU cache
+      of played games and artwork (`SOVEMU_CACHE_GB`), disc images cached only after their first
+      session, system artwork prefetched, PlayStation CD read-ahead raised to 256 sectors, worker
+      load deadline raised to 2 minutes
 - [ ] Full titles for arcade sets (FBNeo's DAT maps `mslug` to *Metal Slug*)
 - [ ] Group multi-disc games (`(Disc N)`) into one entry
 

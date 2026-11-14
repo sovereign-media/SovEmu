@@ -45,6 +45,18 @@ then:
 docker compose -f compose.yaml -f compose.nas.yaml up -d
 ```
 
+**A remote share** (over a VPN or a tunnel such as Cloudflare Zero Trust) is slow: about 100 ms
+per request and a few MB/s. `compose.nas.yaml` turns on a local cache in `data/cache`
+(`SOVEMU_CACHE_GB`, default 20):
+- A game's first start reads it from the share. Later starts read a local copy: a 32 MB GBA game
+  went from 7.9 s to 0.3 s.
+- Disc images over 64 MiB are copied only after their first session ends, so the copy never
+  competes with the game for bandwidth.
+- Opening a system prefetches its box art in the background.
+- The least recently used files are evicted first.
+
+PlayStation games read ahead 256 sectors on the core's own disc thread, to ride out the latency.
+
 The scanner picks up box art, composite images, marquees and video snaps
 (`images/<rom>-thumb.png`, `-image.png`, `-marquee.png`, `videos/<rom>-video.mp4`). The game list
 shows them. It scans in the background, so the server answers at once. A 3,500-game SMB library
@@ -64,6 +76,7 @@ All settings are flags on `sovemu-server` or environment variables (the image se
 | `SOVEMU_DATA_DIR` | `data` (`/data` in the image) | Database, saves, `system/` (BIOS) |
 | `SOVEMU_ROMS_DIR` | `<data dir>/roms` | The ROM library, one folder per system |
 | `SOVEMU_SYSTEM_DIR` | `<data dir>/system` | BIOS files for cores (PlayStation, Neo Geo, …) |
+| `SOVEMU_CACHE_GB` | `0` (`20` with `compose.nas.yaml`) | Local cache of a slow library's games and artwork; 0 turns it off |
 | `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent game session; publish the whole range |
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to: the host's LAN address in a container |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers that cannot reach the UDP ports directly, as JSON `RTCIceServer`s |

@@ -21,8 +21,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
-/// How long a worker may take to load its core and game.
-const READY_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long a worker may take to load its core and game. Generous: a disc image on a remote
+/// network share takes tens of seconds to open (the core reads its header and index first).
+const READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a request to a worker may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -51,7 +52,15 @@ pub struct SessionInfo {
 }
 
 /// What to start.
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Launch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Launch")
+            .field("game_id", &self.game_id)
+            .field("rom", &self.rom)
+            .finish_non_exhaustive()
+    }
+}
+
 pub struct Launch {
     pub user_id: i64,
     pub game_id: i64,
@@ -61,6 +70,11 @@ pub struct Launch {
     pub rom: PathBuf,
     pub save_dir: PathBuf,
     pub state_dir: PathBuf,
+    /// Core options (`key`, `value`).
+    pub variables: Vec<(String, String)>,
+    /// Run once the worker has exited (for example, to cache a large disc image only after the
+    /// session that streamed it, so the copy does not compete with the game for the network).
+    pub after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
 pub struct Session {
@@ -150,7 +164,7 @@ impl Workers {
     }
 
     /// Starts a session, ending the user's current one first.
-    pub async fn start(self: &Arc<Self>, launch: Launch) -> Result<Arc<Session>> {
+    pub async fn start(self: &Arc<Self>, mut launch: Launch) -> Result<Arc<Session>> {
         if let Some(existing) = self.for_user(launch.user_id) {
             self.stop(&existing.id).await;
         }
@@ -159,7 +173,8 @@ impl Workers {
             .free_ports
             .pop_first()
             .ok_or_else(|| anyhow!("all {} session ports are in use", self.port_count()))?;
-        match self.spawn(&launch, port).await {
+        let after_exit = launch.after_exit.take();
+        match self.spawn(&launch, port, after_exit).await {
             Ok(session) => {
                 self.lock().sessions.insert(session.id.clone(), session.clone());
                 Ok(session)
@@ -175,7 +190,12 @@ impl Workers {
         (self.config.ports.1 - self.config.ports.0) as usize + 1
     }
 
-    async fn spawn(self: &Arc<Self>, launch: &Launch, port: u16) -> Result<Arc<Session>> {
+    async fn spawn(
+        self: &Arc<Self>,
+        launch: &Launch,
+        port: u16,
+        after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
+    ) -> Result<Arc<Session>> {
         std::fs::create_dir_all(&launch.save_dir)?;
         std::fs::create_dir_all(&self.config.system_dir)?;
         let mut command = Command::new(&self.config.worker_bin);
@@ -195,6 +215,9 @@ impl Workers {
             .arg(&launch.state_dir)
             .arg("--idle-timeout")
             .arg(self.config.idle_timeout_secs.to_string());
+        for (key, value) in &launch.variables {
+            command.arg("--var").arg(format!("{key}={value}"));
+        }
         if let Some(ip) = self.config.advertise_ip {
             command.arg("--advertise-ip").arg(ip.to_string());
         }
@@ -270,6 +293,9 @@ impl Workers {
             let status = reader.child.lock().await.wait().await;
             tracing::info!("session {} ended ({status:?})", reader.id);
             workers.forget(&reader.id, reader.port);
+            if let Some(after) = after_exit {
+                after();
+            }
         });
         Ok(session)
     }

@@ -49,6 +49,9 @@ fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Erro
     seq.end()
 }
 
+/// Games larger than this (disc images) are cached only after the session that streamed them.
+const LARGE_GAME_BYTES: i64 = 64 * 1024 * 1024;
+
 /// The installed core for a system, if any.
 pub fn find_core(cores_dir: &std::path::Path, system: &System) -> Option<PathBuf> {
     system.cores.iter().find_map(|name| {
@@ -96,6 +99,7 @@ pub async fn list_games(
     .bind(&system)
     .fetch_all(&state.db)
     .await?;
+    prefetch_art(&state, &system, &games);
     Ok(Json(games))
 }
 
@@ -143,14 +147,32 @@ pub async fn start_session(
             format!("no core installed for {}", system.name),
         )
     })?;
-    let rom = state.config.roms_dir.join(&game.path);
-    if !rom.is_file() {
+    let original = state.config.roms_dir.join(&game.path);
+    if !original.is_file() {
         return Err(ApiError::new(
             StatusCode::GONE,
             "the game file is missing; rescan the library",
         ));
     }
     let (save_dir, state_dir) = save_dirs(&state, user.id, &game);
+    // A local copy when the library is on a slow share and the game has been played before.
+    // Otherwise the original: small games are copied for next time straight away, large ones
+    // (disc images) only once this session ends, so the copy never competes with the game.
+    let cached = state.cache.cached("roms", &game.path, &original);
+    let large = game.size > LARGE_GAME_BYTES;
+    let rom = match &cached {
+        Some(copy) => copy.clone(),
+        None if large => original.clone(),
+        None => state.cache.local_or_fetch("roms", &game.path, &original),
+    };
+    let after_exit: Option<Box<dyn FnOnce() + Send + Sync>> =
+        (cached.is_none() && large).then(|| {
+            let (cache, path, original) =
+                (state.cache.clone(), game.path.clone(), original.clone());
+            Box::new(move || {
+                cache.local_or_fetch("roms", &path, &original);
+            }) as Box<dyn FnOnce() + Send + Sync>
+        });
     let session = state
         .workers
         .start(Launch {
@@ -162,6 +184,12 @@ pub async fn start_session(
             rom,
             save_dir,
             state_dir,
+            variables: system
+                .options
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+            after_exit,
         })
         .await
         .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;
@@ -364,14 +392,10 @@ pub async fn game_media(
         return Err(ApiError::not_found("media"));
     }
     let game = fetch_game(&state, user.id, id).await?;
-    let rom = std::path::Path::new(&game.path);
-    let folder = state.config.roms_dir.join(rom.parent().unwrap_or(std::path::Path::new("")));
-    let stem = rom.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let file = library::media_candidates(&stem, &kind)
-        .into_iter()
-        .map(|c| folder.join(c))
-        .find(|p| p.is_file())
-        .ok_or_else(|| ApiError::not_found("media"))?;
+    let relative =
+        media_relative(&state, &game, &kind).ok_or_else(|| ApiError::not_found("media"))?;
+    let original = state.config.roms_dir.join(&relative);
+    let file = state.cache.local_or_fetch("media", &relative, &original);
     let mut response = tower_http::services::ServeFile::new(file)
         .oneshot(request)
         .await
@@ -383,4 +407,51 @@ pub async fn game_media(
         axum::http::HeaderValue::from_static("private, max-age=86400"),
     );
     Ok(response)
+}
+
+/// Where a game's artwork of `kind` is, relative to the library root, if it exists.
+fn media_relative(state: &AppState, game: &Game, kind: &str) -> Option<String> {
+    let rom = std::path::Path::new(&game.path);
+    let stem = rom.file_stem()?.to_string_lossy().into_owned();
+    let folder = rom.parent().unwrap_or(std::path::Path::new(""));
+    library::media_candidates(&stem, kind)
+        .into_iter()
+        .map(|c| folder.join(c).to_string_lossy().replace('\\', "/"))
+        .find(|rel| state.config.roms_dir.join(rel).is_file())
+}
+
+/// Opening a system warms the cache with its games' stills (not videos), in the background.
+fn prefetch_art(state: &AppState, system: &str, games: &[Game]) {
+    if !state.cache.enabled() {
+        return;
+    }
+    let state2 = state.clone();
+    let games: Vec<(String, String)> =
+        games.iter().map(|g| (g.path.clone(), g.media.clone())).collect();
+    let system = system.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let mut items = Vec::new();
+        for (path, media) in games {
+            let rom = std::path::Path::new(&path);
+            let Some(stem) = rom.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            let folder = rom.parent().unwrap_or(std::path::Path::new("")).to_path_buf();
+            for kind in ["thumb", "image"] {
+                if !media.split(',').any(|m| m == kind) {
+                    continue;
+                }
+                // Media file names come from the scan; the first candidate that exists wins.
+                for candidate in library::media_candidates(&stem, kind) {
+                    let rel = folder.join(&candidate).to_string_lossy().replace('\\', "/");
+                    let original = state2.config.roms_dir.join(&rel);
+                    if original.is_file() {
+                        items.push(("media", rel, original));
+                        break;
+                    }
+                }
+            }
+        }
+        state2.cache.prefetch_many(format!("{system} artwork"), items);
+    });
 }

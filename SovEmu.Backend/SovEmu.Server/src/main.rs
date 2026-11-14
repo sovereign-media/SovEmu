@@ -6,6 +6,7 @@
 
 mod api;
 mod auth;
+mod cache;
 mod cheats;
 mod db;
 mod error;
@@ -78,6 +79,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ADVERTISE_IP")]
     pub advertise_ip: Option<IpAddr>,
 
+    /// Keep up to this many GiB of the library (ROMs and artwork) on local disk, for a library
+    /// on a slow network share. 0 disables the cache.
+    #[arg(long, env = "SOVEMU_CACHE_GB", default_value_t = 0)]
+    pub cache_gb: u64,
+
     /// End a session after this many seconds with no client connected.
     #[arg(long, env = "SOVEMU_IDLE_TIMEOUT", default_value_t = 300)]
     pub idle_timeout: u64,
@@ -128,6 +134,7 @@ pub struct AppState {
     /// Verified against when a username does not exist, so failures take the same time.
     pub dummy_hash: String,
     pub login_throttle: Arc<ops::LoginThrottle>,
+    pub cache: Arc<cache::Cache>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -212,12 +219,22 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         system_dir: config.system.clone().unwrap_or_else(|| config.data_dir.join("system")),
         idle_timeout_secs: config.idle_timeout,
     });
+    let config_cache_dir = config.data_dir.join("cache");
+    let cache_bytes = config.cache_gb.saturating_mul(1 << 30);
+    if cache_bytes > 0 {
+        tracing::info!(
+            "caching up to {} GiB of the library in {}",
+            config.cache_gb,
+            config_cache_dir.display()
+        );
+    }
     Ok(AppState {
         db,
         config: Arc::new(config),
         workers,
         dummy_hash: auth::hash_password("x")?,
         login_throttle: Arc::default(),
+        cache: cache::Cache::new(config_cache_dir, cache_bytes),
     })
 }
 
