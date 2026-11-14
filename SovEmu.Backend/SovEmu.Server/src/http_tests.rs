@@ -253,10 +253,20 @@ async fn browses_the_library() {
     let (_, report) = h.call("POST", "/api/library/scan", None).await;
     assert_eq!(report, json!({"found": 2, "added": 1, "removed": 1}));
 
-    // No core: starting a game says so.
-    let (status, body) = h.call("POST", "/api/sessions", Some(json!({"game_id": id}))).await;
+    // No core: starting a game says so, and so does its progress.
+    let start = json!({"game_id": id, "start_id": "no-core-start"});
+    let (status, body) = h.call("POST", "/api/sessions", Some(start)).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body["error"].as_str().unwrap().contains("no core"));
+    let (_, progress) = h.call("GET", "/api/sessions/starting/no-core-start", None).await;
+    assert_eq!(progress["phase"], "failed");
+    assert!(progress["error"].as_str().unwrap().contains("no core"));
+    let bad = json!({"game_id": id, "start_id": "../../x"});
+    assert_eq!(h.call("POST", "/api/sessions", Some(bad)).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        h.call("GET", "/api/sessions/starting/never-started", None).await.0,
+        StatusCode::NOT_FOUND
+    );
     assert_eq!(h.call("GET", "/api/nope", None).await.0, StatusCode::NOT_FOUND);
 }
 
@@ -269,8 +279,12 @@ async fn runs_a_game_session_in_a_worker() {
     let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
     let id = games[0]["id"].as_i64().unwrap();
 
-    let (status, session) = h.call("POST", "/api/sessions", Some(json!({"game_id": id}))).await;
+    let start = json!({"game_id": id, "start_id": "first-start-1"});
+    let (status, session) = h.call("POST", "/api/sessions", Some(start)).await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
+    let (_, progress) = h.call("GET", "/api/sessions/starting/first-start-1", None).await;
+    assert_eq!(progress["phase"], "ready", "{progress}");
+    assert!(progress["elapsed_ms"].as_u64().is_some());
     assert_eq!(session["core"], "SovEmu Test Core");
     assert_eq!((session["width"].clone(), session["height"].clone()), (json!(256), json!(224)));
     assert_eq!(session["title"], "Test Game");

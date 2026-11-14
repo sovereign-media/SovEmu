@@ -18,6 +18,7 @@ mod library;
 mod metadata;
 mod mirror;
 mod ops;
+mod starts;
 mod structured;
 mod systems;
 mod workers;
@@ -474,6 +475,7 @@ pub fn router(state: AppState) -> Router {
         .route("/gpu", get(admin::gpu_status))
         .route("/sessions", post(api::start_session))
         .route("/sessions/current", get(api::current_session))
+        .route("/sessions/starting/{start_id}", get(api::start_progress))
         .route("/sessions/{id}", delete(api::stop_session))
         .route("/sessions/{id}/offer", post(api::offer))
         .route("/sessions/{id}/reset", post(api::reset))

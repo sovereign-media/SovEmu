@@ -13,6 +13,7 @@
 
 mod gpu;
 mod headless;
+mod loading;
 mod pacing;
 mod persist;
 mod probe;

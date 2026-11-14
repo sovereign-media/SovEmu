@@ -1,4 +1,5 @@
 // Typed calls to the SovEmu API (same origin). A 401 sends the browser to the sign-in page.
+import type { StartStatus } from "./launch";
 
 export interface User {
   id: number;
@@ -151,7 +152,10 @@ export const api = {
   syncLibrary: () => call<void>("POST", "/library/sync"),
   metadataStatus: () => call<MetadataStatus>("GET", "/metadata/status"),
   fetchMetadata: (system?: string, force = false) => call<MetadataStatus>("POST", "/metadata/fetch", { system, force }),
-  startSession: (gameId: number) => call<SessionInfo>("POST", "/sessions", { game_id: gameId }),
+  /** `startId` lets `startProgress` follow the start while this request waits for it. */
+  startSession: (gameId: number, startId?: string) =>
+    call<SessionInfo>("POST", "/sessions", { game_id: gameId, start_id: startId }),
+  startProgress: (startId: string) => call<StartStatus>("GET", `/sessions/starting/${encodeURIComponent(startId)}`),
   currentSession: () => call<SessionInfo | null>("GET", "/sessions/current"),
   stopSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
   resetSession: (id: string) => call<void>("POST", `/sessions/${id}/reset`),

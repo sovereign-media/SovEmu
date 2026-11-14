@@ -18,6 +18,16 @@ import Base from "../../layouts/Base.astro";
         <h1 data-title class="max-w-3xl text-4xl font-black md:text-5xl"></h1>
         <p data-status class="text-slate-400">Starting…</p>
       </div>
+      <!-- The loading bar: what the start is doing, how far it has got, and for how long. -->
+      <div data-progress class="absolute inset-x-0 bottom-10 mx-auto grid w-[28rem] max-w-[86vw] gap-2" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="flex items-baseline justify-between gap-4 text-sm">
+          <span data-progress-label class="font-semibold text-slate-200">Starting</span>
+          <span data-progress-detail class="text-xs tabular-nums text-slate-500"></span>
+        </div>
+        <div class="h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div data-progress-bar class="h-full w-0 rounded-full transition-[width] duration-300 ease-out"></div>
+        </div>
+      </div>
     </section>
 
     <!-- The menu stack: splash choices, in-game menu, slot pickers. -->
@@ -39,6 +49,7 @@ import Base from "../../layouts/Base.astro";
   import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
   import type { ButtonName } from "../../lib/protocol";
   import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
+  import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
   import { listenNav } from "../../lib/nav";
   import { Session } from "../../lib/session";
   import { StatsSampler } from "../../lib/stats";
@@ -80,11 +91,41 @@ import Base from "../../layouts/Base.astro";
 
   // --- The session ----------------------------------------------------------------------------
   let info: SessionInfo | null = null;
-  const starting = api.startSession(gameId).then((s) => {
+  // Start at once (the splash's choices show meanwhile), and follow the start on the bar.
+  const startId = newStartId();
+  const bar = new ForwardOnly();
+  $("progress-bar").style.background = color;
+  const showProgress = (p: StartStatus) => {
+    const view = describeStart(p);
+    const percent = Math.round(bar.next(view.fraction) * 100);
+    $("progress-label").textContent = view.label;
+    $("progress-detail").textContent = view.detail;
+    $("progress-bar").style.width = `${percent}%`;
+    $("progress").setAttribute("aria-valuenow", String(percent));
+  };
+  let polling = true;
+  const poll = async () => {
+    while (polling) {
+      const p = await api.startProgress(startId).catch(() => null);
+      if (!polling) break;
+      if (p) showProgress(p);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  };
+  void poll();
+  const starting = api.startSession(gameId, startId).then((s) => {
+    polling = false;
+    showProgress({ phase: "ready", elapsed_ms: 0, phase_ms: 0 });
+    setTimeout(() => $("progress").classList.add("hidden"), 600);
     info = s;
     $("screen").style.aspectRatio = ["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3";
     $("status").textContent = `${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`;
     return s;
+  });
+  starting.catch((e) => {
+    polling = false;
+    showProgress({ phase: "failed", elapsed_ms: 0, phase_ms: 0, error: (e as Error).message });
+    $("progress-bar").style.width = "0%";
   });
 
   const input = new InputState();

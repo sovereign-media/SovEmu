@@ -7,7 +7,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use sovemu_protocol::ipc::{Reply, Request};
+use sovemu_protocol::ipc::{LoadPhase, Reply, Request};
 
 fn test_core() -> PathBuf {
     if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
@@ -72,7 +72,16 @@ impl Worker {
                 }
             }
         });
-        let ready = replies.recv_timeout(Duration::from_secs(10)).expect("ready");
+        // Progress first (opening the core, then the game), then ready.
+        let mut phases = Vec::new();
+        let ready = loop {
+            match replies.recv_timeout(Duration::from_secs(10)).expect("ready") {
+                Reply::Progress { phase, .. } => phases.push(phase),
+                other => break other,
+            }
+        };
+        phases.dedup();
+        assert_eq!(phases, [LoadPhase::Core, LoadPhase::Content], "loading progress before ready");
         (Self { child, stdin, replies }, ready)
     }
 

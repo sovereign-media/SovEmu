@@ -33,21 +33,29 @@ impl Out {
 
 pub fn run(args: SessionArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
-    let session = Session::open(&SessionConfig {
-        core: args.core.clone(),
-        rom: args.rom.clone(),
-        system_dir: args.system_dir.clone(),
-        save_dir: args.save_dir.clone(),
-        variables: args.variables.clone(),
-        video_kbps: args.video_kbps,
-        audio_kbps: args.audio_kbps,
-        rewind_seconds: args.rewind_seconds,
-        rewind_max_mb: args.rewind_max_mb,
-        fast_forward: args.fast_forward,
-        keyframe_interval: args.keyframe_interval,
-        gpu: args.gpu.0.clone(),
-        state_dir: args.state_dir.clone(),
-    })?;
+    let out = Out(Arc::new(Mutex::new(std::io::stdout())));
+    let report_out = out.clone();
+    let report = move |phase, read, total| {
+        report_out.send(&Reply::Progress { phase, read, total });
+    };
+    let session = Session::open(
+        &SessionConfig {
+            core: args.core.clone(),
+            rom: args.rom.clone(),
+            system_dir: args.system_dir.clone(),
+            save_dir: args.save_dir.clone(),
+            variables: args.variables.clone(),
+            video_kbps: args.video_kbps,
+            audio_kbps: args.audio_kbps,
+            rewind_seconds: args.rewind_seconds,
+            rewind_max_mb: args.rewind_max_mb,
+            fast_forward: args.fast_forward,
+            keyframe_interval: args.keyframe_interval,
+            gpu: args.gpu.0.clone(),
+            state_dir: args.state_dir.clone(),
+        },
+        &report,
+    )?;
     let (core, av) = session.describe();
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
@@ -55,7 +63,6 @@ pub fn run(args: SessionArgs) -> Result<()> {
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
     tracing::info!("session ready: WebRTC on UDP {udp_addr}, advertising {advertised}");
 
-    let out = Out(Arc::new(Mutex::new(std::io::stdout())));
     out.send(&Reply::Ready {
         udp_port: udp_addr.port(),
         core,

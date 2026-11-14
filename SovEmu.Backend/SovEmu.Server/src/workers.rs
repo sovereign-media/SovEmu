@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
@@ -20,6 +20,8 @@ use sovemu_protocol::ipc::{Reply, Request};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
+
+use crate::starts::{Phase, Starts};
 
 /// How long a request to a worker may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -104,6 +106,8 @@ pub struct Launch {
     /// Run once the worker has exited (for example, to cache a large disc image only after the
     /// session that streamed it, so the copy does not compete with the game for the network).
     pub after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
+    /// The client's id for following this start's progress.
+    pub start_id: Option<String>,
 }
 
 pub struct Session {
@@ -168,12 +172,18 @@ struct Inner {
 pub struct Workers {
     config: WorkerConfig,
     inner: Mutex<Inner>,
+    /// Starts' progress, for clients' loading bars.
+    pub starts: Starts,
 }
 
 impl Workers {
     pub fn new(config: WorkerConfig) -> Arc<Self> {
         let free_ports = (config.ports.0..=config.ports.1).collect();
-        Arc::new(Self { config, inner: Mutex::new(Inner { sessions: HashMap::new(), free_ports }) })
+        Arc::new(Self {
+            config,
+            inner: Mutex::new(Inner { sessions: HashMap::new(), free_ports }),
+            starts: Starts::default(),
+        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -194,9 +204,16 @@ impl Workers {
 
     /// Starts a session, ending the user's current one first.
     pub async fn start(self: &Arc<Self>, mut launch: Launch) -> Result<Arc<Session>> {
+        let phase = |phase| {
+            if let Some(id) = &launch.start_id {
+                self.starts.update(id, phase, None, None, Instant::now());
+            }
+        };
         if let Some(existing) = self.for_user(launch.user_id) {
+            phase(Phase::Stopping);
             self.stop(&existing.id).await;
         }
+        phase(Phase::Launching);
         let port = self
             .lock()
             .free_ports
@@ -290,6 +307,11 @@ impl Workers {
                     Ok(Reply::Ready { core, width, height, fps, .. }) => {
                         return Ok((core, width, height, fps));
                     }
+                    Ok(Reply::Progress { phase, read, total }) => {
+                        if let Some(id) = &launch.start_id {
+                            self.starts.update(id, phase.into(), read, total, Instant::now());
+                        }
+                    }
                     Ok(other) => tracing::debug!("worker said {other:?} before ready"),
                     Err(_) => tracing::debug!("worker: {line}"),
                 }
@@ -339,7 +361,7 @@ impl Workers {
                             let _ = tx.send(reply);
                         }
                     }
-                    Reply::Ready { .. } => {}
+                    Reply::Ready { .. } | Reply::Progress { .. } => {}
                 }
             }
             // The worker exited: idle timeout, shutdown, or a crash.

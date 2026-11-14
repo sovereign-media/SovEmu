@@ -13,9 +13,11 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
+use crate::loading::{self, Report};
 use crate::sysdir::SystemDir;
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
+use sovemu_protocol::ipc::LoadPhase;
 use sovemu_protocol::ipc::Request;
 use sovemu_protocol::{
     ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
@@ -129,7 +131,7 @@ pub struct Session {
 
 impl Session {
     /// Loads the core and content and sets up the encoders.
-    pub fn open(config: &SessionConfig) -> Result<Self> {
+    pub fn open(config: &SessionConfig, report: Report<'_>) -> Result<Self> {
         // The BIOS folder may be on a read-only library without one; most cores need none.
         if let Err(e) = std::fs::create_dir_all(&config.system_dir) {
             tracing::debug!("system dir {}: {e}", config.system_dir.display());
@@ -146,9 +148,22 @@ impl Session {
             gpu: config.gpu.clone(),
             variables: config.variables.clone(),
         };
-        let mut core = Core::load(&config.core, options)
-            .with_context(|| format!("loading core {}", config.core.display()))?;
-        let av = *core.load_game(config.rom.as_deref()).context("loading content")?;
+        let mut core = loading::reporting(LoadPhase::Core, None, report, || {
+            Core::load(&config.core, options)
+                .with_context(|| format!("loading core {}", config.core.display()))
+        })?;
+        // SovEmu reads the whole file when the core takes content from memory: then the total
+        // is known. A core that opens the file itself reads what it needs, an unknown amount.
+        let total = match &config.rom {
+            Some(rom) if !core.system_info().need_fullpath => {
+                std::fs::metadata(rom).ok().map(|m| m.len())
+            }
+            _ => None,
+        };
+        let av = loading::reporting(LoadPhase::Content, total, report, || {
+            core.load_game(config.rom.as_deref()).copied()
+        })
+        .context("loading content")?;
         let save_name =
             config.rom.as_deref().and_then(|r| r.file_stem()).map(|s| s.to_string_lossy());
         let mut persist =
