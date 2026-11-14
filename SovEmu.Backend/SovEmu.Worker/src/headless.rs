@@ -93,10 +93,13 @@ pub fn run(args: HeadlessArgs) -> Result<()> {
     fs::create_dir_all(&save_dir)?;
     fs::create_dir_all(&args.system_dir)?;
 
+    let system_dir =
+        crate::sysdir::SystemDir::for_core(&args.core, &args.system_dir.canonicalize()?)?;
     let options = CoreOptions {
-        system_dir: args.system_dir.canonicalize()?,
+        system_dir: system_dir.path().to_owned(),
         save_dir: save_dir.canonicalize()?,
         variables: args.variables.clone(),
+        gpu: args.gpu.0.clone(),
     };
     let mut core = Core::load(&args.core, options)
         .with_context(|| format!("loading core {}", args.core.display()))?;

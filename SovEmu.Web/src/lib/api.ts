@@ -20,6 +20,10 @@ export interface SystemSummary {
   color: string;
   game_count: number;
   playable: boolean;
+  /** A 3D system: its cores render with OpenGL and read analog sticks. */
+  needs_gpu: boolean;
+  /** For a 3D system, where it renders here: on a GPU, in software (slow), or not at all. */
+  rendering?: "gpu" | "software" | "off";
 }
 
 export interface Game {

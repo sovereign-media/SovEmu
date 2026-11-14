@@ -20,8 +20,11 @@ pub struct SystemSummary {
     #[serde(flatten)]
     system: System,
     game_count: i64,
-    /// Whether a core that plays it is installed.
+    /// Whether a core that plays it is installed (and, for a 3D system, it has a renderer).
     playable: bool,
+    /// For a 3D system: `gpu`, `software` (slow) or `off` (unplayable here).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rendering: Option<crate::gpu::Mode>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -123,7 +126,9 @@ pub async fn list_systems(
         .map(|s| SystemSummary {
             system: *s,
             game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
-            playable: find_core(&state, s).is_some(),
+            playable: find_core(&state, s).is_some()
+                && (!s.needs_gpu || state.gpu.mode != crate::gpu::Mode::Off),
+            rendering: s.needs_gpu.then_some(state.gpu.mode),
         })
         .collect();
     Ok(Json(summaries))
@@ -195,6 +200,16 @@ pub async fn start_session(
 ) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
     let game = fetch_game(&state, user.id, start.game_id).await?;
     let system = system_by_id(&state, &game.system)?;
+    if system.needs_gpu && state.gpu.mode == crate::gpu::Mode::Off {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!(
+                "{} needs 3D rendering, which is unavailable on this server ({})",
+                system.name,
+                state.gpu.note.as_deref().unwrap_or("SOVEMU_GPU")
+            ),
+        ));
+    }
     let core = find_core(&state, system).ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,

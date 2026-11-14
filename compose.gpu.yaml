@@ -1,0 +1,19 @@
+# Render 3D systems (N64, Dreamcast, GameCube, PS2) on the host's GPU:
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+#   (add -f compose.nas.yaml for the NAS library, in any order)
+#
+# Passes the host's render nodes through and adds the container user to the group that owns
+# them. Find that group on the host with `stat -c %g /dev/dri/renderD128` and put it in .env as
+# SOVEMU_RENDER_GID (often 104, 107 or 109). At startup the server tries every GPU it can see
+# and logs which one 3D games use; without this file they render in software (slowly).
+#
+# Works with the GPUs Mesa drives: AMD (radeonsi) and Intel (iris, crocus). NVIDIA's own driver
+# is built for glibc and does not load in this Alpine image; an NVIDIA card falls back to
+# software rendering.
+services:
+  sovemu:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${SOVEMU_RENDER_GID:?set SOVEMU_RENDER_GID in .env: stat -c %g /dev/dri/renderD128}"

@@ -13,13 +13,14 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
+use crate::sysdir::SystemDir;
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
 use sovemu_protocol::ipc::Request;
 use sovemu_protocol::{
     ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
-use sovemu_retro_host::{AvInfo, Core, CoreOptions, JoypadButtons};
+use sovemu_retro_host::{AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons};
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
@@ -80,6 +81,8 @@ pub struct SessionConfig {
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
     pub keyframe_interval: u32,
+    /// The GPU for OpenGL cores; `None` refuses them.
+    pub gpu: Option<sovemu_retro_host::GpuChoice>,
 }
 
 /// The connected (or connecting) client.
@@ -102,6 +105,7 @@ pub struct Session {
     audio_samples: u64,
     buttons: Vec<JoypadButtons>,
     last_seq: Option<u32>,
+    last_analog_seq: Option<u32>,
     pending_ack: Option<(u32, u32)>,
     persist: Persist,
     rewind: Rewind,
@@ -118,6 +122,9 @@ pub struct Session {
     /// Size of the frame in `rgba`, for save-state screenshots.
     shot_size: (u32, u32),
     finished: bool,
+    /// The core's system directory (a merge it may be reading from); dropped last, after the
+    /// core.
+    _system_dir: SystemDir,
 }
 
 impl Session {
@@ -128,12 +135,15 @@ impl Session {
             tracing::debug!("system dir {}: {e}", config.system_dir.display());
         }
         std::fs::create_dir_all(&config.save_dir)?;
+        let bios = config
+            .system_dir
+            .canonicalize()
+            .or_else(|_| std::path::absolute(&config.system_dir))?;
+        let system_dir = SystemDir::for_core(&config.core, &bios)?;
         let options = CoreOptions {
-            system_dir: config
-                .system_dir
-                .canonicalize()
-                .or_else(|_| std::path::absolute(&config.system_dir))?,
+            system_dir: system_dir.path().to_owned(),
             save_dir: config.save_dir.canonicalize()?,
+            gpu: config.gpu.clone(),
             variables: config.variables.clone(),
         };
         let mut core = Core::load(&config.core, options)
@@ -154,6 +164,7 @@ impl Session {
             av.sample_rate
         );
         Ok(Self {
+            _system_dir: system_dir,
             video: Vp8Encoder::new(Vp8Config {
                 bitrate_kbps: config.video_kbps,
                 fps: av.fps.round() as u32,
@@ -180,6 +191,7 @@ impl Session {
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
+            last_analog_seq: None,
             hotkeys_at: Instant::now(),
             ticks: 0,
             shot_size: (0, 0),
@@ -501,6 +513,19 @@ impl Session {
             Ok(ClientMessage::Hotkeys(h)) => {
                 self.hotkeys = h;
                 self.hotkeys_at = Instant::now();
+                return;
+            }
+            Ok(ClientMessage::Analog(a)) => {
+                if self.last_analog_seq.is_some_and(|last| !a.is_newer_than(last)) {
+                    return;
+                }
+                self.last_analog_seq = Some(a.seq);
+                let sticks: Vec<AnalogSticks> = a
+                    .ports
+                    .iter()
+                    .map(|p| AnalogSticks { left: p.left, right: p.right, l2: p.l2, r2: p.r2 })
+                    .collect();
+                self.core.set_analog(&sticks);
                 return;
             }
             Err(e) => {

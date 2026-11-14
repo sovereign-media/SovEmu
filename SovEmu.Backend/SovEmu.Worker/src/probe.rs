@@ -64,6 +64,8 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
         system_dir: scratch.to_owned(),
         save_dir: scratch.to_owned(),
         variables: Vec::new(),
+        // Loading is enough to probe; no game, so no context is ever made.
+        gpu: Some(sovemu_retro_host::GpuChoice::Auto),
     };
     match Core::load(path, options) {
         Ok(core) => {

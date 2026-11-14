@@ -127,3 +127,11 @@ pub async fn metadata_fetch(
     tokio::spawn(metadata::run_job(state.clone(), request.system, request.force));
     Ok((StatusCode::ACCEPTED, Json(state.metadata.status())))
 }
+
+/// Where 3D systems render, and every device the startup probe tried.
+pub async fn gpu_status(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+) -> Json<crate::gpu::GpuStatus> {
+    Json((*state.gpu).clone())
+}

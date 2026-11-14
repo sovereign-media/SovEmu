@@ -88,6 +88,7 @@ import Base from "../../layouts/Base.astro";
   });
 
   const input = new InputState();
+  input.analogSticks = !!system?.needs_gpu;
 
   // Display filter: WebGL over the video when available, else the video itself.
   const FILTER_KEY = "sovemu.filter";

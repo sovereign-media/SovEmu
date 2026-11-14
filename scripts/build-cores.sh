@@ -43,7 +43,10 @@ while read -r name repo commit build; do
   git -C "$src" init --quiet
   git -C "$src" fetch --quiet --depth 1 "$repo" "$commit"
   git -C "$src" checkout --quiet FETCH_HEAD
-  git -C "$src" submodule update --quiet --init --recursive --depth 1
+  # Some cores carry nested submodules they never build (Mupen64Plus's paraLLEl RSP lists one
+  # with no URL); a build that needs a missing one fails on its own.
+  git -C "$src" submodule update --quiet --init --recursive --depth 1 \
+    || echo "    (some submodules of $name could not be fetched; building anyway)"
 
   (cd "$src" && eval "$build")
 

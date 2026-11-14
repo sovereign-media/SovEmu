@@ -2,7 +2,7 @@
 // no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle)
 // to the session's offer URL (`/api/sessions/{id}/offer`).
 import { InputState } from "./input";
-import { INPUT_CHANNEL, decodeAck, encodeHotkeys, encodeInput } from "./protocol";
+import { type Analog, CENTRED, INPUT_CHANNEL, analogEqual, decodeAck, encodeAnalog, encodeHotkeys, encodeInput } from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
 const HEARTBEAT_MS = 100;
@@ -28,6 +28,9 @@ export class Session {
   private sent = -1;
   private sentHotkeys = 0;
   private lastSend = 0;
+  private analogSeq = 0;
+  private sentAnalog: Analog = { ...CENTRED };
+  private lastAnalogSend = 0;
   private raf = 0;
 
   /** While true, the controller state is withheld (a menu is open): nothing is pressed. */
@@ -105,6 +108,16 @@ export class Session {
         this.sent = state;
         this.sentHotkeys = hotkeyBits;
         this.lastSend = now;
+      }
+      // Sticks: on change, and as a heartbeat while off-centre (a lost packet must not leave a
+      // stick held). Clients without sticks never send this message.
+      const analog = reading?.analog ?? CENTRED;
+      const offCentre = !analogEqual(analog, CENTRED);
+      if (!analogEqual(analog, this.sentAnalog) || (offCentre && now - this.lastAnalogSend > HEARTBEAT_MS)) {
+        this.analogSeq = (this.analogSeq + 1) >>> 0;
+        this.channel.send(encodeAnalog({ seq: this.analogSeq, ports: [analog] }));
+        this.sentAnalog = analog;
+        this.lastAnalogSend = now;
       }
     }
     this.raf = requestAnimationFrame(this.pump);

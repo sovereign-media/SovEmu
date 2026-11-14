@@ -54,3 +54,7 @@ ingress:
       hosts: [games.example.com]
 resources:
   requests: {cpu: "1", memory: 512Mi}
+gpu:
+  mode: /dev/dri/renderD128
+  resources:
+    amd.com/gpu: 1

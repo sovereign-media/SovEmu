@@ -28,6 +28,7 @@ import HintBar from "../components/HintBar.astro";
 
 <script>
   import { api, type SystemSummary } from "../lib/api";
+  import { systemBadge } from "../lib/systems";
   import { listenNav } from "../lib/nav";
 
   const track = document.querySelector<HTMLElement>("[data-track]")!;
@@ -45,10 +46,11 @@ import HintBar from "../components/HintBar.astro";
       "relative grid h-44 w-72 shrink-0 place-items-center rounded-3xl border border-white/10 text-5xl font-black tracking-tight text-white shadow-2xl transition-all duration-300";
     el.style.background = `linear-gradient(145deg, ${s.color}, color-mix(in srgb, ${s.color} 35%, black))`;
     el.innerHTML = `<span>${s.short}</span>`;
-    if (!s.playable) {
+    const status = systemBadge(s);
+    if (status) {
       const badge = document.createElement("span");
       badge.className = "absolute bottom-3 right-4 rounded bg-black/60 px-2 py-0.5 text-[11px] font-semibold tracking-normal";
-      badge.textContent = "no core";
+      badge.textContent = status;
       el.append(badge);
     }
     el.addEventListener("click", () => {

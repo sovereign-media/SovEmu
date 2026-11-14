@@ -13,6 +13,10 @@
 //! - **Input:** read once per frame through `RETRO_DEVICE_ID_JOYPAD_MASK`.
 //! - **Save states:** 16 bytes, the frame counter and the sine phase.
 //! - **Content:** optional (`SET_SUPPORT_NO_GAME`). Loaded content's size is logged.
+//! - **GPU rendering:** with the core option `sovemu_test_render=gl` the core asks for an OpenGL
+//!   context (`SET_HW_RENDER`) when the game loads, refusing to load without one, and each frame
+//!   clears the frontend's framebuffer to [`SOLID_COLOUR`] with its top half [`GL_TOP_COLOUR`]
+//!   (bottom-left origin, so a frontend that forgets to flip gets them the wrong way round).
 //! - **Battery save:** [`SAVE_RAM_SIZE`] bytes of `RETRO_MEMORY_SAVE_RAM`. Each frame writes the
 //!   frame counter into its first 8 bytes (little-endian), so a frontend's `.srm` persistence
 //!   can be checked; the rest is left alone.
@@ -35,6 +39,115 @@ pub const SAVE_RAM_SIZE: usize = 8 * 1024;
 /// Battery RAM. A raw static so its address stays fixed for the frontend, as in a real core.
 static SAVE_RAM: Mutex<[u8; SAVE_RAM_SIZE]> = Mutex::new([0; SAVE_RAM_SIZE]);
 const TONE_HZ: f64 = 440.0;
+/// What the GL mode clears the top half of the frame to (`0x00RRGGBB`).
+pub const GL_TOP_COLOUR: u32 = 0x00_FF_00_00;
+
+const RENDER_KEY: &CStr = c"sovemu_test_render";
+
+/// The GL functions the GL mode uses, loaded in `context_reset`.
+#[derive(Clone, Copy)]
+struct GlFns {
+    bind_framebuffer: unsafe extern "C" fn(u32, u32),
+    viewport: unsafe extern "C" fn(i32, i32, i32, i32),
+    clear_color: unsafe extern "C" fn(f32, f32, f32, f32),
+    clear: unsafe extern "C" fn(u32),
+    enable: unsafe extern "C" fn(u32),
+    disable: unsafe extern "C" fn(u32),
+    scissor: unsafe extern "C" fn(i32, i32, i32, i32),
+}
+
+struct Hw {
+    callback: Option<ffi::retro_hw_render_callback>,
+    gl: Option<GlFns>,
+}
+
+static HW: Mutex<Hw> = Mutex::new(Hw { callback: None, gl: None });
+
+unsafe extern "C" fn context_reset() {
+    let mut hw = HW.lock().unwrap();
+    let Some(get) = hw.callback.and_then(|c| c.get_proc_address) else { return };
+    let load = |name: &CStr| {
+        // SAFETY: the frontend's get_proc_address takes a C string.
+        let f = unsafe { get(name.as_ptr()) };
+        f.expect("the frontend has this GL function")
+    };
+    // SAFETY: each pointer is the named GL function, with the signature GL defines.
+    hw.gl = Some(unsafe {
+        GlFns {
+            bind_framebuffer: std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(u32, u32),
+            >(load(c"glBindFramebuffer")),
+            viewport: std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(i32, i32, i32, i32),
+            >(load(c"glViewport")),
+            clear_color: std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(f32, f32, f32, f32),
+            >(load(c"glClearColor")),
+            clear: std::mem::transmute::<unsafe extern "C" fn(), unsafe extern "C" fn(u32)>(load(
+                c"glClear",
+            )),
+            enable: std::mem::transmute::<unsafe extern "C" fn(), unsafe extern "C" fn(u32)>(load(
+                c"glEnable",
+            )),
+            disable: std::mem::transmute::<unsafe extern "C" fn(), unsafe extern "C" fn(u32)>(
+                load(c"glDisable"),
+            ),
+            scissor: std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(i32, i32, i32, i32),
+            >(load(c"glScissor")),
+        }
+    });
+}
+
+unsafe extern "C" fn context_destroy() {
+    HW.lock().unwrap().gl = None;
+}
+
+fn rgb(c: u32) -> (f32, f32, f32) {
+    let ch = |shift: u32| ((c >> shift) & 0xff) as f32 / 255.0;
+    (ch(16), ch(8), ch(0))
+}
+
+/// Draws a GL-mode frame into the frontend's framebuffer. False if there is no context yet.
+fn draw_gl() -> bool {
+    let hw = HW.lock().unwrap();
+    let (Some(gl), Some(cb)) = (hw.gl, hw.callback) else { return false };
+    let Some(fbo) = cb.get_current_framebuffer else { return false };
+    const COLOR_BUFFER_BIT: u32 = 0x4000;
+    const SCISSOR_TEST: u32 = 0x0C11;
+    let (w, h) = (WIDTH as i32, HEIGHT as i32);
+    // SAFETY: the frontend made its context current before retro_run; these are its GL
+    // functions, called with valid arguments.
+    unsafe {
+        (gl.bind_framebuffer)(0x8D40, fbo() as u32);
+        (gl.viewport)(0, 0, w, h);
+        let (r, g, b) = rgb(SOLID_COLOUR);
+        (gl.clear_color)(r, g, b, 1.0);
+        (gl.clear)(COLOR_BUFFER_BIT);
+        (gl.enable)(SCISSOR_TEST);
+        (gl.scissor)(0, h / 2, w, h - h / 2);
+        let (r, g, b) = rgb(GL_TOP_COLOUR);
+        (gl.clear_color)(r, g, b, 1.0);
+        (gl.clear)(COLOR_BUFFER_BIT);
+        (gl.disable)(SCISSOR_TEST);
+    }
+    true
+}
+
+/// Reads `sovemu_test_render` from the frontend.
+fn wants_gl() -> bool {
+    let mut var = ffi::retro_variable { key: RENDER_KEY.as_ptr(), value: std::ptr::null() };
+    if env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE, (&raw mut var).cast()) && !var.value.is_null() {
+        // SAFETY: the frontend returns a NUL-terminated string.
+        unsafe { CStr::from_ptr(var.value) }.to_bytes() == b"gl"
+    } else {
+        false
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Callbacks {
@@ -122,6 +235,7 @@ pub extern "C" fn retro_set_environment(cb: ffi::retro_environment_t) {
             key: PATTERN_KEY.as_ptr(),
             value: c"Test pattern; gradient|solid".as_ptr(),
         },
+        ffi::retro_variable { key: RENDER_KEY.as_ptr(), value: c"Rendering; software|gl".as_ptr() },
         ffi::retro_variable { key: std::ptr::null(), value: std::ptr::null() },
     ];
     env(ffi::RETRO_ENVIRONMENT_SET_VARIABLES, vars.as_mut_ptr().cast());
@@ -285,7 +399,15 @@ pub extern "C" fn retro_run() {
     let audio = s.audio.clone();
     drop(s);
 
-    if let Some(video) = cb.video {
+    let gl_mode = HW.lock().unwrap().callback.is_some();
+    if gl_mode {
+        if let Some(video) = cb.video {
+            let data =
+                if !dupe && draw_gl() { usize::MAX as *const c_void } else { std::ptr::null() };
+            // SAFETY: RETRO_HW_FRAME_BUFFER_VALID (all bits set) or a dupe.
+            unsafe { video(data, WIDTH, HEIGHT, 0) };
+        }
+    } else if let Some(video) = cb.video {
         let data = pixels.as_ref().map_or(std::ptr::null(), |p| p.as_ptr().cast::<c_void>());
         // SAFETY: `data` is null (a dupe) or HEIGHT rows of PITCH bytes.
         unsafe { video(data, WIDTH, HEIGHT, PITCH) };
@@ -358,6 +480,25 @@ pub unsafe extern "C" fn retro_load_game(game: *const ffi::retro_game_info) -> b
     let mut dir: *const c_char = std::ptr::null();
     if !env(ffi::RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, (&raw mut dir).cast()) || dir.is_null() {
         return false;
+    }
+    HW.lock().unwrap().callback = None;
+    if wants_gl() {
+        let mut cb = ffi::retro_hw_render_callback {
+            context_type: ffi::retro_hw_context_type::RETRO_HW_CONTEXT_OPENGL,
+            context_reset: Some(context_reset),
+            context_destroy: Some(context_destroy),
+            depth: true,
+            stencil: false,
+            bottom_left_origin: true,
+            version_major: 2,
+            version_minor: 1,
+            ..Default::default()
+        };
+        if !env(ffi::RETRO_ENVIRONMENT_SET_HW_RENDER, (&raw mut cb).cast()) {
+            log(c"no GL context: refusing to load");
+            return false;
+        }
+        HW.lock().unwrap().callback = Some(cb);
     }
     // SAFETY: guaranteed by the caller.
     if let Some(game) = unsafe { game.as_ref() } {

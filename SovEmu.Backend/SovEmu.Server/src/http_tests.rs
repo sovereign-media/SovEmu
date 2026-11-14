@@ -244,7 +244,7 @@ async fn browses_the_library() {
         StatusCode::NOT_FOUND
     );
     assert_eq!(h.call("GET", &format!("/api/games/{id}"), None).await.1["system"], "nes");
-    assert_eq!(h.call("GET", "/api/systems/n64/games", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.call("GET", "/api/systems/saturn/games", None).await.0, StatusCode::NOT_FOUND);
     assert_eq!(h.call("GET", "/api/games/9999", None).await.0, StatusCode::NOT_FOUND);
 
     // A new file appears after a rescan; a deleted one goes.

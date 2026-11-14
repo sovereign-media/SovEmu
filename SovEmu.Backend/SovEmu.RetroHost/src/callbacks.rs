@@ -7,12 +7,14 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use sovemu_libretro_ffi as ffi;
 
 use crate::MAX_PORTS;
-use crate::input::JoypadButtons;
+use crate::gl::{ContextRequest, GlApi};
+use crate::input::{AnalogSticks, JoypadButtons};
 use crate::video::{PixelFormat, VideoFrame};
 
 /// `RETRO_HW_FRAME_BUFFER_VALID`, a pointer-valued macro bindgen cannot translate.
@@ -36,6 +38,8 @@ pub(crate) struct HostState {
     /// Interleaved stereo samples produced so far this frame.
     pub audio: Vec<i16>,
     pub input: [JoypadButtons; MAX_PORTS],
+    /// Analog state per port; kept between frames until the frontend changes it.
+    pub analog: [AnalogSticks; MAX_PORTS],
     pub system_dir: CString,
     pub save_dir: CString,
     pub variables: BTreeMap<String, Variable>,
@@ -48,6 +52,40 @@ pub(crate) struct HostState {
     pub av_update: Option<ffi::retro_system_av_info>,
     pub shutdown_requested: bool,
     pub unsupported_logged: HashSet<c_uint>,
+    /// Whether this frontend offers GPU rendering at all (a GPU choice was configured).
+    pub hw_allowed: bool,
+    /// What the core asked for in `SET_HW_RENDER`.
+    pub hw: Option<HwRequest>,
+    /// The size of the frame the core rendered into the framebuffer this frame.
+    pub hw_frame: Option<(u32, u32)>,
+}
+
+/// A core's `SET_HW_RENDER` request, kept to set up and tear down its context.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HwRequest {
+    pub context: ContextRequest,
+    pub bottom_left_origin: bool,
+    pub context_reset: ffi::retro_hw_context_reset_t,
+    pub context_destroy: ffi::retro_hw_context_reset_t,
+}
+
+/// The framebuffer a GPU core renders into; read by `get_current_framebuffer`, which a core
+/// calls from inside `retro_run`, so it lives outside the state lock.
+pub(crate) static HW_FRAMEBUFFER: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "C" fn get_current_framebuffer() -> usize {
+    HW_FRAMEBUFFER.load(Ordering::Acquire)
+}
+
+unsafe extern "C" fn get_proc_address(sym: *const c_char) -> ffi::retro_proc_address_t {
+    if sym.is_null() {
+        return None;
+    }
+    // SAFETY: the core passes a NUL-terminated symbol name.
+    let p = crate::gl::proc_address(unsafe { CStr::from_ptr(sym) });
+    // SAFETY: a GL function pointer (or null, which becomes None); libretro's
+    // `retro_proc_address_t` is the generic function pointer the core casts back.
+    unsafe { std::mem::transmute::<*const c_void, ffi::retro_proc_address_t>(p) }
 }
 
 static STATE: Mutex<Option<HostState>> = Mutex::new(None);
@@ -201,11 +239,21 @@ impl HostState {
                 ffi::RETRO_ENVIRONMENT_GET_LANGUAGE => {
                     write(data, ffi::retro_language::RETRO_LANGUAGE_ENGLISH as c_uint)
                 }
+                ffi::RETRO_ENVIRONMENT_SET_HW_RENDER => {
+                    self.set_hw_render(data.cast::<ffi::retro_hw_render_callback>())
+                }
+                ffi::RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER if self.hw_allowed => {
+                    write(data, ffi::retro_hw_context_type::RETRO_HW_CONTEXT_OPENGL_CORE as c_uint)
+                }
+                // Cores that render from their own threads ask for this; the context is shared
+                // by being current on the thread that runs the core, which is what they expect.
+                ffi::RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT => self.hw_allowed,
                 // SovEmu answers `RETRO_DEVICE_ID_JOYPAD_MASK` in `input_state`.
                 ffi::RETRO_ENVIRONMENT_GET_INPUT_BITMASKS => true,
-                ffi::RETRO_ENVIRONMENT_GET_INPUT_DEVICE_CAPABILITIES => {
-                    write(data, 1u64 << ffi::RETRO_DEVICE_JOYPAD)
-                }
+                ffi::RETRO_ENVIRONMENT_GET_INPUT_DEVICE_CAPABILITIES => write(
+                    data,
+                    (1u64 << ffi::RETRO_DEVICE_JOYPAD) | (1u64 << ffi::RETRO_DEVICE_ANALOG),
+                ),
                 ffi::RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE => {
                     // Bit 0: video enabled, bit 1: audio enabled.
                     write(data, 0b11 as c_int)
@@ -223,7 +271,7 @@ impl HostState {
                 | ffi::RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
                 | ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
                 // Everything else, including GET_CORE_OPTIONS_VERSION (so cores fall back to the
-                // legacy SET_VARIABLES), SET_HW_RENDER (no GPU cores in v1) and callbacks we would
+                // legacy SET_VARIABLES), Vulkan's GET_HW_RENDER_INTERFACE and callbacks we would
                 // never call.
                 _ => {
                     if self.unsupported_logged.insert(cmd) {
@@ -233,6 +281,47 @@ impl HostState {
                 }
             }
         }
+    }
+
+    /// Accepts an OpenGL or OpenGL ES request when GPU rendering is allowed, filling in the
+    /// frontend's half of the struct. The context itself is made once the game has loaded.
+    ///
+    /// # Safety
+    ///
+    /// `hw` must be null or point to a writable `retro_hw_render_callback`.
+    unsafe fn set_hw_render(&mut self, hw: *mut ffi::retro_hw_render_callback) -> bool {
+        // SAFETY: guaranteed by the caller.
+        let Some(hw) = (unsafe { hw.as_mut() }) else { return false };
+        use ffi::retro_hw_context_type as t;
+        let api = match hw.context_type {
+            t::RETRO_HW_CONTEXT_OPENGL => GlApi::Gl,
+            t::RETRO_HW_CONTEXT_OPENGL_CORE => GlApi::GlCore,
+            t::RETRO_HW_CONTEXT_OPENGLES2
+            | t::RETRO_HW_CONTEXT_OPENGLES3
+            | t::RETRO_HW_CONTEXT_OPENGLES_VERSION => GlApi::Gles,
+            other => {
+                tracing::info!("the core asked for GPU API {other}, which SovEmu does not offer");
+                return false;
+            }
+        };
+        if !self.hw_allowed {
+            tracing::warn!("the core needs a GPU context, and GPU rendering is off");
+            return false;
+        }
+        let (major, minor) = match hw.context_type {
+            t::RETRO_HW_CONTEXT_OPENGLES2 => (2, 0),
+            t::RETRO_HW_CONTEXT_OPENGLES3 => (3, 0),
+            _ => (hw.version_major, hw.version_minor),
+        };
+        hw.get_current_framebuffer = Some(get_current_framebuffer);
+        hw.get_proc_address = Some(get_proc_address);
+        self.hw = Some(HwRequest {
+            context: ContextRequest { api, major, minor, depth: hw.depth, stencil: hw.stencil },
+            bottom_left_origin: hw.bottom_left_origin,
+            context_reset: hw.context_reset,
+            context_destroy: hw.context_destroy,
+        });
+        true
     }
 
     /// # Safety
@@ -325,7 +414,13 @@ pub(crate) unsafe extern "C" fn video_refresh(
 ) {
     with(|s| {
         // A null frame is a dupe (we answered GET_CAN_DUPE): the previous frame stands.
-        if data.is_null() || data == HW_FRAME_BUFFER_VALID {
+        if data.is_null() {
+            return;
+        }
+        // A GPU core rendered into the framebuffer: `Core::run_frame` reads it back.
+        if data == HW_FRAME_BUFFER_VALID {
+            s.hw_frame = Some((width, height));
+            s.video_updated = true;
             return;
         }
         let format = s.pixel_format;
@@ -355,13 +450,15 @@ pub(crate) unsafe extern "C" fn input_poll() {}
 pub(crate) unsafe extern "C" fn input_state(
     port: c_uint,
     device: c_uint,
-    _index: c_uint,
+    index: c_uint,
     id: c_uint,
 ) -> i16 {
     with(|s| {
         let Some(&buttons) = s.input.get(port as usize) else { return 0 };
-        if device & ffi::RETRO_DEVICE_MASK != ffi::RETRO_DEVICE_JOYPAD {
-            return 0;
+        match device & ffi::RETRO_DEVICE_MASK {
+            ffi::RETRO_DEVICE_JOYPAD => {}
+            ffi::RETRO_DEVICE_ANALOG => return s.analog[port as usize].read(buttons, index, id),
+            _ => return 0,
         }
         if id == ffi::RETRO_DEVICE_ID_JOYPAD_MASK {
             buttons.0 as i16

@@ -8,10 +8,11 @@ use libloading::Library;
 use sovemu_libretro_ffi as ffi;
 
 use crate::MAX_PORTS;
-use crate::callbacks::{self, HostState};
+use crate::callbacks::{self, HW_FRAMEBUFFER, HostState, HwRequest};
 use crate::error::Error;
-use crate::input::JoypadButtons;
-use crate::video::VideoFrame;
+use crate::gl::{GlContext, GpuChoice, RendererInfo};
+use crate::input::{AnalogSticks, JoypadButtons};
+use crate::video::{PixelFormat, VideoFrame};
 
 /// Set while a [`Core`] exists; see the crate docs for why there can only be one.
 static CORE_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -26,6 +27,8 @@ pub struct CoreOptions {
     pub save_dir: PathBuf,
     /// Core option values (`key`, `value`) that replace the core's defaults.
     pub variables: Vec<(String, String)>,
+    /// The GPU for cores that render with OpenGL; `None` refuses them (software cores only).
+    pub gpu: Option<GpuChoice>,
 }
 
 /// What a core says about itself, before any content is loaded.
@@ -189,6 +192,9 @@ pub struct Core {
     video: VideoFrame,
     audio: Vec<i16>,
     initialized: bool,
+    gpu: Option<GpuChoice>,
+    /// A GPU core's context and what it asked for.
+    hw: Option<(GlContext, HwRequest)>,
     /// Declared last so it is dropped last: every function pointer in `api` points into it.
     _library: Library,
 }
@@ -244,6 +250,7 @@ impl Core {
             system_dir: c_path(&options.system_dir)?,
             save_dir: c_path(&options.save_dir)?,
             overrides: options.variables.into_iter().collect(),
+            hw_allowed: options.gpu.is_some(),
             ..HostState::default()
         });
 
@@ -261,6 +268,8 @@ impl Core {
             video: VideoFrame::default(),
             audio: Vec::new(),
             initialized: false,
+            gpu: options.gpu,
+            hw: None,
             _library: library,
         };
 
@@ -376,6 +385,12 @@ impl Core {
         let mut raw = ffi::retro_system_av_info::default();
         // SAFETY: `raw` is a valid out-parameter.
         unsafe { (self.api.get_system_av_info)(&mut raw) };
+        if let Err(e) = self.start_hw(&raw.geometry) {
+            // SAFETY: the game loaded just now; nothing else holds it.
+            unsafe { (self.api.unload_game)() };
+            self.content = None;
+            return Err(e);
+        }
         callbacks::with(|s| {
             s.geometry_update = None;
             s.av_update = None;
@@ -404,14 +419,19 @@ impl Core {
             s.audio.clear();
         });
 
+        if let Some((ctx, _)) = &self.hw {
+            ctx.make_current();
+        }
         // SAFETY: a game is loaded; the callbacks only take the state lock briefly.
         unsafe { (self.api.run)() };
 
         let mut av_changed = false;
         let mut video_updated = false;
+        let mut hw_frame = None;
         callbacks::with(|s| {
             video_updated = s.video_updated;
-            if video_updated {
+            hw_frame = s.hw_frame.take();
+            if video_updated && hw_frame.is_none() {
                 // Swap rather than copy: next frame the callback reuses our old allocation.
                 std::mem::swap(&mut self.video, &mut s.video);
             }
@@ -426,12 +446,70 @@ impl Core {
             }
         });
 
+        if let (Some((ctx, request)), Some((width, height))) = (&mut self.hw, hw_frame) {
+            if av_changed && let Some(av) = &self.av_info {
+                ctx.resize(av.max_width, av.max_height).map_err(Error::Gpu)?;
+            }
+            ctx.read(width, height, request.bottom_left_origin, &mut self.video.data);
+            self.video.width = width;
+            self.video.height = height;
+            self.video.format = PixelFormat::Rgba8888;
+        }
+
         let av_changed = if av_changed { self.av_info } else { None };
         Ok(FrameOutput { video: &self.video, video_updated, audio: &self.audio, av_changed })
     }
 
+    /// Makes the core's GL context and calls its `context_reset`, if it asked for one.
+    fn start_hw(&mut self, geometry: &ffi::retro_game_geometry) -> Result<(), Error> {
+        let Some(request) = callbacks::with(|s| s.hw).flatten() else { return Ok(()) };
+        let choice = self.gpu.clone().ok_or_else(|| Error::Gpu("GPU rendering is off".into()))?;
+        let (w, h) = (
+            geometry.max_width.max(geometry.base_width),
+            geometry.max_height.max(geometry.base_height),
+        );
+        let ctx = GlContext::create(&choice, request.context, w, h).map_err(Error::Gpu)?;
+        tracing::info!(
+            "GPU rendering on {} ({}){}",
+            ctx.info.renderer,
+            ctx.info.version,
+            if ctx.info.software { ", in software" } else { "" }
+        );
+        HW_FRAMEBUFFER.store(ctx.framebuffer() as usize, Ordering::Release);
+        self.hw = Some((ctx, request));
+        if let Some(reset) = request.context_reset {
+            // SAFETY: the core's own callback, called with its context current, as libretro
+            // requires after a successful `retro_load_game`.
+            unsafe { reset() };
+        }
+        Ok(())
+    }
+
+    /// The renderer a GPU core is drawing with; `None` for a software core.
+    pub fn renderer(&self) -> Option<&RendererInfo> {
+        self.hw.as_ref().map(|(ctx, _)| &ctx.info)
+    }
+
+    fn make_current(&self) {
+        if let Some((ctx, _)) = &self.hw {
+            ctx.make_current();
+        }
+    }
+
+    /// Sets the analog sticks and triggers (`analog[n]` is port `n`; missing ports are
+    /// centred). They hold until changed, unlike buttons, which each frame takes afresh.
+    pub fn set_analog(&mut self, analog: &[AnalogSticks]) {
+        callbacks::with(|s| {
+            s.analog = [AnalogSticks::CENTRED; MAX_PORTS];
+            for (port, a) in s.analog.iter_mut().zip(analog) {
+                *port = *a;
+            }
+        });
+    }
+
     /// Resets the running game, as the console's reset button would.
     pub fn reset(&mut self) {
+        self.make_current();
         if self.content.is_some() {
             // SAFETY: a game is loaded.
             unsafe { (self.api.reset)() };
@@ -443,6 +521,7 @@ impl Core {
         if self.content.is_none() {
             return Err(Error::NoGameLoaded);
         }
+        self.make_current();
         // SAFETY: a game is loaded.
         let size = unsafe { (self.api.serialize_size)() };
         if size == 0 {
@@ -462,6 +541,7 @@ impl Core {
         if self.content.is_none() {
             return Err(Error::NoGameLoaded);
         }
+        self.make_current();
         // SAFETY: `state` is a readable buffer of the given length.
         if unsafe { (self.api.unserialize)(state.as_ptr().cast(), state.len()) } {
             Ok(())
@@ -530,8 +610,15 @@ impl Core {
 
 impl Drop for Core {
     fn drop(&mut self) {
-        // SAFETY: tear down in the reverse order of setup; the library is still open.
+        // SAFETY: tear down in the reverse order of setup; the library is still open. A GPU
+        // core frees its GL objects in `context_destroy` (context current), before unloading.
         unsafe {
+            if let Some((ctx, request)) = &self.hw {
+                ctx.make_current();
+                if let Some(destroy) = request.context_destroy {
+                    destroy();
+                }
+            }
             if self.content.take().is_some() {
                 (self.api.unload_game)();
             }
@@ -539,6 +626,9 @@ impl Drop for Core {
                 (self.api.deinit)();
             }
         }
+        // The context goes after the core: `deinit` may still touch GL.
+        self.hw = None;
+        HW_FRAMEBUFFER.store(0, Ordering::Release);
         callbacks::clear();
         CORE_ACTIVE.store(false, Ordering::Release);
     }
