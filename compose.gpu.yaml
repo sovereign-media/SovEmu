@@ -8,9 +8,8 @@
 # SOVEMU_RENDER_GID (often 104, 107 or 109). At startup the server tries every GPU it can see
 # and logs which one 3D games use; without this file they render in software (slowly).
 #
-# Works with the GPUs Mesa drives: AMD (radeonsi) and Intel (iris, crocus). NVIDIA's own driver
-# is built for glibc and does not load in this Alpine image; an NVIDIA card falls back to
-# software rendering.
+# For the GPUs Mesa drives: AMD (radeonsi) and Intel (iris, crocus), and NVIDIA cards on the
+# open-source nouveau driver. For an NVIDIA card on NVIDIA's own driver use compose.nvidia.yaml.
 services:
   sovemu:
     devices:

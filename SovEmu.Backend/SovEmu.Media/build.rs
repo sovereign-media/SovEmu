@@ -1,5 +1,5 @@
 //! Links the system libvpx and libopus (found with pkg-config) and generates bindings for the
-//! parts of their APIs SovEmu uses. On Alpine: `libvpx-dev opus-dev pkgconf`; on macOS:
+//! parts of their APIs SovEmu uses. On Debian: `libvpx-dev libopus-dev pkg-config`; on macOS:
 //! `brew install libvpx opus pkgconf`.
 
 use std::env;

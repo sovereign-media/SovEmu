@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use sovemu_protocol::SessionDescription;
+use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 use sovemu_protocol::ipc::{Reply, Request};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
@@ -120,6 +121,18 @@ pub struct Session {
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     next_id: AtomicU64,
     connected: AtomicBool,
+    /// The options the core declared with its game loaded (the worker's `options` reply).
+    declared: Mutex<Option<Declared>>,
+}
+
+/// A core's options and categories, as a session reported them.
+pub type Declared = (Vec<CoreOption>, Vec<CoreCategory>);
+
+impl Session {
+    /// The options the core declared once its game loaded, taken (once) to be remembered.
+    pub fn take_declared(&self) -> Option<Declared> {
+        self.declared.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
 }
 
 impl std::fmt::Debug for Session {
@@ -306,11 +319,15 @@ impl Workers {
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
 
+        let mut declared = None;
         let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
                     Ok(Reply::Ready { core, width, height, fps, .. }) => {
                         return Ok((core, width, height, fps));
+                    }
+                    Ok(Reply::Options { options, categories }) => {
+                        declared = Some((options, categories));
                     }
                     Ok(Reply::Progress { phase, read, total }) => {
                         if let Some(id) = &launch.start_id {
@@ -348,6 +365,7 @@ impl Workers {
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             connected: AtomicBool::new(false),
+            declared: Mutex::new(declared),
         });
         tracing::info!("session {id}: {} ({}) on UDP {port}", launch.title, launch.system);
 
@@ -366,7 +384,7 @@ impl Workers {
                             let _ = tx.send(reply);
                         }
                     }
-                    Reply::Ready { .. } | Reply::Progress { .. } => {}
+                    Reply::Ready { .. } | Reply::Progress { .. } | Reply::Options { .. } => {}
                 }
             }
             // The worker exited: idle timeout, shutdown, or a crash.

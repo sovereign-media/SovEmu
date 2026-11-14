@@ -51,6 +51,35 @@ pub enum LoadPhase {
     Content,
 }
 
+/// A core option as the core declares it (core options v2 where the core uses them): what the
+/// probe reports, and what a session reports once its game has loaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreOption {
+    pub key: String,
+    pub description: String,
+    /// What it does, where the core explains it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub info: String,
+    /// The key of its [`CoreCategory`], where the core groups its options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    pub choices: Vec<String>,
+    /// A display label per choice.
+    #[serde(default)]
+    pub labels: Vec<String>,
+    /// The core's own default.
+    pub default: String,
+}
+
+/// A group of core options ("Video", "Audio", …).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoreCategory {
+    pub key: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub info: String,
+}
+
 /// Worker → server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -64,6 +93,13 @@ pub enum Reply {
         read: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         total: Option<u64>,
+    },
+    /// The options the core declared, sent just before [`Reply::Ready`]. Some cores only
+    /// declare them once a game is loaded, which the probe (no game) cannot see.
+    Options {
+        options: Vec<CoreOption>,
+        #[serde(default)]
+        categories: Vec<CoreCategory>,
     },
     /// The core is loaded and the worker is listening for WebRTC on `udp_port`.
     Ready {

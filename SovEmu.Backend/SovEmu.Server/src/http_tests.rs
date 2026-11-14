@@ -297,6 +297,15 @@ async fn runs_a_game_session_in_a_worker() {
     assert_eq!(session["title"], "Test Game");
     let sid = session["id"].as_str().unwrap().to_owned();
 
+    // The options the core declared with its game loaded are kept for the Settings page.
+    let (core, options): (String, String) =
+        sqlx::query_as("SELECT core, options FROM core_options")
+            .fetch_one(&h.state.db)
+            .await
+            .unwrap();
+    assert!(core.starts_with("fceumm_libretro."), "{core}");
+    assert!(options.contains("sovemu_test_pattern"), "{options}");
+
     let (_, current) = h.call("GET", "/api/sessions/current", None).await;
     assert_eq!(current["id"], sid.as_str());
     assert_eq!(

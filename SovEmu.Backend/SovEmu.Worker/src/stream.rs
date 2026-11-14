@@ -17,8 +17,8 @@ use crate::loading::{self, Report};
 use crate::sysdir::SystemDir;
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
-use sovemu_protocol::ipc::LoadPhase;
 use sovemu_protocol::ipc::Request;
+use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
 use sovemu_protocol::{
     ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
@@ -225,6 +225,11 @@ impl Session {
     }
 
     /// The core's name and the content's geometry and timing.
+    /// The options the core has declared now that its game is loaded.
+    pub fn options(&self) -> (Vec<CoreOption>, Vec<CoreCategory>) {
+        declared_options(&self.core)
+    }
+
     pub fn describe(&self) -> (String, AvInfo) {
         let av = *self.core.av_info().expect("a game is loaded");
         (self.core.system_info().library_name.clone(), av)
@@ -654,6 +659,30 @@ impl Session {
         self.persist.tick(&mut self.core, now);
         Ok(())
     }
+}
+
+/// A core's declared options and categories, in the protocol's terms (each option with its
+/// core default, not the value SovEmu set).
+pub fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategory>) {
+    let options = core
+        .variables()
+        .into_iter()
+        .map(|v| CoreOption {
+            key: v.key,
+            description: v.description,
+            info: v.info,
+            category: v.category,
+            choices: v.options,
+            labels: v.labels,
+            default: v.default,
+        })
+        .collect();
+    let categories = core
+        .option_categories()
+        .into_iter()
+        .map(|c| CoreCategory { key: c.key, description: c.description, info: c.info })
+        .collect();
+    (options, categories)
 }
 
 #[cfg(test)]

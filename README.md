@@ -20,9 +20,11 @@ and iOS clients.
 
 ## Container
 
-SovEmu ships as one self-contained Alpine Linux image. The libretro cores are built from
-source at pinned commits ([scripts/cores.list](scripts/cores.list)), and every core is checked
-for loading during the build.
+SovEmu ships as one self-contained Debian image for x86_64, the same on every host, with or
+without a GPU. The libretro cores come prebuilt from a libretro stable release (1.22.2), pinned
+by version and checksum in [scripts/cores.list](scripts/cores.list), and every core is checked
+for loading during the build. libretro's stable releases have no Linux arm64 cores, so the image
+is x86_64 only; an arm64 machine (a Mac) builds and runs it under x86_64 emulation.
 
 ```bash
 scripts/fetch-free-roms.sh            # free homebrew into data/roms, or add your own
@@ -52,14 +54,18 @@ GPU probe:
 `GET /api/gpu` (admin) returns the same, and the system list marks each 3D system's `rendering`
 as `gpu`, `software` or `off`.
 
-- **Docker:** `docker compose -f compose.yaml -f compose.gpu.yaml up -d` passes `/dev/dri`
-  through. Set `SOVEMU_RENDER_GID` in `.env` to the group that owns the render node (`stat -c %g
-  /dev/dri/renderD128` on the host).
+- **Docker, AMD or Intel:** `docker compose -f compose.yaml -f compose.gpu.yaml up -d` passes
+  `/dev/dri` through. Set `SOVEMU_RENDER_GID` in `.env` to the group that owns the render node
+  (`stat -c %g /dev/dri/renderD128` on the host).
+- **Docker, NVIDIA:** install NVIDIA's [container
+  toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) on the host, then
+  `docker compose -f compose.yaml -f compose.nvidia.yaml up -d`. The toolkit adds the host's
+  NVIDIA driver to the container; the image asks it for OpenGL/EGL, Vulkan and NVENC.
 - **Kubernetes:** set `gpu.resources` to your GPU device plugin's resource (`amd.com/gpu: 1`,
-  `gpu.intel.com/i915: 1`), or use `gpu.hostDevice`.
-- **Which GPUs:** the ones Mesa drives, which means AMD (radeonsi) and Intel (iris, crocus).
-  NVIDIA's own driver is built for glibc and doesn't load in this Alpine image, so an NVIDIA card
-  falls back to software rendering.
+  `gpu.intel.com/i915: 1`, `nvidia.com/gpu: 1`), or use `gpu.hostDevice`. For NVIDIA, also set
+  `gpu.runtimeClassName: nvidia` if the cluster does not make NVIDIA's runtime the default.
+- **Which GPUs:** AMD (radeonsi) and Intel (iris, crocus) through Mesa in the image; NVIDIA
+  through NVIDIA's own driver (or Mesa's nouveau/NVK on the open-source driver).
 - **Dolphin** needs its `Sys` data folder. The image ships it beside the cores and overlays it on
   the BIOS folder, so the library stays read-only.
 - **3D systems need BIOS files**, laid out as in Batocera:
@@ -78,7 +84,9 @@ as `gpu`, `software` or `off`.
 Each emulator has its own settings: rendering, internal resolution, frame skipping and so on
 (43 for Snes9x, 113 for Dolphin). Admins change them per system on the **Settings** page: pick
 the system from the dropdown, and its settings are grouped (System, Video, Audio, Input, then the
-emulator's own groups), each with the emulator's explanation of what it does. The worker speaks
+emulator's own groups), each with the emulator's explanation of what it does. A few emulators
+(the NES's FCEUmm, for one) list their settings only once a game is running; their page fills in
+after any game of that system has been played once. The worker speaks
 libretro's core options v2, so groups, explanations and value labels come from the emulator
 itself; settings an emulator leaves ungrouped are placed by keyword. Changes apply to the next
 game started.

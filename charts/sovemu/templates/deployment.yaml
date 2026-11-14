@@ -36,6 +36,9 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.gpu.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
       {{- if .Values.media.hostNetwork }}
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet

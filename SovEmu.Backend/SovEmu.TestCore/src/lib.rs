@@ -7,6 +7,7 @@
 //!   honour the pitch. Pixel `(x, y)` on frame `n` is `R = x + n`, `G = y + n` (both mod 256) and
 //!   `B` = the low byte of the held buttons. Holding SELECT dupes the frame (passes null).
 //!   With the core option `sovemu_test_pattern=solid` every pixel is [`SOLID_COLOUR`].
+//! - **Stdout:** prints a line to stdout in `retro_init`, as some real cores do.
 //! - **Core options:** declared through core options v2 (a "Video" category, explanations and
 //!   value labels) when the frontend reports version 2, else through `SET_VARIABLES`.
 //! - **Audio:** 48 kHz at 60 fps, so exactly 800 stereo frames per video frame, of a 440 Hz
@@ -347,6 +348,9 @@ pub extern "C" fn retro_set_input_state(cb: ffi::retro_input_state_t) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn retro_init() {
+    // Like PCSX-ReARMed's Lightrec, chatter on stdout: a frontend whose stdout is a protocol
+    // channel must not let it through.
+    println!("sovemu test core: initialising (printed to stdout)");
     let mut log_cb = ffi::retro_log_callback::default();
     let log_fn = if env(ffi::RETRO_ENVIRONMENT_GET_LOG_INTERFACE, (&raw mut log_cb).cast()) {
         log_cb.log

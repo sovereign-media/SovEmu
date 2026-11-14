@@ -162,23 +162,30 @@ relays to that session's worker. The answer carries the server's
 host candidates. The worker is ICE-lite and uses one UDP port for everything in its session. The client offers receive-only video and audio plus the `input` DataChannel
 (unordered, no retransmits).
 
-### Deployment: one Alpine container
+### Deployment: one Debian container
 
-SovEmu ships as a single self-contained image, Alpine (musl), with Debian as the fallback
-only if a needed core cannot be made to work on musl. Everything runs in that one container:
+SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.
+(It began on Alpine; it moved because NVIDIA's driver, which most NVIDIA owners run and which
+the NVIDIA container toolkit injects into the container, is built for glibc and cannot load on
+musl. Mesa in the image still covers AMD, Intel and software rendering.) Everything runs in
+that one container:
 the server, the per-session worker processes it spawns, and the cores. `tini` is PID 1, so
 exited workers are reaped.
 
-- **Cores are built from source** at commits pinned in `scripts/cores.list`, because the
-  libretro buildbot's Linux cores are glibc builds and will not load on musl. Bumping a core
-  means changing a hash in a reviewed PR.
-- **The worker links musl dynamically** (`-C target-feature=-crt-static`). A statically
-  linked binary cannot `dlopen` a core.
+- **Cores come prebuilt from a libretro stable release** (the bundle RetroArch ships for Linux
+  x86_64), pinned by version and SHA-256 in `scripts/cores.list`; never nightly builds. This
+  keeps SovEmu close to official releases without compiling emulators (they were built from
+  source until the move to Debian, which musl required). Moving to a newer release is a
+  reviewed change of version and hash. The cost: stable releases have no Linux arm64 cores, so
+  the image is x86_64 only.
+- **GPU drivers are found at run time:** libglvnd's libEGL dispatches to Mesa or to NVIDIA's
+  driver, whichever the host provides; the image sets `NVIDIA_DRIVER_CAPABILITIES` so the
+  toolkit injects graphics (and video, for NVENC later), not only compute.
 - **Every shipped core is probed at image build time** (`sovemu-worker probe`), which writes
   `/opt/sovemu/cores/manifest.json`. The server will read it to map file extensions to cores.
 - The image runs as uid 1000 and keeps everything mutable under the `/data` volume: `roms/`,
   `system/` (BIOS), `saves/`, and later the SQLite database.
-- Phase 1 adds `libvpx` and `opus` to the runtime image, both packaged by Alpine.
+- The runtime image carries `libvpx` and `libopus` for encoding, from Debian.
 
 ### Draft schema
 

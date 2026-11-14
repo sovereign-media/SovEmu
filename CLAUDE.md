@@ -33,11 +33,15 @@ instead (as Sovereign's server takes its SPA).
 - **Never commit cores, ROMs or BIOS files.** `cores/`, `roms/`, `system/` and `data/` are
   gitignored; `scripts/fetch-cores.sh` downloads cores for local testing. Tests use
   `SovEmu.TestCore`.
-- **The deliverable is one self-contained Alpine (musl) image**, `SovEmu.Backend/Dockerfile`.
-  Never ship a buildbot core in it: those are glibc builds and do not load on musl. Shipped
-  cores are built from source at the commits pinned in `scripts/cores.list`. Never build the
-  worker with musl's default static linking (`crt-static`): a static binary cannot `dlopen`.
-  Debian is the fallback only if a needed core cannot be made to work on musl.
+- **The deliverable is one self-contained Debian (glibc) x86_64 image**,
+  `SovEmu.Backend/Dockerfile`, the same for every host: Mesa in the image drives AMD, Intel and
+  software rendering, and the NVIDIA container toolkit injects NVIDIA's own (glibc) driver when
+  there is one. Never split it into per-GPU images.
+- **Shipped cores come from a libretro stable release**, never nightly: `scripts/cores.list`
+  pins the release version and the SHA-256 of its `RetroArch_cores.7z`, and
+  `scripts/install-cores.sh` installs the listed cores plus data folders from git at
+  pinned commits. x86_64 only, because stable releases have no Linux arm64 cores. Moving to a
+  new release also moves `FBNEO_COMMIT` (`SovEmu.Server/src/metadata/fbneo.rs`).
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
   `RetroHost` or `Media` into `SovEmu.Server`.
@@ -71,7 +75,8 @@ instead (as Sovereign's server takes its SPA).
   thread that runs the core and must be made current before any call into it. The server only
   ever learns about GPUs from `sovemu-worker gpu` (it never loads GL); a device counts only
   if it drew a frame and read it back, and `SOVEMU_GPU` falls back to software (llvmpipe), then
-  to no 3D systems. Never ship a core that needs Vulkan or a glibc GPU driver.
+  to no 3D systems. A GPU with no DRM node (NVIDIA without `nvidia-drm`) is reported as
+  `auto`, which workers resolve hardware-first. Vulkan cores are not supported yet.
 - **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** `/metrics` stays off unless
@@ -122,18 +127,22 @@ loaded per process.
 ## Container
 
 `SovEmu.Backend/Dockerfile` (context: the repository root) has five stages: `web` runs the web
-client's tests and builds it on `node:<ver>-alpine`; `cores` builds every core in
-`scripts/cores.list` with `scripts/build-cores.sh`; `build` compiles the workspace on
-`rust:<ver>-alpine` with `RUSTFLAGS=-C target-feature=-crt-static` against Alpine's libvpx and
-opus; `test` runs `cargo test --workspace` on musl; `runtime` is plain Alpine with `libgcc`,
-`libstdc++`, `libvpx`, `opus` and `tini`, the web client in `/opt/sovemu/web`, runs as uid 1000,
+client's tests and builds it on `node:<ver>-trixie-slim`; `cores` installs every core in
+`scripts/cores.list` from the libretro stable release with `scripts/install-cores.sh` (refusing
+to build for anything but `linux/amd64`); `build` compiles the
+workspace on `rust:<ver>-trixie` against Debian's libvpx and libopus; `test` runs
+`cargo test --workspace` with Mesa's llvmpipe; `runtime` is `debian:trixie-slim` with
+`libstdc++6`, `libvpx9`, `libopus0`, `tini`, libglvnd and Mesa (GL, EGL; no Vulkan drivers yet),
+`libxi6` and `libusb-1.0-0` (the release's Dolphin links them), sets
+`NVIDIA_DRIVER_CAPABILITIES=graphics,video,utility` for NVIDIA's toolkit, has the web client in
+`/opt/sovemu/web`, runs as uid 1000,
 keeps data in `/data`, exposes 8080/tcp (web + API) and 50000/udp (all WebRTC media), and runs
 `sovemu-worker probe` over every core at build time (writing `/opt/sovemu/cores/manifest.json`),
 so a core that cannot load fails the build. `compose.yaml` builds it, mounts `./data` and runs
 `serve`.
 
 ```bash
-docker build -f SovEmu.Backend/Dockerfile --target test .   # tests on musl
+docker build --platform linux/amd64 -f SovEmu.Backend/Dockerfile --target test .   # tests
 docker compose build && docker compose run --rm sovemu probe
 scripts/fetch-free-roms.sh && docker compose up --build     # then open http://localhost:8080
 ```

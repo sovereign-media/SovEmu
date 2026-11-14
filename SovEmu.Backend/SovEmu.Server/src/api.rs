@@ -282,7 +282,7 @@ async fn launch(
             game_id: game.id,
             system: game.system.clone(),
             title: game.title.clone(),
-            core,
+            core: core.clone(),
             rom,
             save_dir,
             state_dir,
@@ -292,6 +292,9 @@ async fn launch(
         })
         .await
         .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;
+    if let Some(declared) = session.take_declared() {
+        crate::settings::remember(&state.db, &core, &declared).await;
+    }
     let codes = crate::cheats::enabled_codes(&state, user.id, game.id).await?;
     if !codes.is_empty()
         && let Err(e) =

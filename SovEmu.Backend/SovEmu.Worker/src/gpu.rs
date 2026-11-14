@@ -3,6 +3,8 @@
 //! The server runs this once at startup (cores and GL drivers only ever load in workers) and
 //! keeps the answer. A device counts only if it drew a frame and read it back.
 
+use std::io::Write;
+
 use anyhow::Result;
 use serde::Serialize;
 use sovemu_retro_host::gl;
@@ -26,15 +28,23 @@ struct Report {
     /// Why nothing could be probed (no libEGL).
     error: Option<String>,
     devices: Vec<Device>,
-    /// What `auto` picks: a render node, `software`, or null if nothing works.
+    /// What `auto` picks: a render node, `software`, `auto` (a GPU with no render node), or
+    /// null if nothing works.
     best: Option<String>,
 }
 
 pub fn run() -> Result<()> {
+    // GL drivers may print to stdout; the JSON report must be the only thing on it.
+    let mut out = sovemu_retro_host::take_stdout()?;
     let report = match gl::probe() {
         Ok(found) => {
-            let best =
-                gl::best(&found).map(|r| r.node.clone().unwrap_or_else(|| "software".to_owned()));
+            // A GPU with no DRM node (NVIDIA's driver without nvidia-drm) is still a GPU:
+            // workers find it again with `auto`, which tries hardware before software.
+            let best = gl::best(&found).map(|r| match (&r.node, r.kind) {
+                (Some(node), _) => node.clone(),
+                (None, "software") => "software".to_owned(),
+                (None, _) => "auto".to_owned(),
+            });
             let devices = found
                 .into_iter()
                 .map(|r| Device {
@@ -52,6 +62,6 @@ pub fn run() -> Result<()> {
         }
         Err(e) => Report { error: Some(e), devices: Vec::new(), best: None },
     };
-    println!("{}", serde_json::to_string_pretty(&report)?);
+    writeln!(out, "{}", serde_json::to_string_pretty(&report)?)?;
     Ok(())
 }

@@ -1,30 +1,40 @@
-# The libretro cores SovEmu ships, built from source by scripts/build-cores.sh (the container
-# image builds them this way: the buildbot's Linux cores are glibc builds and do not load on
-# Alpine's musl). One core per line:
+# The libretro cores SovEmu ships, read by scripts/install-cores.sh (the container image's
+# `cores` stage). They come prebuilt from a libretro *stable* release (the bundle RetroArch
+# ships for Linux x86_64), checked against its SHA-256, never from nightly builds. x86_64 only:
+# libretro's stable releases have no Linux arm64 cores.
 #
-#   <name>  <git repository>  <commit>  <build command, run from the checkout root>
+# To move to a newer stable release: change the version and the hash (sha256sum of
+# RetroArch_cores.7z from https://buildbot.libretro.com/stable/<version>/linux/x86_64/), rebuild
+# the image (it runs `sovemu-worker probe` over every core, so one that cannot load fails the
+# build), and bump FBNEO_COMMIT in SovEmu.Server/src/metadata/fbneo.rs to the FBNeo in the
+# release (its probe version ends in the commit).
 #
-# The build command can use `$out`, the output directory.
-#
-# The build must leave <name>_libretro.so somewhere in the checkout. Pin full commit hashes;
-# bump them deliberately, and rebuild the image to check every core still loads (the build runs
-# `sovemu-worker probe` over all of them).
+# Lines:
+#   release <version> <sha256 of RetroArch_cores.7z>
+#   core <name>                                  <name>_libretro.so is taken from the bundle
+#   data <repo> <commit> <path in repo> <dest>   a data folder a core needs, copied to
+#                                                <cores>/system/<dest> (the worker overlays it
+#                                                on the BIOS folder)
 #
 # Licences: fceumm, gambatte, mgba and pcsx_rearmed are GPL/MPL; snes9x, genesis_plus_gx and
 # fbneo are non-commercial. SovEmu is non-commercial, so all are usable (see docs/ARCHITECTURE.md).
 
-fceumm           https://github.com/libretro/libretro-fceumm.git    e0f3086a8104f8fbbe49a2615b10401504a9533f  make -f Makefile.libretro
-snes9x           https://github.com/libretro/snes9x.git             fae2fea08f74180759ef540ee94259213f503480  make -C libretro
-mgba             https://github.com/libretro/mgba.git               7a12d6d4b9acb14c0ae62c9166b6a2f3d08007f6  cmake -B build -DLIBMGBA_ONLY=ON -DBUILD_LIBRETRO=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel
-gambatte         https://github.com/libretro/gambatte-libretro.git  77f2567d718b8973d02caa2daa8dce4953faf811  make -f Makefile.libretro
-genesis_plus_gx  https://github.com/libretro/Genesis-Plus-GX.git    b9c2316441978d4015ba30e9a95d9b0e6f8ee981  make -f Makefile.libretro
-pcsx_rearmed     https://github.com/libretro/pcsx_rearmed.git       7b0e8f8fadfbce3d170d195b9d9eecaabfa08c8e  make -f Makefile.libretro
-fbneo            https://github.com/libretro/FBNeo.git              e6c7ee3d3a34b12f03054d669123ebe813397a8c  make -C src/burner/libretro
+release 1.22.2 4b7ed8dc97d4bf035fce182c64b5658c7662e2e9e5d42129538afbd4b6096307
+
+core fceumm
+core snes9x
+core mgba
+core gambatte
+core genesis_plus_gx
+core pcsx_rearmed
+core fbneo
 # 3D cores: render with OpenGL through the frontend's EGL context (a GPU, or Mesa's llvmpipe).
-mupen64plus_next https://github.com/libretro/mupen64plus-libretro-nx.git 15bada85906593376e8fd697f1b0b3af3a20f512  make FORCE_GLES=0
-flycast          https://github.com/flyinghead/flycast.git          3a5267a5e32438026e1c5b97d5de6cd77236f72c  cmake -B build -G Ninja -DLIBRETRO=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build
-# Dolphin also needs its Sys data (fonts, game settings), shipped as system/dolphin-emu/Sys beside the cores: the worker overlays it on the BIOS folder.
-dolphin          https://github.com/libretro/dolphin.git            0863ee3700978e826b0d95b72d4742e537a7325b  cmake -B build -G Ninja -DLIBRETRO=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_QT=OFF -DENABLE_NOGUI=OFF -DENABLE_X11=OFF -DENABLE_EVDEV=OFF -DENABLE_LLVM=OFF -DUSE_UPNP=OFF -DENABLE_PULSEAUDIO=OFF -DENABLE_ALSA=OFF -DENABLE_CUBEB=OFF -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DUSE_DISCORD_PRESENCE=OFF -DENABLE_HWDB=OFF && cmake --build build && mkdir -p "$out/system/dolphin-emu" && cp -r Data/Sys "$out/system/dolphin-emu/"
-# PCSX2 (LRPS2, x86-64 and arm64). Ships its game database as system/pcsx2/resources. Its initial-exec TLS
-# hint relies on glibc's static-TLS surplus: musl refuses to dlopen such a library, so it is patched out.
-pcsx2            https://github.com/libretro/ps2.git                9691a4f995862436c3d25ce686ac3bd02065ad62  sed -i 's/__attribute__((tls_model("initial-exec")))//' common/Pcsx2Defs.h && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLIBRETRO=ON && cmake --build build && mkdir -p "$out/system/pcsx2" && cp -r bin/resources "$out/system/pcsx2/"
+core mupen64plus_next
+core flycast
+core dolphin
+core pcsx2
+
+# Dolphin's Sys (fonts, game settings) and PCSX2's game database. Not in the release bundle,
+# and libretro's asset zips of them are rebuilt nightly, so they come from git at pinned commits.
+data https://github.com/libretro/dolphin.git  0863ee3700978e826b0d95b72d4742e537a7325b  Data/Sys       dolphin-emu/Sys
+data https://github.com/libretro/ps2.git      9691a4f995862436c3d25ce686ac3bd02065ad62  bin/resources  pcsx2/resources

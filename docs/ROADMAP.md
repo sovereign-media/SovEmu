@@ -176,7 +176,12 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Core options v1/v2 in RetroHost (`GET_CORE_OPTIONS_VERSION` = 2): the settings page groups
       each system's settings by the core's categories (else by keyword) under a system dropdown,
       and shows the core's explanation of each
-- [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
+- [x] The image moves from Alpine to Debian (trixie), so NVIDIA's own driver works through the
+      NVIDIA container toolkit (`compose.nvidia.yaml`, the chart's `gpu.runtimeClassName`); one
+      image for every host. GPUs without a DRM node are used too
+- [x] Cores prebuilt from the libretro stable release (1.22.2, pinned by SHA-256) instead of
+      compiled from source; the image is x86_64 only
+- [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend)
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 
 ## Later

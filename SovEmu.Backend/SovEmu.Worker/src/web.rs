@@ -64,8 +64,12 @@ pub fn lookup(root: &Path, url_path: &str) -> Option<StaticFile> {
 mod tests {
     use super::*;
 
+    /// A fresh site per call: tests run in parallel, and one rewriting files another is
+    /// reading made it read them empty.
     fn site() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("sovemu-web-test-{}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("sovemu-web-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(root.join("_astro")).unwrap();
         std::fs::create_dir_all(root.join("about")).unwrap();
         std::fs::write(root.join("index.html"), "<h1>home</h1>").unwrap();
