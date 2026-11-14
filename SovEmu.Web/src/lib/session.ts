@@ -14,6 +14,11 @@ export interface SessionEvents {
   onState?: (state: SessionState) => void;
 }
 
+export interface SessionOptions {
+  /** STUN/TURN servers from the server's configuration (`/api/config`). */
+  iceServers?: RTCIceServer[];
+}
+
 export class Session {
   readonly pc: RTCPeerConnection;
   /** Recent input round trips (send -> server applies on a frame -> ack), in ms. */
@@ -33,8 +38,9 @@ export class Session {
     private readonly video: HTMLVideoElement,
     private readonly input: InputState,
     private readonly events: SessionEvents = {},
+    options: SessionOptions = {},
   ) {
-    this.pc = new RTCPeerConnection();
+    this.pc = new RTCPeerConnection({ iceServers: options.iceServers ?? [] });
     this.pc.addTransceiver("video", { direction: "recvonly" });
     this.pc.addTransceiver("audio", { direction: "recvonly" });
     this.channel = this.pc.createDataChannel(INPUT_CHANNEL, { ordered: false, maxRetransmits: 0 });

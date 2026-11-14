@@ -12,6 +12,7 @@ mod error;
 #[cfg(test)]
 mod http_tests;
 mod library;
+mod ops;
 mod systems;
 mod workers;
 
@@ -81,9 +82,26 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_SECURE_COOKIES")]
     pub secure_cookies: bool,
 
+    /// STUN/TURN servers for browsers, as a JSON array of `RTCIceServer` objects, e.g.
+    /// `[{"urls":"turn:turn.example:3478","username":"u","credential":"p"}]`. Only needed when
+    /// clients cannot reach the session UDP ports directly.
+    #[arg(long, env = "SOVEMU_ICE_SERVERS", default_value = "[]", value_parser = parse_ice_servers)]
+    pub ice_servers: serde_json::Value,
+
+    /// Bearer token that enables `GET /metrics` (Prometheus). Unset: metrics are off.
+    #[arg(long, env = "SOVEMU_METRICS_TOKEN")]
+    pub metrics_token: Option<String>,
+
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
+}
+
+fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
+    let value: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("not JSON: {e}"))?;
+    let ok =
+        value.as_array().is_some_and(|servers| servers.iter().all(|s| s.get("urls").is_some()));
+    if ok { Ok(value) } else { Err("expected an array of objects with \"urls\"".into()) }
 }
 
 fn parse_ports(s: &str) -> Result<(u16, u16), String> {
@@ -105,6 +123,7 @@ pub struct AppState {
     pub workers: Arc<Workers>,
     /// Verified against when a username does not exist, so failures take the same time.
     pub dummy_hash: String,
+    pub login_throttle: Arc<ops::LoginThrottle>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -115,6 +134,7 @@ impl std::fmt::Debug for AppState {
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
+        .route("/config", get(ops::client_config))
         .route("/auth/status", get(auth::status))
         .route("/auth/setup", post(auth::setup))
         .route("/auth/login", post(auth::login))
@@ -143,11 +163,15 @@ pub fn router(state: AppState) -> Router {
         .route("/sessions/{id}/stop", post(api::stop_session))
         .fallback(|| async { error::ApiError::not_found("route") });
 
-    let mut app = Router::new().nest("/api", api).with_state(state.clone());
+    let mut app = Router::new()
+        .route("/health", get(ops::health))
+        .route("/metrics", get(ops::metrics))
+        .nest("/api", api)
+        .with_state(state.clone());
     if let Some(dir) = &state.config.web_dir {
         app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
     }
-    app.layer(middleware::from_fn(cache_headers))
+    app.layer(middleware::from_fn(cache_headers)).layer(middleware::from_fn(ops::security_headers))
 }
 
 /// Astro fingerprints everything under `/_astro/`, so those are immutable; pages and the API
@@ -191,7 +215,13 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         system_dir: config.data_dir.join("system"),
         idle_timeout_secs: config.idle_timeout,
     });
-    Ok(AppState { db, config: Arc::new(config), workers, dummy_hash: auth::hash_password("x")? })
+    Ok(AppState {
+        db,
+        config: Arc::new(config),
+        workers,
+        dummy_hash: auth::hash_password("x")?,
+        login_throttle: Arc::default(),
+    })
 }
 
 #[tokio::main]
@@ -226,6 +256,15 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ice_server_config() {
+        assert!(parse_ice_servers("[]").is_ok());
+        assert!(parse_ice_servers(r#"[{"urls":"stun:stun.example:3478"}]"#).is_ok());
+        assert!(parse_ice_servers(r#"[{"username":"x"}]"#).is_err());
+        assert!(parse_ice_servers("{}").is_err());
+        assert!(parse_ice_servers("nope").is_err());
+    }
 
     #[test]
     fn port_ranges() {

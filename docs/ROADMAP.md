@@ -96,7 +96,16 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 6: hardening
 
-- [ ] TURN (coturn), H.264 fallback negotiation, metrics, worker sandboxing
+- [x] Adaptive bitrate: str0m's send-bandwidth estimate (TWCC/REMB) drives the VP8 target (85% of
+      the estimate minus audio, between 300 kbit/s and the configured rate, changes over 10% only)
+- [x] STUN/TURN: `SOVEMU_ICE_SERVERS` is handed to browsers through `/api/config`
+- [x] Sign-in throttling: five failures lock a username out for five minutes
+- [x] `GET /health`; Prometheus `GET /metrics` behind a bearer token (off by default)
+- [x] Security headers (nosniff, frame denial, referrer and permissions policies); compose healthcheck
+- [x] Configuration reference in the README
+- [ ] OIDC sign-in
+- [ ] H.264 fallback for clients without VP8 decode
+- [ ] Worker resource limits (cgroups/rlimits per session)
 
 ## Later
 
