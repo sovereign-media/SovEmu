@@ -1,0 +1,24 @@
+{
+  "name": "sovemu-web",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "SovEmu web client: Astro + Tailwind, served as static files by the SovEmu Rust server",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "astro": "^7.4.12",
+    "tailwindcss": "^4.3.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@types/node": "^26.6.6",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0"
+  }
+}

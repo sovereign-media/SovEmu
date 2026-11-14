@@ -1,0 +1,19 @@
+[package]
+name = "sovemu-media"
+description = "Encoding for the SovEmu stream: RGBA to I420, VP8 (libvpx), Opus (libopus), resampling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+bindgen = "0.73.2"
+pkg-config = "0.3"
+
+[lints]
+workspace = true
+
+[dependencies]
+audioadapter-buffers = "5.2.0"
+rubato = "5.1.0"

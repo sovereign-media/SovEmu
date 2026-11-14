@@ -76,14 +76,14 @@ impl VideoFrame {
         out.reserve(self.width as usize * self.height as usize * 4);
         match self.format {
             PixelFormat::Xrgb8888 => {
-                for px in self.data.chunks_exact(4) {
-                    let v = u32::from_ne_bytes([px[0], px[1], px[2], px[3]]);
+                for px in self.data.as_chunks::<4>().0 {
+                    let v = u32::from_ne_bytes(*px);
                     out.extend_from_slice(&[(v >> 16) as u8, (v >> 8) as u8, v as u8, 255]);
                 }
             }
             PixelFormat::Rgb565 => {
-                for px in self.data.chunks_exact(2) {
-                    let v = u16::from_ne_bytes([px[0], px[1]]);
+                for px in self.data.as_chunks::<2>().0 {
+                    let v = u16::from_ne_bytes(*px);
                     out.extend_from_slice(&[
                         expand5((v >> 11) & 0x1f),
                         expand6((v >> 5) & 0x3f),
@@ -93,8 +93,8 @@ impl VideoFrame {
                 }
             }
             PixelFormat::Rgb1555 => {
-                for px in self.data.chunks_exact(2) {
-                    let v = u16::from_ne_bytes([px[0], px[1]]);
+                for px in self.data.as_chunks::<2>().0 {
+                    let v = u16::from_ne_bytes(*px);
                     out.extend_from_slice(&[
                         expand5((v >> 10) & 0x1f),
                         expand5((v >> 5) & 0x1f),
@@ -172,7 +172,7 @@ mod tests {
         // SAFETY: `src` holds 2 rows of 12 bytes, each with 2 XRGB8888 pixels.
         unsafe { f.copy_from_core(src.as_ptr(), 2, 2, 12, PixelFormat::Xrgb8888) };
         let pixels: Vec<u32> =
-            f.data.chunks_exact(4).map(|b| u32::from_ne_bytes(b.try_into().unwrap())).collect();
+            f.data.as_chunks::<4>().0.iter().map(|b| u32::from_ne_bytes(*b)).collect();
         assert_eq!(pixels, [1, 2, 3, 4]);
     }
 }

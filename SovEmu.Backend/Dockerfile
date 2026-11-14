@@ -14,9 +14,21 @@
 #
 # The final stage runs `sovemu-worker probe` over every core it ships, so a core that cannot be
 # loaded fails the image build rather than a player's session.
+#
+# The web client (SovEmu.Web, Astro + Tailwind) is built in the `web` stage and served as static
+# files by the same Rust process that serves the API.
 
 ARG ALPINE_VERSION=3.24
 ARG RUST_VERSION=1.100
+ARG NODE_VERSION=24
+
+## ---- web: the Astro web client ---------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS web
+WORKDIR /web
+COPY SovEmu.Web/package.json SovEmu.Web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY SovEmu.Web/ ./
+RUN npm test && npm run build
 
 ## ---- cores: libretro cores from source -------------------------------------------------------
 # Independent of the Rust sources, so it stays cached until scripts/cores.list changes.
@@ -28,8 +40,9 @@ RUN ./build-cores.sh --out /out/cores --work /build/src && rm -rf /build/src
 
 ## ---- build: the Rust workspace -----------------------------------------------------------------
 FROM rust:${RUST_VERSION}-alpine${ALPINE_VERSION} AS build
-# clang-dev: libclang for bindgen. build-base: the C compiler for the log shim.
-RUN apk add --no-cache build-base clang-dev
+# clang-dev: libclang for bindgen. build-base: the C compiler for the log shim and aws-lc
+# (str0m's DTLS). libvpx-dev, opus-dev, pkgconf: the codecs SovEmu.Media links.
+RUN apk add --no-cache build-base clang-dev cmake libvpx-dev opus-dev pkgconf
 ENV RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TERM_COLOR=always
 WORKDIR /src
@@ -37,7 +50,9 @@ COPY SovEmu.Backend/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p sovemu-worker \
-    && install -D target/release/sovemu-worker /out/sovemu-worker
+    && install -D target/release/sovemu-worker /out/sovemu-worker \
+    # Drop the line tables (most of the binary's size) but keep symbol names for backtraces.
+    && strip --strip-debug /out/sovemu-worker
 
 ## ---- test: the full test suite, on musl (not part of the shipped image) -----------------------
 FROM build AS test
@@ -47,9 +62,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 ## ---- runtime ------------------------------------------------------------------------------------
 FROM alpine:${ALPINE_VERSION} AS runtime
-# libgcc: Rust's unwinder. libstdc++: the C++ cores (snes9x, gambatte). tini: PID 1, so the
-# per-session worker processes the server will spawn are reaped.
-RUN apk add --no-cache libgcc libstdc++ tini \
+# libgcc: Rust's unwinder. libstdc++: the C++ cores (snes9x, gambatte). libvpx, opus: VP8 and
+# Opus encoding. tini: PID 1, so the per-session worker processes the server will spawn are
+# reaped.
+RUN apk add --no-cache libgcc libstdc++ libvpx opus tini \
     && addgroup -S -g 1000 sovemu \
     && adduser -S -D -H -u 1000 -G sovemu -h /data sovemu \
     && mkdir -p /data/roms /data/system /data/saves \
@@ -57,8 +73,10 @@ RUN apk add --no-cache libgcc libstdc++ tini \
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
 COPY --from=build /out/sovemu-worker /usr/local/bin/sovemu-worker
+COPY --from=web /web/dist/ /opt/sovemu/web/
 
-ENV SOVEMU_CORES_DIR=/opt/sovemu/cores
+ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
+    SOVEMU_WEB_DIR=/opt/sovemu/web
 
 # Every shipped core must load under musl with the libraries installed above.
 RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
@@ -66,5 +84,7 @@ RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
 USER sovemu
 WORKDIR /data
 VOLUME ["/data"]
+# 8080: the web client and API. 50000/udp: all WebRTC media for every client.
+EXPOSE 8080/tcp 50000/udp
 ENTRYPOINT ["/sbin/tini", "--", "sovemu-worker"]
 CMD ["--help"]

@@ -103,8 +103,9 @@ pub struct FrameOutput<'a> {
     pub video_updated: bool,
     /// Interleaved stereo 16-bit samples, at [`AvInfo::sample_rate`].
     pub audio: &'a [i16],
-    /// The core changed its geometry or timing during this frame; re-read [`Core::av_info`].
-    pub av_changed: bool,
+    /// The new geometry and timing, if the core changed them during this frame (also what
+    /// [`Core::av_info`] now returns).
+    pub av_changed: Option<AvInfo>,
 }
 
 /// The libretro functions every core exports, resolved once at load.
@@ -331,16 +332,15 @@ impl Core {
             None => (None, None),
             Some(path) => {
                 let extension = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
-                if let Some(ext) = &extension {
-                    if !self.info.valid_extensions.is_empty()
-                        && !self.info.valid_extensions.contains(ext)
-                    {
-                        tracing::warn!(
-                            "{} does not list .{ext} among its extensions {:?}",
-                            self.info.library_name,
-                            self.info.valid_extensions
-                        );
-                    }
+                if let Some(ext) = &extension
+                    && !self.info.valid_extensions.is_empty()
+                    && !self.info.valid_extensions.contains(ext)
+                {
+                    tracing::warn!(
+                        "{} does not list .{ext} among its extensions {:?}",
+                        self.info.library_name,
+                        self.info.valid_extensions
+                    );
                 }
                 let data =
                     if self.info.need_fullpath {
@@ -422,6 +422,7 @@ impl Core {
             }
         });
 
+        let av_changed = if av_changed { self.av_info } else { None };
         Ok(FrameOutput { video: &self.video, video_updated, audio: &self.audio, av_changed })
     }
 

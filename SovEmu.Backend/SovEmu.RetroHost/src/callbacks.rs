@@ -140,18 +140,18 @@ impl HostState {
                     true
                 }
                 ffi::RETRO_ENVIRONMENT_SET_MESSAGE => {
-                    if let Some(msg) = read::<ffi::retro_message>(data) {
-                        if let Some(text) = read_str(msg.msg) {
-                            tracing::info!(target: "core", "message: {text}");
-                        }
+                    if let Some(msg) = read::<ffi::retro_message>(data)
+                        && let Some(text) = read_str(msg.msg)
+                    {
+                        tracing::info!(target: "core", "message: {text}");
                     }
                     true
                 }
                 ffi::RETRO_ENVIRONMENT_SET_MESSAGE_EXT => {
-                    if let Some(msg) = read::<ffi::retro_message_ext>(data) {
-                        if let Some(text) = read_str(msg.msg) {
-                            tracing::info!(target: "core", "message: {text}");
-                        }
+                    if let Some(msg) = read::<ffi::retro_message_ext>(data)
+                        && let Some(text) = read_str(msg.msg)
+                    {
+                        tracing::info!(target: "core", "message: {text}");
                     }
                     true
                 }
