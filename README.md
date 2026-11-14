@@ -79,25 +79,50 @@ which SovEmu doesn't run yet, so they don't appear.
 
 ## Configuration
 
-All settings are flags on `sovemu-server` or environment variables (the image sets the paths).
+Every setting is an environment variable. There's nothing to set up by clicking through the app.
+`compose.yaml` loads `.env` whole, so put settings there; `.env.example` lists them all. The same
+names work as `--flags` on `sovemu-server`. An empty value means "unset". Each secret can instead
+be read from a file named by `<VAR>_FILE`, for Docker or Kubernetes secrets. The server logs its
+effective configuration at startup, with secrets redacted.
 
 | Variable | Default | What |
 |---|---|---|
-| `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
-| `SOVEMU_DATA_DIR` | `data` (`/data` in the image) | Database, saves, `system/` (BIOS) |
-| `SOVEMU_ROMS_DIR` | `<data dir>/roms` | The ROM library, one folder per system |
-| `SOVEMU_SYSTEM_DIR` | `<data dir>/system` | BIOS files for cores (PlayStation, Neo Geo, …) |
+| **Accounts** | | |
+| `SOVEMU_ADMIN_USERNAME`, `SOVEMU_ADMIN_PASSWORD` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
+| **Library** | | |
+| `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
+| `SOVEMU_ROMS_DIR` | `<data>/roms` | The library, one folder per system |
+| `SOVEMU_SYSTEM_DIR` | `<data>/system` | BIOS files |
 | `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
-| `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB of games and artwork to keep locally |
-| `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids to copy |
-| `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD`, `_USER`, `_PASSWORD` | unset | ScreenScraper credentials |
+| `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB kept locally |
+| `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids |
+| `SOVEMU_SCAN_INTERVAL_MINUTES` | `60` | Rescan period (0: startup only) |
+| `SOVEMU_MIRROR_INTERVAL_MINUTES` | `360` | `mirror` mode: sync period (0: startup only) |
+| `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
+| **Game information** | | |
+| `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
+| `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD` | unset | ScreenScraper developer credentials |
+| `SOVEMU_SCREENSCRAPER_USER`, `_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |
-| `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent game session; publish the whole range |
-| `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to: the host's LAN address in a container |
-| `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers that cannot reach the UDP ports directly, as JSON `RTCIceServer`s |
-| `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client connected |
-| `SOVEMU_SECURE_COOKIES` | off | Set when serving over HTTPS (behind a reverse proxy) |
+| **Streaming** | | |
+| `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
+| `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent session; publish the range |
+| `SOVEMU_UDP_BIND` | `0.0.0.0` | Address the session ports bind to |
+| `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
+| `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
+| `SOVEMU_VIDEO_KBPS` | `2500` | Video bitrate cap (adaptation stays below it) |
+| `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |
+| `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
+| **Operations** | | |
+| `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
 | `SOVEMU_METRICS_TOKEN` | unset | Enables `GET /metrics` (Prometheus) for this bearer token |
+| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER` | set in the image | The built web client; the worker binary |
+| `RUST_LOG` | `info` | Log filter |
+| **compose.nas.yaml only** | | |
+| `SOVEMU_NAS_HOST`, `SOVEMU_NAS_PATH`, `SOVEMU_NAS_USER`, `SOVEMU_NAS_PASSWORD` | | The SMB share to mount read-only |
+
+Game workers start with an empty environment, apart from `PATH`, `HOME`, `TMPDIR`, `LANG` and
+`RUST_LOG`. Cores are third-party code, so they never see credentials.
 
 `GET /health` answers `ok` while the database is reachable. Sign-in locks a username out for five
 minutes after five failed attempts.

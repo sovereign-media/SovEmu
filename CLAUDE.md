@@ -53,6 +53,14 @@ instead (as Sovereign's server takes its SPA).
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, ack `0x81`), each tested
   against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
+- **Every setting is an environment variable; nothing needs click-ops.** A new setting gets a
+  `SOVEMU_*` env var on `Config` (and a row in the README's table and a line in
+  `.env.example`). Secrets join `SECRETS` in `main.rs` (so `<VAR>_FILE` works and the startup
+  log redacts them). Anything an admin can do in the UI must also happen on its own from
+  configuration (the admin account, rescans, mirror syncs, metadata lookups); UI buttons are
+  shortcuts, never the only way.
+- **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
+  allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** `/metrics` stays off unless
   `SOVEMU_METRICS_TOKEN` is set; new operational routes follow the same pattern.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the

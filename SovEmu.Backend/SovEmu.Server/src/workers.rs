@@ -35,7 +35,13 @@ pub struct WorkerConfig {
     pub advertise_ip: Option<IpAddr>,
     pub system_dir: PathBuf,
     pub idle_timeout_secs: u64,
+    pub video_kbps: u32,
+    pub audio_kbps: u32,
 }
+
+/// The only environment a worker inherits. Cores are third-party code: they get no credentials
+/// (the NAS password, API keys) and nothing else of the server's environment.
+const WORKER_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "RUST_LOG", "RUST_BACKTRACE"];
 
 /// What a session is playing, as the API reports it.
 #[derive(Debug, Clone, Serialize)]
@@ -199,8 +205,18 @@ impl Workers {
         std::fs::create_dir_all(&launch.save_dir)?;
         std::fs::create_dir_all(&self.config.system_dir)?;
         let mut command = Command::new(&self.config.worker_bin);
+        command.env_clear();
+        for var in WORKER_ENV {
+            if let Some(value) = std::env::var_os(var) {
+                command.env(var, value);
+            }
+        }
         command
             .arg("session")
+            .arg("--video-kbps")
+            .arg(self.config.video_kbps.to_string())
+            .arg("--audio-kbps")
+            .arg(self.config.audio_kbps.to_string())
             .arg("--core")
             .arg(&launch.core)
             .arg("--rom")

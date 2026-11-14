@@ -137,6 +137,33 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_METRICS_TOKEN")]
     pub metrics_token: Option<String>,
 
+    /// The admin account, created at startup if missing; its password is kept in step with
+    /// this setting. With it set there is no first-run setup page.
+    #[arg(long, env = "SOVEMU_ADMIN_USERNAME")]
+    pub admin_username: Option<String>,
+    #[arg(long, env = "SOVEMU_ADMIN_PASSWORD")]
+    pub admin_password: Option<String>,
+
+    /// Rescan the library every this many minutes (0: only at startup).
+    #[arg(long, env = "SOVEMU_SCAN_INTERVAL_MINUTES", default_value_t = 60)]
+    pub scan_interval_minutes: u64,
+
+    /// `mirror` mode: sync every this many minutes (0: only at startup).
+    #[arg(long, env = "SOVEMU_MIRROR_INTERVAL_MINUTES", default_value_t = 360)]
+    pub mirror_interval_minutes: u64,
+
+    /// Look up game information for new games after every scan.
+    #[arg(long, env = "SOVEMU_METADATA_AUTO", default_value_t = true, action = clap::ArgAction::Set)]
+    pub metadata_auto: bool,
+
+    /// Video bitrate cap for game streams, kbit/s (adaptation stays at or below it).
+    #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 2500)]
+    pub video_kbps: u32,
+
+    /// Opus audio bitrate for game streams, kbit/s.
+    #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
+    pub audio_kbps: u32,
+
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
@@ -148,6 +175,99 @@ pub enum LibraryMode {
     Direct,
     Cache,
     Mirror,
+}
+
+/// Settings that hold secrets: each may instead come from a file named by `<VAR>_FILE` (Docker
+/// and Kubernetes secrets), and is redacted in the startup log.
+const SECRETS: &[&str] = &[
+    "SOVEMU_ADMIN_PASSWORD",
+    "SOVEMU_METRICS_TOKEN",
+    "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
+    "SOVEMU_SCREENSCRAPER_PASSWORD",
+    "SOVEMU_THEGAMESDB_KEY",
+];
+
+impl Config {
+    fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
+        Some(match var {
+            "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
+            "SOVEMU_METRICS_TOKEN" => &mut self.metrics_token,
+            "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
+            "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
+            "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
+            _ => return None,
+        })
+    }
+
+    /// Fills unset secrets from `<VAR>_FILE`, and treats empty values as unset.
+    pub fn resolve_secrets(&mut self, env: impl Fn(&str) -> Option<String>) -> Result<()> {
+        for var in SECRETS {
+            let slot = self.secret_mut(var).expect("every secret has a field");
+            if slot.as_deref().is_some_and(|v| v.is_empty()) {
+                *slot = None;
+            }
+            if slot.is_none()
+                && let Some(path) = env(&format!("{var}_FILE")).filter(|p| !p.is_empty())
+            {
+                let value = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading {var}_FILE ({path})"))?;
+                *slot = Some(value.trim_end_matches(['\n', '\r']).to_owned());
+            }
+        }
+        Ok(())
+    }
+
+    /// The effective settings, one per line, secrets redacted: logged at startup so a
+    /// deployment's configuration can be checked without guessing.
+    pub fn summary(&self) -> String {
+        let secret = |v: &Option<String>| if v.is_some() { "(set)" } else { "(unset)" };
+        let opt = |v: &Option<String>| v.clone().unwrap_or_else(|| "(unset)".into());
+        let lines = [
+            format!("http={}", self.http),
+            format!("data_dir={}", self.data_dir.display()),
+            format!("roms_dir={}", self.roms_dir.display()),
+            format!("library_mode={:?}", self.library_mode),
+            format!("cache_gb={}", self.cache_gb.map_or("(default)".into(), |g| g.to_string())),
+            format!(
+                "mirror_systems={}",
+                if self.mirror_systems.is_empty() {
+                    "(all)".into()
+                } else {
+                    self.mirror_systems.join(",")
+                }
+            ),
+            format!("scan_interval_minutes={}", self.scan_interval_minutes),
+            format!("mirror_interval_minutes={}", self.mirror_interval_minutes),
+            format!("metadata_auto={}", self.metadata_auto),
+            format!("cores_dir={}", self.cores_dir.display()),
+            format!(
+                "web_dir={}",
+                self.web_dir.as_ref().map_or("(none)".into(), |d| d.display().to_string())
+            ),
+            format!("udp_ports={}-{}", self.udp_ports.0, self.udp_ports.1),
+            format!(
+                "advertise_ip={}",
+                self.advertise_ip.map_or("(detected)".into(), |ip| ip.to_string())
+            ),
+            format!("video_kbps={} audio_kbps={}", self.video_kbps, self.audio_kbps),
+            format!("idle_timeout={}s", self.idle_timeout),
+            format!(
+                "admin_username={} admin_password={}",
+                opt(&self.admin_username),
+                secret(&self.admin_password)
+            ),
+            format!(
+                "screenscraper_devid={} devpassword={} user={} password={}",
+                opt(&self.screenscraper_devid),
+                secret(&self.screenscraper_devpassword),
+                opt(&self.screenscraper_user),
+                secret(&self.screenscraper_password)
+            ),
+            format!("thegamesdb_key={}", secret(&self.thegamesdb_key)),
+            format!("metrics_token={}", secret(&self.metrics_token)),
+        ];
+        lines.join("\n")
+    }
 }
 
 fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
@@ -271,6 +391,9 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
     let db = db::open(&config.data_dir.join("sovemu.db")).await?;
+    if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
+        auth::ensure_admin(&db, user, password).await?;
+    }
     let workers = Workers::new(WorkerConfig {
         worker_bin: config.worker.clone().unwrap_or_else(default_worker),
         ports: config.udp_ports,
@@ -278,6 +401,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         advertise_ip: config.advertise_ip,
         system_dir: config.system.clone().unwrap_or_else(|| config.data_dir.join("system")),
         idle_timeout_secs: config.idle_timeout,
+        video_kbps: config.video_kbps,
+        audio_kbps: config.audio_kbps,
     });
     let cache_dir = config.data_dir.join("cache");
     let cache_bytes = match config.library_mode {
@@ -340,25 +465,85 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
 /// scan's games are already in the database meanwhile. In `mirror` mode, syncs first (scanning
 /// what is already mirrored while it runs), then scans again.
 fn spawn_initial_scan(state: &AppState) {
+    spawn_periodic(state);
     let state = state.clone();
     tokio::spawn(async move {
         admin::scan_and_log(&state).await;
         if state.config.library_mode == LibraryMode::Mirror {
-            admin::sync_then_scan(state).await;
+            admin::sync_then_scan(state.clone()).await;
         }
+        admin::after_scan(&state).await;
     });
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+/// Rescans (and in `mirror` mode syncs) on the configured intervals, so the library keeps up
+/// with the share on its own.
+fn spawn_periodic(state: &AppState) {
+    let every = |minutes: u64| (minutes > 0).then(|| std::time::Duration::from_secs(minutes * 60));
+    if let Some(period) = every(state.config.scan_interval_minutes) {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(period);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                admin::scan_and_log(&state).await;
+                admin::after_scan(&state).await;
+            }
+        });
+    }
+    if state.config.library_mode == LibraryMode::Mirror
+        && let Some(period) = every(state.config.mirror_interval_minutes)
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(period);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                admin::sync_then_scan(state.clone()).await;
+                admin::after_scan(&state).await;
+            }
+        });
+    }
+}
+
+/// Tidies the environment before the settings are parsed:
+/// - an empty `SOVEMU_*` variable means "not set" (a blank line in `.env`), so it is removed
+///   rather than rejected as an invalid value;
+/// - `SOVEMU_NAS_*` are compose's, for mounting the share; the server has no use for the NAS
+///   password, so it does not keep it.
+fn unset_empty_settings() {
+    let empty: Vec<String> = std::env::vars_os()
+        .filter_map(|(k, v)| {
+            let k = k.into_string().ok()?;
+            (k.starts_with("SOVEMU_") && (v.is_empty() || k.starts_with("SOVEMU_NAS_")))
+                .then_some(k)
+        })
+        .collect();
+    for key in empty {
+        // SAFETY: called first thing in `main`, before the runtime or any other thread exists,
+        // so nothing can be reading the environment concurrently.
+        unsafe { std::env::remove_var(key) };
+    }
+}
+
+fn main() -> Result<()> {
+    unset_empty_settings();
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+}
+
+async fn run() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
-    let config = Config::parse();
+    let mut config = Config::parse();
+    config.resolve_secrets(|var| std::env::var(var).ok())?;
     let addr = config.http;
     let state = build_state(config).await?;
+    tracing::info!("configuration:\n{}", state.config.summary());
     spawn_initial_scan(&state);
     let workers = state.workers.clone();
     if state.config.web_dir.is_none() {
@@ -390,6 +575,33 @@ mod tests {
         assert!(parse_ice_servers(r#"[{"username":"x"}]"#).is_err());
         assert!(parse_ice_servers("{}").is_err());
         assert!(parse_ice_servers("nope").is_err());
+    }
+
+    #[test]
+    fn secrets_come_from_files_and_are_redacted() {
+        let file = std::env::temp_dir().join(format!("sovemu-secret-{}", std::process::id()));
+        std::fs::write(&file, "s3cret\n").unwrap();
+        let mut config = Config::parse_from([
+            "sovemu-server",
+            "--admin-username",
+            "boss",
+            "--thegamesdb-key",
+            "",
+        ]);
+        let path = file.display().to_string();
+        config
+            .resolve_secrets(|var| (var == "SOVEMU_ADMIN_PASSWORD_FILE").then(|| path.clone()))
+            .unwrap();
+        assert_eq!(config.admin_password.as_deref(), Some("s3cret"), "trailing newline trimmed");
+        assert_eq!(config.thegamesdb_key, None, "empty means unset");
+        let summary = config.summary();
+        assert!(summary.contains("admin_password=(set)"));
+        assert!(!summary.contains("s3cret"));
+        let missing = Config::parse_from(["sovemu-server"]).resolve_secrets(|v| {
+            (v == "SOVEMU_METRICS_TOKEN_FILE").then(|| "/nonexistent/token".to_owned())
+        });
+        assert!(missing.is_err(), "a named secret file that cannot be read is an error");
+        std::fs::remove_file(file).ok();
     }
 
     #[test]

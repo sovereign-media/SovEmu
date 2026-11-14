@@ -26,6 +26,13 @@ pub async fn scan_and_log(state: &AppState) {
     }
 }
 
+/// After a scan: look up game information for games that have none yet, if configured to.
+pub async fn after_scan(state: &AppState) {
+    if state.config.metadata_auto {
+        metadata::run_job(state.clone(), None, false).await;
+    }
+}
+
 /// Mirrors the source into the local library, then rescans it. No-op outside `mirror` mode or
 /// while a sync is running.
 pub async fn sync_then_scan(state: AppState) {
