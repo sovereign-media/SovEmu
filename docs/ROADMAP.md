@@ -45,13 +45,23 @@ held 59.93 fps over 300 frames with no resyncs.
 - [ ] Measure button-to-photon latency in a real browser against a real core (needs a person and
       a camera, or a photodiode)
 
-## Phase 2: server
+## Phase 2: server and library
 
-- [ ] `SovEmu.Server`: axum, SQLite (WAL, sqlx migrations); serves `SovEmu.Web` and the API, and
-      takes over `serve`'s HTTP side (the worker keeps only the media loop)
-- [ ] Auth: local accounts (argon2) with admin invites, plus optional OIDC
-- [ ] ROM library: scan `roms/`, hash, match to a system and core
-- [ ] Start and stop workers; IPC; WebSocket signalling relay; idle-session cleanup
+- [x] `SovEmu.Server`: axum serving `SovEmu.Web` and `/api/*`; SQLite (sqlx, WAL, embedded
+      migrations)
+- [x] Auth: local accounts (argon2, HttpOnly session cookie), first-run admin setup, admin adds
+      users
+- [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
+      cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
+- [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per
+      session from a pool, one session per user, idle timeout, clean shutdown, play history
+- [x] Web: sign-in and first-run setup, a system carousel and game list in the style of console
+      frontends (gamepad and keyboard navigation, hint bar), the player with a splash and an in-game
+      menu (resume, reset, stats, quit)
+- [x] `scripts/fetch-free-roms.sh`: pinned, freely licensed homebrew for NES, SNES, GB, GBC and GBA
+- [x] Verified in Docker: Snes9x streaming *Castle Platformer* through the server to a WebRTC client
+- [ ] OIDC sign-in (deferred to Phase 6)
+- [ ] Connect the NAS library (`nas.blh.casa/emulation`, SMB with credentials)
 
 ## Phase 3: persistence
 

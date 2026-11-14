@@ -1,0 +1,27 @@
+---
+// The bottom bar of controller hints, as on a console menu. Each hint is a button glyph and
+// what it does; glyphs are drawn here (no platform button artwork).
+interface Hint {
+  /** "dpad", "a", "b", "start" or "select". */
+  button: string;
+  label: string;
+}
+interface Props {
+  hints: Hint[];
+}
+const { hints } = Astro.props;
+const glyph: Record<string, string> = { dpad: "✥", a: "A", b: "B", start: "≡", select: "⊟" };
+---
+
+<footer class="pointer-events-none fixed inset-x-0 bottom-0 flex items-center justify-end gap-6 bg-gradient-to-t from-black/80 to-transparent px-8 pb-5 pt-10 text-sm text-slate-300">
+  {
+    hints.map((h) => (
+      <span class="flex items-center gap-2">
+        <span class="grid h-7 min-w-7 place-items-center rounded-full border border-white/30 bg-white/10 px-1.5 text-xs font-bold text-white">
+          {glyph[h.button] ?? h.button}
+        </span>
+        {h.label}
+      </span>
+    ))
+  }
+</footer>

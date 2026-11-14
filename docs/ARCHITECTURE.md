@@ -78,16 +78,32 @@ Dependencies point one way. `Worker` uses `RetroHost` (which uses `LibretroFfi`)
 `Protocol` is shared by `Worker` and `Server`. `Server` never links a core: it starts
 `sovemu-worker` processes and talks to them over IPC.
 
+### Server, sessions and the library
+
+`sovemu-server` is the container's main process. It serves the web client and `/api/*`, owns
+the SQLite database, scans the library, and runs game sessions. Each session is a
+`sovemu-worker session` child process. The server sends it JSON-line requests on stdin
+(`offer`, `reset`, `save_state`, `load_state`, `shutdown`, each with an id) and reads replies and
+events from its stdout (`ready`, `answer`, `done`, `error`, `client_connected`,
+`client_disconnected`). The worker exits when stdin closes, so a crashed server never leaves
+orphans. It also exits on `shutdown` or after the idle timeout. A user has at most one session.
+Each session gets one UDP port from a fixed range, so the container publishes that range.
+
+Library folders follow the Recalbox/Batocera names (`nes/`, `snes/`, `megadrive/` …), plus
+aliases (`genesis/`, No-Intro style names). A file outside a known folder is placed by its
+extension, but only when exactly one system claims that extension. A rescan updates rows in place
+by path, so game ids (and with them play history and saves) survive a rescan.
+
 ### Web client and signalling
 
 `SovEmu.Web` is Astro + Tailwind built to static files (no server runtime). The same Rust
 process that serves `/api/*` serves those files, so the page and the API share one origin. That
-process is `sovemu-worker serve` in Phase 1 and `SovEmu.Server` from Phase 2.
+process is `sovemu-server`; `sovemu-worker serve` does the same standalone for development.
 
 Signalling is a single request. The browser gathers all its ICE candidates, then `POST`s the
-complete offer (`{"type":"offer","sdp":...}`) to `/api/offer`. The answer carries the server's
-host candidates. The server side is ICE-lite, and all media for every client goes through one
-UDP port (50000). The client offers receive-only video and audio plus the `input` DataChannel
+complete offer (`{"type":"offer","sdp":...}`) to `/api/sessions/{id}/offer`, which the server
+relays to that session's worker. The answer carries the server's
+host candidates. The worker is ICE-lite and uses one UDP port for everything in its session. The client offers receive-only video and audio plus the `input` DataChannel
 (unordered, no retransmits).
 
 ### Deployment: one Alpine container

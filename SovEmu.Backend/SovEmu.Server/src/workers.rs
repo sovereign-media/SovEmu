@@ -1,0 +1,313 @@
+//! Game sessions: one `sovemu-worker session` process each.
+//!
+//! Every session gets its own UDP port from a fixed range (publish that range from the
+//! container) and its own worker, so a crashing core takes down only its session. The server
+//! talks to a worker in JSON lines ([`sovemu_protocol::ipc`]), matching replies to requests by
+//! id. A user has at most one session: starting a game ends the previous one.
+
+use std::collections::{BTreeSet, HashMap};
+use std::net::IpAddr;
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow, bail};
+use serde::Serialize;
+use sovemu_protocol::SessionDescription;
+use sovemu_protocol::ipc::{Reply, Request};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, Command};
+use tokio::sync::oneshot;
+
+/// How long a worker may take to load its core and game.
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long a request to a worker may take.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+pub struct WorkerConfig {
+    pub worker_bin: PathBuf,
+    pub ports: (u16, u16),
+    pub bind_ip: IpAddr,
+    pub advertise_ip: Option<IpAddr>,
+    pub system_dir: PathBuf,
+    pub idle_timeout_secs: u64,
+}
+
+/// What a session is playing, as the API reports it.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionInfo {
+    pub id: String,
+    pub game_id: i64,
+    pub system: String,
+    pub title: String,
+    pub core: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub connected: bool,
+}
+
+/// What to start.
+#[derive(Debug, Clone)]
+pub struct Launch {
+    pub user_id: i64,
+    pub game_id: i64,
+    pub system: String,
+    pub title: String,
+    pub core: PathBuf,
+    pub rom: PathBuf,
+    pub save_dir: PathBuf,
+}
+
+pub struct Session {
+    pub id: String,
+    pub user_id: i64,
+    port: u16,
+    info: SessionInfo,
+    stdin: tokio::sync::Mutex<ChildStdin>,
+    child: tokio::sync::Mutex<Child>,
+    pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
+    next_id: AtomicU64,
+    connected: AtomicBool,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session").field("id", &self.id).field("port", &self.port).finish()
+    }
+}
+
+impl Session {
+    pub fn info(&self) -> SessionInfo {
+        SessionInfo { connected: self.connected.load(Ordering::Relaxed), ..self.info.clone() }
+    }
+
+    /// Sends a request and waits for its reply.
+    pub async fn request(&self, make: impl FnOnce(u64) -> Request) -> Result<Reply> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let request = make(id);
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
+        let mut line = serde_json::to_string(&request)?;
+        line.push('\n');
+        {
+            let mut stdin = self.stdin.lock().await;
+            stdin.write_all(line.as_bytes()).await.context("worker stdin closed")?;
+            stdin.flush().await?;
+        }
+        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
+            Ok(Ok(Reply::Error { message, .. })) => bail!("{message}"),
+            Ok(Ok(reply)) => Ok(reply),
+            Ok(Err(_)) => bail!("the session ended"),
+            Err(_) => bail!("the session did not answer in time"),
+        }
+    }
+
+    pub async fn offer(&self, offer: SessionDescription) -> Result<SessionDescription> {
+        match self.request(|id| Request::Offer { id, offer }).await? {
+            Reply::Answer { answer, .. } => Ok(answer),
+            other => bail!("unexpected reply {other:?}"),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Inner {
+    sessions: HashMap<String, Arc<Session>>,
+    free_ports: BTreeSet<u16>,
+}
+
+#[derive(Debug)]
+pub struct Workers {
+    config: WorkerConfig,
+    inner: Mutex<Inner>,
+}
+
+impl Workers {
+    pub fn new(config: WorkerConfig) -> Arc<Self> {
+        let free_ports = (config.ports.0..=config.ports.1).collect();
+        Arc::new(Self { config, inner: Mutex::new(Inner { sessions: HashMap::new(), free_ports }) })
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<Session>> {
+        self.lock().sessions.get(id).cloned()
+    }
+
+    pub fn for_user(&self, user_id: i64) -> Option<Arc<Session>> {
+        self.lock().sessions.values().find(|s| s.user_id == user_id).cloned()
+    }
+
+    pub fn count(&self) -> usize {
+        self.lock().sessions.len()
+    }
+
+    /// Starts a session, ending the user's current one first.
+    pub async fn start(self: &Arc<Self>, launch: Launch) -> Result<Arc<Session>> {
+        if let Some(existing) = self.for_user(launch.user_id) {
+            self.stop(&existing.id).await;
+        }
+        let port = self
+            .lock()
+            .free_ports
+            .pop_first()
+            .ok_or_else(|| anyhow!("all {} session ports are in use", self.port_count()))?;
+        match self.spawn(&launch, port).await {
+            Ok(session) => {
+                self.lock().sessions.insert(session.id.clone(), session.clone());
+                Ok(session)
+            }
+            Err(e) => {
+                self.lock().free_ports.insert(port);
+                Err(e)
+            }
+        }
+    }
+
+    fn port_count(&self) -> usize {
+        (self.config.ports.1 - self.config.ports.0) as usize + 1
+    }
+
+    async fn spawn(self: &Arc<Self>, launch: &Launch, port: u16) -> Result<Arc<Session>> {
+        std::fs::create_dir_all(&launch.save_dir)?;
+        std::fs::create_dir_all(&self.config.system_dir)?;
+        let mut command = Command::new(&self.config.worker_bin);
+        command
+            .arg("session")
+            .arg("--core")
+            .arg(&launch.core)
+            .arg("--rom")
+            .arg(&launch.rom)
+            .arg("--udp")
+            .arg(format!("{}:{port}", self.config.bind_ip))
+            .arg("--system-dir")
+            .arg(&self.config.system_dir)
+            .arg("--save-dir")
+            .arg(&launch.save_dir)
+            .arg("--idle-timeout")
+            .arg(self.config.idle_timeout_secs.to_string());
+        if let Some(ip) = self.config.advertise_ip {
+            command.arg("--advertise-ip").arg(ip.to_string());
+        }
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true)
+            .spawn()
+            .with_context(|| format!("starting {}", self.config.worker_bin.display()))?;
+        let stdin = child.stdin.take().expect("piped");
+        let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
+
+        let ready = tokio::time::timeout(READY_TIMEOUT, async {
+            while let Some(line) = lines.next_line().await? {
+                match serde_json::from_str::<Reply>(&line) {
+                    Ok(Reply::Ready { core, width, height, fps, .. }) => {
+                        return Ok((core, width, height, fps));
+                    }
+                    Ok(other) => tracing::debug!("worker said {other:?} before ready"),
+                    Err(_) => tracing::debug!("worker: {line}"),
+                }
+            }
+            bail!("the worker exited while loading the game")
+        })
+        .await
+        .map_err(|_| anyhow!("the worker took too long to load the game"))??;
+
+        let (core, width, height, fps) = ready;
+        let id = random_id();
+        let session = Arc::new(Session {
+            id: id.clone(),
+            user_id: launch.user_id,
+            port,
+            info: SessionInfo {
+                id: id.clone(),
+                game_id: launch.game_id,
+                system: launch.system.clone(),
+                title: launch.title.clone(),
+                core,
+                width,
+                height,
+                fps,
+                connected: false,
+            },
+            stdin: tokio::sync::Mutex::new(stdin),
+            child: tokio::sync::Mutex::new(child),
+            pending: Mutex::new(HashMap::new()),
+            next_id: AtomicU64::new(1),
+            connected: AtomicBool::new(false),
+        });
+        tracing::info!("session {id}: {} ({}) on UDP {port}", launch.title, launch.system);
+
+        let workers = self.clone();
+        let reader = session.clone();
+        tokio::spawn(async move {
+            while let Ok(Some(line)) = lines.next_line().await {
+                let Ok(reply) = serde_json::from_str::<Reply>(&line) else { continue };
+                match reply {
+                    Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
+                    Reply::ClientDisconnected => reader.connected.store(false, Ordering::Relaxed),
+                    Reply::Answer { id, .. } | Reply::Done { id } | Reply::Error { id, .. } => {
+                        let waiter =
+                            reader.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                        if let Some(tx) = waiter {
+                            let _ = tx.send(reply);
+                        }
+                    }
+                    Reply::Ready { .. } => {}
+                }
+            }
+            // The worker exited: idle timeout, shutdown, or a crash.
+            let status = reader.child.lock().await.wait().await;
+            tracing::info!("session {} ended ({status:?})", reader.id);
+            workers.forget(&reader.id, reader.port);
+        });
+        Ok(session)
+    }
+
+    fn forget(&self, id: &str, port: u16) {
+        let mut inner = self.lock();
+        if inner.sessions.remove(id).is_some() || !inner.free_ports.contains(&port) {
+            inner.free_ports.insert(port);
+        }
+    }
+
+    /// Ends a session: asks the worker to flush and exit, then kills it if it does not.
+    pub async fn stop(&self, id: &str) {
+        let Some(session) = self.lock().sessions.remove(id) else { return };
+        let asked = tokio::time::timeout(
+            Duration::from_secs(3),
+            session.request(|id| Request::Shutdown { id }),
+        )
+        .await;
+        if !matches!(asked, Ok(Ok(_))) {
+            tracing::warn!("session {id} did not shut down cleanly; killing it");
+        }
+        let mut child = session.child.lock().await;
+        if tokio::time::timeout(Duration::from_secs(2), child.wait()).await.is_err() {
+            let _ = child.kill().await;
+        }
+        drop(child);
+        self.lock().free_ports.insert(session.port);
+    }
+
+    /// Ends every session (server shutdown).
+    pub async fn stop_all(&self) {
+        let ids: Vec<String> = self.lock().sessions.keys().cloned().collect();
+        for id in ids {
+            self.stop(&id).await;
+        }
+    }
+}
+
+fn random_id() -> String {
+    let mut bytes = [0u8; 12];
+    getrandom::fill(&mut bytes).expect("the OS random source works");
+    hex::encode(bytes)
+}

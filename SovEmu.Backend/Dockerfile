@@ -5,6 +5,9 @@
 #   docker build -f SovEmu.Backend/Dockerfile -t sovemu .
 #   docker build -f SovEmu.Backend/Dockerfile --target test .     # run the test suite on musl
 #
+# The container runs `sovemu-server` (web client + API on 8080), which starts one
+# `sovemu-worker session` per game, each streaming WebRTC on its own UDP port (50000-50009).
+#
 # Two things make Alpine work for a libretro frontend:
 #
 # - The libretro buildbot's Linux cores are glibc builds and will not load on musl, so the
@@ -49,10 +52,11 @@ WORKDIR /src
 COPY SovEmu.Backend/ ./
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p sovemu-worker \
+    cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
-    # Drop the line tables (most of the binary's size) but keep symbol names for backtraces.
-    && strip --strip-debug /out/sovemu-worker
+    && install -D target/release/sovemu-server /out/sovemu-server \
+    # Drop the line tables (most of the binaries' size) but keep symbol names for backtraces.
+    && strip --strip-debug /out/sovemu-worker /out/sovemu-server
 
 ## ---- test: the full test suite, on musl (not part of the shipped image) -----------------------
 FROM build AS test
@@ -72,11 +76,14 @@ RUN apk add --no-cache libgcc libstdc++ libvpx opus tini \
     && chown -R sovemu:sovemu /data
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
-COPY --from=build /out/sovemu-worker /usr/local/bin/sovemu-worker
+COPY --from=build /out/sovemu-worker /out/sovemu-server /usr/local/bin/
 COPY --from=web /web/dist/ /opt/sovemu/web/
 
 ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
-    SOVEMU_WEB_DIR=/opt/sovemu/web
+    SOVEMU_WEB_DIR=/opt/sovemu/web \
+    SOVEMU_WORKER=/usr/local/bin/sovemu-worker \
+    SOVEMU_DATA_DIR=/data \
+    SOVEMU_UDP_PORTS=50000-50009
 
 # Every shipped core must load under musl with the libraries installed above.
 RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
@@ -84,7 +91,7 @@ RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
 USER sovemu
 WORKDIR /data
 VOLUME ["/data"]
-# 8080: the web client and API. 50000/udp: all WebRTC media for every client.
-EXPOSE 8080/tcp 50000/udp
-ENTRYPOINT ["/sbin/tini", "--", "sovemu-worker"]
-CMD ["--help"]
+# 8080: the web client and API. 50000-50009/udp: one port per concurrent game session.
+EXPOSE 8080/tcp 50000-50009/udp
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["sovemu-server"]

@@ -1,27 +1,25 @@
-# Local development: build the image and run one game, playable at http://localhost:8080.
+# Run SovEmu locally: http://localhost:8080 (the first visit creates the admin account).
 #
-#   docker compose build
-#   docker compose run --rm sovemu probe          # list the bundled cores
-#   SOVEMU_ROM=roms/game.nes docker compose up    # put the ROM in data/roms/ first
+#   scripts/fetch-free-roms.sh        # free homebrew into data/roms (or add your own ROMs there)
+#   docker compose up --build
 #
-# ./data is mounted at /data: ROMs in data/roms, BIOS files in data/system.
+# ./data is mounted at /data: the database, data/roms (one folder per system: nes/, snes/, …),
+# data/system (BIOS files) and data/saves.
 #
-# WebRTC media goes to UDP 50000 at the address the server advertises. In a container the server
-# cannot see the host's address, so set SOVEMU_ADVERTISE_IP to the IP browsers reach this host
-# on (127.0.0.1 is fine for a browser on the same machine).
+# Each game session streams WebRTC on its own UDP port (50000-50009). Browsers send media to
+# SOVEMU_ADVERTISE_IP, which a container cannot discover for itself: 127.0.0.1 works for a
+# browser on this machine; use the host's LAN address for other devices.
 services:
   sovemu:
     image: sovemu:dev
     build:
       context: .
       dockerfile: SovEmu.Backend/Dockerfile
-    command: ["serve"]
     environment:
-      SOVEMU_CORE: ${SOVEMU_CORE:-/opt/sovemu/cores/fceumm_libretro.so}
-      SOVEMU_ROM: ${SOVEMU_ROM:-}
       SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
     ports:
       - "8080:8080/tcp"
-      - "50000:50000/udp"
+      - "50000-50009:50000-50009/udp"
     volumes:
       - ./data:/data
+    restart: unless-stopped
