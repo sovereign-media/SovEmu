@@ -20,6 +20,9 @@ pub enum Request {
     LoadState { id: u64, slot: u32 },
     /// Press the console's reset button.
     Reset { id: u64 },
+    /// Replace the active cheats with these codes (format depends on the core: Game Genie,
+    /// Pro Action Replay, …). Empty clears them.
+    SetCheats { id: u64, codes: Vec<String> },
     /// Flush battery saves and exit.
     Shutdown { id: u64 },
 }
@@ -31,6 +34,7 @@ impl Request {
             | Self::SaveState { id, .. }
             | Self::LoadState { id, .. }
             | Self::Reset { id }
+            | Self::SetCheats { id, .. }
             | Self::Shutdown { id } => *id,
         }
     }

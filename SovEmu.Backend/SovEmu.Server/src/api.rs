@@ -152,6 +152,13 @@ pub async fn start_session(
         })
         .await
         .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;
+    let codes = crate::cheats::enabled_codes(&state, user.id, game.id).await?;
+    if !codes.is_empty()
+        && let Err(e) =
+            session.request(|id| sovemu_protocol::ipc::Request::SetCheats { id, codes }).await
+    {
+        tracing::warn!("could not apply cheats: {e:#}");
+    }
     sqlx::query(
         "INSERT INTO play_history (user_id, game_id, last_played_at, play_count)
          VALUES (?, ?, datetime('now'), 1)

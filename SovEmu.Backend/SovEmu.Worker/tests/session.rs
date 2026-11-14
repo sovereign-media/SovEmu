@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use sovemu_media::{OpusDecoder, Vp8Decoder};
-use sovemu_protocol::{INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
+use sovemu_protocol::{Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
 use str0m::change::SdpAnswer;
 use str0m::channel::{ChannelConfig, Reliability};
 use str0m::media::{Direction, MediaKind};
@@ -232,8 +232,24 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let started = Instant::now();
     let mut buf = vec![0u8; 2048];
 
+    // After the basics, hold fast-forward for a while and see the emulated frames speed up.
+    let ff_window = Duration::from_millis(600);
+    let mut ff_start: Option<(Instant, u32)> = None;
+    let mut normal_rate = 0.0f64;
+    let mut ff_rate = 0.0f64;
     while started.elapsed() < Duration::from_secs(15) {
-        if video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
+        if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
+            let first = acks[0];
+            let last = *acks.last().unwrap();
+            let span = (last.client_time_ms - first.client_time_ms) as f64 / 10.0 * 0.05;
+            normal_rate = (last.frame - first.frame) as f64 / span.max(0.05);
+            ff_start = Some((Instant::now(), last.frame));
+        }
+        if let Some((at, frame)) = ff_start
+            && at.elapsed() >= ff_window
+        {
+            let last = acks.last().unwrap().frame;
+            ff_rate = (last - frame) as f64 / at.elapsed().as_secs_f64();
             break;
         }
         let timeout = match rtc.poll_output().unwrap() {
@@ -268,7 +284,12 @@ fn streams_video_and_audio_and_acknowledges_input() {
         if channel_open && last_input.elapsed() > Duration::from_millis(50) {
             seq += 1;
             let packet = InputPacket { seq, client_time_ms: seq * 10, ports: vec![1 << 8] };
-            rtc.channel(input).unwrap().write(true, &packet.encode()).unwrap();
+            let mut channel = rtc.channel(input).unwrap();
+            channel.write(true, &packet.encode()).unwrap();
+            if ff_start.is_some() {
+                let ff = Hotkeys { fast_forward: true, rewind: false };
+                channel.write(true, &ff.encode()).unwrap();
+            }
             last_input = Instant::now();
             continue;
         }
@@ -310,4 +331,6 @@ fn streams_video_and_audio_and_acknowledges_input() {
         assert_eq!(ack.client_time_ms, ack.seq * 10, "client time echoed");
     }
     assert!(acks.windows(2).all(|w| w[0].frame < w[1].frame), "acks follow the frames");
+    eprintln!("emulated {normal_rate:.0} frames/s normally, {ff_rate:.0} fast-forwarding");
+    assert!(ff_rate > normal_rate * 2.5, "fast-forward: {ff_rate:.0} vs {normal_rate:.0} frames/s");
 }

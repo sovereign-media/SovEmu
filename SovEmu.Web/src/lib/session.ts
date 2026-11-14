@@ -2,7 +2,7 @@
 // no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle)
 // to the session's offer URL (`/api/sessions/{id}/offer`).
 import { InputState } from "./input";
-import { INPUT_CHANNEL, decodeAck, encodeInput } from "./protocol";
+import { INPUT_CHANNEL, decodeAck, encodeHotkeys, encodeInput } from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
 const HEARTBEAT_MS = 100;
@@ -21,6 +21,7 @@ export class Session {
   private channel: RTCDataChannel;
   private seq = 0;
   private sent = -1;
+  private sentHotkeys = 0;
   private lastSend = 0;
   private raf = 0;
 
@@ -84,12 +85,19 @@ export class Session {
   /** Every animation frame: send the input state if it changed or the heartbeat is due. */
   private pump = () => {
     if (this.channel.readyState === "open") {
-      const state = this.suspended ? 0 : this.input.read();
+      const reading = this.suspended ? null : this.input.read();
+      const state = reading?.buttons ?? 0;
+      const hotkeys = reading?.hotkeys ?? { fastForward: false, rewind: false };
+      const hotkeyBits = (hotkeys.fastForward ? 1 : 0) | (hotkeys.rewind ? 2 : 0);
       const now = performance.now();
-      if (state !== this.sent || now - this.lastSend > HEARTBEAT_MS) {
+      const heartbeat = now - this.lastSend > HEARTBEAT_MS;
+      if (state !== this.sent || hotkeyBits !== this.sentHotkeys || heartbeat) {
         this.seq = (this.seq + 1) >>> 0;
         this.channel.send(encodeInput({ seq: this.seq, clientTimeMs: now32(), ports: [state] }));
+        // Held hotkeys are refreshed with every heartbeat; the worker drops stale ones.
+        if (hotkeyBits !== this.sentHotkeys || hotkeyBits !== 0) this.channel.send(encodeHotkeys(hotkeys));
         this.sent = state;
+        this.sentHotkeys = hotkeyBits;
         this.lastSend = now;
       }
     }

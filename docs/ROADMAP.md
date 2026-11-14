@@ -82,9 +82,17 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 5: features
 
-- [ ] Per-game controller remapping, client-side shaders
-- [ ] Rewind (ring buffer of compressed state deltas) and fast-forward
-- [ ] Cheats UI, RetroAchievements (rcheevos; needs `SET_MEMORY_MAPS`)
+- [x] Fast-forward (4 frames per tick) and rewind (ring of states every 2 frames, capped at 64 MiB
+      / 60 s) while a hotkey is held: Tab / Backspace, or Select+R / Select+L on a gamepad (those
+      buttons are kept from the game meanwhile). A `0x02` hotkeys message on the input channel,
+      refreshed while held and dropped by the worker after 500 ms without a refresh. RTP timestamps
+      follow wall-clock ticks, not emulated frames
+- [x] Cheats per user and game (stored in SQLite, applied by the worker at start and on every change)
+- [x] Controller remapping, keyboard and gamepad, per browser
+- [x] Display filters on a WebGL canvas: sharp pixels, smooth, CRT (scanlines + aperture mask)
+- [x] Verified: fast-forward over WebRTC ran 216 emulated frames/s against 61 normally
+- [ ] RetroAchievements (rcheevos in the worker, an RA account per user). Memory-region access
+      (`Core::system_ram`) is in place for it
 
 ## Phase 6: hardening
 

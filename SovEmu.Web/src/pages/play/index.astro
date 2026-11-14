@@ -7,7 +7,10 @@ import Base from "../../layouts/Base.astro";
 
 <Base title="Playing">
   <main class="fixed inset-0 grid place-items-center bg-black">
-    <video data-video autoplay playsinline class="pixelated h-full max-h-dvh w-auto max-w-full object-contain" style="aspect-ratio: 4 / 3"></video>
+    <div data-screen class="relative h-full max-h-dvh w-auto max-w-full" style="aspect-ratio: 4 / 3">
+      <video data-video autoplay playsinline class="pixelated absolute inset-0 h-full w-full object-fill"></video>
+      <canvas data-canvas class="absolute inset-0 h-full w-full"></canvas>
+    </div>
 
     <section data-splash class="absolute inset-0 grid place-items-center bg-surface">
       <div class="grid justify-items-center gap-3 text-center">
@@ -32,7 +35,9 @@ import Base from "../../layouts/Base.astro";
 
 <script>
   import { AUTO_SLOT, api, screenshotUrl, type SaveSlot, type SessionInfo } from "../../lib/api";
-  import { InputState } from "../../lib/input";
+  import { DEFAULT_BINDINGS, InputState, bind, captureNextInput, describeBinding } from "../../lib/input";
+  import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
+  import type { ButtonName } from "../../lib/protocol";
   import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
   import { listenNav } from "../../lib/nav";
   import { Session } from "../../lib/session";
@@ -72,12 +77,24 @@ import Base from "../../layouts/Base.astro";
   let info: SessionInfo | null = null;
   const starting = api.startSession(gameId).then((s) => {
     info = s;
-    video.style.aspectRatio = ["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3";
+    $("screen").style.aspectRatio = ["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3";
     $("status").textContent = `${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`;
     return s;
   });
 
   const input = new InputState();
+
+  // Display filter: WebGL over the video when available, else the video itself.
+  const FILTER_KEY = "sovemu.filter";
+  const filter = new VideoFilter(video, $<HTMLCanvasElement>("canvas"));
+  let filterMode = (localStorage.getItem(FILTER_KEY) as FilterMode) || "sharp";
+  if (filter.supported) {
+    video.classList.add("opacity-0");
+    filter.setMode(filterMode);
+  } else {
+    $("canvas").classList.add("hidden");
+  }
+  let capturing = false;
   let session: Session | null = null;
   const sampler = new StatsSampler();
   let statsOn = false;
@@ -95,7 +112,10 @@ import Base from "../../layouts/Base.astro";
     $("splash").classList.add("hidden");
     session = new Session(`/api/sessions/${s.id}/offer`, video, input, {
       onState: (state) => {
-        if (state === "connected") toast("Escape or Select+Start for the menu");
+        if (state === "connected") {
+          filter.start();
+          toast("Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind");
+        }
         if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
       },
     });
@@ -199,12 +219,95 @@ import Base from "../../layouts/Base.astro";
     });
   }
 
+  function filterMenu() {
+    menus.push({
+      title: "Display filter",
+      items: FILTERS.map(({ mode, label }) => ({
+        label,
+        detail: mode === filterMode ? "Selected" : "",
+        run: () => {
+          filterMode = mode;
+          localStorage.setItem(FILTER_KEY, mode);
+          filter.setMode(mode);
+          menus.close();
+          toast(label);
+        },
+      })),
+    });
+  }
+
+  const REMAPPABLE: ButtonName[] = ["UP", "DOWN", "LEFT", "RIGHT", "A", "B", "X", "Y", "L", "R", "L2", "R2", "START", "SELECT"];
+  const controlsMenu = (): Menu => ({
+    title: "Controls: choose a button, then press a key or pad button",
+    items: [
+      ...REMAPPABLE.map((button) => ({
+        label: button,
+        detail: describeBinding(input.bindings, button),
+        run: async () => {
+          capturing = true;
+          toast(`Press a key or button for ${button} (Escape cancels)`);
+          const pressed = await captureNextInput();
+          // Let the press that bound the button finish before menus react again.
+          setTimeout(() => (capturing = false), 250);
+          if (pressed) input.setBindings(bind(input.bindings, pressed, button));
+          menus.replace(controlsMenu());
+        },
+      })),
+      {
+        label: "Reset to defaults",
+        run: () => {
+          input.setBindings(structuredClone(DEFAULT_BINDINGS));
+          menus.replace(controlsMenu());
+          toast("Controls reset");
+        },
+      },
+    ],
+  });
+
+  async function cheatsMenu(replace = false) {
+    const cheats = await api.cheats(gameId);
+    const menu: Menu = {
+      title: "Cheats: choose one to turn it on or off",
+      items: [
+        ...cheats.map((c) => ({
+          label: `${c.enabled ? "●" : "○"} ${c.description || c.code}`,
+          detail: c.description ? c.code : "",
+          run: async () => {
+            await api.setCheat(gameId, c.id, !c.enabled);
+            await cheatsMenu(true);
+          },
+        })),
+        {
+          label: "Add a cheat…",
+          detail: "Game Genie, Pro Action Replay or the core's own format",
+          run: async () => {
+            const code = prompt("Cheat code")?.trim();
+            if (!code) return;
+            const description = prompt("What does it do? (optional)")?.trim() ?? "";
+            try {
+              await api.addCheat(gameId, code, description);
+              toast("Cheat added");
+            } catch (e) {
+              toast(`Could not add: ${(e as Error).message}`);
+            }
+            await cheatsMenu(true);
+          },
+        },
+      ],
+    };
+    if (replace) menus.replace(menu);
+    else menus.push(menu);
+  }
+
   const gameMenu = (): Menu => ({
     title: game.title,
     items: [
       { label: "Resume", run: () => menus.close() },
       { label: "Save state", run: saveMenu },
       { label: "Load state", run: loadMenu },
+      { label: "Cheats", run: () => cheatsMenu() },
+      { label: "Controls", run: () => menus.push(controlsMenu()) },
+      { label: "Display filter", detail: FILTERS.find((f) => f.mode === filterMode)?.label, run: filterMenu },
       {
         label: "Reset",
         run: async () => {
@@ -246,7 +349,7 @@ import Base from "../../layouts/Base.astro";
 
   // Menu navigation. While playing with no menu open, game keys must not drive menus.
   listenNav((action) => {
-    if (session && !menus.open) return;
+    if (capturing || (session && !menus.open)) return;
     menus.handle(action);
   });
 

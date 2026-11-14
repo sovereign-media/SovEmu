@@ -6,6 +6,7 @@
 
 mod api;
 mod auth;
+mod cheats;
 mod db;
 mod error;
 #[cfg(test)]
@@ -122,6 +123,11 @@ pub fn router(state: AppState) -> Router {
         .route("/systems", get(api::list_systems))
         .route("/systems/{id}/games", get(api::list_games))
         .route("/games/{id}", get(api::get_game))
+        .route("/games/{id}/cheats", get(cheats::list).post(cheats::add))
+        .route(
+            "/games/{id}/cheats/{cheat}",
+            axum::routing::patch(cheats::update).delete(cheats::remove),
+        )
         .route("/games/{id}/states", get(api::list_states))
         .route("/games/{id}/states/{slot}", delete(api::delete_state))
         .route("/games/{id}/states/{slot}/screenshot", get(api::state_screenshot))

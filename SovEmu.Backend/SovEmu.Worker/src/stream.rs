@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
 use sovemu_protocol::ipc::Request;
-use sovemu_protocol::{INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
+use sovemu_protocol::{
+    ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
+};
 use sovemu_retro_host::{AvInfo, Core, CoreOptions, JoypadButtons};
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
@@ -27,6 +29,12 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig}
 
 use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
+use crate::rewind::Rewind;
+
+/// Frames emulated per tick while fast-forward is held.
+const FAST_FORWARD: u32 = 4;
+/// Hotkeys lapse if the client stops refreshing them (a lost release must not stick).
+const HOTKEY_LAPSE: Duration = Duration::from_millis(500);
 
 /// How long the loop sleeps at most when idle, so new commands are picked up promptly.
 const IDLE_WAIT: Duration = Duration::from_millis(20);
@@ -83,6 +91,12 @@ pub struct Session {
     last_seq: Option<u32>,
     pending_ack: Option<(u32, u32)>,
     persist: Persist,
+    rewind: Rewind,
+    hotkeys: Hotkeys,
+    hotkeys_at: Instant,
+    /// Frames sent to the client, for RTP timestamps: wall-clock paced even when fast-forward
+    /// runs several emulated frames per tick.
+    ticks: u64,
     /// Size of the frame in `rgba`, for save-state screenshots.
     shot_size: (u32, u32),
     finished: bool,
@@ -131,6 +145,10 @@ impl Session {
             last_seq: None,
             pending_ack: None,
             persist,
+            rewind: Rewind::default(),
+            hotkeys: Hotkeys::default(),
+            hotkeys_at: Instant::now(),
+            ticks: 0,
             shot_size: (0, 0),
             finished: false,
         })
@@ -157,6 +175,15 @@ impl Session {
         match request {
             Request::Reset { .. } => {
                 self.core.reset();
+                self.rewind.clear();
+                Ok(false)
+            }
+            Request::SetCheats { codes, .. } => {
+                self.core.reset_cheats();
+                for (i, code) in codes.iter().enumerate() {
+                    self.core.set_cheat(i as u32, true, code);
+                }
+                tracing::info!("{} cheat(s) active", codes.len());
                 Ok(false)
             }
             Request::Shutdown { .. } => {
@@ -173,6 +200,7 @@ impl Session {
             }
             Request::LoadState { slot, .. } => {
                 self.persist.load_state(&mut self.core, *slot).map_err(|e| format!("{e:#}"))?;
+                self.rewind.clear();
                 self.video.request_keyframe();
                 Ok(false)
             }
@@ -423,12 +451,18 @@ impl Drop for Session {
 }
 
 impl Session {
-    /// Applies an input packet, if it is newer than the last one applied.
+    /// Applies a message from the input channel: controller state (if newer than the last one
+    /// applied) or hotkeys.
     fn handle_input(&mut self, bytes: &[u8]) {
-        let packet = match InputPacket::decode(bytes) {
-            Ok(p) => p,
+        let packet = match ClientMessage::decode(bytes) {
+            Ok(ClientMessage::Input(p)) => p,
+            Ok(ClientMessage::Hotkeys(h)) => {
+                self.hotkeys = h;
+                self.hotkeys_at = Instant::now();
+                return;
+            }
             Err(e) => {
-                tracing::debug!("bad input packet: {e}");
+                tracing::debug!("bad input message: {e}");
                 return;
             }
         };
@@ -440,12 +474,32 @@ impl Session {
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
     }
 
-    /// Runs one frame and sends its video, audio and any input ack to the peer.
+    /// Runs one tick (one frame; several when fast-forwarding; a step back when rewinding) and
+    /// sends its video, audio and any input ack to the peer.
     fn step(&mut self, p: &mut Peer) -> Result<()> {
+        let now = Instant::now();
+        let hotkeys = if now.duration_since(self.hotkeys_at) < HOTKEY_LAPSE {
+            self.hotkeys
+        } else {
+            Hotkeys::default()
+        };
+        if hotkeys.rewind {
+            let core = &mut self.core;
+            self.rewind.step_back(|state| core.unserialize(state));
+        } else if hotkeys.fast_forward {
+            for _ in 1..FAST_FORWARD {
+                self.core.run_frame(&self.buttons)?;
+                self.frame += 1;
+                let core = &mut self.core;
+                self.rewind.record(|| core.serialize());
+            }
+        }
+
         let out = self.core.run_frame(&self.buttons)?;
         let frame = self.frame;
         self.frame += 1;
-        let now = Instant::now();
+        let tick = self.ticks;
+        self.ticks += 1;
 
         if let Some(av) = out.av_changed {
             tracing::info!(
@@ -469,7 +523,7 @@ impl Session {
                 (self.video.encode(&self.rgba, w, h)?, p.video)
                 && let Some(writer) = p.rtc.writer(mid)
             {
-                let rtp_time = MediaTime::from_90khz((frame as f64 * 90_000.0 / self.fps) as u64);
+                let rtp_time = MediaTime::from_90khz((tick as f64 * 90_000.0 / self.fps) as u64);
                 writer.playout_delay(MediaTime::from_millis(0), MediaTime::from_millis(0)).write(
                     pt,
                     now,
@@ -479,7 +533,9 @@ impl Session {
             }
         }
 
-        for packet in self.audio.push(out.audio)? {
+        // Rewinding plays silence (the browser fills the gap).
+        let audio: &[i16] = if hotkeys.rewind { &[] } else { out.audio };
+        for packet in self.audio.push(audio)? {
             if let Some((mid, pt)) = p.audio
                 && let Some(writer) = p.rtc.writer(mid)
             {
@@ -494,6 +550,10 @@ impl Session {
         {
             let ack = InputAck { seq, client_time_ms, frame: frame as u32 };
             let _ = channel.write(true, &ack.encode());
+        }
+        if !hotkeys.rewind {
+            let core = &mut self.core;
+            self.rewind.record(|| core.serialize());
         }
         self.persist.tick(&mut self.core, now);
         Ok(())

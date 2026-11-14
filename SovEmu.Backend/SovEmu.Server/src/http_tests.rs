@@ -255,6 +255,32 @@ async fn runs_a_game_session_in_a_worker() {
     assert_eq!(h.call("GET", &states, None).await.1, json!([]));
     assert_eq!(h.call("DELETE", &format!("{states}/2"), None).await.0, StatusCode::NOT_FOUND);
 
+    // Cheats: added, toggled and removed while the game runs (each change reaches the worker).
+    let cheats = format!("/api/games/{id}/cheats");
+    let (status, list) = h
+        .call("POST", &cheats, Some(json!({"code": " SXIOPO ", "description": "Infinite lives"})))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(list[0]["code"], "SXIOPO");
+    assert_eq!(list[0]["enabled"], true);
+    let cheat = list[0]["id"].as_i64().unwrap();
+    let (_, list) =
+        h.call("PATCH", &format!("{cheats}/{cheat}"), Some(json!({"enabled": false}))).await;
+    assert_eq!(list[0]["enabled"], false);
+    assert_eq!(
+        h.call("POST", &cheats, Some(json!({"code": "  "}))).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        h.call("DELETE", &format!("{cheats}/{cheat}"), None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(h.call("DELETE", &format!("{cheats}/{cheat}"), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        h.call("POST", "/api/games/9999/cheats", Some(json!({"code": "X"}))).await.0,
+        StatusCode::NOT_FOUND
+    );
+
     // Play history is recorded.
     let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
     assert_eq!(games[0]["play_count"], 1);
