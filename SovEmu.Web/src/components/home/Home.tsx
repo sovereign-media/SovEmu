@@ -128,7 +128,7 @@ function HomeScreen() {
         onBrowse={browse}
         empty={empty}
       />
-      <div className="relative z-10 -mt-8 grid gap-10">
+      <div className="relative z-10 -mt-8 grid grid-cols-1 gap-10">
         {feed.recent.length > 0 && (
           <Row title="Continue playing" icon={<History />}>
             {feed.recent.map((g, i) => (

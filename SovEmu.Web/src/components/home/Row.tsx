@@ -1,20 +1,57 @@
 // A home screen row: a titled, horizontally scrolling strip of game or system cards.
-import { Play } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatAgo, type Game, type RecentGame, type SystemSummary } from "../../lib/api";
 import { cardArt } from "../../lib/home";
 import { systemBadge } from "../../lib/systems";
 import { cn } from "../ui/cn";
 import { ScrollArea } from "../ui/primitives";
 
+/** How far one click of a row's arrow moves it: most of what is on screen, keeping a card of
+ *  context. */
+const STEP = 0.8;
+
 export function Row({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  // Which way the row can still move, for the arrows; measured on scroll and resize.
+  const [room, setRoom] = useState({ left: false, right: false });
+  useEffect(() => {
+    const v = viewport.current;
+    if (!v) return;
+    const measure = () => setRoom({ left: v.scrollLeft > 4, right: v.scrollLeft + v.clientWidth < v.scrollWidth - 4 });
+    measure();
+    v.addEventListener("scroll", measure, { passive: true });
+    const resize = new ResizeObserver(measure);
+    resize.observe(v);
+    return () => {
+      v.removeEventListener("scroll", measure);
+      resize.disconnect();
+    };
+  }, []);
+  const scroll = (dir: -1 | 1) => {
+    const v = viewport.current;
+    if (v) v.scrollBy({ left: dir * v.clientWidth * STEP, behavior: "smooth" });
+  };
+  const arrow = "rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent";
   return (
-    <section>
-      <h2 className="mb-3 flex items-center gap-2 px-8 text-lg font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
-        {icon}
-        {title}
-      </h2>
-      <ScrollArea orientation="horizontal">
+    <section className="min-w-0">
+      <div className="mb-3 flex items-center justify-between px-8">
+        <h2 className="flex items-center gap-2 text-lg font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
+          {icon}
+          {title}
+        </h2>
+        {(room.left || room.right) && (
+          <div className="flex gap-1">
+            <button type="button" aria-label={`Scroll ${title} left`} disabled={!room.left} onClick={() => scroll(-1)} className={arrow}>
+              <ChevronLeft className="size-5" />
+            </button>
+            <button type="button" aria-label={`Scroll ${title} right`} disabled={!room.right} onClick={() => scroll(1)} className={arrow}>
+              <ChevronRight className="size-5" />
+            </button>
+          </div>
+        )}
+      </div>
+      <ScrollArea orientation="horizontal" viewportRef={viewport}>
         <div className="flex w-max gap-4 px-8 py-3">{children}</div>
       </ScrollArea>
     </section>
