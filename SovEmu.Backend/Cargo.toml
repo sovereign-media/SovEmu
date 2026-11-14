@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = [
+    "SovEmu.LibretroFfi",
+    "SovEmu.RetroHost",
+    "SovEmu.TestCore",
+    "SovEmu.Worker",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+repository = "https://github.com/sovereign-media/SovEmu"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
+
+[profile.release]
+# The worker is a long-running per-session process: favour speed, keep symbols for crash reports.
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"

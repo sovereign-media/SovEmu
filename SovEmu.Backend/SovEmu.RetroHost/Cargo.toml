@@ -1,0 +1,16 @@
+[package]
+name = "sovemu-retro-host"
+description = "Safe libretro frontend: loads one core per process and runs it a frame at a time"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+libloading = "0.8.9"
+sovemu-libretro-ffi = { path = "../SovEmu.LibretroFfi" }
+tracing = "0.1.44"
+
+[lints]
+workspace = true

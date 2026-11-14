@@ -1,0 +1,16 @@
+# Local development. Phase 0 has no long-running server yet, so the service runs the worker CLI:
+#
+#   docker compose build
+#   docker compose run --rm sovemu probe
+#   docker compose run --rm sovemu headless --core /opt/sovemu/cores/fceumm_libretro.so \
+#       --rom roms/game.nes --frames 600 --out headless-out
+#
+# ./data is mounted at /data: put ROMs in data/roms and BIOS files in data/system.
+services:
+  sovemu:
+    image: sovemu:dev
+    build:
+      context: .
+      dockerfile: SovEmu.Backend/Dockerfile
+    volumes:
+      - ./data:/data
