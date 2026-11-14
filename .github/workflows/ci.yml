@@ -112,8 +112,9 @@ jobs:
       - name: Smoke test
         working-directory: .
         run: |
-          docker run --rm sovemu:ci --version
-          docker run --rm sovemu:ci probe
+          # The image runs sovemu-server by default; name each binary to run it instead.
+          docker run --rm sovemu:ci sovemu-server --version
+          docker run --rm sovemu:ci sovemu-worker probe /opt/sovemu/cores > /dev/null
 
   chart:
     # charts/sovemu: lint and render every value set in ci/, and validate what it renders
