@@ -94,6 +94,7 @@ export const api = {
   setup: (username: string, password: string) => call<User>("POST", "/auth/setup", { username, password }),
   login: (username: string, password: string) => call<User>("POST", "/auth/login", { username, password }),
   logout: () => call<void>("POST", "/auth/logout"),
+  config: () => call<{ ice_servers: RTCIceServer[] }>("GET", "/config"),
   systems: () => call<SystemSummary[]>("GET", "/systems"),
   games: (system: string) => call<Game[]>("GET", `/systems/${encodeURIComponent(system)}/games`),
   game: (id: number) => call<Game>("GET", `/games/${id}`),

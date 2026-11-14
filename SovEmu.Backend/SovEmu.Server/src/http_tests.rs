@@ -170,9 +170,45 @@ async fn first_run_setup_then_sign_in() {
 }
 
 #[tokio::test]
+async fn throttles_guessing_and_serves_ops_routes() {
+    let mut h = Harness::new("ops", false).await;
+    h.sign_up_admin().await;
+    h.cookie = None;
+    let wrong = json!({"username": "admin", "password": "wrong-password"});
+    for _ in 0..crate::ops::MAX_FAILURES {
+        assert_eq!(
+            h.call("POST", "/api/auth/login", Some(wrong.clone())).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let (status, body) = h.call("POST", "/api/auth/login", Some(wrong)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(body["error"].as_str().unwrap().contains("try again"));
+    // Locked out even with the right password, until the window passes.
+    let right = json!({"username": "admin", "password": "password123"});
+    assert_eq!(
+        h.call("POST", "/api/auth/login", Some(right)).await.0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+
+    let health = Request::builder().uri("/health").body(Body::empty()).unwrap();
+    let response = router(h.state.clone()).oneshot(health).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(response.headers()["x-frame-options"], "DENY");
+    assert_eq!(
+        h.call("GET", "/metrics", None).await.0,
+        StatusCode::NOT_FOUND,
+        "off without a token"
+    );
+    assert_eq!(h.call("GET", "/api/config", None).await.0, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn browses_the_library() {
     let mut h = Harness::new("library", false).await;
     h.sign_up_admin().await;
+    assert_eq!(h.call("GET", "/api/config", None).await.1, json!({"ice_servers": []}));
     let (_, systems) = h.call("GET", "/api/systems", None).await;
     assert_eq!(system(&systems, "nes")["game_count"], 1);
     assert_eq!(system(&systems, "nes")["name"], "Nintendo Entertainment System");

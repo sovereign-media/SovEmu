@@ -204,6 +204,13 @@ pub async fn login(
     State(state): State<AppState>,
     Json(creds): Json<Credentials>,
 ) -> ApiResult<Response> {
+    let now = std::time::Instant::now();
+    if let Err(wait) = state.login_throttle.check(&creds.username, now) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("too many failed attempts; try again in {wait} s"),
+        ));
+    }
     let row: Option<(i64, String, bool, String)> = sqlx::query_as(
         "SELECT id, username, is_admin, password_hash FROM users WHERE username = ?",
     )
@@ -217,8 +224,10 @@ pub async fn login(
     };
     let valid = verify_password(&creds.password, &hash);
     let Some(user) = user.filter(|_| valid) else {
+        state.login_throttle.failed(&creds.username, now);
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "wrong username or password"));
     };
+    state.login_throttle.succeeded(&creds.username);
     let cookie = start_session(&state.db, user.id, state.config.secure_cookies).await?;
     Ok(([(SET_COOKIE, cookie)], Json(user)).into_response())
 }

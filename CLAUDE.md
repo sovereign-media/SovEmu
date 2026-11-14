@@ -47,6 +47,8 @@ submodules from the start.
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, ack `0x81`), each tested
   against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
+- **Never expose operational data without a switch.** `/metrics` stays off unless
+  `SOVEMU_METRICS_TOKEN` is set; new operational routes follow the same pattern.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the
   Write tool to `test-results/<task>.md` and passed with `-F` / `--body-file`, never a heredoc.
 

@@ -20,6 +20,7 @@ use sovemu_protocol::{
     ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
 use sovemu_retro_host::{AvInfo, Core, CoreOptions, JoypadButtons};
+use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
 use str0m::format::Codec;
@@ -35,6 +36,16 @@ use crate::rewind::Rewind;
 const FAST_FORWARD: u32 = 4;
 /// Hotkeys lapse if the client stops refreshing them (a lost release must not stick).
 const HOTKEY_LAPSE: Duration = Duration::from_millis(500);
+
+/// The lowest video bitrate adaptation will choose, kbit/s.
+const MIN_VIDEO_KBPS: u32 = 300;
+
+/// The video bitrate to use for a send-bandwidth estimate: 85% of it (headroom for retransmits
+/// and estimate noise) minus the audio, clamped to `[MIN_VIDEO_KBPS, max_kbps]`.
+pub fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u32) -> u32 {
+    let usable = (estimate_bps as f64 * 0.85 / 1000.0) as i64 - i64::from(audio_kbps);
+    usable.clamp(i64::from(MIN_VIDEO_KBPS.min(max_kbps)), i64::from(max_kbps)) as u32
+}
 
 /// How long the loop sleeps at most when idle, so new commands are picked up promptly.
 const IDLE_WAIT: Duration = Duration::from_millis(20);
@@ -92,6 +103,9 @@ pub struct Session {
     pending_ack: Option<(u32, u32)>,
     persist: Persist,
     rewind: Rewind,
+    /// The configured (maximum) video bitrate; adaptation stays at or below it.
+    max_video_kbps: u32,
+    audio_kbps: u32,
     hotkeys: Hotkeys,
     hotkeys_at: Instant,
     /// Frames sent to the client, for RTP timestamps: wall-clock paced even when fast-forward
@@ -146,6 +160,8 @@ impl Session {
             pending_ack: None,
             persist,
             rewind: Rewind::default(),
+            max_video_kbps: config.video_kbps,
+            audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
             hotkeys_at: Instant::now(),
             ticks: 0,
@@ -238,6 +254,7 @@ fn primary_ip() -> Option<IpAddr> {
 fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
+    max_video_kbps: u32,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
     let mut rtc = RtcConfig::new()
@@ -245,7 +262,12 @@ fn accept_offer(
         .clear_codecs()
         .enable_vp8(true)
         .enable_opus(true, false)
+        .enable_bwe(Some(Bitrate::kbps(u64::from(max_video_kbps))))
         .build(Instant::now());
+    rtc.bwe().set_bitrate(
+        Bitrate::kbps(u64::from(MIN_VIDEO_KBPS)),
+        Bitrate::kbps(u64::from(max_video_kbps)),
+    );
     rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
     let answer = rtc.sdp_api().accept_offer(offer)?;
     let peer = Peer { rtc, video: None, audio: None, input: None, connected: false };
@@ -281,7 +303,7 @@ pub fn run(
         loop {
             match commands.try_recv() {
                 Ok(Command::Offer { offer, reply }) => {
-                    let result = accept_offer(&offer, advertised);
+                    let result = accept_offer(&offer, advertised, session.max_video_kbps);
                     let answer = match result {
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {
@@ -437,6 +459,9 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     session.handle_input(&data.data);
                 }
                 Event::KeyframeRequest(_) => session.video.request_keyframe(),
+                Event::EgressBitrateEstimate(
+                    BweKind::Twcc { estimate, .. } | BweKind::Remb { estimate, .. },
+                ) => session.adapt_bitrate(estimate.as_u64()),
                 _ => {}
             },
         }
@@ -472,6 +497,20 @@ impl Session {
         self.last_seq = Some(packet.seq);
         self.buttons = packet.ports.iter().map(|&b| JoypadButtons(b)).collect();
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
+    }
+
+    /// Follows the send-bandwidth estimate, ignoring changes under 10%.
+    fn adapt_bitrate(&mut self, estimate_bps: u64) {
+        let target = target_video_kbps(estimate_bps, self.audio_kbps, self.max_video_kbps);
+        let current = self.video.config().bitrate_kbps;
+        if target.abs_diff(current) * 10 > current {
+            tracing::debug!(
+                "video bitrate {current} -> {target} kbit/s (estimate {estimate_bps} bit/s)"
+            );
+            if let Err(e) = self.video.set_bitrate(target) {
+                tracing::warn!("cannot change the bitrate: {e}");
+            }
+        }
     }
 
     /// Runs one tick (one frame; several when fast-forwarding; a step back when rewinding) and
@@ -563,6 +602,18 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bitrate_follows_the_estimate_within_bounds() {
+        assert_eq!(target_video_kbps(4_000_000, 128, 2500), 2500, "capped at the configured rate");
+        assert_eq!(target_video_kbps(2_000_000, 128, 2500), 1572);
+        assert_eq!(target_video_kbps(100_000, 128, 2500), 300, "never below the floor");
+        assert_eq!(
+            target_video_kbps(100_000, 128, 200),
+            200,
+            "a floor above the cap yields the cap"
+        );
+    }
 
     #[test]
     fn an_explicit_advertise_address_wins() {

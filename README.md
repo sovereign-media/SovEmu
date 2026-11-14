@@ -34,6 +34,30 @@ The first visit creates the admin account. `./data` is mounted at `/data`: the d
 machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
 UDP 50000-50009 reachable.
 
+## Configuration
+
+All settings are flags on `sovemu-server` or environment variables (the image sets the paths).
+
+| Variable | Default | What |
+|---|---|---|
+| `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
+| `SOVEMU_DATA_DIR` | `data` (`/data` in the image) | Database, saves, `system/` (BIOS) |
+| `SOVEMU_ROMS_DIR` | `<data dir>/roms` | The ROM library, one folder per system |
+| `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent game session; publish the whole range |
+| `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to: the host's LAN address in a container |
+| `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers that cannot reach the UDP ports directly, as JSON `RTCIceServer`s |
+| `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client connected |
+| `SOVEMU_SECURE_COOKIES` | off | Set when serving over HTTPS (behind a reverse proxy) |
+| `SOVEMU_METRICS_TOKEN` | unset | Enables `GET /metrics` (Prometheus) for this bearer token |
+
+`GET /health` answers `ok` while the database is reachable. Sign-in locks a username out for five
+minutes after five failed attempts.
+
+**Playing away from home:** sessions need UDP from the browser to the session ports. Expose
+8080 through an HTTPS reverse proxy (and set `SOVEMU_SECURE_COOKIES=1`). Then forward
+50000-50009/udp and set `SOVEMU_ADVERTISE_IP` to your public address, or run a TURN server
+(coturn) and list it in `SOVEMU_ICE_SERVERS`.
+
 ## Building from source
 
 You need:
