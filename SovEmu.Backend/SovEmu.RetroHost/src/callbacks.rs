@@ -20,11 +20,20 @@ use crate::video::{PixelFormat, VideoFrame};
 /// `RETRO_HW_FRAME_BUFFER_VALID`, a pointer-valued macro bindgen cannot translate.
 const HW_FRAME_BUFFER_VALID: *const c_void = usize::MAX as *const c_void;
 
-/// A core option declared through `RETRO_ENVIRONMENT_SET_VARIABLES`.
+/// A core option, declared through `SET_VARIABLES` or the core options interface (v1 or v2).
 #[derive(Debug)]
 pub(crate) struct Variable {
+    /// Position in the core's declaration (options come back in the core's order).
+    pub order: usize,
     pub description: String,
+    /// What the option does, where the core says (core options v1 and v2).
+    pub info: String,
+    /// The key of its category (core options v2).
+    pub category: Option<String>,
     pub options: Vec<String>,
+    /// A display label per option (the value itself where the core gives none).
+    pub labels: Vec<String>,
+    pub default: String,
     /// The current value; the core reads it through a pointer, so it must stay put until the
     /// next `GET_VARIABLE`.
     pub value: CString,
@@ -43,6 +52,8 @@ pub(crate) struct HostState {
     pub system_dir: CString,
     pub save_dir: CString,
     pub variables: BTreeMap<String, Variable>,
+    /// Option categories the core declared (core options v2): key, description, info.
+    pub categories: Vec<(String, String, String)>,
     /// Values chosen by the frontend, applied whenever the core (re)declares its variables.
     pub overrides: BTreeMap<String, String>,
     pub variables_dirty: bool,
@@ -136,6 +147,38 @@ unsafe fn read_str(ptr: *const c_char) -> Option<String> {
     (!ptr.is_null()).then(|| unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned())
 }
 
+/// An option as a core declares it, before SovEmu gives it a value.
+struct Declared {
+    key: String,
+    description: String,
+    info: String,
+    category: Option<String>,
+    options: Vec<String>,
+    labels: Vec<String>,
+    default: Option<String>,
+}
+
+/// An option's values and their labels (the value where there is no label), up to the first
+/// null value.
+///
+/// # Safety
+///
+/// Every non-null string in `values` must be NUL-terminated.
+unsafe fn read_values(values: &[ffi::retro_core_option_value]) -> (Vec<String>, Vec<String>) {
+    let mut options = Vec::new();
+    let mut labels = Vec::new();
+    for v in values {
+        // SAFETY: guaranteed by the caller.
+        let Some(value) = (unsafe { read_str(v.value) }) else { break };
+        // SAFETY: as above.
+        labels.push(
+            unsafe { read_str(v.label) }.filter(|l| !l.is_empty()).unwrap_or_else(|| value.clone()),
+        );
+        options.push(value);
+    }
+    (options, labels)
+}
+
 /// Writes an environment call's out-parameter, refusing a null pointer.
 ///
 /// # Safety
@@ -218,6 +261,34 @@ impl HostState {
                     self.set_variables(data.cast::<ffi::retro_variable>());
                     true
                 }
+                // Core options v2: categories, an explanation per option, and value labels.
+                // Cores ask for the version first and declare their options the richest way the
+                // frontend supports.
+                ffi::RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION => write(data, 2 as c_uint),
+                ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2 => {
+                    self.set_core_options_v2(data.cast::<ffi::retro_core_options_v2>());
+                    // True: categories are supported.
+                    true
+                }
+                ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL => {
+                    // SovEmu asks for English (GET_LANGUAGE), so the `us` set is the one.
+                    match read::<ffi::retro_core_options_v2_intl>(data) {
+                        Some(intl) => self.set_core_options_v2(intl.us),
+                        None => self.declare(Vec::new(), Vec::new()),
+                    }
+                    true
+                }
+                ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS => {
+                    self.set_core_options_v1(data.cast::<ffi::retro_core_option_definition>());
+                    true
+                }
+                ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL => {
+                    match read::<ffi::retro_core_options_intl>(data) {
+                        Some(intl) => self.set_core_options_v1(intl.us),
+                        None => self.declare(Vec::new(), Vec::new()),
+                    }
+                    true
+                }
                 ffi::RETRO_ENVIRONMENT_GET_VARIABLE => {
                     self.get_variable(data.cast::<ffi::retro_variable>())
                 }
@@ -270,9 +341,8 @@ impl HostState {
                 | ffi::RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS
                 | ffi::RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS
                 | ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
-                // Everything else, including GET_CORE_OPTIONS_VERSION (so cores fall back to the
-                // legacy SET_VARIABLES), Vulkan's GET_HW_RENDER_INTERFACE and callbacks we would
-                // never call.
+                // Everything else, including Vulkan's GET_HW_RENDER_INTERFACE, the core options
+                // update-display callback, and callbacks we would never call.
                 _ => {
                     if self.unsupported_logged.insert(cmd) {
                         tracing::debug!("unsupported environment command {cmd:#x}");
@@ -324,15 +394,51 @@ impl HostState {
         true
     }
 
+    /// Replaces the declared options, giving each its frontend override or its default.
+    fn declare(&mut self, options: Vec<Declared>, categories: Vec<(String, String, String)>) {
+        self.variables.clear();
+        self.categories = categories;
+        for (order, d) in options.into_iter().enumerate() {
+            let default = d
+                .default
+                .filter(|v| d.options.contains(v))
+                .or_else(|| d.options.first().cloned())
+                .unwrap_or_default();
+            let value = match self.overrides.get(&d.key) {
+                Some(chosen) => {
+                    if !d.options.contains(chosen) {
+                        tracing::warn!(
+                            "core option {}={chosen} is not one of {:?}; using it anyway",
+                            d.key,
+                            d.options
+                        );
+                    }
+                    chosen.clone()
+                }
+                None => default.clone(),
+            };
+            self.variables.insert(
+                d.key,
+                Variable {
+                    order,
+                    description: d.description,
+                    info: d.info,
+                    category: d.category,
+                    options: d.options,
+                    labels: d.labels,
+                    default,
+                    value: CString::new(value).unwrap_or_default(),
+                },
+            );
+        }
+    }
+
     /// # Safety
     ///
     /// `vars` must be null or point to an array of `retro_variable` terminated by a null key.
     unsafe fn set_variables(&mut self, mut vars: *const ffi::retro_variable) {
-        self.variables.clear();
-        if vars.is_null() {
-            return;
-        }
-        loop {
+        let mut declared = Vec::new();
+        while !vars.is_null() {
             // SAFETY: the array is terminated by an entry with a null key, checked below.
             let var = unsafe { vars.read() };
             // SAFETY: libretro strings are NUL-terminated.
@@ -342,28 +448,112 @@ impl HostState {
             // "Description; option1|option2|option3", where the first option is the default.
             let (description, options) = spec.split_once("; ").unwrap_or(("", &spec));
             let options: Vec<String> = options.split('|').map(str::to_owned).collect();
-            let value = match self.overrides.get(&key) {
-                Some(chosen) => {
-                    if !options.contains(chosen) {
-                        tracing::warn!(
-                            "core option {key}={chosen} is not one of {options:?}; using it anyway"
-                        );
-                    }
-                    chosen.clone()
-                }
-                None => options.first().cloned().unwrap_or_default(),
-            };
-            self.variables.insert(
+            declared.push(Declared {
                 key,
-                Variable {
-                    description: description.to_owned(),
-                    options,
-                    value: CString::new(value).unwrap_or_default(),
-                },
-            );
+                description: description.to_owned(),
+                info: String::new(),
+                category: None,
+                labels: options.clone(),
+                default: None,
+                options,
+            });
             // SAFETY: not yet past the terminator.
             vars = unsafe { vars.add(1) };
         }
+        self.declare(declared, Vec::new());
+    }
+
+    /// # Safety
+    ///
+    /// `defs` must be null or point to an array of `retro_core_option_definition` terminated by
+    /// a null key.
+    unsafe fn set_core_options_v1(&mut self, mut defs: *const ffi::retro_core_option_definition) {
+        let mut declared = Vec::new();
+        while !defs.is_null() {
+            // SAFETY: the array is terminated by an entry with a null key, checked below.
+            let def = unsafe { &*defs };
+            // SAFETY: libretro strings are NUL-terminated.
+            let Some(key) = (unsafe { read_str(def.key) }) else { break };
+            // SAFETY: as above, for every string in the definition.
+            let (options, labels) = unsafe { read_values(&def.values) };
+            declared.push(Declared {
+                key,
+                // SAFETY: as above.
+                description: unsafe { read_str(def.desc) }.unwrap_or_default(),
+                // SAFETY: as above.
+                info: unsafe { read_str(def.info) }.unwrap_or_default(),
+                category: None,
+                options,
+                labels,
+                // SAFETY: as above.
+                default: unsafe { read_str(def.default_value) },
+            });
+            // SAFETY: not yet past the terminator.
+            defs = unsafe { defs.add(1) };
+        }
+        self.declare(declared, Vec::new());
+    }
+
+    /// # Safety
+    ///
+    /// `options` must be null or point to a `retro_core_options_v2` whose arrays are terminated
+    /// by null keys.
+    unsafe fn set_core_options_v2(&mut self, options: *const ffi::retro_core_options_v2) {
+        // SAFETY: guaranteed by the caller.
+        let Some(options) = (unsafe { options.as_ref() }) else {
+            return self.declare(Vec::new(), Vec::new());
+        };
+        let mut categories = Vec::new();
+        let mut cat = options.categories.cast_const();
+        while !cat.is_null() {
+            // SAFETY: terminated by an entry with a null key, checked below.
+            let c = unsafe { &*cat };
+            // SAFETY: libretro strings are NUL-terminated.
+            let Some(key) = (unsafe { read_str(c.key) }) else { break };
+            categories.push((
+                key,
+                // SAFETY: as above.
+                unsafe { read_str(c.desc) }.unwrap_or_default(),
+                // SAFETY: as above.
+                unsafe { read_str(c.info) }.unwrap_or_default(),
+            ));
+            // SAFETY: not yet past the terminator.
+            cat = unsafe { cat.add(1) };
+        }
+        let mut declared = Vec::new();
+        let mut def = options.definitions.cast_const();
+        while !def.is_null() {
+            // SAFETY: terminated by an entry with a null key, checked below.
+            let d = unsafe { &*def };
+            // SAFETY: libretro strings are NUL-terminated.
+            let Some(key) = (unsafe { read_str(d.key) }) else { break };
+            // SAFETY: as above.
+            let category = unsafe { read_str(d.category_key) }
+                .filter(|k| categories.iter().any(|(c, _, _)| c == k));
+            // Within a category the core offers shorter wording, as RetroArch shows it there.
+            let pick = |plain: *const c_char, categorized: *const c_char| {
+                // SAFETY: as above.
+                let categorized = unsafe { read_str(categorized) }.filter(|s| !s.is_empty());
+                // SAFETY: as above.
+                let plain = unsafe { read_str(plain) }.unwrap_or_default();
+                if category.is_some() { categorized.unwrap_or(plain) } else { plain }
+            };
+            // SAFETY: as above, for every value.
+            let (values, labels) = unsafe { read_values(&d.values) };
+            declared.push(Declared {
+                description: pick(d.desc, d.desc_categorized),
+                info: pick(d.info, d.info_categorized),
+                key,
+                category: category.clone(),
+                options: values,
+                labels,
+                // SAFETY: as above.
+                default: unsafe { read_str(d.default_value) },
+            });
+            // SAFETY: not yet past the terminator.
+            def = unsafe { def.add(1) };
+        }
+        self.declare(declared, categories);
     }
 
     /// # Safety

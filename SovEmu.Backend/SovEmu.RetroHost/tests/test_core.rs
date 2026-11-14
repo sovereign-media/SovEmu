@@ -165,6 +165,17 @@ fn core_options_default_override_and_change() {
         assert_eq!(vars[0].description, "Test pattern");
         assert_eq!(vars[0].options, ["gradient", "solid"]);
         assert_eq!(vars[0].value, "gradient");
+        // Declared through core options v2: category, explanation, labels and default.
+        assert_eq!(vars[0].category.as_deref(), Some("video"));
+        assert!(vars[0].info.starts_with("What every frame shows"));
+        assert_eq!(vars[0].labels, ["Gradient", "Solid colour"]);
+        assert_eq!(vars[0].default, "gradient");
+        let categories = core.option_categories();
+        assert_eq!(categories.len(), 1);
+        assert_eq!(
+            (categories[0].key.as_str(), categories[0].description.as_str()),
+            ("video", "Video")
+        );
 
         // Changed at runtime: the core sees GET_VARIABLE_UPDATE on the next frame.
         assert_ne!(pixel(&core.run_frame(&[]).unwrap().video.to_rgba8(), 1, 1), SOLID_COLOUR);

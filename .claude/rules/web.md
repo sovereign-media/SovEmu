@@ -17,7 +17,7 @@ paths:
 - **React islands, Radix UI, Lucide.** A page is a thin `.astro` file mounting one React
   component with `client:only="react"` (no SSR: it still builds to static files). Controls come
   from Radix UI (`radix-ui`), styled once in `src/components/ui/` (dialogs, confirm, select,
-  progress, dropdown menu, tooltip, scroll area, toggle chips, toast, `Button`); never hand-roll a
+  progress, dropdown menu, tooltip, scroll area, toast, `Button`); never hand-roll a
   control Radix has, and never use `prompt()`/`confirm()`. Icons are `lucide-react`.
 - **Pad and keyboard first.** Console-style screens are driven by `listenNav` (`src/lib/nav.ts`)
   with the focus logic in `src/lib/` (`home.ts`, `menu.ts`); Radix supplies the surfaces. Where

@@ -24,16 +24,33 @@ struct ProbeResult {
     valid_extensions: Vec<String>,
     need_fullpath: bool,
     supports_no_game: bool,
-    /// The core options it declares, with their choices; the first choice is the default.
+    /// The core options it declares, in its order, with their choices.
     variables: Vec<ProbeVariable>,
+    /// The groups the core puts its options in ("Video", "Audio", …), if it does.
+    categories: Vec<ProbeCategory>,
 }
 
 #[derive(Debug, Serialize)]
 struct ProbeVariable {
     key: String,
     description: String,
+    /// What the option does, where the core explains it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    info: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
     choices: Vec<String>,
+    /// A display label per choice.
+    labels: Vec<String>,
     default: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeCategory {
+    key: String,
+    description: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    info: String,
 }
 
 /// Whether `path` looks like a shared library on this platform.
@@ -70,6 +87,7 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
         need_fullpath: false,
         supports_no_game: false,
         variables: Vec::new(),
+        categories: Vec::new(),
     };
     let options = CoreOptions {
         system_dir: scratch.to_owned(),
@@ -86,16 +104,23 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
             result.valid_extensions = info.valid_extensions.clone();
             result.need_fullpath = info.need_fullpath;
             result.supports_no_game = core.supports_no_game();
-            // Loaded with no overrides, so each value is the core's default.
             result.variables = core
                 .variables()
                 .into_iter()
                 .map(|v| ProbeVariable {
                     key: v.key,
                     description: v.description,
+                    info: v.info,
+                    category: v.category,
                     choices: v.options,
-                    default: v.value,
+                    labels: v.labels,
+                    default: v.default,
                 })
+                .collect();
+            result.categories = core
+                .option_categories()
+                .into_iter()
+                .map(|c| ProbeCategory { key: c.key, description: c.description, info: c.info })
                 .collect();
         }
         Err(err) => result.error = Some(format!("{err:#}")),

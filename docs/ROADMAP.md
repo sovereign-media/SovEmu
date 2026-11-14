@@ -173,6 +173,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Emulator settings in the web app: each core's options (probed by a worker), changed per
       system by admins (`system_settings`, migration 0005); the environment wins and is shown
       locked; changes are offered as `SOVEMU_SYSTEMS__…` lines
+- [x] Core options v1/v2 in RetroHost (`GET_CORE_OPTIONS_VERSION` = 2): the settings page groups
+      each system's settings by the core's categories (else by keyword) under a system dropdown,
+      and shows the core's explanation of each
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 

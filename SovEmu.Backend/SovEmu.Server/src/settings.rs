@@ -31,8 +31,26 @@ use crate::systems::System;
 pub struct CoreOption {
     pub key: String,
     pub description: String,
+    /// What it does, where the core explains it.
+    #[serde(default)]
+    pub info: String,
+    /// The key of its category, where the core groups its options.
+    #[serde(default)]
+    pub category: Option<String>,
     pub choices: Vec<String>,
+    /// A display label per choice.
+    #[serde(default)]
+    pub labels: Vec<String>,
     pub default: String,
+}
+
+/// A group of options the core declares ("Video", "Audio", …).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct CoreCategory {
+    pub key: String,
+    pub description: String,
+    #[serde(default)]
+    pub info: String,
 }
 
 /// What the probe says about a core.
@@ -43,6 +61,8 @@ pub struct CoreInfo {
     pub error: Option<String>,
     #[serde(default)]
     pub variables: Vec<CoreOption>,
+    #[serde(default)]
+    pub categories: Vec<CoreCategory>,
 }
 
 /// Probe results, per core library, for the life of the process.
@@ -139,7 +159,13 @@ fn environment(state: &AppState, system: &System) -> BTreeMap<String, String> {
 pub struct Setting {
     key: String,
     description: String,
+    /// What it does, in the core's words (empty where the core does not say).
+    info: String,
+    /// The key of the core's category for it; the web client groups the rest itself.
+    category: Option<String>,
     choices: Vec<String>,
+    /// A display label per choice.
+    labels: Vec<String>,
     /// The core's own default.
     default: String,
     value: String,
@@ -151,6 +177,8 @@ pub struct SystemSettings {
     system: String,
     core: String,
     settings: Vec<Setting>,
+    /// The core's own option categories, in its order.
+    categories: Vec<CoreCategory>,
     /// The admin's choices as environment lines, to make them part of the configuration.
     environment: Vec<String>,
 }
@@ -179,7 +207,14 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
                 } else {
                     o.description.clone()
                 },
+                info: o.info.clone(),
+                category: o.category.clone(),
                 choices: o.choices.clone(),
+                labels: if o.labels.len() == o.choices.len() {
+                    o.labels.clone()
+                } else {
+                    o.choices.clone()
+                },
                 default: o.default.clone(),
                 value,
                 source,
@@ -191,7 +226,10 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
     settings.extend(layers.into_iter().map(|(key, (value, source))| Setting {
         description: key.clone(),
         key,
+        info: String::new(),
+        category: None,
         choices: Vec::new(),
+        labels: Vec::new(),
         default: String::new(),
         value,
         source,
@@ -201,7 +239,13 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
         .map(|(k, v)| format!("SOVEMU_SYSTEMS__{}__OPTIONS__{k}={v}", system.id))
         .collect();
     let core = [info.name.clone(), info.version.clone()].into_iter().flatten().collect::<Vec<_>>();
-    Ok(SystemSettings { system: system.id.to_owned(), core: core.join(" "), settings, environment })
+    Ok(SystemSettings {
+        system: system.id.to_owned(),
+        core: core.join(" "),
+        settings,
+        categories: info.categories.clone(),
+        environment,
+    })
 }
 
 fn system(id: &str) -> ApiResult<&'static System> {

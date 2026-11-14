@@ -1,5 +1,5 @@
 // SovEmu's look over Radix UI primitives: dialogs, selects, progress bars, menus, tooltips,
-// scroll areas, toggle groups and labels. Pages compose these; none hand-roll their own.
+// scroll areas and labels. Pages compose these; none hand-roll their own.
 import {
   AlertDialog as AlertPrimitive,
   Dialog as DialogPrimitive,
@@ -8,7 +8,6 @@ import {
   Progress as ProgressPrimitive,
   ScrollArea as ScrollPrimitive,
   Select as SelectPrimitive,
-  ToggleGroup as TogglePrimitive,
   Tooltip as TooltipPrimitive,
 } from "radix-ui";
 import { Check, ChevronDown, X } from "lucide-react";
@@ -265,41 +264,6 @@ export function ScrollArea({
         <ScrollPrimitive.Thumb className="relative flex-1 rounded-full bg-white/25" />
       </ScrollPrimitive.Scrollbar>
     </ScrollPrimitive.Root>
-  );
-}
-
-// --- Toggle group ---------------------------------------------------------------------------
-
-export function Chips<T extends string>({
-  value,
-  items,
-  onChange,
-  label,
-}: {
-  value: T | undefined;
-  items: { value: T; label: string; color?: string }[];
-  onChange: (value: T) => void;
-  label: string;
-}) {
-  return (
-    <TogglePrimitive.Root
-      type="single"
-      aria-label={label}
-      value={value ?? ""}
-      onValueChange={(v) => v && onChange(v as T)}
-      className="flex flex-wrap gap-2"
-    >
-      {items.map((i) => (
-        <TogglePrimitive.Item
-          key={i.value}
-          value={i.value}
-          style={i.value === value ? { background: i.color } : undefined}
-          className="cursor-pointer rounded-full border border-edge px-3 py-1 text-sm text-slate-300 outline-none hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70 data-[state=on]:border-transparent data-[state=on]:bg-accent data-[state=on]:text-white"
-        >
-          {i.label}
-        </TogglePrimitive.Item>
-      ))}
-    </TogglePrimitive.Root>
   );
 }
 

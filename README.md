@@ -76,8 +76,12 @@ as `gpu`, `software` or `off`.
 ## Emulator settings
 
 Each emulator has its own settings: rendering, internal resolution, frame skipping and so on
-(41 for Snes9x, 113 for Dolphin). Admins change them per system on the **Settings** page.
-Changes apply to the next game started.
+(43 for Snes9x, 113 for Dolphin). Admins change them per system on the **Settings** page: pick
+the system from the dropdown, and its settings are grouped (System, Video, Audio, Input, then the
+emulator's own groups), each with the emulator's explanation of what it does. The worker speaks
+libretro's core options v2, so groups, explanations and value labels come from the emulator
+itself; settings an emulator leaves ungrouped are placed by keyword. Changes apply to the next
+game started.
 
 A game starts with each setting taken from these, in order, the last one winning:
 
