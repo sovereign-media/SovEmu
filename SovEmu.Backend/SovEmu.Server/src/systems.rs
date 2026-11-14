@@ -171,6 +171,51 @@ pub fn by_id(id: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.id == id)
 }
 
+/// Batocera/Recalbox folders of systems SovEmu does not play. The scanner skips them rather
+/// than guess from extensions: a PlayStation 2, Dreamcast or Neo Geo CD disc is a `.chd` or
+/// `.cue` too, and the PlayStation core cannot run it.
+pub const UNSUPPORTED_FOLDERS: &[&str] = &[
+    "3do",
+    "3ds",
+    "64dd",
+    "amigacd32",
+    "atomiswave",
+    "cdi",
+    "dreamcast",
+    "gamecube",
+    "gc",
+    "jaguar",
+    "jaguarcd",
+    "model2",
+    "model3",
+    "n64",
+    "naomi",
+    "naomi2",
+    "nds",
+    "neogeocd",
+    "pcenginecd",
+    "pcfx",
+    "ps2",
+    "ps3",
+    "ps4",
+    "psp",
+    "psvita",
+    "saturn",
+    "segacd",
+    "sega32x",
+    "switch",
+    "triforce",
+    "wii",
+    "wiiu",
+    "xbox",
+    "xbox360",
+];
+
+/// Whether a top-level library folder belongs to a system SovEmu does not play.
+pub fn is_unsupported_folder(folder: &str) -> bool {
+    UNSUPPORTED_FOLDERS.contains(&folder.trim().to_ascii_lowercase().as_str())
+}
+
 /// The system a top-level library folder belongs to.
 pub fn by_folder(folder: &str) -> Option<&'static System> {
     let folder = folder.trim().to_ascii_lowercase();
