@@ -27,6 +27,27 @@ export interface SystemSummary {
   rendering?: "gpu" | "software" | "off";
 }
 
+export type SettingSource = "core" | "sovemu" | "admin" | "environment";
+
+/** A libretro core option for a system, as the admin Settings page shows it. */
+export interface CoreSetting {
+  key: string;
+  description: string;
+  choices: string[];
+  /** The core's own default. */
+  default: string;
+  value: string;
+  source: SettingSource;
+}
+
+export interface SystemSettings {
+  system: string;
+  core: string;
+  settings: CoreSetting[];
+  /** The admin's changes as SOVEMU_SYSTEMS__… lines, to move into configuration. */
+  environment: string[];
+}
+
 export interface Game {
   id: number;
   system: string;
@@ -155,6 +176,10 @@ export const api = {
   /** `startId` lets `startProgress` follow the start while this request waits for it. */
   startSession: (gameId: number, startId?: string) =>
     call<SessionInfo>("POST", "/sessions", { game_id: gameId, start_id: startId }),
+  systemSettings: (id: string) => call<SystemSettings>("GET", `/systems/${encodeURIComponent(id)}/settings`),
+  /** A value sets an option; null goes back to the default. */
+  changeSettings: (id: string, changes: Record<string, string | null>) =>
+    call<SystemSettings>("PUT", `/systems/${encodeURIComponent(id)}/settings`, changes),
   startProgress: (startId: string) => call<StartStatus>("GET", `/sessions/starting/${encodeURIComponent(startId)}`),
   currentSession: () => call<SessionInfo | null>("GET", "/sessions/current"),
   stopSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),

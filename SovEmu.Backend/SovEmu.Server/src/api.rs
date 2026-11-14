@@ -103,16 +103,6 @@ fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
     systems::by_id(id).filter(|s| enabled(state, s.id)).ok_or_else(|| ApiError::not_found("system"))
 }
 
-/// SovEmu's core options for a system with the environment's on top.
-fn core_options(state: &AppState, system: &System) -> Vec<(String, String)> {
-    let mut options: std::collections::BTreeMap<String, String> =
-        system.options.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
-    if let Some(spec) = state.config.systems.get(system.id) {
-        options.extend(spec.options.clone());
-    }
-    options.into_iter().collect()
-}
-
 pub async fn list_systems(
     State(state): State<AppState>,
     _user: CurrentUser,
@@ -295,7 +285,7 @@ async fn launch(
             rom,
             save_dir,
             state_dir,
-            variables: core_options(&state, system),
+            variables: crate::settings::for_launch(&state, system).await?,
             after_exit,
             start_id,
         })

@@ -186,6 +186,11 @@ impl Workers {
         })
     }
 
+    /// The worker binary, for one-off jobs (probing a core's settings).
+    pub fn worker_bin(&self) -> PathBuf {
+        self.config.worker_bin.clone()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }

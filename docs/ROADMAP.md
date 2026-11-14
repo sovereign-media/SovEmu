@@ -166,6 +166,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Loading progress: the worker reports its phases and the bytes it has read (`progress`
       before `ready`); clients follow a start with `start_id` and
       `GET /api/sessions/starting/{id}`; the web player shows a loading bar
+- [x] Emulator settings in the web app: each core's options (probed by a worker), changed per
+      system by admins (`system_settings`, migration 0005); the environment wins and is shown
+      locked; changes are offered as `SOVEMU_SYSTEMS__…` lines
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 

@@ -59,7 +59,9 @@ instead (as Sovereign's server takes its SPA).
   `.env.example`). Secrets join `SECRETS` in `main.rs` (so `<VAR>_FILE` works and the startup
   log redacts them). Anything an admin can do in the UI must also happen on its own from
   configuration (accounts, rescans, mirror syncs, metadata lookups, per-system cores and
-  options); UI buttons are shortcuts, never the only way. Tunables are settings, not constants.
+  options); UI buttons are shortcuts, never the only way. Where the UI stores a setting
+  (emulator settings, `system_settings`), the environment still wins, the UI shows it locked,
+  and the page offers the stored values as environment lines. Tunables are settings, not constants.
   Lists and maps use Sovereign's `__` hierarchy (`SOVEMU_USERS__0__USERNAME`,
   `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A new setting also gets
   its place in `charts/sovemu` if it needs more than `settings:` (a secret, a volume, a port).
