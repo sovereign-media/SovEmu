@@ -105,6 +105,40 @@ pub const SYSTEMS: &[System] = &[
         cores: &["genesis_plus_gx"],
     },
     System {
+        id: "psx",
+        name: "PlayStation",
+        short: "PS1",
+        manufacturer: "Sony",
+        year: 1994,
+        color: "#636e72",
+        folders: &["psx", "playstation", "ps1", "sony - playstation"],
+        // Not .bin/.iso: other systems use them too, and a .cue/.m3u names its tracks anyway.
+        extensions: &["chd", "cue", "pbp", "m3u", "ccd"],
+        cores: &["pcsx_rearmed"],
+    },
+    System {
+        id: "fbneo",
+        name: "Arcade",
+        short: "ARC",
+        manufacturer: "FinalBurn Neo",
+        year: 1978,
+        color: "#e17055",
+        folders: &["fbneo", "arcade", "fba", "mame"],
+        extensions: &["zip", "7z"],
+        cores: &["fbneo"],
+    },
+    System {
+        id: "neogeo",
+        name: "Neo Geo",
+        short: "NEO",
+        manufacturer: "SNK",
+        year: 1990,
+        color: "#b8860b",
+        folders: &["neogeo", "snk - neo geo"],
+        extensions: &["zip", "7z"],
+        cores: &["fbneo"],
+    },
+    System {
         id: "gamegear",
         name: "Game Gear",
         short: "GG",
@@ -193,7 +227,9 @@ mod tests {
         assert_eq!(by_folder("nes").unwrap().id, "nes");
         assert_eq!(by_folder("Genesis").unwrap().id, "megadrive");
         assert_eq!(by_folder("Nintendo - Game Boy Advance").unwrap().id, "gba");
-        assert!(by_folder("psx").is_none());
+        assert_eq!(by_folder("psx").unwrap().id, "psx");
+        assert_eq!(by_folder("arcade").unwrap().id, "fbneo");
+        assert!(by_folder("n64").is_none(), "GPU systems are not supported");
     }
 
     #[test]
@@ -201,7 +237,8 @@ mod tests {
         assert_eq!(by_extension("SFC").unwrap().id, "snes");
         assert_eq!(by_extension("gbc").unwrap().id, "gbc");
         assert!(by_extension("bin").is_none());
-        assert!(by_extension("zip").is_none());
+        assert!(by_extension("zip").is_none(), "arcade and Neo Geo both claim .zip");
+        assert_eq!(by_extension("chd").unwrap().id, "psx");
     }
 
     #[test]

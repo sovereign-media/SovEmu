@@ -67,8 +67,8 @@ SovEmu/
     SovEmu.Protocol/         wire formats: input packets, signalling                 [Phase 1]
     SovEmu.Server/           axum: web client + API, auth, SQLite, orchestration     [Phase 2]
   SovEmu.Web/                Astro + Tailwind, static; served by the Rust server     [Phase 1]
-  SovEmu.Android/            submodule: Kotlin, libwebrtc + InputDevice
-  SovEmu.iOS/                submodule: Swift, WebRTC.framework + GameController
+  SovEmu.Android/            submodule: Kotlin + Compose, Stream libwebrtc, gamepad + touch
+  SovEmu.iOS/                submodule: SwiftUI + XcodeGen, stasel/WebRTC, GameController + touch
   docs/  scripts/  .claude/  .github/
   cores/  roms/  system/     gitignored: fetched cores, admin ROM library, BIOS
 ```

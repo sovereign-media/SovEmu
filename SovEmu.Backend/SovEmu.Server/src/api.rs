@@ -34,6 +34,19 @@ pub struct Game {
     size: i64,
     last_played_at: Option<String>,
     play_count: Option<i64>,
+    /// Artwork available through `/api/games/{id}/media/{kind}`.
+    #[serde(serialize_with = "split_media")]
+    media: String,
+}
+
+fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+    let kinds: Vec<&str> = media.split(',').filter(|k| !k.is_empty()).collect();
+    let mut seq = s.serialize_seq(Some(kinds.len()))?;
+    for k in kinds {
+        seq.serialize_element(k)?;
+    }
+    seq.end()
 }
 
 /// The installed core for a system, if any.
@@ -66,7 +79,7 @@ pub async fn list_systems(
 }
 
 const GAME_COLUMNS: &str = "g.id, g.system, g.title, g.tags, g.path, g.size,
-     h.last_played_at, h.play_count";
+     h.last_played_at, h.play_count, g.media";
 
 pub async fn list_games(
     State(state): State<AppState>,
@@ -335,4 +348,39 @@ pub async fn load_state(
         slot,
     })
     .await
+}
+
+/// A game's artwork or video (`image`, `thumb`, `marquee`, `video`), served with range support
+/// so browsers can stream the video.
+pub async fn game_media(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, kind)): Path<(i64, String)>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    use tower::ServiceExt;
+    if !library::MEDIA_KINDS.contains(&kind.as_str()) {
+        return Err(ApiError::not_found("media"));
+    }
+    let game = fetch_game(&state, user.id, id).await?;
+    let rom = std::path::Path::new(&game.path);
+    let folder = state.config.roms_dir.join(rom.parent().unwrap_or(std::path::Path::new("")));
+    let stem = rom.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let file = library::media_candidates(&stem, &kind)
+        .into_iter()
+        .map(|c| folder.join(c))
+        .find(|p| p.is_file())
+        .ok_or_else(|| ApiError::not_found("media"))?;
+    let mut response = tower_http::services::ServeFile::new(file)
+        .oneshot(request)
+        .await
+        .map_err(ApiError::internal)?
+        .into_response();
+    // Artwork changes only on a rescrape; let browsers keep it a day.
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, max-age=86400"),
+    );
+    Ok(response)
 }

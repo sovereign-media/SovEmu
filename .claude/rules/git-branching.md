@@ -13,11 +13,11 @@ SovEmu follows the same model as `sovereign-media/sovereign`: **trunk-based on `
 - Name branches `feat/`, `fix/`, `chore/` or `docs/`.
 - Never commit straight onto `main`.
 
-## Submodules (planned)
+## Submodules
 
-The clients (`SovEmu.Web`, `SovEmu.Android`, `SovEmu.iOS`) will each be their own repository,
-checked out here as a submodule so the boundary between server and client is a git boundary.
-As in Sovereign, they will **not be pinned**: `.gitmodules` will give each `branch = main` and
-`ignore = all`, nothing in this repository builds from them, and they are updated with
-`git submodule update --remote`. A change that spans repos gets a branch, and a PR, in every
+`SovEmu.Android` and `SovEmu.iOS` are their own repositories, checked out here as submodules so
+the boundary between server and client is a git boundary. As in Sovereign, they are **not
+pinned**: `.gitmodules` gives each `branch = main` and `ignore = all`, nothing in this
+repository builds from them, and they are updated with `git submodule update --remote`. Branch a
+submodule from its freshly fetched `origin/main`, never from the frozen pointer. A change that spans repos gets a branch, and a PR, in every
 repo it touches; a rule about one submodule lives in that submodule's `.claude/rules/`.

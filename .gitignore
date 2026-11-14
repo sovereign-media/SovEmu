@@ -24,3 +24,6 @@ headless-out/
 
 # The compose data volume (ROMs, BIOS, saves) mounted at /data
 /data/
+
+# Local secrets for compose (NAS credentials); see .env.example
+/.env
