@@ -50,6 +50,10 @@ struct Harness {
 
 impl Harness {
     async fn new(name: &str, with_core: bool) -> Self {
+        Self::new_with(name, with_core, Vec::new()).await
+    }
+
+    async fn new_with(name: &str, with_core: bool, extra: Vec<String>) -> Self {
         let dir = std::env::temp_dir().join(format!("sovemu-server-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         for (path, bytes) in [
@@ -84,6 +88,7 @@ impl Harness {
             std::fs::copy(core, cores.join(format!("fceumm_libretro.{ext}"))).unwrap();
             args.extend(["--worker".into(), worker.display().to_string()]);
         }
+        args.extend(extra);
         let state = build_state(Config::parse_from(args)).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
         Self { state, dir, cookie: None }
@@ -354,4 +359,187 @@ async fn runs_a_game_session_in_a_worker() {
         h.call("DELETE", &format!("/api/sessions/{sid}"), None).await.0,
         StatusCode::NOT_FOUND
     );
+}
+
+/// A stand-in for ScreenScraper and TheGamesDB on a local port. ScreenScraper answers for the
+/// NES game (checking the exact query a real client must send) and not for the GBA one;
+/// TheGamesDB answers for the GBA one, with box art. `quota` makes ScreenScraper refuse.
+async fn mock_services(quota: bool) -> String {
+    use axum::extract::Query;
+    use axum::routing::get;
+    use std::collections::HashMap;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let img_base = format!("{base}/img/");
+    let app = axum::Router::new()
+        .route(
+            "/api2/jeuInfos.php",
+            get(move |Query(q): Query<HashMap<String, String>>| async move {
+                if quota {
+                    return (StatusCode::from_u16(430).unwrap(), "Quota exceeded".to_owned());
+                }
+                assert_eq!(q["devid"], "dev");
+                assert_eq!(q["devpassword"], "pw");
+                assert_eq!(q["output"], "xml");
+                match q["systemeid"].as_str() {
+                    "3" => {
+                        assert_eq!(q["romnom"], "Test Game (USA).nes");
+                        assert_eq!(q["romtaille"], "64");
+                        // MD5 of the fixture's 64 zero bytes.
+                        assert_eq!(q["md5"], "3b5d3c7d207e37dceeedd301e35e2e58");
+                        (StatusCode::OK, crate::metadata::screenscraper::tests::SAMPLE.to_owned())
+                    }
+                    _ => (StatusCode::NOT_FOUND, "Erreur : Rom/Iso/Dossier non trouvée !".to_owned()),
+                }
+            }),
+        )
+        .route(
+            "/v1/Games/ByGameName",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                assert_eq!(q["apikey"], "key");
+                let games = if q["name"] == "Other" && q["filter[platform]"] == "5" {
+                    json!([{"id": 5, "game_title": "Other", "overview": "From TGDB", "developers": [1], "players": 2}])
+                } else {
+                    json!([])
+                };
+                axum::Json(json!({"data": {"games": games}}))
+            }),
+        )
+        .route("/v1/Developers", get(|| async { axum::Json(json!({"data": {"developers": {"1": {"id": 1, "name": "Dev Co"}}}})) }))
+        .route("/v1/Publishers", get(|| async { axum::Json(json!({"data": {"publishers": {}}})) }))
+        .route("/v1/Genres", get(|| async { axum::Json(json!({"data": {"genres": {}}})) }))
+        .route(
+            "/v1/Games/Images",
+            get(move || {
+                let img_base = img_base.clone();
+                async move {
+                    axum::Json(json!({"data": {"base_url": {"large": img_base},
+                        "images": {"5": [{"type": "boxart", "side": "front", "filename": "box.png"}]}}}))
+                }
+            }),
+        )
+        .route("/img/box.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    base
+}
+
+fn metadata_args(base: &str) -> Vec<String> {
+    [
+        "--screenscraper-devid",
+        "dev",
+        "--screenscraper-devpassword",
+        "pw",
+        "--screenscraper-url",
+        &format!("{base}/api2"),
+        "--thegamesdb-key",
+        "key",
+        "--thegamesdb-url",
+        &format!("{base}/v1"),
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+async fn wait_for_job(h: &mut Harness) -> Value {
+    for _ in 0..200 {
+        let (_, status) = h.call("GET", "/api/metadata/status", None).await;
+        if status["running"] == false && status["done"].as_u64() > Some(0) {
+            return status;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the metadata job did not finish");
+}
+
+#[tokio::test]
+async fn fetches_metadata_from_both_services() {
+    let base = mock_services(false).await;
+    let mut h = Harness::new_with("metadata", false, metadata_args(&base)).await;
+    h.sign_up_admin().await;
+    let (_, status) = h.call("GET", "/api/metadata/status", None).await;
+    assert_eq!(status["sources"], json!(["fbneo", "screenscraper", "thegamesdb"]));
+
+    assert_eq!(h.call("POST", "/api/metadata/fetch", None).await.0, StatusCode::ACCEPTED);
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(
+        (status["found"].clone(), status["failed"].clone()),
+        (json!(2), json!(0)),
+        "{status}"
+    );
+
+    // ScreenScraper named the NES game and described it; the file's own title is kept too.
+    let (_, nes) = h.call("GET", "/api/systems/nes/games", None).await;
+    assert_eq!(nes[0]["title"], "Castlevania");
+    assert_eq!(nes[0]["file_title"], "Test Game");
+    assert_eq!(nes[0]["developer"], "Konami");
+    assert_eq!(nes[0]["release_date"], "1987-05-01");
+    assert_eq!(nes[0]["rating"], 0.8);
+
+    // TheGamesDB filled in the GBA game, and its box art stands in for the missing thumb.
+    let (_, gba) = h.call("GET", "/api/systems/gba/games", None).await;
+    assert_eq!(gba[0]["description"], "From TGDB");
+    assert_eq!(gba[0]["developer"], "Dev Co");
+    assert_eq!(gba[0]["players"], "2");
+    assert_eq!(gba[0]["media"], json!(["thumb"]));
+    let id = gba[0]["id"].as_i64().unwrap();
+    assert_eq!(
+        h.call("GET", &format!("/api/games/{id}/media/thumb"), None).await.0,
+        StatusCode::OK
+    );
+
+    // Looked-up games are not asked for again.
+    assert_eq!(
+        h.call("POST", "/api/metadata/fetch", Some(json!({}))).await.0,
+        StatusCode::ACCEPTED
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(h.call("GET", "/api/metadata/status", None).await.1["total"], 0);
+}
+
+#[tokio::test]
+async fn stops_a_service_that_is_out_of_quota() {
+    let base = mock_services(true).await;
+    let mut h = Harness::new_with("metadata-quota", false, metadata_args(&base)).await;
+    h.sign_up_admin().await;
+    h.call("POST", "/api/metadata/fetch", Some(json!({"system": "nes"}))).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(status["total"], 1, "only the system asked for");
+    assert!(status["notes"][0].as_str().unwrap().contains("quota"), "{status}");
+    // A failed lookup is not stored, so the next job retries it.
+    let (_, nes) = h.call("GET", "/api/systems/nes/games", None).await;
+    assert_eq!(nes[0]["description"], Value::Null);
+    h.call("POST", "/api/metadata/fetch", Some(json!({"system": "nes"}))).await;
+    assert_eq!(wait_for_job(&mut h).await["total"], 1);
+}
+
+#[tokio::test]
+async fn mirror_mode_copies_the_library_and_plays_from_it() {
+    let mut h =
+        Harness::new_with("mirror", false, vec!["--library-mode".into(), "mirror".into()]).await;
+    h.sign_up_admin().await;
+    assert_eq!(h.state.config.roms_dir, h.dir.join("library"), "the server plays from the mirror");
+    let (_, status) = h.call("GET", "/api/library/status", None).await;
+    assert_eq!((status["mode"].clone(), status["games"].clone()), (json!("mirror"), json!(0)));
+
+    crate::admin::sync_then_scan(h.state.clone()).await;
+    assert!(
+        h.dir.join("library/nes/images/Test Game (USA)-thumb.png").is_file(),
+        "artwork is mirrored too"
+    );
+    let (_, status) = h.call("GET", "/api/library/status", None).await;
+    assert_eq!(status["games"], 2);
+    assert_eq!(status["mirror"]["files_done"], 3);
+    assert_eq!(status["mirror"]["running"], false);
+    assert_eq!(h.call("POST", "/api/library/sync", None).await.0, StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn library_status_reports_direct_mode() {
+    let mut h = Harness::new("direct", false).await;
+    h.sign_up_admin().await;
+    let (_, status) = h.call("GET", "/api/library/status", None).await;
+    assert_eq!(status, json!({"mode": "direct", "games": 2, "cache_bytes": null, "mirror": null}));
+    assert_eq!(h.call("POST", "/api/library/sync", None).await.0, StatusCode::BAD_REQUEST);
 }

@@ -26,8 +26,12 @@ import HintBar from "../../components/HintBar.astro";
         <video data-art-video muted loop playsinline class="absolute inset-0 hidden h-full w-full object-contain"></video>
       </div>
       <h2 data-title class="text-3xl font-black leading-tight"></h2>
+      <p data-byline class="mt-1 text-sm text-slate-400"></p>
       <div data-tags class="mt-3 flex flex-wrap gap-2"></div>
+      <p data-description class="mt-4 line-clamp-5 text-sm leading-relaxed text-slate-300"></p>
       <dl class="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+        <dt data-genre-label class="text-slate-400">Genre</dt><dd data-genre></dd>
+        <dt data-players-label class="text-slate-400">Players</dt><dd data-players></dd>
         <dt class="text-slate-400">Last played</dt><dd data-played></dd>
         <dt class="text-slate-400">Times played</dt><dd data-plays></dd>
         <dt class="text-slate-400">File</dt><dd data-file class="truncate font-mono text-xs leading-5"></dd>
@@ -122,6 +126,16 @@ import HintBar from "../../components/HintBar.astro";
     $("details").classList.remove("hidden");
     $("title").textContent = g.title;
     showArt(g);
+    const year = g.release_date?.slice(0, 4);
+    $("byline").textContent = [year, g.developer, g.publisher && g.publisher !== g.developer ? g.publisher : null]
+      .filter(Boolean)
+      .join(" · ");
+    $("description").textContent = g.description ?? "";
+    for (const [key, value] of [["genre", g.genre], ["players", g.players]] as const) {
+      $(key).textContent = value ?? "";
+      $(key).classList.toggle("hidden", !value);
+      $(`${key}-label`).classList.toggle("hidden", !value);
+    }
     $("tags").replaceChildren(
       ...g.tags.split(",").map((t) => t.trim()).filter(Boolean).map((t) => {
         const chip = document.createElement("span");

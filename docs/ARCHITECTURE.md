@@ -94,6 +94,28 @@ aliases (`genesis/`, No-Intro style names). A file outside a known folder is pla
 extension, but only when exactly one system claims that extension. A rescan updates rows in place
 by path, so game ids (and with them play history and saves) survive a rescan.
 
+### Library modes
+
+`SOVEMU_LIBRARY_MODE` sets how the server uses the library:
+- **`direct`** (the default): read games and artwork from where they are. This is right for local
+  disk or a NAS on the LAN.
+- **`cache`**: for a remote share; see below.
+- **`mirror`**: copy the library (optionally only some systems) into `data/library` and play
+  from there. A background sync copies new and changed files (size, and modification time
+  within 2 s), removes deleted ones, and then rescans. The NAS stays mounted read-only as its
+  source.
+
+### Game information
+
+`metadata/` holds one module per source (FBNeo DATs, ScreenScraper, TheGamesDB), each turning
+a lookup into a `GameInfo`. A background job, started by an admin, tries the sources in order.
+Earlier sources' fields win, and later ones fill the gaps. The result goes into `game_metadata`,
+one row per game, found or not, so the next job skips it. A lookup that failed is not stored,
+so it's retried next time. A source that rejects credentials or runs out of quota is skipped
+for the rest of the job. Downloaded box art lives in `data/metadata/media` and stands in for a
+missing local thumb. The game API returns the looked-up title, with the file's own title in
+`file_title`, plus description, release date, developer, publisher, genre, players and rating.
+
 ### A remote library
 
 The library can sit on a share reached over a tunnel. That means about 100 ms per request and a

@@ -69,7 +69,7 @@ FROM alpine:${ALPINE_VERSION} AS runtime
 # libgcc: Rust's unwinder. libstdc++: the C++ cores (snes9x, gambatte). libvpx, opus: VP8 and
 # Opus encoding. tini: PID 1, so the per-session worker processes the server will spawn are
 # reaped.
-RUN apk add --no-cache libgcc libstdc++ libvpx opus tini \
+RUN apk add --no-cache ca-certificates libgcc libstdc++ libvpx opus tini \
     && addgroup -S -g 1000 sovemu \
     && adduser -S -D -H -u 1000 -G sovemu -h /data sovemu \
     && mkdir -p /data/roms /data/system /data/saves \

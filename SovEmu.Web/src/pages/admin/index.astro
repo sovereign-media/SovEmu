@@ -1,0 +1,146 @@
+---
+// Library administration: where games come from (direct / cache / mirror), the mirror's sync,
+// rescans, and fetching game information from metadata services.
+import Base from "../../layouts/Base.astro";
+import TopBar from "../../components/TopBar.astro";
+
+const card = "rounded-2xl border border-white/10 bg-panel/80 p-6";
+const button = "rounded-md bg-accent px-3 py-1.5 text-sm font-semibold hover:brightness-110 disabled:opacity-40";
+---
+
+<Base title="Library">
+  <TopBar crumb="Library" />
+  <main class="mx-auto grid max-w-4xl gap-6 px-6 pb-16 pt-24">
+    <section class={card}>
+      <div class="flex items-baseline justify-between gap-4">
+        <h2 class="text-xl font-bold">Library</h2>
+        <button data-scan class={button}>Rescan</button>
+      </div>
+      <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+        <dt class="text-slate-400">Mode</dt><dd data-mode></dd>
+        <dt class="text-slate-400">Games</dt><dd data-games></dd>
+        <dt data-cache-label class="hidden text-slate-400">Local cache</dt><dd data-cache class="hidden"></dd>
+      </dl>
+      <p data-mode-help class="mt-3 text-sm text-slate-400"></p>
+    </section>
+
+    <section data-mirror-card class={`${card} hidden`}>
+      <div class="flex items-baseline justify-between gap-4">
+        <h2 class="text-xl font-bold">Mirror</h2>
+        <button data-sync class={button}>Sync now</button>
+      </div>
+      <div class="mt-4 h-2 overflow-hidden rounded-full bg-black/40"><div data-sync-bar class="h-full bg-accent transition-[width]" style="width: 0%"></div></div>
+      <p data-sync-text class="mt-2 text-sm text-slate-300"></p>
+    </section>
+
+    <section class={card}>
+      <div class="flex flex-wrap items-baseline justify-between gap-4">
+        <h2 class="text-xl font-bold">Game information</h2>
+        <div class="flex gap-2">
+          <button data-fetch class={button}>Fetch missing</button>
+          <button data-refetch class="rounded-md border border-edge px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40">Refresh all</button>
+        </div>
+      </div>
+      <p class="mt-3 text-sm text-slate-400">
+        Titles, descriptions, release dates, developers, genres and box art. Arcade and Neo Geo names come from
+        FinalBurn Neo's own lists. ScreenScraper and TheGamesDB need credentials, set on the server
+        (<code>SOVEMU_SCREENSCRAPER_*</code>, <code>SOVEMU_THEGAMESDB_KEY</code>).
+      </p>
+      <p class="mt-3 text-sm">Sources: <span data-sources class="font-semibold"></span></p>
+      <div class="mt-4 h-2 overflow-hidden rounded-full bg-black/40"><div data-meta-bar class="h-full bg-emerald-500 transition-[width]" style="width: 0%"></div></div>
+      <p data-meta-text class="mt-2 text-sm text-slate-300"></p>
+      <ul data-notes class="mt-2 list-disc pl-5 text-sm text-amber-300"></ul>
+    </section>
+  </main>
+</Base>
+
+<script>
+  import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
+
+  const $ = <T extends HTMLElement>(name: string) => document.querySelector<T>(`[data-${name}]`)!;
+  const status = await api.status();
+  if (!status.user?.is_admin) location.replace("/");
+
+  const MODES: Record<LibraryStatus["mode"], [string, string]> = {
+    direct: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
+    cache: ["Cache", "The library is a remote share. Games and artwork are kept on local disk once used, so they start fast next time."],
+    mirror: ["Mirror", "A full local copy of the library is kept in sync in the background, and games are played from it."],
+  };
+
+  function showLibrary(s: LibraryStatus) {
+    const [name, help] = MODES[s.mode];
+    $("mode").textContent = name;
+    $("mode-help").textContent = help;
+    $("games").textContent = s.games.toLocaleString();
+    const cached = s.cache_bytes !== null;
+    $("cache").textContent = cached ? formatSize(s.cache_bytes!) : "";
+    $("cache").classList.toggle("hidden", !cached);
+    $("cache-label").classList.toggle("hidden", !cached);
+    $("mirror-card").classList.toggle("hidden", !s.mirror);
+    if (s.mirror) {
+      const m = s.mirror;
+      const pct = m.bytes_total ? (100 * m.bytes_done) / m.bytes_total : m.running ? 0 : 100;
+      $("sync-bar").style.width = `${pct.toFixed(1)}%`;
+      $<HTMLButtonElement>("sync").disabled = m.running;
+      $("sync-text").textContent = m.error
+        ? m.error
+        : m.running
+          ? `Copying ${m.files_done.toLocaleString()} of ${m.files_total.toLocaleString()} files (${formatSize(m.bytes_done)} of ${formatSize(m.bytes_total)})`
+          : m.finished_at
+            ? `Up to date as of ${new Date(m.finished_at * 1000).toLocaleString()}${m.failed ? ` · ${m.failed} failed` : ""}${m.removed ? ` · ${m.removed} removed` : ""}`
+            : "Not synced yet.";
+    }
+  }
+
+  function showMetadata(m: MetadataStatus) {
+    $("sources").textContent = m.sources.join(", ");
+    const pct = m.total ? (100 * m.done) / m.total : 0;
+    $("meta-bar").style.width = `${pct.toFixed(1)}%`;
+    $<HTMLButtonElement>("fetch").disabled = m.running;
+    $<HTMLButtonElement>("refetch").disabled = m.running;
+    $("meta-text").textContent = m.running
+      ? `Looking up ${m.done.toLocaleString()} of ${m.total.toLocaleString()} games…`
+      : m.done
+        ? `Last run: ${m.found} found, ${m.not_found} not found, ${m.failed} to retry.`
+        : "";
+    $("notes").replaceChildren(
+      ...m.notes.map((n) => {
+        const li = document.createElement("li");
+        li.textContent = n;
+        return li;
+      }),
+    );
+  }
+
+  async function refresh() {
+    const [library, metadata] = await Promise.all([api.libraryStatus(), api.metadataStatus()]);
+    showLibrary(library);
+    showMetadata(metadata);
+  }
+
+  $("scan").addEventListener("click", async (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    b.disabled = true;
+    b.textContent = "Scanning…";
+    await api.scan().catch(() => {});
+    b.disabled = false;
+    b.textContent = "Rescan";
+    await refresh();
+  });
+  $("sync").addEventListener("click", async () => {
+    await api.syncLibrary();
+    await refresh();
+  });
+  $("fetch").addEventListener("click", async () => {
+    await api.fetchMetadata();
+    setTimeout(refresh, 300);
+  });
+  $("refetch").addEventListener("click", async () => {
+    if (!confirm("Look every game up again? This uses your services' daily quota.")) return;
+    await api.fetchMetadata(undefined, true);
+    setTimeout(refresh, 300);
+  });
+
+  await refresh();
+  setInterval(refresh, 2000);
+</script>

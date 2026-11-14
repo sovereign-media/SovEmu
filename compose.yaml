@@ -17,6 +17,12 @@ services:
       dockerfile: SovEmu.Backend/Dockerfile
     environment:
       SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
+      # Game information services (optional; see .env.example). Arcade names need none.
+      SOVEMU_SCREENSCRAPER_DEVID: ${SOVEMU_SCREENSCRAPER_DEVID:-}
+      SOVEMU_SCREENSCRAPER_DEVPASSWORD: ${SOVEMU_SCREENSCRAPER_DEVPASSWORD:-}
+      SOVEMU_SCREENSCRAPER_USER: ${SOVEMU_SCREENSCRAPER_USER:-}
+      SOVEMU_SCREENSCRAPER_PASSWORD: ${SOVEMU_SCREENSCRAPER_PASSWORD:-}
+      SOVEMU_THEGAMESDB_KEY: ${SOVEMU_THEGAMESDB_KEY:-}
     ports:
       - "8080:8080/tcp"
       - "50000-50009:50000-50009/udp"
