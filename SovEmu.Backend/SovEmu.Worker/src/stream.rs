@@ -32,8 +32,6 @@ use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 
-/// Frames emulated per tick while fast-forward is held.
-const FAST_FORWARD: u32 = 4;
 /// Hotkeys lapse if the client stops refreshing them (a lost release must not stick).
 const HOTKEY_LAPSE: Duration = Duration::from_millis(500);
 
@@ -78,6 +76,10 @@ pub struct SessionConfig {
     pub audio_kbps: u32,
     /// Where save states go (`slotN.state` + `slotN.png`); none disables them.
     pub state_dir: Option<PathBuf>,
+    pub rewind_seconds: u32,
+    pub rewind_max_mb: u32,
+    pub fast_forward: u32,
+    pub keyframe_interval: u32,
 }
 
 /// The connected (or connecting) client.
@@ -103,6 +105,8 @@ pub struct Session {
     pending_ack: Option<(u32, u32)>,
     persist: Persist,
     rewind: Rewind,
+    /// Frames emulated per tick while fast-forward is held.
+    fast_forward: u32,
     /// The configured (maximum) video bitrate; adaptation stays at or below it.
     max_video_kbps: u32,
     audio_kbps: u32,
@@ -119,10 +123,16 @@ pub struct Session {
 impl Session {
     /// Loads the core and content and sets up the encoders.
     pub fn open(config: &SessionConfig) -> Result<Self> {
-        std::fs::create_dir_all(&config.system_dir)?;
+        // The BIOS folder may be on a read-only library without one; most cores need none.
+        if let Err(e) = std::fs::create_dir_all(&config.system_dir) {
+            tracing::debug!("system dir {}: {e}", config.system_dir.display());
+        }
         std::fs::create_dir_all(&config.save_dir)?;
         let options = CoreOptions {
-            system_dir: config.system_dir.canonicalize()?,
+            system_dir: config
+                .system_dir
+                .canonicalize()
+                .or_else(|_| std::path::absolute(&config.system_dir))?,
             save_dir: config.save_dir.canonicalize()?,
             variables: config.variables.clone(),
         };
@@ -147,6 +157,7 @@ impl Session {
             video: Vp8Encoder::new(Vp8Config {
                 bitrate_kbps: config.video_kbps,
                 fps: av.fps.round() as u32,
+                keyframe_interval: config.keyframe_interval.max(1),
                 ..Vp8Config::default()
             }),
             audio: AudioEncoder::new(av.sample_rate, config.audio_kbps * 1000)?,
@@ -159,7 +170,13 @@ impl Session {
             last_seq: None,
             pending_ack: None,
             persist,
-            rewind: Rewind::default(),
+            // One snapshot every INTERVAL frames, so seconds × fps / INTERVAL of them.
+            rewind: Rewind::new(
+                config.rewind_max_mb as usize * 1024 * 1024,
+                (f64::from(config.rewind_seconds) * av.fps / f64::from(crate::rewind::INTERVAL))
+                    as usize,
+            ),
+            fast_forward: config.fast_forward.max(1),
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
@@ -526,7 +543,7 @@ impl Session {
             let core = &mut self.core;
             self.rewind.step_back(|state| core.unserialize(state));
         } else if hotkeys.fast_forward {
-            for _ in 1..FAST_FORWARD {
+            for _ in 1..self.fast_forward {
                 self.core.run_frame(&self.buttons)?;
                 self.frame += 1;
                 let core = &mut self.core;

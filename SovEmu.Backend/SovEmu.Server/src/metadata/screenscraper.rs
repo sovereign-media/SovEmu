@@ -39,29 +39,38 @@ pub struct ScreenScraper {
     base: String,
     credentials: Credentials,
     http: reqwest::Client,
+    regions: Vec<String>,
+    languages: Vec<String>,
 }
 
-/// Region preference for names, dates and media: USA first, as the library's sets mostly are.
-const REGIONS: &[&str] = &["us", "wor", "eu", "ss", "uk", "jp"];
-const LANGUAGES: &[&str] = &["en", "wor"];
+/// Default region preference for names, dates and media: USA first, as most sets are.
+pub const DEFAULT_REGIONS: &[&str] = &["us", "wor", "eu", "ss", "uk", "jp"];
+pub const DEFAULT_LANGUAGES: &[&str] = &["en", "wor"];
 
-fn pick<'a>(
+fn pick<'a, S: AsRef<str>>(
     nodes: impl Iterator<Item = roxmltree::Node<'a, 'a>>,
     attr: &str,
-    prefs: &[&str],
+    prefs: &[S],
 ) -> Option<String> {
     let all: Vec<_> =
         nodes.filter_map(|n| Some((n.attribute(attr).unwrap_or(""), n.text()?.trim()))).collect();
     prefs
         .iter()
-        .find_map(|p| all.iter().find(|(a, _)| a == p))
+        .find_map(|p| all.iter().find(|(a, _)| *a == p.as_ref()))
         .or_else(|| all.first())
         .map(|(_, t)| (*t).to_owned())
         .filter(|t| !t.is_empty())
 }
 
-/// Parses a `jeuInfos.php` XML response. `None` when it holds no game.
+/// Parses a `jeuInfos.php` XML response with the default preferences. `None` when it holds no
+/// game.
+#[cfg(test)]
 pub fn parse(xml: &str) -> Option<GameInfo> {
+    parse_with(xml, DEFAULT_REGIONS, DEFAULT_LANGUAGES)
+}
+
+/// [`parse`] with region and language preferences (most preferred first).
+pub fn parse_with<S: AsRef<str>>(xml: &str, regions: &[S], languages: &[S]) -> Option<GameInfo> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let jeu = doc.descendants().find(|n| {
         n.has_tag_name("jeu")
@@ -77,7 +86,7 @@ pub fn parse(xml: &str) -> Option<GameInfo> {
             .flat_map(move |o| o.children().filter(move |c| c.has_tag_name(inner)))
     };
 
-    let title = pick(list("noms", "nom"), "region", REGIONS).map(|t| t.replace("&nbsp;", " "));
+    let title = pick(list("noms", "nom"), "region", regions).map(|t| t.replace("&nbsp;", " "));
     if title.as_deref().is_some_and(|t| t.starts_with("ZZZ(notgame)")) {
         return None;
     }
@@ -99,16 +108,16 @@ pub fn parse(xml: &str) -> Option<GameInfo> {
             Some((m.attribute("region").unwrap_or(""), m.text()?.trim().replace(' ', "%20")))
         })
         .collect::<Vec<_>>();
-    let box_art_url = REGIONS
+    let box_art_url = regions
         .iter()
-        .find_map(|r| box_art.iter().find(|(reg, _)| reg == r))
+        .find_map(|r| box_art.iter().find(|(reg, _)| *reg == r.as_ref()))
         .or_else(|| box_art.first())
         .map(|(_, url)| url.clone());
 
     Some(GameInfo {
         title,
-        description: pick(list("synopsis", "synopsis"), "langue", LANGUAGES),
-        release_date: pick(list("dates", "date"), "region", REGIONS),
+        description: pick(list("synopsis", "synopsis"), "langue", languages),
+        release_date: pick(list("dates", "date"), "region", regions),
         developer: text("developpeur"),
         publisher: text("editeur"),
         genre,
@@ -120,7 +129,29 @@ pub fn parse(xml: &str) -> Option<GameInfo> {
 
 impl ScreenScraper {
     pub fn new(base: impl Into<String>, credentials: Credentials, http: reqwest::Client) -> Self {
-        Self { base: base.into(), credentials, http }
+        let own = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect();
+        Self {
+            base: base.into(),
+            credentials,
+            http,
+            regions: own(DEFAULT_REGIONS),
+            languages: own(DEFAULT_LANGUAGES),
+        }
+    }
+
+    /// Region and language preferences, most preferred first (empty keeps the defaults).
+    pub fn with_preferences(mut self, regions: Vec<String>, languages: Vec<String>) -> Self {
+        let clean = |v: Vec<String>| -> Vec<String> {
+            v.into_iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
+        };
+        let (regions, languages) = (clean(regions), clean(languages));
+        if !regions.is_empty() {
+            self.regions = regions;
+        }
+        if !languages.is_empty() {
+            self.languages = languages;
+        }
+        self
     }
 
     pub async fn lookup(&self, input: &LookupInput) -> Result<Option<GameInfo>, MetaError> {
@@ -166,7 +197,7 @@ impl ScreenScraper {
                 },
             );
         }
-        Ok(parse(&body))
+        Ok(parse_with(&body, &self.regions, &self.languages))
     }
 }
 
@@ -219,6 +250,15 @@ pub(crate) mod tests {
         assert_eq!(info.players.as_deref(), Some("1"));
         assert_eq!(info.rating, Some(0.8), "ScreenScraper rates out of 20");
         assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20us.png"));
+    }
+
+    #[test]
+    fn honours_region_and_language_preferences() {
+        let info = parse_with(SAMPLE, &["jp"], &["fr"]).unwrap();
+        assert_eq!(info.title.as_deref(), Some("Akumajou Dracula"));
+        assert_eq!(info.release_date.as_deref(), Some("1986-09-26"));
+        assert_eq!(info.description.as_deref(), Some("Simon Belmont part affronter Dracula."));
+        assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20jp.png"));
     }
 
     #[test]

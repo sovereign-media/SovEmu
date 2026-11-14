@@ -21,9 +21,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::oneshot;
 
-/// How long a worker may take to load its core and game. Generous: a disc image on a remote
-/// network share takes tens of seconds to open (the core reads its header and index first).
-const READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a request to a worker may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -37,6 +34,13 @@ pub struct WorkerConfig {
     pub idle_timeout_secs: u64,
     pub video_kbps: u32,
     pub audio_kbps: u32,
+    /// How long a worker may take to load its core and game. Generous by default: a disc image
+    /// on a remote share takes tens of seconds to open.
+    pub start_timeout: Duration,
+    pub rewind_seconds: u32,
+    pub rewind_max_mb: u32,
+    pub fast_forward: u32,
+    pub keyframe_interval: u32,
 }
 
 /// The only environment a worker inherits. Cores are third-party code: they get no credentials
@@ -203,7 +207,11 @@ impl Workers {
         after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
     ) -> Result<Arc<Session>> {
         std::fs::create_dir_all(&launch.save_dir)?;
-        std::fs::create_dir_all(&self.config.system_dir)?;
+        // The BIOS folder may sit on a read-only library that has none: most cores need no BIOS,
+        // so a missing one is not a reason to refuse the game.
+        if let Err(e) = std::fs::create_dir_all(&self.config.system_dir) {
+            tracing::debug!("system dir {}: {e}", self.config.system_dir.display());
+        }
         let mut command = Command::new(&self.config.worker_bin);
         command.env_clear();
         for var in WORKER_ENV {
@@ -230,7 +238,15 @@ impl Workers {
             .arg("--state-dir")
             .arg(&launch.state_dir)
             .arg("--idle-timeout")
-            .arg(self.config.idle_timeout_secs.to_string());
+            .arg(self.config.idle_timeout_secs.to_string())
+            .arg("--rewind-seconds")
+            .arg(self.config.rewind_seconds.to_string())
+            .arg("--rewind-max-mb")
+            .arg(self.config.rewind_max_mb.to_string())
+            .arg("--fast-forward")
+            .arg(self.config.fast_forward.to_string())
+            .arg("--keyframe-interval")
+            .arg(self.config.keyframe_interval.to_string());
         for (key, value) in &launch.variables {
             command.arg("--var").arg(format!("{key}={value}"));
         }
@@ -247,7 +263,7 @@ impl Workers {
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
 
-        let ready = tokio::time::timeout(READY_TIMEOUT, async {
+        let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
                     Ok(Reply::Ready { core, width, height, fps, .. }) => {

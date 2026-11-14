@@ -76,17 +76,37 @@ fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Erro
     seq.end()
 }
 
-/// Games larger than this (disc images) are cached only after the session that streamed them.
-const LARGE_GAME_BYTES: i64 = 64 * 1024 * 1024;
-
-/// The installed core for a system, if any.
-pub fn find_core(cores_dir: &std::path::Path, system: &System) -> Option<PathBuf> {
-    system.cores.iter().find_map(|name| {
+/// The installed core for a system, if any: the one `SOVEMU_SYSTEMS__<id>__CORE` names, or
+/// else the first of SovEmu's choices that is installed.
+pub fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
+    let chosen = state.config.systems.get(system.id).and_then(|s| s.core.as_deref());
+    let names: Vec<&str> = chosen.map_or_else(|| system.cores.to_vec(), |c| vec![c]);
+    names.iter().find_map(|name| {
         ["so", "dylib", "dll"]
             .iter()
-            .map(|ext| cores_dir.join(format!("{name}_libretro.{ext}")))
+            .map(|ext| state.config.cores_dir.join(format!("{name}_libretro.{ext}")))
             .find(|p| p.is_file())
     })
+}
+
+/// Whether a system is offered (`SOVEMU_SYSTEMS__<id>__ENABLED=false` hides it).
+fn enabled(state: &AppState, id: &str) -> bool {
+    state.config.systems.get(id).and_then(|s| s.enabled).unwrap_or(true)
+}
+
+/// The system, if it exists and is enabled.
+fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
+    systems::by_id(id).filter(|s| enabled(state, s.id)).ok_or_else(|| ApiError::not_found("system"))
+}
+
+/// SovEmu's core options for a system with the environment's on top.
+fn core_options(state: &AppState, system: &System) -> Vec<(String, String)> {
+    let mut options: std::collections::BTreeMap<String, String> =
+        system.options.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+    if let Some(spec) = state.config.systems.get(system.id) {
+        options.extend(spec.options.clone());
+    }
+    options.into_iter().collect()
 }
 
 pub async fn list_systems(
@@ -99,10 +119,11 @@ pub async fn list_systems(
             .await?;
     let summaries = systems::SYSTEMS
         .iter()
+        .filter(|s| enabled(&state, s.id))
         .map(|s| SystemSummary {
             system: *s,
             game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
-            playable: find_core(&state.config.cores_dir, s).is_some(),
+            playable: find_core(&state, s).is_some(),
         })
         .collect();
     Ok(Json(summaries))
@@ -119,7 +140,7 @@ pub async fn list_games(
     CurrentUser(user): CurrentUser,
     Path(system): Path<String>,
 ) -> ApiResult<Json<Vec<Game>>> {
-    systems::by_id(&system).ok_or_else(|| ApiError::not_found("system"))?;
+    system_by_id(&state, &system)?;
     let games = sqlx::query_as::<_, Game>(&format!(
         "SELECT {GAME_COLUMNS} FROM games g
          LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
@@ -173,8 +194,8 @@ pub async fn start_session(
     Json(start): Json<StartSession>,
 ) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
     let game = fetch_game(&state, user.id, start.game_id).await?;
-    let system = systems::by_id(&game.system).ok_or_else(|| ApiError::not_found("system"))?;
-    let core = find_core(&state.config.cores_dir, system).ok_or_else(|| {
+    let system = system_by_id(&state, &game.system)?;
+    let core = find_core(&state, system).ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("no core installed for {}", system.name),
@@ -192,7 +213,7 @@ pub async fn start_session(
     // Otherwise the original: small games are copied for next time straight away, large ones
     // (disc images) only once this session ends, so the copy never competes with the game.
     let cached = state.cache.cached("roms", &game.path, &original);
-    let large = game.size > LARGE_GAME_BYTES;
+    let large = game.size.max(0).unsigned_abs() > state.config.cache_large_game_mb << 20;
     let rom = match &cached {
         Some(copy) => copy.clone(),
         None if large => original.clone(),
@@ -217,11 +238,7 @@ pub async fn start_session(
             rom,
             save_dir,
             state_dir,
-            variables: system
-                .options
-                .iter()
-                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-                .collect(),
+            variables: core_options(&state, system),
             after_exit,
         })
         .await

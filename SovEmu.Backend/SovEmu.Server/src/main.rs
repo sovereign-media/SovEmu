@@ -17,6 +17,7 @@ mod library;
 mod metadata;
 mod mirror;
 mod ops;
+mod structured;
 mod systems;
 mod workers;
 
@@ -164,6 +165,83 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
     pub audio_kbps: u32,
 
+    /// How many days a sign-in lasts.
+    #[arg(long, env = "SOVEMU_SESSION_DAYS", default_value_t = 30)]
+    pub session_days: u32,
+
+    /// Failed sign-ins per username before it is locked out (0: never).
+    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES", default_value_t = ops::MAX_FAILURES)]
+    pub login_max_failures: u32,
+
+    /// How long a locked-out username waits, and the window failures are counted in.
+    #[arg(long, env = "SOVEMU_LOGIN_LOCKOUT_MINUTES", default_value_t = 5)]
+    pub login_lockout_minutes: u64,
+
+    /// Delete accounts not declared in `SOVEMU_USERS__*` (or `SOVEMU_ADMIN_USERNAME`) at
+    /// startup, so the environment is the whole list of users.
+    #[arg(long, env = "SOVEMU_USERS_PRUNE")]
+    pub users_prune: bool,
+
+    /// How long a worker may take to load a core and game, seconds.
+    #[arg(long, env = "SOVEMU_WORKER_START_TIMEOUT", default_value_t = 120)]
+    pub worker_start_timeout: u64,
+
+    /// Rewind history per session, seconds (0 turns rewind off).
+    #[arg(long, env = "SOVEMU_REWIND_SECONDS", default_value_t = 60)]
+    pub rewind_seconds: u32,
+
+    /// Memory cap for one session's rewind history, MiB.
+    #[arg(long, env = "SOVEMU_REWIND_MAX_MB", default_value_t = 64)]
+    pub rewind_max_mb: u32,
+
+    /// Fast-forward speed (frames emulated per frame shown).
+    #[arg(long, env = "SOVEMU_FAST_FORWARD", default_value_t = 4)]
+    pub fast_forward: u32,
+
+    /// Frames between VP8 keyframes (lost packets recover sooner with fewer).
+    #[arg(long, env = "SOVEMU_KEYFRAME_INTERVAL", default_value_t = 600)]
+    pub keyframe_interval: u32,
+
+    /// `cache` mode: games larger than this (MiB) are copied before starting, smaller ones
+    /// are played from the share while the copy runs.
+    #[arg(long, env = "SOVEMU_CACHE_LARGE_GAME_MB", default_value_t = 64)]
+    pub cache_large_game_mb: u64,
+
+    /// Files copied at once by the mirror sync and the artwork cache.
+    #[arg(long, env = "SOVEMU_COPY_THREADS", default_value_t = 4)]
+    pub copy_threads: usize,
+
+    /// Region preference for game information, most preferred first.
+    #[arg(
+        long,
+        env = "SOVEMU_METADATA_REGIONS",
+        value_delimiter = ',',
+        default_value = "us,wor,eu,ss,uk,jp"
+    )]
+    pub metadata_regions: Vec<String>,
+
+    /// Language preference for descriptions, most preferred first.
+    #[arg(
+        long,
+        env = "SOVEMU_METADATA_LANGUAGES",
+        value_delimiter = ',',
+        default_value = "en,wor"
+    )]
+    pub metadata_languages: Vec<String>,
+
+    /// Pause between ScreenScraper requests, milliseconds (free accounts: one at a time).
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DELAY_MS", default_value_t = 1200)]
+    pub screenscraper_delay_ms: u64,
+
+    /// Users declared as `SOVEMU_USERS__<n>__USERNAME` / `__PASSWORD` / `__ADMIN`.
+    #[arg(skip)]
+    pub users: Vec<structured::UserSpec>,
+
+    /// Per-system overrides declared as `SOVEMU_SYSTEMS__<id>__CORE` / `__ENABLED` /
+    /// `__OPTIONS__<name>`.
+    #[arg(skip)]
+    pub systems: std::collections::BTreeMap<String, structured::SystemSpec>,
+
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
@@ -265,7 +343,57 @@ impl Config {
             ),
             format!("thegamesdb_key={}", secret(&self.thegamesdb_key)),
             format!("metrics_token={}", secret(&self.metrics_token)),
+            format!(
+                "session_days={} login_max_failures={} login_lockout_minutes={}",
+                self.session_days, self.login_max_failures, self.login_lockout_minutes
+            ),
+            format!(
+                "users={} users_prune={}",
+                if self.users.is_empty() {
+                    "(none declared)".into()
+                } else {
+                    self.users
+                        .iter()
+                        .map(|u| format!("{}{}", u.username, if u.admin { "(admin)" } else { "" }))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                },
+                self.users_prune
+            ),
+            format!(
+                "worker_start_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
+                 keyframe_interval={}",
+                self.worker_start_timeout,
+                self.rewind_seconds,
+                self.rewind_max_mb,
+                self.fast_forward,
+                self.keyframe_interval
+            ),
+            format!(
+                "cache_large_game_mb={} copy_threads={}",
+                self.cache_large_game_mb, self.copy_threads
+            ),
+            format!(
+                "metadata_regions={} metadata_languages={} screenscraper_delay_ms={}",
+                self.metadata_regions.join(","),
+                self.metadata_languages.join(","),
+                self.screenscraper_delay_ms
+            ),
         ];
+        let mut lines = lines.to_vec();
+        for (id, spec) in &self.systems {
+            let mut parts = Vec::new();
+            if let Some(core) = &spec.core {
+                parts.push(format!("core={core}"));
+            }
+            if let Some(enabled) = spec.enabled {
+                parts.push(format!("enabled={enabled}"));
+            }
+            for (k, v) in &spec.options {
+                parts.push(format!("{k}={v}"));
+            }
+            lines.push(format!("system {id}: {}", parts.join(" ")));
+        }
         lines.join("\n")
     }
 }
@@ -391,9 +519,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
     let db = db::open(&config.data_dir.join("sovemu.db")).await?;
-    if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
-        auth::ensure_admin(&db, user, password).await?;
-    }
+    reconcile_users(&db, &config).await?;
     let workers = Workers::new(WorkerConfig {
         worker_bin: config.worker.clone().unwrap_or_else(default_worker),
         ports: config.udp_ports,
@@ -403,6 +529,11 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
         audio_kbps: config.audio_kbps,
+        start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
+        rewind_seconds: config.rewind_seconds,
+        rewind_max_mb: config.rewind_max_mb,
+        fast_forward: config.fast_forward,
+        keyframe_interval: config.keyframe_interval,
     });
     let cache_dir = config.data_dir.join("cache");
     let cache_bytes = match config.library_mode {
@@ -427,8 +558,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     }
     let http = metadata::http_client();
     let screenscraper = match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
-        (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => {
-            Some(metadata::screenscraper::ScreenScraper::new(
+        (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => Some(
+            metadata::screenscraper::ScreenScraper::new(
                 config.screenscraper_url.clone(),
                 metadata::screenscraper::Credentials {
                     dev_id: id.clone(),
@@ -440,25 +571,58 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
                         .zip(config.screenscraper_password.clone()),
                 },
                 http.clone(),
-            ))
-        }
+            )
+            .with_preferences(config.metadata_regions.clone(), config.metadata_languages.clone()),
+        ),
         _ => None,
     };
     let thegamesdb = config.thegamesdb_key.clone().filter(|k| !k.is_empty()).map(|key| {
         metadata::thegamesdb::TheGamesDb::new(config.thegamesdb_url.clone(), key, http.clone())
     });
-    let metadata =
-        metadata::Metadata::new(config.data_dir.join("metadata"), screenscraper, thegamesdb);
+    let metadata = metadata::Metadata::new(
+        config.data_dir.join("metadata"),
+        screenscraper,
+        thegamesdb,
+        std::time::Duration::from_millis(config.screenscraper_delay_ms),
+    );
+    let login_throttle = ops::LoginThrottle::new(
+        config.login_max_failures,
+        std::time::Duration::from_secs(config.login_lockout_minutes * 60),
+    );
+    let copy_threads = config.copy_threads;
     Ok(AppState {
         db,
         config: Arc::new(config),
         workers,
         dummy_hash: auth::hash_password("x")?,
-        login_throttle: Arc::default(),
-        cache: cache::Cache::new(cache_dir, cache_bytes),
+        login_throttle: Arc::new(login_throttle),
+        cache: cache::Cache::new(cache_dir, cache_bytes, copy_threads),
         metadata,
         mirror: Arc::default(),
     })
+}
+
+/// Brings the accounts in line with the environment: the admin and every declared user exist
+/// with their declared passwords, and with `SOVEMU_USERS_PRUNE` nobody else does.
+async fn reconcile_users(db: &SqlitePool, config: &Config) -> Result<()> {
+    let mut declared = Vec::new();
+    if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
+        auth::ensure_admin(db, user, password).await?;
+        declared.push(user.clone());
+    }
+    for user in &config.users {
+        auth::ensure_user(db, &user.username, &user.password, user.admin).await?;
+        declared.push(user.username.clone());
+    }
+    if config.users_prune {
+        if declared.is_empty() {
+            anyhow::bail!(
+                "SOVEMU_USERS_PRUNE is set but no users are declared: that would delete everyone"
+            );
+        }
+        auth::prune_users(db, &declared).await?;
+    }
+    Ok(())
 }
 
 /// Scans the library in the background: a network library can take minutes, and the last
@@ -528,6 +692,31 @@ fn unset_empty_settings() {
     }
 }
 
+/// Ctrl-C, or SIGTERM: what `docker stop` and Kubernetes send. Either way the server stops
+/// every worker properly afterwards, so players' saves are written.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+        let term = async {
+            match term.as_mut() {
+                Some(t) => {
+                    t.recv().await;
+                }
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            () = term => {}
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = tokio::signal::ctrl_c().await;
+    tracing::info!("shutting down: stopping game sessions");
+}
+
 fn main() -> Result<()> {
     unset_empty_settings();
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
@@ -541,6 +730,13 @@ async fn run() -> Result<()> {
         .init();
     let mut config = Config::parse();
     config.resolve_secrets(|var| std::env::var(var).ok())?;
+    let vars: Vec<(String, String)> = std::env::vars().collect();
+    config.users = structured::users(&vars, |path| {
+        std::fs::read_to_string(path)
+            .map(|s| s.trim_end_matches(['\n', '\r']).to_owned())
+            .with_context(|| format!("reading {path}"))
+    })?;
+    config.systems = structured::systems(&vars)?;
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!("configuration:\n{}", state.config.summary());
@@ -555,11 +751,7 @@ async fn run() -> Result<()> {
     let local = listener.local_addr()?;
     println!("http={local}");
     tracing::info!("SovEmu on http://{local}/");
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
+    axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()).await?;
     workers.stop_all().await;
     Ok(())
 }

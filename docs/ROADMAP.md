@@ -137,6 +137,15 @@ held 59.93 fps over 300 frames with no resyncs.
       mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
       effective configuration logged (redacted); compose loads `.env` whole; workers start with a
       cleared environment
+- [x] The whole deployment from configuration, as in Sovereign: declared accounts
+      (`SOVEMU_USERS__<n>__*`, optional pruning), per-system cores, core options and hiding
+      (`SOVEMU_SYSTEMS__<id>__*`), and every tunable that was a constant (session length, sign-in
+      lockout, worker start timeout, rewind, fast-forward, keyframes, cache threshold, copy
+      threads, metadata regions and languages, ScreenScraper pacing)
+- [x] Helm chart (`charts/sovemu`): values become the environment; secrets or existing Secrets;
+      NFS, claim or host-path library; UDP LoadBalancer or host networking for media; Ingress;
+      read-only root, uid 1000, no capabilities. Linted and schema-checked in CI
+- [x] Graceful shutdown on SIGTERM (Kubernetes, `docker stop`): every session saves first
 - [ ] OIDC sign-in
 - [ ] H.264 fallback for clients without VP8 decode
 - [ ] Worker resource limits (cgroups/rlimits per session)

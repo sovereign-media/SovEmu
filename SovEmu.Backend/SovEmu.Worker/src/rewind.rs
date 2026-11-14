@@ -1,17 +1,14 @@
 //! Rewind: a ring of save states taken every few frames, capped by memory.
 //!
 //! While rewind is held the worker steps back one snapshot per frame, so rewinding runs at
-//! [`INTERVAL`]× speed. How far back it reaches depends on the core's state size: an NES state is
-//! a few KiB (the frame cap applies), a SNES state about 400 KiB (the byte cap applies, ~5 s).
+//! [`INTERVAL`]× speed. How far back it reaches is capped twice (both set by the server): by
+//! seconds of history and by memory. An NES state is a few KiB (the seconds cap applies), a SNES
+//! state about 400 KiB (the memory cap applies first: ~5 s in 64 MiB).
 
 use std::collections::VecDeque;
 
 /// Snapshot every this many frames.
 pub const INTERVAL: u32 = 2;
-/// At most this many bytes of snapshots.
-pub const MAX_BYTES: usize = 64 * 1024 * 1024;
-/// And at most this many snapshots (60 s at 60 fps).
-pub const MAX_STATES: usize = 1800;
 
 #[derive(Debug)]
 pub struct Rewind {
@@ -22,12 +19,6 @@ pub struct Rewind {
     counter: u32,
     /// Set if the core cannot serialize; stops trying every frame.
     unsupported: bool,
-}
-
-impl Default for Rewind {
-    fn default() -> Self {
-        Self::new(MAX_BYTES, MAX_STATES)
-    }
 }
 
 impl Rewind {
@@ -49,7 +40,7 @@ impl Rewind {
 
     /// Called once per emulated frame; snapshots every [`INTERVAL`] frames.
     pub fn record<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
-        if self.unsupported {
+        if self.unsupported || self.max_states == 0 || self.max_bytes == 0 {
             return;
         }
         self.counter += 1;

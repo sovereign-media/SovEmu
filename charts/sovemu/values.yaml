@@ -1,0 +1,153 @@
+# SovEmu's Helm values. Every SovEmu setting is an environment variable (the README's
+# configuration table lists them all); this chart only turns values into those variables, so a
+# deployment is reproduced entirely from this file and its secrets. Nothing needs setting up in
+# the UI afterwards.
+
+image:
+  # SovEmu.Backend/Dockerfile, built and pushed to your registry (no public image yet).
+  repository: ghcr.io/sovereign-media/sovemu
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Settings as plain environment variables, without the SOVEMU_ prefix, e.g.
+#   LIBRARY_MODE: cache
+#   CACHE_GB: "50"
+#   SCAN_INTERVAL_MINUTES: "30"
+# They go into a ConfigMap. Values are strings: quote numbers and booleans.
+settings: {}
+
+# Secret settings, without the SOVEMU_ prefix (ADMIN_PASSWORD, METRICS_TOKEN,
+# SCREENSCRAPER_DEVPASSWORD, SCREENSCRAPER_PASSWORD, THEGAMESDB_KEY, ...). They go into a Secret
+# this chart creates. Prefer existingSecret for anything kept in Git.
+secrets: {}
+
+# A Secret you manage (sealed-secrets, external-secrets, ...) whose keys are full variable
+# names (SOVEMU_ADMIN_PASSWORD, ...), loaded with envFrom.
+existingSecret: ""
+
+# The admin account, created at startup and kept in step with these values. With it set there
+# is no first-run setup page.
+admin:
+  username: ""
+  # Either a password (stored in the chart's Secret) or a key of an existing Secret.
+  password: ""
+  passwordSecret: {}
+  #   name: sovemu-admin
+  #   key: password
+
+# Further accounts, created at startup and kept in step (SOVEMU_USERS__<n>__*). Each takes
+# `password` or `passwordSecret: {name, key}`.
+users: []
+#  - username: kid
+#    passwordSecret: {name: sovemu-users, key: kid}
+#    admin: false
+
+# Delete accounts that are not declared above at startup, so these values are the whole list.
+pruneUsers: false
+
+# Per-system overrides (SOVEMU_SYSTEMS__<id>__*): `core`, `enabled`, `options` (core options).
+systems: {}
+#  psx:
+#    options:
+#      pcsx_rearmed_cd_readahead: "512"
+#  gamegear:
+#    enabled: false
+
+# STUN/TURN servers for browsers that cannot reach the media ports directly (RTCIceServer
+# objects), as SOVEMU_ICE_SERVERS.
+iceServers: []
+#  - urls: turn:turn.example.com:3478
+#    username: sovemu
+#    credential: secret
+
+# The library (Batocera layout: roms/<system>/, bios/). Mounted read-only at /library;
+# SovEmu never writes to it.
+library:
+  # none | existingClaim | nfs | hostPath
+  type: none
+  existingClaim: ""
+  nfs:
+    server: ""
+    path: ""
+  hostPath: ""
+  # Paths inside the library.
+  romsPath: roms
+  biosPath: bios
+
+# The database, saves, states, caches and (in mirror mode) the mirror, at /data.
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessModes: [ReadWriteOnce]
+  size: 20Gi
+
+# WebRTC media: every game session streams on its own UDP port, from firstPort, one port per
+# concurrent session. Browsers must reach advertiseIP on those ports.
+media:
+  firstPort: 50000
+  ports: 10
+  # The address clients send media to: the LoadBalancer's IP, or the node's with hostNetwork.
+  # Required unless hostNetwork is on and the node's own address is the right one.
+  advertiseIP: ""
+  # Put the pod on the node's network: no Service needed for media, ports open on the node.
+  hostNetwork: false
+  service:
+    # LoadBalancer (MetalLB, a cloud LB) keeps the ports as they are. NodePort cannot: the
+    # ports would have to fall inside the cluster's NodePort range.
+    type: LoadBalancer
+    loadBalancerIP: ""
+    annotations: {}
+    externalTrafficPolicy: Local
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: sovemu.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: sovemu-tls
+  #    hosts: [sovemu.example.com]
+
+resources: {}
+#  requests: {cpu: "1", memory: 512Mi}
+#  limits: {memory: 2Gi}
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extra environment variables (full EnvVar objects), for anything the values above miss.
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
