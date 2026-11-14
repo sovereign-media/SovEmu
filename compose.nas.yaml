@@ -10,14 +10,12 @@ services:
     environment:
       SOVEMU_ROMS_DIR: /nas/roms
       SOVEMU_SYSTEM_DIR: /nas/bios
-      # direct: the NAS is on the same network; play from it as is (the usual case).
-      # cache:  the NAS is remote (VPN, tunnel); keep played games and artwork on local disk,
-      #         least recently used out past SOVEMU_CACHE_GB.
-      # mirror: keep a full local copy in data/library (only SOVEMU_MIRROR_SYSTEMS, if set),
-      #         synced in the background; play from it.
-      SOVEMU_LIBRARY_MODE: ${SOVEMU_LIBRARY_MODE:-direct}
-      SOVEMU_CACHE_GB: ${SOVEMU_CACHE_GB:-20}
-      SOVEMU_MIRROR_SYSTEMS: ${SOVEMU_MIRROR_SYSTEMS:-}
+      # SOVEMU_LIBRARY_MODE (direct | cache | mirror), SOVEMU_CACHE_GB and SOVEMU_MIRROR_SYSTEMS
+      # come from .env like every other setting.
+      # The share's credentials are only for the mount below: blank them inside the container
+      # (compose still reads them from .env to mount the share).
+      SOVEMU_NAS_USER: ""
+      SOVEMU_NAS_PASSWORD: ""
     volumes:
       - nas:/nas:ro
 

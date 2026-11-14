@@ -60,6 +60,11 @@ held 59.93 fps over 300 frames with no resyncs.
       menu (resume, reset, stats, quit)
 - [x] `scripts/fetch-free-roms.sh`: pinned, freely licensed homebrew for NES, SNES, GB, GBC and GBA
 - [x] Verified in Docker: Snes9x streaming *Castle Platformer* through the server to a WebRTC client
+- [x] Configuration entirely through environment variables: the admin account
+      (`SOVEMU_ADMIN_*`, kept in step on every start), `*_FILE` secrets, periodic rescans and
+      mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
+      effective configuration logged (redacted); compose loads `.env` whole; workers start with a
+      cleared environment
 - [ ] OIDC sign-in (deferred to Phase 6)
 - [x] NAS library: `compose.nas.yaml` mounts the SMB share read-only (credentials in a gitignored
       `.env`); Batocera artwork (box art, image, marquee, video snaps) is scanned and served with
@@ -127,6 +132,11 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `GET /health`; Prometheus `GET /metrics` behind a bearer token (off by default)
 - [x] Security headers (nosniff, frame denial, referrer and permissions policies); compose healthcheck
 - [x] Configuration reference in the README
+- [x] Configuration entirely through environment variables: the admin account
+      (`SOVEMU_ADMIN_*`, kept in step on every start), `*_FILE` secrets, periodic rescans and
+      mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
+      effective configuration logged (redacted); compose loads `.env` whole; workers start with a
+      cleared environment
 - [ ] OIDC sign-in
 - [ ] H.264 fallback for clients without VP8 decode
 - [ ] Worker resource limits (cgroups/rlimits per session)

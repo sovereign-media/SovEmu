@@ -1,4 +1,5 @@
-# Run SovEmu locally: http://localhost:8080 (the first visit creates the admin account).
+# Run SovEmu locally: http://localhost:8080. Set SOVEMU_ADMIN_USERNAME and SOVEMU_ADMIN_PASSWORD
+# in .env to create the admin; without them the first visit asks for one.
 #
 #   scripts/fetch-free-roms.sh        # free homebrew into data/roms (or add your own ROMs there)
 #   docker compose up --build
@@ -15,14 +16,14 @@ services:
     build:
       context: .
       dockerfile: SovEmu.Backend/Dockerfile
+    # Every SovEmu setting is an environment variable (see the README's table); put yours in
+    # .env, which is loaded here as a whole, so no setting needs this file edited. Workers do
+    # not inherit it: the server starts them with an empty environment.
+    env_file:
+      - path: .env
+        required: false
     environment:
       SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
-      # Game information services (optional; see .env.example). Arcade names need none.
-      SOVEMU_SCREENSCRAPER_DEVID: ${SOVEMU_SCREENSCRAPER_DEVID:-}
-      SOVEMU_SCREENSCRAPER_DEVPASSWORD: ${SOVEMU_SCREENSCRAPER_DEVPASSWORD:-}
-      SOVEMU_SCREENSCRAPER_USER: ${SOVEMU_SCREENSCRAPER_USER:-}
-      SOVEMU_SCREENSCRAPER_PASSWORD: ${SOVEMU_SCREENSCRAPER_PASSWORD:-}
-      SOVEMU_THEGAMESDB_KEY: ${SOVEMU_THEGAMESDB_KEY:-}
     ports:
       - "8080:8080/tcp"
       - "50000-50009:50000-50009/udp"

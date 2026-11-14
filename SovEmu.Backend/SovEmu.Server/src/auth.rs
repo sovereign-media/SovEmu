@@ -93,6 +93,55 @@ pub async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<User> {
     }
 }
 
+/// Makes sure the configured admin exists with the configured password: created if missing,
+/// otherwise its password and admin flag are brought in line (the environment is the source of
+/// truth, so rotating `SOVEMU_ADMIN_PASSWORD` rotates the password).
+pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> anyhow::Result<()> {
+    validate(username, password).map_err(|e| anyhow::anyhow!("SOVEMU_ADMIN_*: {}", e.message))?;
+    let existing: Option<(i64, String, bool)> =
+        sqlx::query_as("SELECT id, password_hash, is_admin FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(pool)
+            .await?;
+    match existing {
+        None => {
+            create_user(
+                pool,
+                &NewUser {
+                    username: username.to_owned(),
+                    password: password.to_owned(),
+                    is_admin: true,
+                },
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("creating the admin: {}", e.message))?;
+            tracing::info!("created admin {username} from SOVEMU_ADMIN_USERNAME");
+        }
+        Some((id, hash, is_admin)) => {
+            if !verify_password(password, &hash) {
+                sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+                    .bind(hash_password(password)?)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+                // A changed password signs every browser out.
+                sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?")
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+                tracing::info!("updated admin {username}'s password from SOVEMU_ADMIN_PASSWORD");
+            }
+            if !is_admin {
+                sqlx::query("UPDATE users SET is_admin = 1 WHERE id = ?")
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Creates a sign-in session and returns the `Set-Cookie` value for it.
 async fn start_session(pool: &SqlitePool, user_id: i64, secure: bool) -> ApiResult<HeaderValue> {
     let mut bytes = [0u8; 32];

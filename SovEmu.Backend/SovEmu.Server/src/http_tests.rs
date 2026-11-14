@@ -543,3 +543,45 @@ async fn library_status_reports_direct_mode() {
     assert_eq!(status, json!({"mode": "direct", "games": 2, "cache_bytes": null, "mirror": null}));
     assert_eq!(h.call("POST", "/api/library/sync", None).await.0, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn the_admin_comes_from_the_environment() {
+    let admin = |pw: &str| {
+        vec![
+            "--admin-username".to_owned(),
+            "boss".to_owned(),
+            "--admin-password".to_owned(),
+            pw.to_owned(),
+        ]
+    };
+    let mut h = Harness::new_with("env-admin", false, admin("first-password")).await;
+    let (_, status) = h.call("GET", "/api/auth/status", None).await;
+    assert_eq!(status["setup_required"], false, "no first-run page when the admin is configured");
+    let login = |pw: &str| json!({"username": "boss", "password": pw});
+    let (code, user) = h.call("POST", "/api/auth/login", Some(login("first-password"))).await;
+    assert_eq!((code, user["is_admin"].clone()), (StatusCode::OK, json!(true)));
+
+    // Restarting with a new password rotates it and signs existing browsers out.
+    let config = Config::parse_from(
+        ["sovemu-server", "--data-dir", &h.dir.display().to_string()]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(admin("second-password")),
+    );
+    let state = build_state(config).await.unwrap();
+    h.state = state;
+    assert_eq!(
+        h.call("GET", "/api/systems", None).await.0,
+        StatusCode::UNAUTHORIZED,
+        "old session gone"
+    );
+    h.cookie = None;
+    assert_eq!(
+        h.call("POST", "/api/auth/login", Some(login("first-password"))).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        h.call("POST", "/api/auth/login", Some(login("second-password"))).await.0,
+        StatusCode::OK
+    );
+}
