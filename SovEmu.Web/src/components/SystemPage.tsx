@@ -6,7 +6,7 @@ import { api, formatAgo, formatSize, mediaUrl, type Game, type SystemSummary } f
 import { listenNav } from "../lib/nav";
 import HintBar from "./HintBar";
 import Shell from "./Shell";
-import TopBar from "./TopBar";
+import SideNav, { NAV_SPACE } from "./SideNav";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/primitives";
 
@@ -114,7 +114,7 @@ function Games() {
         className="fixed inset-0"
         style={{ background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${color} 35%, transparent), #0b0d12 60%)` }}
       />
-      <main className="relative mx-auto grid h-dvh max-w-7xl grid-cols-1 gap-8 px-8 pt-24 pb-24 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <main className="relative mx-auto grid h-dvh max-w-7xl grid-cols-1 gap-8 px-8 pt-16 pb-24 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <section className="flex min-h-0 flex-col">
           <h1 className="mb-4 flex items-baseline gap-3">
             <span className="rounded-lg px-2.5 py-1 text-sm font-black" style={{ background: color }}>
@@ -188,8 +188,10 @@ function Games() {
 export default function SystemPage() {
   return (
     <Shell>
-      <TopBar crumb="Games" />
-      <Games />
+      <SideNav section="systems" />
+      <div className={NAV_SPACE}>
+        <Games />
+      </div>
     </Shell>
   );
 }
