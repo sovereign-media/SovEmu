@@ -85,8 +85,9 @@ Each emulator has its own settings: rendering, internal resolution, frame skippi
 (43 for Snes9x, 113 for Dolphin). Admins change them per system on the **Settings** page: pick
 the system from the dropdown, and its settings are grouped (System, Video, Audio, Input, then the
 emulator's own groups), each with the emulator's explanation of what it does. A few emulators
-(the NES's FCEUmm, for one) list their settings only once a game is running; their page fills in
-after any game of that system has been played once. The worker speaks
+list their settings only once a game is loaded: the worker loads a tiny stand-in game for those
+(an empty NES cartridge, a GameCube program that does nothing) to read them. Arcade has no such
+stand-in, so its page fills in after any arcade game has been played once. The worker speaks
 libretro's core options v2, so groups, explanations and value labels come from the emulator
 itself; settings an emulator leaves ungrouped are placed by keyword. Changes apply to the next
 game started.

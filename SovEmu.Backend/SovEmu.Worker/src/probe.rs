@@ -72,11 +72,11 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
         system_dir: scratch.to_owned(),
         save_dir: scratch.to_owned(),
         variables: Vec::new(),
-        // Loading is enough to probe; no game, so no context is ever made.
+        // A stand-in game (see `standin`) makes a GPU core create its context, so allow one.
         gpu: Some(sovemu_retro_host::GpuChoice::Auto),
     };
     match Core::load(path, options) {
-        Ok(core) => {
+        Ok(mut core) => {
             let info = core.system_info();
             result.name = Some(info.library_name.clone());
             result.version = Some(info.library_version.clone());
@@ -84,6 +84,21 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
             result.need_fullpath = info.need_fullpath;
             result.supports_no_game = core.supports_no_game();
             (result.variables, result.categories) = crate::stream::declared_options(&core);
+            // Cores that declare their options only with a game loaded: load a stand-in.
+            if result.variables.is_empty()
+                && let Some((ext, bytes)) = crate::standin::for_extensions(&result.valid_extensions)
+            {
+                let file = scratch.join(format!("standin.{ext}"));
+                match std::fs::write(&file, bytes).map_err(|e| e.to_string()).and_then(|()| {
+                    core.load_game(Some(&file)).map(|_| ()).map_err(|e| format!("{e:#}"))
+                }) {
+                    Ok(()) => {
+                        (result.variables, result.categories) =
+                            crate::stream::declared_options(&core);
+                    }
+                    Err(e) => tracing::warn!("{}: stand-in game did not load: {e}", path.display()),
+                }
+            }
         }
         Err(err) => result.error = Some(format!("{err:#}")),
     }
