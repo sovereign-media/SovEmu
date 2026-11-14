@@ -218,3 +218,27 @@ fn a_missing_library_is_reported() {
     // The failed load must not leave the per-process slot taken.
     Core::load(test_core(), options()).unwrap();
 }
+
+#[test]
+fn exposes_battery_ram() {
+    let _guard = lock();
+    let mut core = Core::load(test_core(), options()).unwrap();
+    assert!(core.save_ram().is_none(), "no game loaded yet");
+    core.load_game(None).unwrap();
+    assert!(core.system_ram().is_none(), "the test core has no system RAM region");
+    let sram = core.save_ram().expect("the test core has battery RAM");
+    assert_eq!(sram.len(), 8 * 1024);
+    assert!(sram.iter().all(|&b| b == 0), "fresh after init");
+    // A frontend restores a .srm by writing into the region before running.
+    sram[100] = 0xAB;
+    for _ in 0..3 {
+        core.run_frame(&[]).unwrap();
+    }
+    let sram = core.save_ram().unwrap();
+    assert_eq!(
+        u64::from_le_bytes(sram[..8].try_into().unwrap()),
+        3,
+        "the core writes its frame count"
+    );
+    assert_eq!(sram[100], 0xAB, "the restored byte survives");
+}

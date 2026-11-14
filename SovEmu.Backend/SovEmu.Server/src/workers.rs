@@ -60,6 +60,7 @@ pub struct Launch {
     pub core: PathBuf,
     pub rom: PathBuf,
     pub save_dir: PathBuf,
+    pub state_dir: PathBuf,
 }
 
 pub struct Session {
@@ -190,6 +191,8 @@ impl Workers {
             .arg(&self.config.system_dir)
             .arg("--save-dir")
             .arg(&launch.save_dir)
+            .arg("--state-dir")
+            .arg(&launch.state_dir)
             .arg("--idle-timeout")
             .arg(self.config.idle_timeout_secs.to_string());
         if let Some(ip) = self.config.advertise_ip {

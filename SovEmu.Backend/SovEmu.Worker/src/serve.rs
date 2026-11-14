@@ -31,6 +31,7 @@ pub fn run(args: ServeArgs) -> Result<()> {
         variables: args.variables.clone(),
         video_kbps: args.video_kbps,
         audio_kbps: args.audio_kbps,
+        state_dir: Some(args.save_dir.join("states")),
     })?;
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;

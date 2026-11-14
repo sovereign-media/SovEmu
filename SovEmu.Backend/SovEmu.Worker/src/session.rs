@@ -41,6 +41,7 @@ pub fn run(args: SessionArgs) -> Result<()> {
         variables: args.variables.clone(),
         video_kbps: args.video_kbps,
         audio_kbps: args.audio_kbps,
+        state_dir: args.state_dir.clone(),
     })?;
     let (core, av) = session.describe();
 

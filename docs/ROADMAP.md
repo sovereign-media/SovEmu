@@ -65,7 +65,14 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 3: persistence
 
-- [ ] SRAM autosave, save-state slots with screenshots, resuming a session
+- [x] Battery saves: `RETRO_MEMORY_SAVE_RAM` restored from `<game>.srm` at load, written when changed
+      (checked every 10 s) and on exit, atomically; RetroArch-compatible names and format
+- [x] Save states in slots with PNG screenshots; slot 0 is the auto state, written whenever a
+      session ends (quit, closing the tab, idle timeout)
+- [x] API: list, save, load and delete states; screenshots
+- [x] Web: the splash offers Continue (from the auto save) or Start over; the in-game menu has Save
+      state and Load state pickers with thumbnails and times
+- [x] Verified in Docker: *Nova the Squirrel* wrote its `.srm`, a slot and the auto state with screenshots
 
 ## Phase 4: mobile clients
 

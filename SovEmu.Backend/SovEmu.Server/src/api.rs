@@ -137,6 +137,7 @@ pub async fn start_session(
             "the game file is missing; rescan the library",
         ));
     }
+    let (save_dir, state_dir) = save_dirs(&state, user.id, &game);
     let session = state
         .workers
         .start(Launch {
@@ -146,12 +147,8 @@ pub async fn start_session(
             title: game.title.clone(),
             core,
             rom,
-            save_dir: state
-                .config
-                .data_dir
-                .join("saves")
-                .join(user.id.to_string())
-                .join(&game.system),
+            save_dir,
+            state_dir,
         })
         .await
         .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;
@@ -222,4 +219,113 @@ pub async fn stop_session(
     owned_session(&state, user.id, &id)?;
     state.workers.stop(&id).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Where a user's saves for a game live: battery saves in
+/// `saves/<user>/<system>/<game>.srm`, states in `saves/<user>/<system>/states/<game>/`.
+fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf, PathBuf) {
+    let save_dir = state.config.data_dir.join("saves").join(user_id.to_string()).join(&game.system);
+    let stem = std::path::Path::new(&game.path)
+        .file_stem()
+        .map_or_else(|| game.id.to_string(), |s| s.to_string_lossy().into_owned());
+    let state_dir = save_dir.join("states").join(stem);
+    (save_dir, state_dir)
+}
+
+/// The highest save-state slot (slot 0 is the auto state).
+const MAX_SLOT: u32 = 9;
+
+#[derive(Debug, Serialize)]
+pub struct SaveSlot {
+    slot: u32,
+    /// Unix seconds.
+    saved_at: u64,
+    screenshot: bool,
+}
+
+pub async fn list_states(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Vec<SaveSlot>>> {
+    let game = fetch_game(&state, user.id, id).await?;
+    let (_, dir) = save_dirs(&state, user.id, &game);
+    let slots = (0..=MAX_SLOT)
+        .filter_map(|slot| {
+            let meta = std::fs::metadata(dir.join(format!("slot{slot}.state"))).ok()?;
+            let saved_at =
+                meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+            Some(SaveSlot {
+                slot,
+                saved_at,
+                screenshot: dir.join(format!("slot{slot}.png")).is_file(),
+            })
+        })
+        .collect();
+    Ok(Json(slots))
+}
+
+pub async fn state_screenshot(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, slot)): Path<(i64, u32)>,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    let game = fetch_game(&state, user.id, id).await?;
+    let (_, dir) = save_dirs(&state, user.id, &game);
+    let bytes = tokio::fs::read(dir.join(format!("slot{slot}.png")))
+        .await
+        .map_err(|_| ApiError::not_found("screenshot"))?;
+    Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes).into_response())
+}
+
+pub async fn delete_state(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, slot)): Path<(i64, u32)>,
+) -> ApiResult<StatusCode> {
+    let game = fetch_game(&state, user.id, id).await?;
+    let (_, dir) = save_dirs(&state, user.id, &game);
+    let state_file = dir.join(format!("slot{slot}.state"));
+    if !state_file.is_file() {
+        return Err(ApiError::not_found("save state"));
+    }
+    let _ = tokio::fs::remove_file(&state_file).await;
+    let _ = tokio::fs::remove_file(dir.join(format!("slot{slot}.png"))).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn session_request(
+    state: &AppState,
+    user_id: i64,
+    id: &str,
+    make: impl FnOnce(u64) -> sovemu_protocol::ipc::Request,
+) -> ApiResult<StatusCode> {
+    let session = owned_session(state, user_id, id)?;
+    session.request(make).await.map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn save_state(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, slot)): Path<(String, u32)>,
+) -> ApiResult<StatusCode> {
+    session_request(&state, user.id, &id, |rid| sovemu_protocol::ipc::Request::SaveState {
+        id: rid,
+        slot,
+    })
+    .await
+}
+
+pub async fn load_state(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path((id, slot)): Path<(String, u32)>,
+) -> ApiResult<StatusCode> {
+    session_request(&state, user.id, &id, |rid| sovemu_protocol::ipc::Request::LoadState {
+        id: rid,
+        slot,
+    })
+    .await
 }

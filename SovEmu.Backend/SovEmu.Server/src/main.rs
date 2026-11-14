@@ -122,12 +122,17 @@ pub fn router(state: AppState) -> Router {
         .route("/systems", get(api::list_systems))
         .route("/systems/{id}/games", get(api::list_games))
         .route("/games/{id}", get(api::get_game))
+        .route("/games/{id}/states", get(api::list_states))
+        .route("/games/{id}/states/{slot}", delete(api::delete_state))
+        .route("/games/{id}/states/{slot}/screenshot", get(api::state_screenshot))
         .route("/library/scan", post(api::scan))
         .route("/sessions", post(api::start_session))
         .route("/sessions/current", get(api::current_session))
         .route("/sessions/{id}", delete(api::stop_session))
         .route("/sessions/{id}/offer", post(api::offer))
         .route("/sessions/{id}/reset", post(api::reset))
+        .route("/sessions/{id}/states/{slot}", post(api::save_state))
+        .route("/sessions/{id}/states/{slot}/load", post(api::load_state))
         // For `navigator.sendBeacon` when a player closes the page: beacons can only POST.
         .route("/sessions/{id}/stop", post(api::stop_session))
         .fallback(|| async { error::ApiError::not_found("route") });
