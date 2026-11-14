@@ -93,8 +93,23 @@ impl AvInfo {
 pub struct CoreVariable {
     pub key: String,
     pub description: String,
+    /// What the option does, where the core explains it (core options v1/v2), else empty.
+    pub info: String,
+    /// The key of its [`CoreCategory`], where the core groups its options (core options v2).
+    pub category: Option<String>,
     pub options: Vec<String>,
+    /// A display label for each of `options`.
+    pub labels: Vec<String>,
+    pub default: String,
     pub value: String,
+}
+
+/// A group of core options the core declared (core options v2): "Video", "Audio", …
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreCategory {
+    pub key: String,
+    pub description: String,
+    pub info: String,
 }
 
 /// What one call to [`Core::run_frame`] produced.
@@ -604,16 +619,36 @@ impl Core {
         unsafe { (self.api.cheat_reset)() };
     }
 
-    /// The core options the core has declared, with their current values.
+    /// The core options the core has declared, in its order, with their current values.
     pub fn variables(&self) -> Vec<CoreVariable> {
         callbacks::with(|s| {
-            s.variables
-                .iter()
+            let mut vars: Vec<_> = s.variables.iter().collect();
+            vars.sort_by_key(|(_, v)| v.order);
+            vars.into_iter()
                 .map(|(key, v)| CoreVariable {
                     key: key.clone(),
                     description: v.description.clone(),
+                    info: v.info.clone(),
+                    category: v.category.clone(),
                     options: v.options.clone(),
+                    labels: v.labels.clone(),
+                    default: v.default.clone(),
                     value: v.value.to_string_lossy().into_owned(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// The categories the core groups its options in (empty for cores that do not).
+    pub fn option_categories(&self) -> Vec<CoreCategory> {
+        callbacks::with(|s| {
+            s.categories
+                .iter()
+                .map(|(key, description, info)| CoreCategory {
+                    key: key.clone(),
+                    description: description.clone(),
+                    info: info.clone(),
                 })
                 .collect()
         })

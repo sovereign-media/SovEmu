@@ -66,7 +66,7 @@ SovEmu/
     SovEmu.Media/            RGBA→I420, VP8 (libvpx), Opus, resampling               [Phase 1]
     SovEmu.Protocol/         wire formats: input packets, signalling                 [Phase 1]
     SovEmu.Server/           axum: web client + API, auth, SQLite, orchestration     [Phase 2]
-  SovEmu.Web/                Astro + Tailwind, static; served by the Rust server     [Phase 1]
+  SovEmu.Web/                Astro + Tailwind + React (Radix UI), static; served by Rust [Phase 1]
   SovEmu.Android/            submodule: Kotlin + Compose, Stream libwebrtc, gamepad + touch
   SovEmu.iOS/                submodule: SwiftUI + XcodeGen, stasel/WebRTC, GameController + touch
   docs/  scripts/  .claude/  .github/
@@ -149,7 +149,10 @@ and deletes the files.
 
 ### Web client and signalling
 
-`SovEmu.Web` is Astro + Tailwind built to static files (no server runtime). The same Rust
+`SovEmu.Web` is Astro + Tailwind built to static files (no server runtime). Each page is a React
+island rendered in the browser (`client:only`), built from Radix UI primitives (dialogs, selects,
+menus, progress, toasts) and Lucide icons; the logic they drive (wire format, input, WebRTC, menu
+stack, loading bar, home navigation) stays framework-free in `src/lib/`. The same Rust
 process that serves `/api/*` serves those files, so the page and the API share one origin. That
 process is `sovemu-server`; `sovemu-worker serve` does the same standalone for development.
 

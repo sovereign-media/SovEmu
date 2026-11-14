@@ -6,6 +6,8 @@ export interface MenuItem {
   label: string;
   /** Secondary text (a save's time, say). */
   detail?: string;
+  /** A Lucide icon to show beside the label, by name (the page maps names to icons). */
+  icon?: string;
   /** An image to show beside the label. */
   image?: string;
   disabled?: boolean;

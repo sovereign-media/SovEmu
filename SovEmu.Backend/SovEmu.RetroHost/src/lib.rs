@@ -19,7 +19,9 @@ pub mod gl;
 mod input;
 mod video;
 
-pub use crate::core::{AvInfo, Core, CoreOptions, CoreVariable, FrameOutput, SystemInfo};
+pub use crate::core::{
+    AvInfo, Core, CoreCategory, CoreOptions, CoreVariable, FrameOutput, SystemInfo,
+};
 pub use crate::error::Error;
 pub use crate::gl::GpuChoice;
 pub use crate::input::{AnalogSticks, JoypadButtons, ParseButtonsError};

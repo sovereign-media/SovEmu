@@ -30,8 +30,8 @@ pub struct SystemSummary {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Game {
-    id: i64,
-    system: String,
+    pub(crate) id: i64,
+    pub(crate) system: String,
     title: String,
     tags: String,
     path: String,
@@ -58,7 +58,7 @@ pub struct Game {
 
 impl Game {
     /// Downloaded box art stands in for a missing local `thumb`.
-    fn with_box_art(mut self) -> Self {
+    pub(crate) fn with_box_art(mut self) -> Self {
         if self.box_art.is_some() && !self.media.split(',').any(|k| k == "thumb") {
             self.media = if self.media.is_empty() {
                 "thumb".into()
@@ -125,7 +125,8 @@ pub async fn list_systems(
     Ok(Json(summaries))
 }
 
-const GAME_COLUMNS: &str = "g.id, g.system, COALESCE(m.title, g.title) AS title, g.tags, g.path,
+pub(crate) const GAME_COLUMNS: &str =
+    "g.id, g.system, COALESCE(m.title, g.title) AS title, g.tags, g.path,
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
@@ -369,7 +370,7 @@ pub async fn stop_session(
 
 /// Where a user's saves for a game live: battery saves in
 /// `saves/<user>/<system>/<game>.srm`, states in `saves/<user>/<system>/states/<game>/`.
-fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf, PathBuf) {
+pub(crate) fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf, PathBuf) {
     let save_dir = state.config.data_dir.join("saves").join(user_id.to_string()).join(&game.system);
     let stem = std::path::Path::new(&game.path)
         .file_stem()

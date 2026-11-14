@@ -12,7 +12,7 @@ under `SovEmu.Backend/`, and each client is a separate project at the root. The 
 their own repositories, checked out as **unpinned submodules** (`branch = main`, `ignore = all`;
 update with `git submodule update --remote`): `SovEmu.Android` (Kotlin + Compose) and
 `SovEmu.iOS` (SwiftUI + XcodeGen). Each has its own README, `.claude/rules/`, CI and PRs.
-`SovEmu.Web` (Astro + Tailwind) stays in-tree for now because the image builds it from source;
+`SovEmu.Web` (Astro + Tailwind, React islands) stays in-tree for now because the image builds it from source;
 it is self-contained so it can move to its own repository once the image takes a released build
 instead (as Sovereign's server takes its SPA).
 
@@ -101,7 +101,7 @@ cargo test --workspace
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
 | `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and `/api/*`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the systems table and library scanner (Recalbox folder names + aliases, extension fallback); one `sovemu-worker session` per game session with a UDP port from a pool. |
-| `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
+| `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
 
 ```
 LibretroFfi  (root — no workspace references)        Media     (no workspace references)

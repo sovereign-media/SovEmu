@@ -33,17 +33,31 @@ export type SettingSource = "core" | "sovemu" | "admin" | "environment";
 export interface CoreSetting {
   key: string;
   description: string;
+  /** What it does, in the core's words; empty where the core does not say. */
+  info: string;
+  /** The key of the core's category for it, where the core groups its options. */
+  category: string | null;
   choices: string[];
+  /** A display label for each choice. */
+  labels: string[];
   /** The core's own default. */
   default: string;
   value: string;
   source: SettingSource;
 }
 
+export interface CoreCategory {
+  key: string;
+  description: string;
+  info?: string;
+}
+
 export interface SystemSettings {
   system: string;
   core: string;
   settings: CoreSetting[];
+  /** The core's own groups ("Video", "Audio", …), in its order; empty for cores without. */
+  categories: CoreCategory[];
   /** The admin's changes as SOVEMU_SYSTEMS__… lines, to move into configuration. */
   environment: string[];
 }
@@ -69,6 +83,18 @@ export interface Game {
   players: string | null;
   /** 0 to 1. */
   rating: number | null;
+}
+
+/** A game on the home screen's "Continue playing" row. */
+export interface RecentGame extends Game {
+  /** When the auto save's screenshot was taken (Unix seconds), if there is one. */
+  screenshot_at: number | null;
+}
+
+export interface HomeFeed {
+  featured: Game[];
+  recent: RecentGame[];
+  added: Game[];
 }
 
 export interface SyncStatus {
@@ -165,6 +191,7 @@ export const api = {
   login: (username: string, password: string) => call<User>("POST", "/auth/login", { username, password }),
   logout: () => call<void>("POST", "/auth/logout"),
   config: () => call<{ ice_servers: RTCIceServer[] }>("GET", "/config"),
+  home: () => call<HomeFeed>("GET", "/home"),
   systems: () => call<SystemSummary[]>("GET", "/systems"),
   games: (system: string) => call<Game[]>("GET", `/systems/${encodeURIComponent(system)}/games`),
   game: (id: number) => call<Game>("GET", `/games/${id}`),

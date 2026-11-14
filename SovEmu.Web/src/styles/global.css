@@ -13,3 +13,11 @@
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+
+/* Scrolls (wheel, trackpad, touch, scrollBy) with no visible scrollbar: the home rows. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

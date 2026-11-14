@@ -119,6 +119,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Cheats per user and game (stored in SQLite, applied by the worker at start and on every change)
 - [x] Controller remapping, keyboard and gamepad, per browser
 - [x] Display filters on a WebGL canvas: sharp pixels, smooth, CRT (scanlines + aperture mask)
+- [x] A home screen in Sovereign's style: a hero carousel of featured games (a new pick each day,
+      games with artwork and descriptions first) over rows of continue playing (the auto save's
+      screenshot), systems and recently added, from one `GET /api/home`
+- [x] The web client on React islands with Radix UI primitives and Lucide icons
 - [x] Verified: fast-forward over WebRTC ran 216 emulated frames/s against 61 normally
 - [ ] RetroAchievements (rcheevos in the worker, an RA account per user). Memory-region access
       (`Core::system_ram`) is in place for it
@@ -169,6 +173,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Emulator settings in the web app: each core's options (probed by a worker), changed per
       system by admins (`system_settings`, migration 0005); the environment wins and is shown
       locked; changes are offered as `SOVEMU_SYSTEMS__…` lines
+- [x] Core options v1/v2 in RetroHost (`GET_CORE_OPTIONS_VERSION` = 2): the settings page groups
+      each system's settings by the core's categories (else by keyword) under a system dropdown,
+      and shows the core's explanation of each
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 

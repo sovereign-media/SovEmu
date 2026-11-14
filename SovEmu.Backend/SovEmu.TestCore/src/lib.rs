@@ -7,6 +7,8 @@
 //!   honour the pitch. Pixel `(x, y)` on frame `n` is `R = x + n`, `G = y + n` (both mod 256) and
 //!   `B` = the low byte of the held buttons. Holding SELECT dupes the frame (passes null).
 //!   With the core option `sovemu_test_pattern=solid` every pixel is [`SOLID_COLOUR`].
+//! - **Core options:** declared through core options v2 (a "Video" category, explanations and
+//!   value labels) when the frontend reports version 2, else through `SET_VARIABLES`.
 //! - **Audio:** 48 kHz at 60 fps, so exactly 800 stereo frames per video frame, of a 440 Hz
 //!   sine. All but the last arrive through the batch callback; the last through the single-
 //!   sample one.
@@ -230,6 +232,14 @@ pub extern "C" fn retro_set_environment(cb: ffi::retro_environment_t) {
     CALLBACKS.lock().unwrap().environment = cb;
     let mut no_game = true;
     env(ffi::RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, (&raw mut no_game).cast());
+    // Like a real core: the richest options interface the frontend offers.
+    let mut version: c_uint = 0;
+    if env(ffi::RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, (&raw mut version).cast())
+        && version >= 2
+    {
+        declare_options_v2();
+        return;
+    }
     let mut vars = [
         ffi::retro_variable {
             key: PATTERN_KEY.as_ptr(),
@@ -239,6 +249,75 @@ pub extern "C" fn retro_set_environment(cb: ffi::retro_environment_t) {
         ffi::retro_variable { key: std::ptr::null(), value: std::ptr::null() },
     ];
     env(ffi::RETRO_ENVIRONMENT_SET_VARIABLES, vars.as_mut_ptr().cast());
+}
+
+/// The same two options through core options v2: a "Video" category, an explanation for each,
+/// and labels for their values. The frontend copies everything during the call.
+fn declare_options_v2() {
+    const NONE: ffi::retro_core_option_value =
+        ffi::retro_core_option_value { value: std::ptr::null(), label: std::ptr::null() };
+    let values = |list: &[(&'static CStr, &'static CStr)]| {
+        let mut out = [NONE; ffi::RETRO_NUM_CORE_OPTION_VALUES_MAX as usize];
+        for (slot, (value, label)) in out.iter_mut().zip(list) {
+            *slot = ffi::retro_core_option_value { value: value.as_ptr(), label: label.as_ptr() };
+        }
+        out
+    };
+    let definition = |key: &'static CStr,
+                      desc: &'static CStr,
+                      info: &'static CStr,
+                      category: *const c_char,
+                      list: &[(&'static CStr, &'static CStr)],
+                      default: &'static CStr| {
+        ffi::retro_core_option_v2_definition {
+            key: key.as_ptr(),
+            desc: desc.as_ptr(),
+            desc_categorized: std::ptr::null(),
+            info: info.as_ptr(),
+            info_categorized: std::ptr::null(),
+            category_key: category,
+            values: values(list),
+            default_value: default.as_ptr(),
+        }
+    };
+    let mut categories = [
+        ffi::retro_core_option_v2_category {
+            key: c"video".as_ptr(),
+            desc: c"Video".as_ptr(),
+            info: c"How frames are drawn.".as_ptr(),
+        },
+        ffi::retro_core_option_v2_category {
+            key: std::ptr::null(),
+            desc: std::ptr::null(),
+            info: std::ptr::null(),
+        },
+    ];
+    let mut definitions = [
+        definition(
+            PATTERN_KEY,
+            c"Test pattern",
+            c"What every frame shows: a moving gradient, or one solid colour.",
+            c"video".as_ptr(),
+            &[(c"gradient", c"Gradient"), (c"solid", c"Solid colour")],
+            c"gradient",
+        ),
+        definition(
+            RENDER_KEY,
+            c"Rendering",
+            c"Draw in software, or through an OpenGL context from the frontend.",
+            c"video".as_ptr(),
+            &[(c"software", c"Software"), (c"gl", c"OpenGL")],
+            c"software",
+        ),
+        definition(c"", c"", c"", std::ptr::null(), &[], c""),
+    ];
+    // The terminator has a null key.
+    definitions[2].key = std::ptr::null();
+    let mut options = ffi::retro_core_options_v2 {
+        categories: categories.as_mut_ptr(),
+        definitions: definitions.as_mut_ptr(),
+    };
+    env(ffi::RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, (&raw mut options).cast());
 }
 
 #[unsafe(no_mangle)]
