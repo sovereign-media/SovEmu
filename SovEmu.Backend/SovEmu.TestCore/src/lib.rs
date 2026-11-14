@@ -13,6 +13,9 @@
 //! - **Input:** read once per frame through `RETRO_DEVICE_ID_JOYPAD_MASK`.
 //! - **Save states:** 16 bytes, the frame counter and the sine phase.
 //! - **Content:** optional (`SET_SUPPORT_NO_GAME`). Loaded content's size is logged.
+//! - **Battery save:** [`SAVE_RAM_SIZE`] bytes of `RETRO_MEMORY_SAVE_RAM`. Each frame writes the
+//!   frame counter into its first 8 bytes (little-endian), so a frontend's `.srm` persistence
+//!   can be checked; the rest is left alone.
 
 use std::ffi::{CStr, c_char, c_uint, c_void};
 use std::sync::Mutex;
@@ -27,6 +30,10 @@ pub const FPS: f64 = 60.0;
 pub const SAMPLE_RATE: f64 = 48_000.0;
 pub const SAMPLES_PER_FRAME: usize = 800;
 pub const SOLID_COLOUR: u32 = 0x00_20_40_80;
+pub const SAVE_RAM_SIZE: usize = 8 * 1024;
+
+/// Battery RAM. A raw static so its address stays fixed for the frontend, as in a real core.
+static SAVE_RAM: Mutex<[u8; SAVE_RAM_SIZE]> = Mutex::new([0; SAVE_RAM_SIZE]);
 const TONE_HZ: f64 = 440.0;
 
 #[derive(Clone, Copy)]
@@ -160,6 +167,7 @@ pub extern "C" fn retro_init() {
         s.solid = false;
         s.log = log_fn;
         s.pixels = vec![0; PITCH / 4 * HEIGHT as usize];
+        *SAVE_RAM.lock().unwrap() = [0; SAVE_RAM_SIZE];
         s.audio = Vec::with_capacity(SAMPLES_PER_FRAME * 2);
     }
     log(c"test core initialised");
@@ -270,6 +278,7 @@ pub extern "C" fn retro_run() {
         s.phase = (s.phase + step).fract();
     }
     s.frame += 1;
+    SAVE_RAM.lock().unwrap()[..8].copy_from_slice(&s.frame.to_le_bytes());
 
     // Copy out what the callbacks need, then release the lock before calling the frontend.
     let pixels = if dupe { None } else { Some(s.pixels.clone()) };
@@ -379,11 +388,16 @@ pub extern "C" fn retro_get_region() -> c_uint {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn retro_get_memory_data(_id: c_uint) -> *mut c_void {
-    std::ptr::null_mut()
+pub extern "C" fn retro_get_memory_data(id: c_uint) -> *mut c_void {
+    if id == ffi::RETRO_MEMORY_SAVE_RAM {
+        // The array lives in a static, so the pointer stays valid after the guard drops.
+        SAVE_RAM.lock().unwrap().as_mut_ptr().cast()
+    } else {
+        std::ptr::null_mut()
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn retro_get_memory_size(_id: c_uint) -> usize {
-    0
+pub extern "C" fn retro_get_memory_size(id: c_uint) -> usize {
+    if id == ffi::RETRO_MEMORY_SAVE_RAM { SAVE_RAM_SIZE } else { 0 }
 }

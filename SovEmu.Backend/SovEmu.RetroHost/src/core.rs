@@ -131,6 +131,8 @@ struct CoreApi {
     cheat_set: unsafe extern "C" fn(c_uint, bool, *const c_char),
     load_game: unsafe extern "C" fn(*const ffi::retro_game_info) -> bool,
     unload_game: unsafe extern "C" fn(),
+    get_memory_data: unsafe extern "C" fn(c_uint) -> *mut c_void,
+    get_memory_size: unsafe extern "C" fn(c_uint) -> usize,
 }
 
 impl CoreApi {
@@ -168,6 +170,8 @@ impl CoreApi {
             cheat_set: sym!("retro_cheat_set"),
             load_game: sym!("retro_load_game"),
             unload_game: sym!("retro_unload_game"),
+            get_memory_data: sym!("retro_get_memory_data"),
+            get_memory_size: sym!("retro_get_memory_size"),
         })
     }
 }
@@ -463,6 +467,28 @@ impl Core {
             Ok(())
         } else {
             Err(Error::UnserializeFailed)
+        }
+    }
+
+    /// The cartridge's battery-backed RAM (`RETRO_MEMORY_SAVE_RAM`), which the frontend persists
+    /// as a `.srm` file. `None` if the game has none. Valid while the game stays loaded.
+    pub fn save_ram(&mut self) -> Option<&mut [u8]> {
+        self.memory(ffi::RETRO_MEMORY_SAVE_RAM)
+    }
+
+    /// The console's main RAM (`RETRO_MEMORY_SYSTEM_RAM`), for achievements and cheats.
+    pub fn system_ram(&mut self) -> Option<&mut [u8]> {
+        self.memory(ffi::RETRO_MEMORY_SYSTEM_RAM)
+    }
+
+    fn memory(&mut self, id: u32) -> Option<&mut [u8]> {
+        self.content.as_ref()?;
+        // SAFETY: a game is loaded; the core owns the region and keeps it valid while loaded,
+        // and `&mut self` stops anything else running the core while the slice is borrowed.
+        unsafe {
+            let size = (self.api.get_memory_size)(id);
+            let data = (self.api.get_memory_data)(id).cast::<u8>();
+            (!data.is_null() && size > 0).then(|| std::slice::from_raw_parts_mut(data, size))
         }
     }
 

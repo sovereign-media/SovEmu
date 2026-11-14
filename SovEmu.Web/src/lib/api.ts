@@ -45,6 +45,16 @@ export interface SessionInfo {
   connected: boolean;
 }
 
+export interface SaveSlot {
+  slot: number;
+  /** Unix seconds. */
+  saved_at: number;
+  screenshot: boolean;
+}
+
+/** Slot 0 is the auto state, written whenever a session ends. */
+export const AUTO_SLOT = 0;
+
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -85,7 +95,15 @@ export const api = {
   currentSession: () => call<SessionInfo | null>("GET", "/sessions/current"),
   stopSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
   resetSession: (id: string) => call<void>("POST", `/sessions/${id}/reset`),
+  states: (gameId: number) => call<SaveSlot[]>("GET", `/games/${gameId}/states`),
+  saveState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}`),
+  loadState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}/load`),
+  deleteState: (gameId: number, slot: number) => call<void>("DELETE", `/games/${gameId}/states/${slot}`),
 };
+
+/** A save slot's screenshot, cache-busted by when it was saved. */
+export const screenshotUrl = (gameId: number, s: SaveSlot) =>
+  `/api/games/${gameId}/states/${s.slot}/screenshot?t=${s.saved_at}`;
 
 /** Human-readable file size. */
 export function formatSize(bytes: number): string {

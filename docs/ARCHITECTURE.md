@@ -94,6 +94,20 @@ aliases (`genesis/`, No-Intro style names). A file outside a known folder is pla
 extension, but only when exactly one system claims that extension. A rescan updates rows in place
 by path, so game ids (and with them play history and saves) survive a rescan.
 
+### Saves
+
+Saves belong to a user and live under `/data/saves/<user id>/<system>/`.
+- **Battery saves** are `<game>.srm`. The worker restores one into the core's
+  `RETRO_MEMORY_SAVE_RAM` at load, writes it back whenever it changes (checked every 10 s), and
+  writes it again on exit. The names and format match RetroArch's.
+- **Save states** are in `states/<game>/slotN.state`, each with a `slotN.png` screenshot of the
+  last frame. Slot 0 is the auto state, written whenever a session ends, so the player can
+  continue later.
+
+Every write goes to a temporary file and is renamed into place. The server never reads or writes
+state data itself: it relays `save_state`/`load_state` to the session's worker, and only lists
+and deletes the files.
+
 ### Web client and signalling
 
 `SovEmu.Web` is Astro + Tailwind built to static files (no server runtime). The same Rust

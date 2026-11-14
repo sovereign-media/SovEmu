@@ -12,6 +12,7 @@
 
 mod headless;
 mod pacing;
+mod persist;
 mod probe;
 mod schedule;
 mod serve;
@@ -70,9 +71,13 @@ struct SessionArgs {
     #[arg(long)]
     system_dir: PathBuf,
 
-    /// Directory the core may save into (battery saves).
+    /// Directory for battery saves (`<game>.srm`).
     #[arg(long)]
     save_dir: PathBuf,
+
+    /// Directory for this game's save states (`slotN.state`, `slotN.png`).
+    #[arg(long)]
+    state_dir: Option<PathBuf>,
 
     /// VP8 target bitrate, kbit/s.
     #[arg(long, default_value_t = 2500)]

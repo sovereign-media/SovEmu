@@ -229,6 +229,32 @@ async fn runs_a_game_session_in_a_worker() {
         StatusCode::BAD_REQUEST
     );
 
+    // Save states: save slot 2, see it listed, load it; an empty slot cannot be loaded.
+    let states = format!("/api/games/{id}/states");
+    assert_eq!(h.call("GET", &states, None).await.1, json!([]));
+    assert_eq!(
+        h.call("POST", &format!("/api/sessions/{sid}/states/2"), None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let (_, slots) = h.call("GET", &states, None).await;
+    assert_eq!(slots[0]["slot"], 2);
+    assert_eq!(slots[0]["screenshot"], false, "no frame streamed yet");
+    assert_eq!(
+        h.call("POST", &format!("/api/sessions/{sid}/states/2/load"), None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, body) = h.call("POST", &format!("/api/sessions/{sid}/states/5/load"), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("empty"));
+    assert_eq!(
+        h.call("GET", &format!("{states}/2/screenshot"), None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert!(h.dir.join("saves/1/nes/states/Test Game (USA)/slot2.state").is_file());
+    assert_eq!(h.call("DELETE", &format!("{states}/2"), None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(h.call("GET", &states, None).await.1, json!([]));
+    assert_eq!(h.call("DELETE", &format!("{states}/2"), None).await.0, StatusCode::NOT_FOUND);
+
     // Play history is recorded.
     let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
     assert_eq!(games[0]["play_count"], 1);

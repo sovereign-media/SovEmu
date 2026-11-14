@@ -4,8 +4,8 @@ Self-hosted console emulation streamed over WebRTC. A Rust server runs
 [libretro](https://www.libretro.com/) cores and streams video, audio and input to web, Android
 and iOS clients.
 
-> **Status:** Phase 2. Sign in, pick a system and a game, and play in the browser over WebRTC.
-> Saving games comes in Phase 3. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** Phase 3. Sign in, pick a system and a game, play in the browser over WebRTC, save
+> and continue later. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Repository layout
 

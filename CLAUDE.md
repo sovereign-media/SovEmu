@@ -34,6 +34,10 @@ submodules from the start.
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
   `RetroHost` or `Media` into `SovEmu.Server`.
+- **Never lose a player's progress.** Battery saves and states are written atomically (temp file
+  + rename) by the worker, which also writes them on every exit path (`Session::finish`, called
+  from `Drop`). Never write a save in place, and never kill a worker without first asking it to
+  shut down (`Workers::stop` does both, in that order).
 - **Never write a migration's SQL into Rust.** Schema changes are a new numbered file in
   `SovEmu.Server/migrations/`; never edit one that has shipped.
 - **The web client is served by the Rust process that serves the API**: `SovEmu.Web` builds to
@@ -73,6 +77,9 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
     └── RetroHost
             └── Worker ──► Media, Protocol
 Server ──► Protocol   (never links a core or a codec: it runs workers)
+
+Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
+persist.rs (battery saves and states), headless.rs, probe.rs.
 ```
 
 Tests sit beside the code they test (`#[cfg(test)]` modules) and in each crate's `tests/`

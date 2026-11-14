@@ -26,6 +26,7 @@ use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
 use crate::pacing::Pacer;
+use crate::persist::{Persist, Screenshot};
 
 /// How long the loop sleeps at most when idle, so new commands are picked up promptly.
 const IDLE_WAIT: Duration = Duration::from_millis(20);
@@ -56,6 +57,8 @@ pub struct SessionConfig {
     pub variables: Vec<(String, String)>,
     pub video_kbps: u32,
     pub audio_kbps: u32,
+    /// Where save states go (`slotN.state` + `slotN.png`); none disables them.
+    pub state_dir: Option<PathBuf>,
 }
 
 /// The connected (or connecting) client.
@@ -79,6 +82,10 @@ pub struct Session {
     buttons: Vec<JoypadButtons>,
     last_seq: Option<u32>,
     pending_ack: Option<(u32, u32)>,
+    persist: Persist,
+    /// Size of the frame in `rgba`, for save-state screenshots.
+    shot_size: (u32, u32),
+    finished: bool,
 }
 
 impl Session {
@@ -94,6 +101,11 @@ impl Session {
         let mut core = Core::load(&config.core, options)
             .with_context(|| format!("loading core {}", config.core.display()))?;
         let av = *core.load_game(config.rom.as_deref()).context("loading content")?;
+        let save_name =
+            config.rom.as_deref().and_then(|r| r.file_stem()).map(|s| s.to_string_lossy());
+        let mut persist =
+            Persist::new(&config.save_dir, save_name.as_deref(), config.state_dir.clone());
+        persist.restore(&mut core);
         tracing::info!(
             "{} {}: {}x{} @ {:.4} fps, audio {} Hz",
             core.system_info().library_name,
@@ -118,7 +130,20 @@ impl Session {
             buttons: vec![JoypadButtons::NONE; 2],
             last_seq: None,
             pending_ack: None,
+            persist,
+            shot_size: (0, 0),
+            finished: false,
         })
+    }
+
+    /// Saves the battery RAM and the auto state, once.
+    pub fn finish(&mut self) {
+        if std::mem::replace(&mut self.finished, true) {
+            return;
+        }
+        let (width, height) = self.shot_size;
+        let shot = Screenshot { rgba: &self.rgba, width, height };
+        self.persist.finish(&mut self.core, self.frame > 0, Some(shot));
     }
 
     /// The core's name and the content's geometry and timing.
@@ -134,9 +159,22 @@ impl Session {
                 self.core.reset();
                 Ok(false)
             }
-            Request::Shutdown { .. } => Ok(true),
-            Request::SaveState { .. } | Request::LoadState { .. } => {
-                Err("save states are not supported yet".into())
+            Request::Shutdown { .. } => {
+                self.finish();
+                Ok(true)
+            }
+            Request::SaveState { slot, .. } => {
+                let (width, height) = self.shot_size;
+                let shot = Screenshot { rgba: &self.rgba, width, height };
+                self.persist
+                    .save_state(&mut self.core, *slot, Some(shot))
+                    .map(|_| false)
+                    .map_err(|e| format!("{e:#}"))
+            }
+            Request::LoadState { slot, .. } => {
+                self.persist.load_state(&mut self.core, *slot).map_err(|e| format!("{e:#}"))?;
+                self.video.request_keyframe();
+                Ok(false)
             }
             Request::Offer { .. } => Err("offers are not control requests".into()),
         }
@@ -377,6 +415,13 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
     }
 }
 
+impl Drop for Session {
+    /// Idle timeout, a lost controller or an error: still keep the player's progress.
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 impl Session {
     /// Applies an input packet, if it is newer than the last one applied.
     fn handle_input(&mut self, bytes: &[u8]) {
@@ -419,6 +464,7 @@ impl Session {
         if out.video_updated && out.video.width > 0 {
             out.video.write_rgba8(&mut self.rgba);
             let (w, h) = (out.video.width, out.video.height);
+            self.shot_size = (w, h);
             if let (Some(encoded), Some((mid, pt))) =
                 (self.video.encode(&self.rgba, w, h)?, p.video)
                 && let Some(writer) = p.rtc.writer(mid)
@@ -449,6 +495,7 @@ impl Session {
             let ack = InputAck { seq, client_time_ms, frame: frame as u32 };
             let _ = channel.write(true, &ack.encode());
         }
+        self.persist.tick(&mut self.core, now);
         Ok(())
     }
 }
