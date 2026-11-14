@@ -61,7 +61,7 @@ export function FilterDrawer({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/10" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/10 motion-safe:data-[state=open]:animate-fade-in motion-safe:data-[state=closed]:animate-fade-out" />
         <Dialog.Content
           // Escape in the search box closes the drawer; elsewhere the page's pad navigation does
           // (its Back), so one press is never handled twice.
@@ -70,7 +70,7 @@ export function FilterDrawer({
             e.preventDefault();
             searchRef.current?.focus();
           }}
-          className="fixed inset-y-3 right-3 z-50 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-surface/95 shadow-2xl outline-none backdrop-blur-md"
+          className="fixed inset-y-3 right-3 z-50 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-surface/95 shadow-2xl outline-none backdrop-blur-md motion-safe:data-[state=open]:animate-slide-in-right motion-safe:data-[state=closed]:animate-slide-out-right"
         >
           <div className="mx-5 flex items-center gap-3 border-b border-white/10 pt-5 pb-4">
             <SlidersHorizontal className="size-5 text-white" aria-hidden />

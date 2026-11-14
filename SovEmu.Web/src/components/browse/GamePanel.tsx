@@ -74,9 +74,14 @@ export function GamePanel({
   onClose: () => void;
   onPlay: (start: "continue" | "new") => void;
 }) {
+  // The last game stays drawn while the panel slides out after closing.
+  const [shown, setShown] = useState(game);
+  useEffect(() => {
+    if (game) setShown(game);
+  }, [game]);
   const auto = slots.find((s) => s.slot === AUTO_SLOT);
-  const players = maxPlayers(game?.players ?? null);
-  const year = game?.releaseDate?.slice(0, 4);
+  const players = maxPlayers(shown?.players ?? null);
+  const year = shown?.releaseDate?.slice(0, 4);
   return (
     <Dialog.Root open={!!game} modal={false} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
@@ -90,12 +95,12 @@ export function GamePanel({
             if (target?.closest?.("[data-game-card], [data-radix-popper-content-wrapper], nav")) e.preventDefault();
           }}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed inset-y-3 right-3 z-30 flex w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/15 bg-surface/60 shadow-2xl outline-none backdrop-blur-xl backdrop-saturate-150"
+          className="fixed inset-y-3 right-3 z-30 flex w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/15 bg-surface/60 shadow-2xl outline-none backdrop-blur-xl backdrop-saturate-150 motion-safe:data-[state=open]:animate-slide-in-right motion-safe:data-[state=closed]:animate-slide-out-right"
         >
-          {game && (
+          {shown && (
             <>
               <div className="relative">
-                <Art game={game} color={system.color} short={system.short} />
+                <Art game={shown} color={system.color} short={system.short} />
                 <Dialog.Close
                   aria-label="Close"
                   className="absolute top-3 right-3 grid size-9 place-items-center rounded-full bg-black/50 text-white backdrop-blur hover:bg-black/70"
@@ -105,13 +110,13 @@ export function GamePanel({
               </div>
               <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-6 pt-2 pb-6">
                 <div>
-                  <Dialog.Title className="text-2xl leading-tight font-black">{game.title}</Dialog.Title>
-                  {game.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{game.tags.join(" · ")}</p>}
+                  <Dialog.Title className="text-2xl leading-tight font-black">{shown.title}</Dialog.Title>
+                  {shown.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{shown.tags.join(" · ")}</p>}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                     {year && <Fact icon={<CalendarDays />}>{year}</Fact>}
-                    {(game.developer || game.publisher) && <Fact icon={<Building2 />}>{game.developer ?? game.publisher}</Fact>}
-                    {game.genre && <Fact icon={<Tag />}>{game.genre}</Fact>}
-                    {players !== null && <Fact icon={<Users />}>{players === 1 ? "1 player" : `${game.players} players`}</Fact>}
+                    {(shown.developer || shown.publisher) && <Fact icon={<Building2 />}>{shown.developer ?? shown.publisher}</Fact>}
+                    {shown.genre && <Fact icon={<Tag />}>{shown.genre}</Fact>}
+                    {players !== null && <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -130,7 +135,7 @@ export function GamePanel({
                     </Button>
                   )}
                 </div>
-                {game.description && <p className="text-sm leading-relaxed text-slate-300">{game.description}</p>}
+                {shown.description && <p className="text-sm leading-relaxed text-slate-300">{shown.description}</p>}
                 {slots.length > 0 && (
                   <div>
                     <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Saves</p>
@@ -152,9 +157,9 @@ export function GamePanel({
                   </div>
                 )}
                 <p className="border-t border-white/10 pt-3 text-xs text-slate-500">
-                  {game.playCount ? `Played ${game.playCount}× · last ${formatAgo(game.lastPlayedAt)}` : "Not played yet"}
+                  {shown.playCount ? `Played ${shown.playCount}× · last ${formatAgo(shown.lastPlayedAt)}` : "Not played yet"}
                   {" · "}
-                  <span className="font-mono break-all">{game.path}</span> · {formatSize(game.size)}
+                  <span className="font-mono break-all">{shown.path}</span> · {formatSize(shown.size)}
                 </p>
               </div>
             </>
