@@ -138,3 +138,75 @@ mod tests {
         assert!(!held.is_pressed(ffi::RETRO_DEVICE_ID_JOYPAD_MASK));
     }
 }
+
+/// One port's analog controls, as libretro's `RETRO_DEVICE_ANALOG` reports them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct AnalogSticks {
+    /// Left stick, x right and y down, −32768 to 32767.
+    pub left: (i16, i16),
+    pub right: (i16, i16),
+    /// Analog triggers, 0 to 32767 (cores read them as analog L2 and R2).
+    pub l2: i16,
+    pub r2: i16,
+}
+
+impl AnalogSticks {
+    /// Centred sticks, released triggers.
+    pub const CENTRED: Self = Self { left: (0, 0), right: (0, 0), l2: 0, r2: 0 };
+
+    /// Answers `input_state(port, RETRO_DEVICE_ANALOG, index, id)`. Analog buttons other than
+    /// the triggers read as fully pressed or released from the digital state.
+    pub(crate) fn read(self, buttons: JoypadButtons, index: u32, id: u32) -> i16 {
+        match (index, id) {
+            (ffi::RETRO_DEVICE_INDEX_ANALOG_LEFT, ffi::RETRO_DEVICE_ID_ANALOG_X) => self.left.0,
+            (ffi::RETRO_DEVICE_INDEX_ANALOG_LEFT, ffi::RETRO_DEVICE_ID_ANALOG_Y) => self.left.1,
+            (ffi::RETRO_DEVICE_INDEX_ANALOG_RIGHT, ffi::RETRO_DEVICE_ID_ANALOG_X) => self.right.0,
+            (ffi::RETRO_DEVICE_INDEX_ANALOG_RIGHT, ffi::RETRO_DEVICE_ID_ANALOG_Y) => self.right.1,
+            (ffi::RETRO_DEVICE_INDEX_ANALOG_BUTTON, id) => {
+                let digital = if buttons.is_pressed(id) { i16::MAX } else { 0 };
+                match id {
+                    ffi::RETRO_DEVICE_ID_JOYPAD_L2 => self.l2.max(digital),
+                    ffi::RETRO_DEVICE_ID_JOYPAD_R2 => self.r2.max(digital),
+                    _ => digital,
+                }
+            }
+            _ => 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod analog_tests {
+    use super::*;
+
+    #[test]
+    fn reads_sticks_triggers_and_analog_buttons() {
+        let a = AnalogSticks { left: (100, -200), right: (-300, 400), l2: 1000, r2: 0 };
+        let none = JoypadButtons::NONE;
+        assert_eq!(
+            a.read(none, ffi::RETRO_DEVICE_INDEX_ANALOG_LEFT, ffi::RETRO_DEVICE_ID_ANALOG_X),
+            100
+        );
+        assert_eq!(
+            a.read(none, ffi::RETRO_DEVICE_INDEX_ANALOG_LEFT, ffi::RETRO_DEVICE_ID_ANALOG_Y),
+            -200
+        );
+        assert_eq!(
+            a.read(none, ffi::RETRO_DEVICE_INDEX_ANALOG_RIGHT, ffi::RETRO_DEVICE_ID_ANALOG_X),
+            -300
+        );
+        assert_eq!(
+            a.read(none, ffi::RETRO_DEVICE_INDEX_ANALOG_RIGHT, ffi::RETRO_DEVICE_ID_ANALOG_Y),
+            400
+        );
+        let button = ffi::RETRO_DEVICE_INDEX_ANALOG_BUTTON;
+        assert_eq!(a.read(none, button, ffi::RETRO_DEVICE_ID_JOYPAD_L2), 1000);
+        assert_eq!(
+            a.read(JoypadButtons::R2, button, ffi::RETRO_DEVICE_ID_JOYPAD_R2),
+            i16::MAX,
+            "digital R2 counts fully"
+        );
+        assert_eq!(a.read(JoypadButtons::A, button, ffi::RETRO_DEVICE_ID_JOYPAD_A), i16::MAX);
+        assert_eq!(a.read(none, button, ffi::RETRO_DEVICE_ID_JOYPAD_A), 0);
+    }
+}

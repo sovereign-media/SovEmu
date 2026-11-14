@@ -58,6 +58,25 @@ systems: {}
 #  gamegear:
 #    enabled: false
 
+# Rendering for the 3D systems (N64, Dreamcast, GameCube, PS2). At startup the server tries
+# every GPU the pod can see (drawing a frame on each) and uses the first that works, else Mesa's
+# software renderer. Mesa drives AMD and Intel GPUs; NVIDIA's driver does not load in the
+# Alpine image.
+gpu:
+  # SOVEMU_GPU: auto | software | off | a render node such as /dev/dri/renderD128.
+  mode: auto
+  # Device-plugin resources that put a GPU in the pod (the usual way), e.g.
+  #   gpu.intel.com/i915: 1     (Intel GPU device plugin)
+  #   amd.com/gpu: 1            (AMD GPU device plugin)
+  resources: {}
+  # Without a device plugin: mount the node's /dev/dri. Needs the render group's GID (on the
+  # node: stat -c %g /dev/dri/renderD128), and a runtime that allows the device; some only do
+  # for privileged pods.
+  hostDevice:
+    enabled: false
+    path: /dev/dri
+    renderGroup: null
+
 # STUN/TURN servers for browsers that cannot reach the media ports directly (RTCIceServer
 # objects), as SOVEMU_ICE_SERVERS.
 iceServers: []
@@ -140,6 +159,9 @@ securityContext:
   readOnlyRootFilesystem: true
   capabilities:
     drop: [ALL]
+
+# /dev/shm for the game workers: Dolphin (GameCube) maps its emulated memory there.
+shmSize: 1Gi
 
 podAnnotations: {}
 podLabels: {}

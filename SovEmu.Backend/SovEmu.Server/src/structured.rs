@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(s["psx"].core.as_deref(), Some("mednafen_psx"));
         assert_eq!(s["psx"].options["pcsx_rearmed_cd_readahead"], "512");
         assert_eq!(s["gamegear"].enabled, Some(false));
-        assert!(systems(&vars(&[("SOVEMU_SYSTEMS__n64__CORE", "x")])).is_err(), "unknown system");
+        assert!(
+            systems(&vars(&[("SOVEMU_SYSTEMS__saturn__CORE", "x")])).is_err(),
+            "unknown system"
+        );
         assert!(
             systems(&vars(&[("SOVEMU_SYSTEMS__nes__COLOUR", "red")])).is_err(),
             "unknown setting"

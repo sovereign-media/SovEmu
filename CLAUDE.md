@@ -2,7 +2,8 @@
 
 A self-hosted console emulation server: a Rust backend runs libretro cores (through C bindings)
 and streams them to web, Android and iOS clients over WebRTC. Personal/family scale, a single
-CPU-only Linux box, SQLite for storage. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the
+Linux box (a GPU is optional: 3D systems render on it when present, else in software), SQLite
+for storage. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the
 design and the decisions behind it; [docs/ROADMAP.md](docs/ROADMAP.md) the phases. The tracking
 issue is sovereign-media/SovEmu#1.
 
@@ -50,8 +51,8 @@ instead (as Sovereign's server takes its SPA).
   static files (`output: "static"`, no Astro server runtime, no Node in the image), and the Rust
   side serves them next to `/api/*`. Never add a Node server or an SSR adapter.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
-  `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, ack `0x81`), each tested
-  against the same byte vectors. Change both in
+  `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),
+  each tested against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
 - **Every setting is an environment variable; nothing needs click-ops.** A new setting gets a
   `SOVEMU_*` env var on `Config` (and a row in the README's table and a line in
@@ -62,6 +63,13 @@ instead (as Sovereign's server takes its SPA).
   Lists and maps use Sovereign's `__` hierarchy (`SOVEMU_USERS__0__USERNAME`,
   `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A new setting also gets
   its place in `charts/sovemu` if it needs more than `settings:` (a secret, a volume, a port).
+- **GPU rendering is headless EGL in the worker** (`SovEmu.RetroHost/src/gl.rs`): libEGL is
+  opened at run time, never linked, so the worker still runs without Mesa. A GPU core's frames
+  are read back from a framebuffer object after `retro_run`; the context is current on the
+  thread that runs the core and must be made current before any call into it. The server only
+  ever learns about GPUs from `sovemu-worker gpu` (it never loads GL); a device counts only
+  if it drew a frame and read it back, and `SOVEMU_GPU` falls back to software (llvmpipe), then
+  to no 3D systems. Never ship a core that needs Vulkan or a glibc GPU driver.
 - **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** `/metrics` stays off unless

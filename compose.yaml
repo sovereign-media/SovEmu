@@ -29,6 +29,9 @@ services:
       - "50000-50009:50000-50009/udp"
     volumes:
       - ./data:/data
+    # Dolphin (GameCube) maps its emulated memory from /dev/shm; Docker's default 64 MB makes
+    # it die with a bus error.
+    shm_size: 1gb
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]

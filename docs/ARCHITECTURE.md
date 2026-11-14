@@ -6,8 +6,8 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 
 | Area | Decision |
 |---|---|
-| Systems (v1) | 2D/software-rendered cores only: NES, SNES, GB/GBC/GBA, Genesis, possibly PS1 (Beetle PSX, software renderer). No GPU cores (N64/PSP/Dreamcast). |
-| Server | Linux, CPU only (no hardware encoder) |
+| Systems | 2D cores (NES, SNES, GB/GBC/GBA, Mega Drive, Master System, Game Gear, PS1, arcade, Neo Geo) and, since the user asked for them, 3D cores that render with OpenGL: N64 (Mupen64Plus-Next), Dreamcast (Flycast), GameCube (Dolphin) and PS2 (PCSX2). |
+| Server | Linux. A GPU is optional: the worker renders 3D cores through headless EGL on whichever GPU passes a startup probe (AMD/Intel via Mesa), else on Mesa's software renderer, llvmpipe (playable for lighter games, slow for GameCube and PS2). Video encoding stays on the CPU. |
 | Scale | Personal/family, single node |
 | Database | SQLite (WAL mode) via `sqlx` with migrations; large files stay on disk |
 | Licensing | Non-commercial, so non-commercial cores (snes9x, genesis_plus_gx, etc.) are allowed |

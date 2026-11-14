@@ -29,6 +29,8 @@ pub enum Error {
     SerializeFailed,
     /// The core refused the save state.
     UnserializeFailed,
+    /// The core renders with the GPU and no GL context could be made for it.
+    Gpu(String),
 }
 
 impl fmt::Display for Error {
@@ -56,6 +58,7 @@ impl fmt::Display for Error {
             Self::NoGameLoaded => f.write_str("no game is loaded"),
             Self::SerializeFailed => f.write_str("the core could not write a save state"),
             Self::UnserializeFailed => f.write_str("the core rejected the save state"),
+            Self::Gpu(e) => write!(f, "no GPU context for this core: {e}"),
         }
     }
 }

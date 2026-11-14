@@ -27,6 +27,8 @@ pub struct System {
     /// Core options SovEmu sets for it (`key`, `value`).
     #[serde(skip)]
     pub options: &'static [(&'static str, &'static str)],
+    /// A 3D system: its cores render with OpenGL, on a GPU or in software (`SOVEMU_GPU`).
+    pub needs_gpu: bool,
 }
 
 pub const SYSTEMS: &[System] = &[
@@ -41,6 +43,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["nes", "unf", "unif", "fds"],
         cores: &["fceumm"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "snes",
@@ -53,6 +56,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["sfc", "smc", "swc", "fig", "bs", "st"],
         cores: &["snes9x"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "gb",
@@ -65,6 +69,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gb", "dmg"],
         cores: &["gambatte", "mgba"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "gbc",
@@ -77,6 +82,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gbc"],
         cores: &["gambatte", "mgba"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "gba",
@@ -89,6 +95,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gba"],
         cores: &["mgba"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "megadrive",
@@ -101,6 +108,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["md", "gen", "smd"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "mastersystem",
@@ -113,6 +121,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["sms"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "psx",
@@ -128,6 +137,7 @@ pub const SYSTEMS: &[System] = &[
         // Read 256 sectors (~600 KB) ahead on the core's CD thread, instead of 12: a library on
         // a network share answers each read in tens to hundreds of milliseconds.
         options: &[("pcsx_rearmed_cd_readahead", "256")],
+        needs_gpu: false,
     },
     System {
         id: "fbneo",
@@ -140,6 +150,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["zip", "7z"],
         cores: &["fbneo"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "neogeo",
@@ -152,6 +163,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["zip", "7z"],
         cores: &["fbneo"],
         options: &[],
+        needs_gpu: false,
     },
     System {
         id: "gamegear",
@@ -164,6 +176,66 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gg"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        needs_gpu: false,
+    },
+    System {
+        id: "n64",
+        name: "Nintendo 64",
+        short: "N64",
+        manufacturer: "Nintendo",
+        year: 1996,
+        color: "#27ae60",
+        folders: &["n64", "nintendo64", "nintendo 64", "nintendo - nintendo 64"],
+        extensions: &["z64", "n64", "v64"],
+        cores: &["mupen64plus_next"],
+        options: &[],
+        needs_gpu: true,
+    },
+    System {
+        id: "dreamcast",
+        name: "Dreamcast",
+        short: "DC",
+        manufacturer: "Sega",
+        year: 1998,
+        color: "#e67e22",
+        folders: &["dreamcast", "dc", "sega - dreamcast"],
+        extensions: &["chd", "cdi", "gdi", "cue", "m3u"],
+        cores: &["flycast"],
+        // Render on the thread that runs the core: SovEmu's GL context is current there only.
+        // Memory cards (VMUs) per game in the player's save folder: by default Flycast writes
+        // them into the BIOS folder, which is shared, and on a NAS read-only.
+        options: &[
+            ("reicast_threaded_rendering", "disabled"),
+            ("reicast_per_content_vmus", "All VMUs"),
+        ],
+        needs_gpu: true,
+    },
+    System {
+        id: "gamecube",
+        name: "GameCube",
+        short: "GC",
+        manufacturer: "Nintendo",
+        year: 2001,
+        color: "#6c5ce7",
+        folders: &["gamecube", "gc", "ngc", "nintendo - gamecube"],
+        extensions: &["iso", "gcm", "gcz", "rvz", "ciso"],
+        cores: &["dolphin"],
+        options: &[],
+        needs_gpu: true,
+    },
+    System {
+        id: "ps2",
+        name: "PlayStation 2",
+        short: "PS2",
+        manufacturer: "Sony",
+        year: 2000,
+        color: "#2d3436",
+        folders: &["ps2", "playstation2", "playstation 2", "sony - playstation 2"],
+        extensions: &["chd", "iso", "cso", "gz"],
+        cores: &["pcsx2"],
+        // Memory cards per game in the player's save folder, not shared under the BIOS folder.
+        options: &[("pcsx2_shared_memory_cards", "disabled")],
+        needs_gpu: true,
     },
 ];
 
@@ -172,8 +244,8 @@ pub fn by_id(id: &str) -> Option<&'static System> {
 }
 
 /// Batocera/Recalbox folders of systems SovEmu does not play. The scanner skips them rather
-/// than guess from extensions: a PlayStation 2, Dreamcast or Neo Geo CD disc is a `.chd` or
-/// `.cue` too, and the PlayStation core cannot run it.
+/// than guess from extensions: a Saturn, Sega CD or Neo Geo CD disc is a `.chd` or `.cue`
+/// too, and the PlayStation core cannot run it.
 pub const UNSUPPORTED_FOLDERS: &[&str] = &[
     "3do",
     "3ds",
@@ -181,21 +253,16 @@ pub const UNSUPPORTED_FOLDERS: &[&str] = &[
     "amigacd32",
     "atomiswave",
     "cdi",
-    "dreamcast",
-    "gamecube",
-    "gc",
     "jaguar",
     "jaguarcd",
     "model2",
     "model3",
-    "n64",
     "naomi",
     "naomi2",
     "nds",
     "neogeocd",
     "pcenginecd",
     "pcfx",
-    "ps2",
     "ps3",
     "ps4",
     "psp",
@@ -290,7 +357,12 @@ mod tests {
         assert_eq!(by_folder("Nintendo - Game Boy Advance").unwrap().id, "gba");
         assert_eq!(by_folder("psx").unwrap().id, "psx");
         assert_eq!(by_folder("arcade").unwrap().id, "fbneo");
-        assert!(by_folder("n64").is_none(), "GPU systems are not supported");
+        assert_eq!(by_folder("n64").unwrap().id, "n64");
+        assert!(by_folder("n64").unwrap().needs_gpu);
+        assert!(!by_folder("snes").unwrap().needs_gpu);
+        assert!(by_folder("saturn").is_none());
+        assert!(is_unsupported_folder("Saturn"));
+        assert!(!is_unsupported_folder("ps2"), "PS2 is supported now");
     }
 
     #[test]
@@ -299,7 +371,8 @@ mod tests {
         assert_eq!(by_extension("gbc").unwrap().id, "gbc");
         assert!(by_extension("bin").is_none());
         assert!(by_extension("zip").is_none(), "arcade and Neo Geo both claim .zip");
-        assert_eq!(by_extension("chd").unwrap().id, "psx");
+        assert!(by_extension("chd").is_none(), "PS1, PS2 and Dreamcast discs are all .chd");
+        assert_eq!(by_extension("z64").unwrap().id, "n64");
     }
 
     #[test]

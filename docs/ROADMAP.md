@@ -150,6 +150,22 @@ held 59.93 fps over 300 frames with no resyncs.
 - [ ] H.264 fallback for clients without VP8 decode
 - [ ] Worker resource limits (cgroups/rlimits per session)
 
+## Phase 7: 3D systems
+
+- [x] Headless OpenGL in the frontend: `SET_HW_RENDER` (OpenGL, core profile, GLES), an EGL
+      context on a framebuffer object, frames read back after `retro_run`; libEGL opened at run
+      time. The test core has a GL mode; the image's test stage renders it with llvmpipe
+- [x] GPU detection as Sovereign does it: `sovemu-worker gpu` draws on every EGL device and the
+      server keeps what works (`SOVEMU_GPU`: auto, software, off, a render node), logging a
+      summary; `GET /api/gpu`; systems report `rendering`
+- [x] N64 (Mupen64Plus-Next), Dreamcast (Flycast), GameCube (Dolphin, with its `Sys` overlaid
+      on the BIOS folder) and PS2 (PCSX2), built from source on Alpine
+- [x] Analog sticks and triggers: input message `0x03` in Rust, TypeScript, Kotlin and Swift;
+      the left stick stops doubling as the D-pad for 3D systems
+- [x] `compose.gpu.yaml`; Helm `gpu.resources` / `gpu.hostDevice`
+- [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend); a glibc image for NVIDIA GPUs
+- [ ] Hardware video encoding (VA-API) when a GPU is present
+
 ## Later
 
 - Multiplayer and spectators; optional pixel-perfect raw-frame DataChannel mode for LAN

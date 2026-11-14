@@ -4,6 +4,8 @@
 #
 #   <name>  <git repository>  <commit>  <build command, run from the checkout root>
 #
+# The build command can use `$out`, the output directory.
+#
 # The build must leave <name>_libretro.so somewhere in the checkout. Pin full commit hashes;
 # bump them deliberately, and rebuild the image to check every core still loads (the build runs
 # `sovemu-worker probe` over all of them).
@@ -18,3 +20,11 @@ gambatte         https://github.com/libretro/gambatte-libretro.git  77f2567d718b
 genesis_plus_gx  https://github.com/libretro/Genesis-Plus-GX.git    b9c2316441978d4015ba30e9a95d9b0e6f8ee981  make -f Makefile.libretro
 pcsx_rearmed     https://github.com/libretro/pcsx_rearmed.git       7b0e8f8fadfbce3d170d195b9d9eecaabfa08c8e  make -f Makefile.libretro
 fbneo            https://github.com/libretro/FBNeo.git              e6c7ee3d3a34b12f03054d669123ebe813397a8c  make -C src/burner/libretro
+# 3D cores: render with OpenGL through the frontend's EGL context (a GPU, or Mesa's llvmpipe).
+mupen64plus_next https://github.com/libretro/mupen64plus-libretro-nx.git 15bada85906593376e8fd697f1b0b3af3a20f512  make FORCE_GLES=0
+flycast          https://github.com/flyinghead/flycast.git          3a5267a5e32438026e1c5b97d5de6cd77236f72c  cmake -B build -G Ninja -DLIBRETRO=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build
+# Dolphin also needs its Sys data (fonts, game settings), shipped as system/dolphin-emu/Sys beside the cores: the worker overlays it on the BIOS folder.
+dolphin          https://github.com/libretro/dolphin.git            0863ee3700978e826b0d95b72d4742e537a7325b  cmake -B build -G Ninja -DLIBRETRO=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_QT=OFF -DENABLE_NOGUI=OFF -DENABLE_X11=OFF -DENABLE_EVDEV=OFF -DENABLE_LLVM=OFF -DUSE_UPNP=OFF -DENABLE_PULSEAUDIO=OFF -DENABLE_ALSA=OFF -DENABLE_CUBEB=OFF -DENABLE_VULKAN=OFF -DENABLE_TESTS=OFF -DUSE_DISCORD_PRESENCE=OFF -DENABLE_HWDB=OFF && cmake --build build && mkdir -p "$out/system/dolphin-emu" && cp -r Data/Sys "$out/system/dolphin-emu/"
+# PCSX2 (LRPS2, x86-64 and arm64). Ships its game database as system/pcsx2/resources. Its initial-exec TLS
+# hint relies on glibc's static-TLS surplus: musl refuses to dlopen such a library, so it is patched out.
+pcsx2            https://github.com/libretro/ps2.git                9691a4f995862436c3d25ce686ac3bd02065ad62  sed -i 's/__attribute__((tls_model("initial-exec")))//' common/Pcsx2Defs.h && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLIBRETRO=ON && cmake --build build && mkdir -p "$out/system/pcsx2" && cp -r bin/resources "$out/system/pcsx2/"

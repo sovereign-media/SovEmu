@@ -9,7 +9,9 @@
 //! - `headless` runs a core with no client and writes what it produced to disk (PNG frames, a
 //!   WAV file and a timing summary).
 //! - `probe` loads cores and reports what they say about themselves.
+//! - `gpu` finds the GPUs this process can render with, by rendering with each.
 
+mod gpu;
 mod headless;
 mod pacing;
 mod persist;
@@ -19,6 +21,7 @@ mod schedule;
 mod serve;
 mod session;
 mod stream;
+mod sysdir;
 mod web;
 
 use std::net::{IpAddr, SocketAddr};
@@ -48,6 +51,23 @@ enum Command {
     /// Load each core, print its name, version and extensions as JSON, and fail if any core
     /// cannot be loaded.
     Probe(ProbeArgs),
+    /// Try every GPU (and the software renderer): make a GL context, draw, read it back. Prints
+    /// the results as JSON.
+    Gpu,
+}
+
+/// `--gpu`: `auto`, `software`, `off` (refuse GPU cores) or a render node.
+#[derive(Debug, Clone)]
+pub struct GpuArg(pub Option<sovemu_retro_host::GpuChoice>);
+
+impl std::str::FromStr for GpuArg {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(match s.trim() {
+            "off" | "none" => None,
+            other => Some(other.parse()?),
+        }))
+    }
 }
 
 #[derive(Debug, clap::Args)]
@@ -111,6 +131,10 @@ struct SessionArgs {
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
+    /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
+    /// (`/dev/dri/renderD128`).
+    #[arg(long, default_value = "auto")]
+    gpu: GpuArg,
 }
 
 #[derive(Debug, clap::Args)]
@@ -176,6 +200,10 @@ struct ServeArgs {
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
+    /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
+    /// (`/dev/dri/renderD128`).
+    #[arg(long, default_value = "auto")]
+    gpu: GpuArg,
 }
 
 #[derive(Debug, clap::Args)]
@@ -227,6 +255,10 @@ struct HeadlessArgs {
     /// Directory the core may save into (defaults to `<out>/saves`).
     #[arg(long)]
     save_dir: Option<PathBuf>,
+    /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
+    /// (`/dev/dri/renderD128`).
+    #[arg(long, default_value = "auto")]
+    gpu: GpuArg,
 }
 
 fn parse_key_value(s: &str) -> Result<(String, String), String> {
@@ -257,6 +289,7 @@ fn main() -> ExitCode {
         }
         Command::Headless(args) => headless::run(args),
         Command::Probe(args) => probe::run(args),
+        Command::Gpu => gpu::run(),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

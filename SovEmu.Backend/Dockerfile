@@ -36,7 +36,10 @@ RUN npm test && npm run build
 ## ---- cores: libretro cores from source -------------------------------------------------------
 # Independent of the Rust sources, so it stays cached until scripts/cores.list changes.
 FROM alpine:${ALPINE_VERSION} AS cores
-RUN apk add --no-cache bash build-base cmake git linux-headers zlib-dev
+# mesa-dev: GL headers for the 3D cores (they load GL through the frontend at run time).
+# bsd-compat-headers: sys/cdefs.h, which PCSX2's libretro-common expects of every libc.
+RUN apk add --no-cache bash bsd-compat-headers build-base cmake git linux-headers mesa-dev ninja nasm pkgconf \
+    python3 zlib-dev libpng-dev zstd-dev xz-dev
 WORKDIR /build
 COPY scripts/cores.list scripts/build-cores.sh ./
 RUN ./build-cores.sh --out /out/cores --work /build/src && rm -rf /build/src
@@ -60,6 +63,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 ## ---- test: the full test suite, on musl (not part of the shipped image) -----------------------
 FROM build AS test
+# Mesa (EGL, desktop GL and GLES, llvmpipe): the GPU-rendering tests draw with the software
+# renderer here, as a server without a GPU would.
+RUN apk add --no-cache mesa-egl mesa-gl mesa-gles mesa-dri-gallium
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo test --workspace --locked
@@ -68,8 +74,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM alpine:${ALPINE_VERSION} AS runtime
 # libgcc: Rust's unwinder. libstdc++: the C++ cores (snes9x, gambatte). libvpx, opus: VP8 and
 # Opus encoding. tini: PID 1, so the per-session worker processes the server will spawn are
-# reaped.
+# reaped. Mesa: EGL and OpenGL for the 3D cores, with the GPU drivers Mesa ships (AMD radeonsi,
+# Intel iris/crocus, nouveau) and llvmpipe, the software renderer used when there is no GPU.
 RUN apk add --no-cache ca-certificates libgcc libstdc++ libvpx opus tini \
+        mesa-egl mesa-gl mesa-gles mesa-dri-gallium libpng zstd-libs xz-libs libgomp \
     && addgroup -S -g 1000 sovemu \
     && adduser -S -D -H -u 1000 -G sovemu -h /data sovemu \
     && mkdir -p /data/roms /data/system /data/saves \

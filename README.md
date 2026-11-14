@@ -31,9 +31,47 @@ docker compose up --build             # then open http://localhost:8080
 
 The first visit creates the admin account. `./data` is mounted at `/data`: the database,
 `data/roms/` (one folder per system: `nes/`, `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`,
-`mastersystem/`, `gamegear/`), `data/system/` for BIOS files and `data/saves/`. Browsers on other
+`mastersystem/`, `gamegear/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …), `data/system/` for BIOS files and `data/saves/`. Browsers on other
 machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
 UDP 50000-50009 reachable.
+
+## 3D systems and the GPU
+
+N64, Dreamcast, GameCube and PS2 render with OpenGL. At startup the server tries every GPU the
+container can see: it makes a context on each, draws a frame and reads it back. It uses the
+first one that works. Without one, it falls back to Mesa's software renderer (llvmpipe), which is
+fine for many N64 games and slow for GameCube and PS2. The startup log says which:
+
+```
+GPU probe:
+  /dev/dri/renderD128 (amdgpu, hardware): works: AMD Radeon RX 6600 (radeonsi, navi23, …)
+  software renderer (software): works: llvmpipe (LLVM 22.1.3, 128 bits)
+3D systems render on the GPU: AMD Radeon RX 6600 (radeonsi, navi23, …)
+```
+
+`GET /api/gpu` (admin) returns the same, and the system list marks each 3D system's `rendering`
+as `gpu`, `software` or `off`.
+
+- **Docker:** `docker compose -f compose.yaml -f compose.gpu.yaml up -d` passes `/dev/dri`
+  through. Set `SOVEMU_RENDER_GID` in `.env` to the group that owns the render node (`stat -c %g
+  /dev/dri/renderD128` on the host).
+- **Kubernetes:** set `gpu.resources` to your GPU device plugin's resource (`amd.com/gpu: 1`,
+  `gpu.intel.com/i915: 1`), or use `gpu.hostDevice`.
+- **Which GPUs:** the ones Mesa drives, which means AMD (radeonsi) and Intel (iris, crocus).
+  NVIDIA's own driver is built for glibc and doesn't load in this Alpine image, so an NVIDIA card
+  falls back to software rendering.
+- **Dolphin** needs its `Sys` data folder. The image ships it beside the cores and overlays it on
+  the BIOS folder, so the library stays read-only.
+- **3D systems need BIOS files**, laid out as in Batocera:
+  - PS2: a BIOS dump in `bios/ps2/` (or `bios/pcsx2/bios/`);
+  - Dreamcast: `bios/dc/dc_boot.bin` and `dc_flash.bin`.
+- **Memory cards** for Dreamcast (VMUs) and PS2 are kept per game in the player's save folder,
+  never under the shared, often read-only, BIOS folder.
+- **GameCube needs `/dev/shm`**, at least 1 GB: Dolphin maps its emulated memory there.
+  `compose.yaml` sets `shm_size` and the chart mounts one (`shmSize`). Docker's default 64 MB
+  makes Dolphin die with a bus error.
+- **Analog sticks:** for 3D systems, the web client sends the gamepad's sticks and triggers as
+  analog values. For 2D systems the left stick still acts as a D-pad.
 
 ## A library on a NAS
 
@@ -131,6 +169,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
 | `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
 | `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
+| `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
 | `SOVEMU_METRICS_TOKEN` | unset | Enables `GET /metrics` (Prometheus) for this bearer token |
@@ -138,6 +177,8 @@ effective configuration at startup, with secrets redacted.
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |
 | `SOVEMU_NAS_HOST`, `SOVEMU_NAS_PATH`, `SOVEMU_NAS_USER`, `SOVEMU_NAS_PASSWORD` | | The SMB share to mount read-only |
+| **compose.gpu.yaml only** | | |
+| `SOVEMU_RENDER_GID` | | The host group that owns `/dev/dri/renderD*` |
 
 Game workers start with an empty environment, apart from `PATH`, `HOME`, `TMPDIR`, `LANG` and
 `RUST_LOG`. Cores are third-party code, so they never see credentials.

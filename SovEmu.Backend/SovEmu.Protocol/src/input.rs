@@ -26,6 +26,21 @@
 //! Sent whenever the flags change, and with every input heartbeat while any is set; the worker
 //! clears them if none arrives for half a second, so a lost release cannot leave a game spinning.
 //!
+//! ## Client → worker: [`AnalogPacket`]
+//!
+//! | Offset | Size | Field |
+//! |---|---|---|
+//! | 0 | 1 | message type, `0x03` |
+//! | 1 | 1 | version |
+//! | 2 | 4 | `seq`: its own counter, independent of the button packets' |
+//! | 6 | 1 | `n`: number of ports that follow, 1 to [`MAX_PORTS`] |
+//! | 7 | 12·n | per port, six `i16`: left stick x, y; right stick x, y; L2, R2 |
+//!
+//! Sticks run from −32768 to 32767, x to the right and y **down** (libretro's convention);
+//! triggers from 0 (released) to 32767. Sent like button packets: on change and at least every
+//! 100 ms while any value is off-centre. Added after version 1 without bumping it: clients that
+//! never send it leave the sticks centred, and workers that predate it ignore the type.
+//!
 //! ## Worker → client: [`InputAck`]
 //!
 //! | Offset | Size | Field |
@@ -48,6 +63,9 @@ pub const MAX_PORTS: usize = 4;
 
 const TYPE_INPUT: u8 = 0x01;
 const TYPE_HOTKEYS: u8 = 0x02;
+const TYPE_ANALOG: u8 = 0x03;
+const ANALOG_HEADER: usize = 7;
+const ANALOG_PORT: usize = 12;
 const TYPE_ACK: u8 = 0x81;
 const INPUT_HEADER: usize = 11;
 const ACK_LEN: usize = 14;
@@ -137,17 +155,80 @@ impl Hotkeys {
     }
 }
 
+/// One port's analog controls.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Analog {
+    /// Left stick, x right and y down, −32768 to 32767.
+    pub left: (i16, i16),
+    pub right: (i16, i16),
+    /// Triggers, 0 to 32767.
+    pub l2: i16,
+    pub r2: i16,
+}
+
+/// The analog state of every port the client drives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalogPacket {
+    pub seq: u32,
+    pub ports: Vec<Analog>,
+}
+
+impl AnalogPacket {
+    pub fn encode(&self) -> Vec<u8> {
+        let ports = &self.ports[..self.ports.len().min(MAX_PORTS)];
+        let mut out = Vec::with_capacity(ANALOG_HEADER + ANALOG_PORT * ports.len());
+        out.extend_from_slice(&[TYPE_ANALOG, INPUT_VERSION]);
+        out.extend_from_slice(&self.seq.to_le_bytes());
+        out.push(ports.len() as u8);
+        for a in ports {
+            for v in [a.left.0, a.left.1, a.right.0, a.right.1, a.l2, a.r2] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        check_header(bytes, TYPE_ANALOG, ANALOG_HEADER)?;
+        let n = bytes[6];
+        if n == 0 || n as usize > MAX_PORTS {
+            return Err(DecodeError::BadPortCount(n));
+        }
+        let body = bytes
+            .get(ANALOG_HEADER..ANALOG_HEADER + ANALOG_PORT * n as usize)
+            .ok_or(DecodeError::TooShort)?;
+        let ports = body
+            .as_chunks::<ANALOG_PORT>()
+            .0
+            .iter()
+            .map(|p| {
+                let v = |i: usize| i16::from_le_bytes([p[2 * i], p[2 * i + 1]]);
+                Analog { left: (v(0), v(1)), right: (v(2), v(3)), l2: v(4), r2: v(5) }
+            })
+            .collect();
+        Ok(Self { seq: u32_at(bytes, 2), ports })
+    }
+
+    /// Whether this packet is newer than one with sequence number `last` (wrapping).
+    pub fn is_newer_than(&self, last: u32) -> bool {
+        let diff = self.seq.wrapping_sub(last);
+        diff != 0 && diff < u32::MAX / 2
+    }
+}
+
 /// A message from the client on the input channel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientMessage {
     Input(InputPacket),
     Hotkeys(Hotkeys),
+    Analog(AnalogPacket),
 }
 
 impl ClientMessage {
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
         match bytes.first() {
             Some(&TYPE_HOTKEYS) => Hotkeys::decode(bytes).map(Self::Hotkeys),
+            Some(&TYPE_ANALOG) => AnalogPacket::decode(bytes).map(Self::Analog),
             _ => InputPacket::decode(bytes).map(Self::Input),
         }
     }
@@ -235,6 +316,26 @@ mod tests {
         let input = InputPacket { seq: 1, client_time_ms: 2, ports: vec![3] };
         assert_eq!(ClientMessage::decode(&input.encode()), Ok(ClientMessage::Input(input)));
         assert_eq!(Hotkeys::decode(&[0x02, 1]), Err(DecodeError::TooShort));
+    }
+
+    #[test]
+    fn analog_layout_is_stable_and_round_trips() {
+        // Clients in other languages are tested against these exact bytes.
+        let packet = AnalogPacket {
+            seq: 0x0403_0201,
+            ports: vec![Analog { left: (-32768, 32767), right: (1, -2), l2: 0, r2: 0x1234 }],
+        };
+        let bytes = packet.encode();
+        assert_eq!(
+            bytes,
+            [0x03, 1, 1, 2, 3, 4, 1, 0x00, 0x80, 0xff, 0x7f, 1, 0, 0xfe, 0xff, 0, 0, 0x34, 0x12]
+        );
+        assert_eq!(AnalogPacket::decode(&bytes), Ok(packet.clone()));
+        assert_eq!(ClientMessage::decode(&bytes), Ok(ClientMessage::Analog(packet)));
+        assert_eq!(AnalogPacket::decode(&bytes[..10]), Err(DecodeError::TooShort));
+        let mut zero = bytes.clone();
+        zero[6] = 0;
+        assert_eq!(AnalogPacket::decode(&zero), Err(DecodeError::BadPortCount(0)));
     }
 
     #[test]

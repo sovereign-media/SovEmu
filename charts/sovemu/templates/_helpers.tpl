@@ -43,6 +43,7 @@ values, with `settings` on top.
 {{- define "sovemu.env" -}}
 {{- $env := dict }}
 {{- $_ := set $env "SOVEMU_UDP_PORTS" (printf "%d-%s" (int .Values.media.firstPort) (include "sovemu.lastPort" .)) }}
+{{- $_ := set $env "SOVEMU_GPU" (toString .Values.gpu.mode) }}
 {{- with include "sovemu.advertiseIP" . }}
 {{- $_ := set $env "SOVEMU_ADVERTISE_IP" . }}
 {{- end }}

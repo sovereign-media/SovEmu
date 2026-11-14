@@ -11,6 +11,7 @@ mod cache;
 mod cheats;
 mod db;
 mod error;
+mod gpu;
 #[cfg(test)]
 mod http_tests;
 mod library;
@@ -233,6 +234,12 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_DELAY_MS", default_value_t = 1200)]
     pub screenscraper_delay_ms: u64,
 
+    /// The GPU for 3D systems (N64, Dreamcast, GameCube, PS2): `auto` (the first GPU that
+    /// works, else software rendering), `software` (Mesa's llvmpipe), `off` (no 3D systems) or
+    /// a render node such as `/dev/dri/renderD128`. Probed at startup.
+    #[arg(long, env = "SOVEMU_GPU", default_value = "auto")]
+    pub gpu: String,
+
     /// Users declared as `SOVEMU_USERS__<n>__USERNAME` / `__PASSWORD` / `__ADMIN`.
     #[arg(skip)]
     pub users: Vec<structured::UserSpec>,
@@ -369,6 +376,7 @@ impl Config {
                 self.fast_forward,
                 self.keyframe_interval
             ),
+            format!("gpu={}", self.gpu),
             format!(
                 "cache_large_game_mb={} copy_threads={}",
                 self.cache_large_game_mb, self.copy_threads
@@ -428,6 +436,8 @@ pub struct AppState {
     pub cache: Arc<cache::Cache>,
     pub metadata: Arc<metadata::Metadata>,
     pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
+    /// Where 3D systems render, decided at startup.
+    pub gpu: Arc<gpu::GpuStatus>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -461,6 +471,7 @@ pub fn router(state: AppState) -> Router {
         .route("/library/sync", post(admin::library_sync))
         .route("/metadata/status", get(admin::metadata_status))
         .route("/metadata/fetch", post(admin::metadata_fetch))
+        .route("/gpu", get(admin::gpu_status))
         .route("/sessions", post(api::start_session))
         .route("/sessions/current", get(api::current_session))
         .route("/sessions/{id}", delete(api::stop_session))
@@ -520,8 +531,11 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     std::fs::create_dir_all(&config.roms_dir).ok();
     let db = db::open(&config.data_dir.join("sovemu.db")).await?;
     reconcile_users(&db, &config).await?;
+    let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
+    let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
+    tracing::info!("GPU probe:\n{}", gpu.summary());
     let workers = Workers::new(WorkerConfig {
-        worker_bin: config.worker.clone().unwrap_or_else(default_worker),
+        worker_bin,
         ports: config.udp_ports,
         bind_ip: config.udp_bind,
         advertise_ip: config.advertise_ip,
@@ -534,6 +548,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         rewind_max_mb: config.rewind_max_mb,
         fast_forward: config.fast_forward,
         keyframe_interval: config.keyframe_interval,
+        gpu: gpu.worker_arg.clone(),
     });
     let cache_dir = config.data_dir.join("cache");
     let cache_bytes = match config.library_mode {
@@ -599,6 +614,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         cache: cache::Cache::new(cache_dir, cache_bytes, copy_threads),
         metadata,
         mirror: Arc::default(),
+        gpu: Arc::new(gpu),
     })
 }
 

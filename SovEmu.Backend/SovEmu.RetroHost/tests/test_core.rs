@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use sovemu_retro_host::{Core, CoreOptions, Error, JoypadButtons, PixelFormat};
+use sovemu_retro_host::{Core, CoreOptions, Error, GpuChoice, JoypadButtons, PixelFormat};
 
 const WIDTH: u32 = 256;
 const HEIGHT: u32 = 224;
@@ -47,7 +47,7 @@ fn test_core() -> &'static PathBuf {
 
 fn options() -> CoreOptions {
     let dir = std::env::temp_dir();
-    CoreOptions { system_dir: dir.clone(), save_dir: dir, variables: Vec::new() }
+    CoreOptions { system_dir: dir.clone(), save_dir: dir, variables: Vec::new(), gpu: None }
 }
 
 fn load_running(options: CoreOptions) -> Core {
@@ -158,9 +158,10 @@ fn core_options_default_override_and_change() {
     let _guard = lock();
     {
         let mut core = load_running(options());
-        let vars = core.variables();
-        assert_eq!(vars.len(), 1);
-        assert_eq!(vars[0].key, "sovemu_test_pattern");
+        let mut vars = core.variables();
+        let keys: Vec<&str> = vars.iter().map(|v| v.key.as_str()).collect();
+        assert_eq!(keys, ["sovemu_test_pattern", "sovemu_test_render"]);
+        vars.truncate(1);
         assert_eq!(vars[0].description, "Test pattern");
         assert_eq!(vars[0].options, ["gradient", "solid"]);
         assert_eq!(vars[0].value, "gradient");
@@ -241,4 +242,43 @@ fn exposes_battery_ram() {
         "the core writes its frame count"
     );
     assert_eq!(sram[100], 0xAB, "the restored byte survives");
+}
+
+fn gl_options(gpu: Option<GpuChoice>) -> CoreOptions {
+    CoreOptions { variables: vec![("sovemu_test_render".into(), "gl".into())], gpu, ..options() }
+}
+
+#[test]
+fn a_gpu_core_is_refused_when_gpu_rendering_is_off() {
+    let _guard = lock();
+    let mut core = Core::load(test_core(), gl_options(None)).unwrap();
+    assert!(matches!(core.load_game(None), Err(Error::LoadGameFailed)));
+    assert!(core.renderer().is_none());
+}
+
+/// Needs libEGL with a working device (Mesa's llvmpipe will do): Linux CI and the musl image
+/// have it; elsewhere the test says so and passes.
+#[test]
+fn renders_a_gpu_core_and_reads_frames_back_upright() {
+    if !sovemu_retro_host::gl::available() {
+        eprintln!("skipped: no libEGL here");
+        return;
+    }
+    let _guard = lock();
+    let mut core = Core::load(test_core(), gl_options(Some(GpuChoice::Software))).unwrap();
+    core.load_game(None).expect("load with a GL context");
+    let renderer = core.renderer().expect("a GL context").clone();
+    assert!(renderer.software, "asked for the software renderer, got {renderer:?}");
+    for _ in 0..2 {
+        let frame = core.run_frame(&[]).unwrap();
+        assert!(frame.video_updated);
+        assert_eq!((frame.video.width, frame.video.height), (WIDTH, HEIGHT));
+        assert_eq!(frame.video.format, PixelFormat::Rgba8888);
+        let rgba = frame.video.to_rgba8();
+        assert_eq!(pixel(&rgba, 0, 0), [0xFF, 0, 0, 255], "top half: drawn at the top");
+        assert_eq!(pixel(&rgba, WIDTH - 1, HEIGHT - 1), SOLID_COLOUR, "bottom half");
+    }
+    // Save states still work with a context current.
+    let state = core.serialize().unwrap();
+    core.unserialize(&state).unwrap();
 }

@@ -45,6 +45,7 @@ pub fn run(args: SessionArgs) -> Result<()> {
         rewind_max_mb: args.rewind_max_mb,
         fast_forward: args.fast_forward,
         keyframe_interval: args.keyframe_interval,
+        gpu: args.gpu.0.clone(),
         state_dir: args.state_dir.clone(),
     })?;
     let (core, av) = session.describe();

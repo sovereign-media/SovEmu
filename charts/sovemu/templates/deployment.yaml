@@ -41,7 +41,11 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       {{- end }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- $pod := deepCopy .Values.podSecurityContext }}
+        {{- if and .Values.gpu.hostDevice.enabled (ne (toString .Values.gpu.hostDevice.renderGroup) "<nil>") }}
+        {{- $_ := set $pod "supplementalGroups" (append (default list $pod.supplementalGroups) (int .Values.gpu.hostDevice.renderGroup)) }}
+        {{- end }}
+        {{- toYaml $pod | nindent 8 }}
       # Time for every game session to write its saves before the pod goes.
       terminationGracePeriodSeconds: 60
       containers:
@@ -113,15 +117,26 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+            # Dolphin (GameCube) maps its emulated memory from /dev/shm.
+            - name: shm
+              mountPath: /dev/shm
             {{- if ne .Values.library.type "none" }}
             - name: library
               mountPath: /library
               readOnly: true
             {{- end }}
+            {{- if .Values.gpu.hostDevice.enabled }}
+            - name: dri
+              mountPath: /dev/dri
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.resources }}
+          {{- $resources := deepCopy .Values.resources }}
+          {{- with .Values.gpu.resources }}
+          {{- $_ := set $resources "limits" (merge (default dict $resources.limits) .) }}
+          {{- end }}
+          {{- with $resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -135,6 +150,16 @@ spec:
           {{- end }}
         - name: tmp
           emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.shmSize }}
+        {{- if .Values.gpu.hostDevice.enabled }}
+        - name: dri
+          hostPath:
+            path: {{ .Values.gpu.hostDevice.path }}
+            type: Directory
+        {{- end }}
         {{- if eq .Values.library.type "existingClaim" }}
         - name: library
           persistentVolumeClaim:

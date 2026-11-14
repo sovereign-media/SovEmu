@@ -268,10 +268,10 @@ mod tests {
             ("loose/Puzzle (Japan).gbc", 8),
             ("loose/mystery.bin", 8),
             (".hidden/game.nes", 8),
-            ("n64/Game.z64", 8),
+            ("nds/Game.nds", 8),
             // Another console's discs: a .chd would otherwise be taken for PlayStation.
-            ("ps2/Spy Game (USA).chd", 8),
-            ("Dreamcast/Disc Game (USA).cue", 8),
+            ("saturn/Spy Game (USA).chd", 8),
+            ("SegaCD/Disc Game (USA).cue", 8),
         ] {
             let p = root.join(path);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();

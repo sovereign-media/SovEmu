@@ -10,6 +10,8 @@ pub enum PixelFormat {
     Xrgb8888,
     /// 16-bit, `RRRRRGGGGGGBBBBB`.
     Rgb565,
+    /// 32-bit, bytes R, G, B, A: what SovEmu reads back from a GPU core's framebuffer.
+    Rgba8888,
 }
 
 impl PixelFormat {
@@ -26,7 +28,7 @@ impl PixelFormat {
     pub fn bytes_per_pixel(self) -> usize {
         match self {
             Self::Rgb1555 | Self::Rgb565 => 2,
-            Self::Xrgb8888 => 4,
+            Self::Xrgb8888 | Self::Rgba8888 => 4,
         }
     }
 }
@@ -75,6 +77,11 @@ impl VideoFrame {
         out.clear();
         out.reserve(self.width as usize * self.height as usize * 4);
         match self.format {
+            PixelFormat::Rgba8888 => {
+                for px in self.data.as_chunks::<4>().0 {
+                    out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+                }
+            }
             PixelFormat::Xrgb8888 => {
                 for px in self.data.as_chunks::<4>().0 {
                     let v = u32::from_ne_bytes(*px);

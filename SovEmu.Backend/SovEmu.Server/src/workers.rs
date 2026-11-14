@@ -41,11 +41,30 @@ pub struct WorkerConfig {
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
     pub keyframe_interval: u32,
+    /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
+    pub gpu: String,
 }
 
 /// The only environment a worker inherits. Cores are third-party code: they get no credentials
 /// (the NAS password, API keys) and nothing else of the server's environment.
-const WORKER_ENV: &[&str] = &["PATH", "HOME", "TMPDIR", "LANG", "RUST_LOG", "RUST_BACKTRACE"];
+pub const WORKER_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "RUST_LOG",
+    "RUST_BACKTRACE",
+    // Mesa's own knobs (driver choice, llvmpipe threads): tuning, never secrets.
+    "MESA_LOADER_DRIVER_OVERRIDE",
+    "GALLIUM_DRIVER",
+    "LP_NUM_THREADS",
+    "LIBGL_ALWAYS_SOFTWARE",
+];
+
+/// The allow-listed part of this process's environment, for a worker.
+pub fn worker_env() -> Vec<(String, String)> {
+    WORKER_ENV.iter().filter_map(|k| std::env::var(k).ok().map(|v| ((*k).to_owned(), v))).collect()
+}
 
 /// What a session is playing, as the API reports it.
 #[derive(Debug, Clone, Serialize)]
@@ -246,7 +265,9 @@ impl Workers {
             .arg("--fast-forward")
             .arg(self.config.fast_forward.to_string())
             .arg("--keyframe-interval")
-            .arg(self.config.keyframe_interval.to_string());
+            .arg(self.config.keyframe_interval.to_string())
+            .arg("--gpu")
+            .arg(&self.config.gpu);
         for (key, value) in &launch.variables {
             command.arg("--var").arg(format!("{key}={value}"));
         }
