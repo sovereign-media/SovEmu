@@ -38,29 +38,40 @@ UDP 50000-50009 reachable.
 
 `compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a
 Batocera-style layout: `roms/<system>/` with `images/` and `videos/` artwork beside the ROMs,
-plus `bios/`. Put the share and credentials in `.env`, which git ignores (see `.env.example`),
-then:
+plus `bios/`. Put the share, credentials and mode in `.env`, which git ignores (see
+`.env.example`), then:
 
 ```bash
 docker compose -f compose.yaml -f compose.nas.yaml up -d
 ```
 
-**A remote share** (over a VPN or a tunnel such as Cloudflare Zero Trust) is slow: about 100 ms
-per request and a few MB/s. `compose.nas.yaml` turns on a local cache in `data/cache`
-(`SOVEMU_CACHE_GB`, default 20):
-- A game's first start reads it from the share. Later starts read a local copy: a 32 MB GBA game
-  went from 7.9 s to 0.3 s.
-- Disc images over 64 MiB are copied only after their first session ends, so the copy never
-  competes with the game for bandwidth.
-- Opening a system prefetches its box art in the background.
-- The least recently used files are evicted first.
+Choose how the server uses the share with `SOVEMU_LIBRARY_MODE`:
 
-PlayStation games read ahead 256 sectors on the core's own disc thread, to ride out the latency.
+| Mode | When | What happens |
+|---|---|---|
+| `direct` (default) | The NAS is on the same network | Games and artwork are read straight from the share |
+| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games and seen artwork are kept in `data/cache` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. Opening a system prefetches its box art. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
+| `mirror` | You want a full local copy | A background sync copies the library and its artwork into `data/library`, copying only what changed and removing what was deleted. Games are played from the copy. `SOVEMU_MIRROR_SYSTEMS=nes,snes` limits it. Start a sync from the Library page. |
 
 The scanner picks up box art, composite images, marquees and video snaps
 (`images/<rom>-thumb.png`, `-image.png`, `-marquee.png`, `videos/<rom>-video.mp4`). The game list
-shows them. It scans in the background, so the server answers at once. A 3,500-game SMB library
-takes about 20 s.
+shows them. Scans run in the background, in parallel.
+
+## Game information
+
+The **Library** page (admins) fetches titles, descriptions, release dates, developers,
+publishers, genres, player counts and box art. Missing box art is downloaded. Sources, in order:
+
+1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
+   `mslug` becomes *Metal Slug - Super Vehicle-001* (1996, Nazca).
+2. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
+   ES-DE scrape from. It matches by MD5, size and file name. It needs developer credentials
+   (requested on its forum); a free user account raises the daily quota.
+3. **[TheGamesDB](https://thegamesdb.net)**, by name and platform. It needs an API key (requested
+   on its forum).
+
+Add credentials in `.env` (`SOVEMU_SCREENSCRAPER_*`, `SOVEMU_THEGAMESDB_KEY`). A job stops
+using a service that rejects credentials or runs out of quota, and retries those games next time.
 
 Supported systems: NES, SNES, Game Boy, Game Boy Color, GBA, Mega Drive, Master System, Game
 Gear, PlayStation, and arcade / Neo Geo (FBNeo). N64, Dreamcast, GameCube and PS2 need GPU cores,
@@ -76,7 +87,11 @@ All settings are flags on `sovemu-server` or environment variables (the image se
 | `SOVEMU_DATA_DIR` | `data` (`/data` in the image) | Database, saves, `system/` (BIOS) |
 | `SOVEMU_ROMS_DIR` | `<data dir>/roms` | The ROM library, one folder per system |
 | `SOVEMU_SYSTEM_DIR` | `<data dir>/system` | BIOS files for cores (PlayStation, Neo Geo, …) |
-| `SOVEMU_CACHE_GB` | `0` (`20` with `compose.nas.yaml`) | Local cache of a slow library's games and artwork; 0 turns it off |
+| `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
+| `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB of games and artwork to keep locally |
+| `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids to copy |
+| `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD`, `_USER`, `_PASSWORD` | unset | ScreenScraper credentials |
+| `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |
 | `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent game session; publish the whole range |
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to: the host's LAN address in a container |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers that cannot reach the UDP ports directly, as JSON `RTCIceServer`s |

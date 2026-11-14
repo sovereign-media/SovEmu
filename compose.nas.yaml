@@ -1,4 +1,4 @@
-# Use the NAS library instead of data/roms:
+# Use a NAS library instead of data/roms:
 #
 #   docker compose -f compose.yaml -f compose.nas.yaml up -d
 #
@@ -10,9 +10,14 @@ services:
     environment:
       SOVEMU_ROMS_DIR: /nas/roms
       SOVEMU_SYSTEM_DIR: /nas/bios
-      # The share is remote (a tunnel), so keep played games and artwork on local disk
-      # (data/cache), least recently used out past this many GiB.
+      # direct: the NAS is on the same network; play from it as is (the usual case).
+      # cache:  the NAS is remote (VPN, tunnel); keep played games and artwork on local disk,
+      #         least recently used out past SOVEMU_CACHE_GB.
+      # mirror: keep a full local copy in data/library (only SOVEMU_MIRROR_SYSTEMS, if set),
+      #         synced in the background; play from it.
+      SOVEMU_LIBRARY_MODE: ${SOVEMU_LIBRARY_MODE:-direct}
       SOVEMU_CACHE_GB: ${SOVEMU_CACHE_GB:-20}
+      SOVEMU_MIRROR_SYSTEMS: ${SOVEMU_MIRROR_SYSTEMS:-}
     volumes:
       - nas:/nas:ro
 

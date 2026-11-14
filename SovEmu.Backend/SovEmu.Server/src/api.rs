@@ -37,6 +37,33 @@ pub struct Game {
     /// Artwork available through `/api/games/{id}/media/{kind}`.
     #[serde(serialize_with = "split_media")]
     media: String,
+    /// The title from the file name, when metadata supplied a better `title`.
+    file_title: Option<String>,
+    description: Option<String>,
+    release_date: Option<String>,
+    developer: Option<String>,
+    publisher: Option<String>,
+    genre: Option<String>,
+    players: Option<String>,
+    /// 0 to 1.
+    rating: Option<f64>,
+    /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
+    #[serde(skip)]
+    box_art: Option<String>,
+}
+
+impl Game {
+    /// Downloaded box art stands in for a missing local `thumb`.
+    fn with_box_art(mut self) -> Self {
+        if self.box_art.is_some() && !self.media.split(',').any(|k| k == "thumb") {
+            self.media = if self.media.is_empty() {
+                "thumb".into()
+            } else {
+                format!("{},thumb", self.media)
+            };
+        }
+        self
+    }
 }
 
 fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Error> {
@@ -81,8 +108,11 @@ pub async fn list_systems(
     Ok(Json(summaries))
 }
 
-const GAME_COLUMNS: &str = "g.id, g.system, g.title, g.tags, g.path, g.size,
-     h.last_played_at, h.play_count, g.media";
+const GAME_COLUMNS: &str = "g.id, g.system, COALESCE(m.title, g.title) AS title, g.tags, g.path,
+     g.size, h.last_played_at, h.play_count, g.media,
+     CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
+     m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
+     m.box_art";
 
 pub async fn list_games(
     State(state): State<AppState>,
@@ -93,26 +123,29 @@ pub async fn list_games(
     let games = sqlx::query_as::<_, Game>(&format!(
         "SELECT {GAME_COLUMNS} FROM games g
          LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
-         WHERE g.system = ? ORDER BY g.title COLLATE NOCASE, g.path"
+         LEFT JOIN game_metadata m ON m.game_id = g.id
+         WHERE g.system = ? ORDER BY COALESCE(m.title, g.title) COLLATE NOCASE, g.path"
     ))
     .bind(user.id)
     .bind(&system)
     .fetch_all(&state.db)
     .await?;
     prefetch_art(&state, &system, &games);
-    Ok(Json(games))
+    Ok(Json(games.into_iter().map(Game::with_box_art).collect()))
 }
 
 async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
     sqlx::query_as::<_, Game>(&format!(
         "SELECT {GAME_COLUMNS} FROM games g
          LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
+         LEFT JOIN game_metadata m ON m.game_id = g.id
          WHERE g.id = ?"
     ))
     .bind(user_id)
     .bind(id)
     .fetch_optional(&state.db)
     .await?
+    .map(Game::with_box_art)
     .ok_or_else(|| ApiError::not_found("game"))
 }
 
@@ -392,10 +425,17 @@ pub async fn game_media(
         return Err(ApiError::not_found("media"));
     }
     let game = fetch_game(&state, user.id, id).await?;
-    let relative =
-        media_relative(&state, &game, &kind).ok_or_else(|| ApiError::not_found("media"))?;
-    let original = state.config.roms_dir.join(&relative);
-    let file = state.cache.local_or_fetch("media", &relative, &original);
+    let file = match media_relative(&state, &game, &kind) {
+        Some(relative) => {
+            let original = state.config.roms_dir.join(&relative);
+            state.cache.local_or_fetch("media", &relative, &original)
+        }
+        // No local artwork: box art a metadata service supplied stands in for the thumb.
+        None => match (kind.as_str(), &game.box_art) {
+            ("thumb", Some(name)) => state.metadata.media_dir.join(name),
+            _ => return Err(ApiError::not_found("media")),
+        },
+    };
     let mut response = tower_http::services::ServeFile::new(file)
         .oneshot(request)
         .await

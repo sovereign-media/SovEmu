@@ -33,6 +33,46 @@ export interface Game {
   play_count: number | null;
   /** Artwork available at mediaUrl(): "image", "thumb", "marquee", "video". */
   media: string[];
+  /** The title from the file name, when metadata supplied `title`. */
+  file_title: string | null;
+  description: string | null;
+  release_date: string | null;
+  developer: string | null;
+  publisher: string | null;
+  genre: string | null;
+  players: string | null;
+  /** 0 to 1. */
+  rating: number | null;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  files_total: number;
+  files_done: number;
+  bytes_total: number;
+  bytes_done: number;
+  removed: number;
+  failed: number;
+  finished_at: number | null;
+  error: string | null;
+}
+
+export interface LibraryStatus {
+  mode: "direct" | "cache" | "mirror";
+  games: number;
+  cache_bytes: number | null;
+  mirror: SyncStatus | null;
+}
+
+export interface MetadataStatus {
+  running: boolean;
+  total: number;
+  done: number;
+  found: number;
+  not_found: number;
+  failed: number;
+  sources: string[];
+  notes: string[];
 }
 
 export const mediaUrl = (gameId: number, kind: string) => `/api/games/${gameId}/media/${kind}`;
@@ -103,6 +143,10 @@ export const api = {
   games: (system: string) => call<Game[]>("GET", `/systems/${encodeURIComponent(system)}/games`),
   game: (id: number) => call<Game>("GET", `/games/${id}`),
   scan: () => call<{ found: number; added: number; removed: number }>("POST", "/library/scan"),
+  libraryStatus: () => call<LibraryStatus>("GET", "/library/status"),
+  syncLibrary: () => call<void>("POST", "/library/sync"),
+  metadataStatus: () => call<MetadataStatus>("GET", "/metadata/status"),
+  fetchMetadata: (system?: string, force = false) => call<MetadataStatus>("POST", "/metadata/fetch", { system, force }),
   startSession: (gameId: number) => call<SessionInfo>("POST", "/sessions", { game_id: gameId }),
   currentSession: () => call<SessionInfo | null>("GET", "/sessions/current"),
   stopSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),

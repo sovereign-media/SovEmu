@@ -4,6 +4,7 @@
 //! its own `sovemu-worker session` process (see [`workers`]), which streams to the browser over
 //! WebRTC on a UDP port of its own.
 
+mod admin;
 mod api;
 mod auth;
 mod cache;
@@ -13,6 +14,8 @@ mod error;
 #[cfg(test)]
 mod http_tests;
 mod library;
+mod metadata;
+mod mirror;
 mod ops;
 mod systems;
 mod workers;
@@ -79,10 +82,42 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ADVERTISE_IP")]
     pub advertise_ip: Option<IpAddr>,
 
-    /// Keep up to this many GiB of the library (ROMs and artwork) on local disk, for a library
-    /// on a slow network share. 0 disables the cache.
-    #[arg(long, env = "SOVEMU_CACHE_GB", default_value_t = 0)]
-    pub cache_gb: u64,
+    /// How to use the library: `direct` (play from it as is: local disk or a share on the LAN),
+    /// `cache` (a slow, remote share: keep what is played on local disk) or `mirror` (keep a
+    /// full local copy, synced in the background, and play from that).
+    #[arg(long, env = "SOVEMU_LIBRARY_MODE", value_enum, default_value_t = LibraryMode::Direct)]
+    pub library_mode: LibraryMode,
+
+    /// `cache` mode: keep up to this many GiB on local disk (default 20 in that mode).
+    #[arg(long, env = "SOVEMU_CACHE_GB")]
+    pub cache_gb: Option<u64>,
+
+    /// `mirror` mode: only these systems (ids, comma-separated, e.g. `nes,snes`). Default: all.
+    #[arg(long, env = "SOVEMU_MIRROR_SYSTEMS", value_delimiter = ',')]
+    pub mirror_systems: Vec<String>,
+
+    /// ScreenScraper developer id and password (request them from screenscraper.fr).
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVID")]
+    pub screenscraper_devid: Option<String>,
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVPASSWORD")]
+    pub screenscraper_devpassword: Option<String>,
+    /// A ScreenScraper user account (optional; raises the daily quota).
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_USER")]
+    pub screenscraper_user: Option<String>,
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_PASSWORD")]
+    pub screenscraper_password: Option<String>,
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_URL", default_value = metadata::screenscraper::DEFAULT_BASE)]
+    pub screenscraper_url: String,
+
+    /// TheGamesDB API key (request one at forums.thegamesdb.net).
+    #[arg(long, env = "SOVEMU_THEGAMESDB_KEY")]
+    pub thegamesdb_key: Option<String>,
+    #[arg(long, env = "SOVEMU_THEGAMESDB_URL", default_value = metadata::thegamesdb::DEFAULT_BASE)]
+    pub thegamesdb_url: String,
+
+    /// Resolved: in `mirror` mode the share being mirrored (and `roms_dir` is the mirror).
+    #[arg(skip)]
+    pub source_dir: Option<PathBuf>,
 
     /// End a session after this many seconds with no client connected.
     #[arg(long, env = "SOVEMU_IDLE_TIMEOUT", default_value_t = 300)]
@@ -105,6 +140,14 @@ pub struct Config {
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryMode {
+    Direct,
+    Cache,
+    Mirror,
 }
 
 fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
@@ -135,6 +178,8 @@ pub struct AppState {
     pub dummy_hash: String,
     pub login_throttle: Arc<ops::LoginThrottle>,
     pub cache: Arc<cache::Cache>,
+    pub metadata: Arc<metadata::Metadata>,
+    pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -164,6 +209,10 @@ pub fn router(state: AppState) -> Router {
         .route("/games/{id}/states/{slot}", delete(api::delete_state))
         .route("/games/{id}/states/{slot}/screenshot", get(api::state_screenshot))
         .route("/library/scan", post(api::scan))
+        .route("/library/status", get(admin::library_status))
+        .route("/library/sync", post(admin::library_sync))
+        .route("/metadata/status", get(admin::metadata_status))
+        .route("/metadata/fetch", post(admin::metadata_fetch))
         .route("/sessions", post(api::start_session))
         .route("/sessions/current", get(api::current_session))
         .route("/sessions/{id}", delete(api::stop_session))
@@ -206,7 +255,18 @@ fn default_worker() -> PathBuf {
 }
 
 pub async fn build_state(mut config: Config) -> Result<AppState> {
-    config.roms_dir = config.roms.clone().unwrap_or_else(|| config.data_dir.join("roms"));
+    let library = config.roms.clone().unwrap_or_else(|| config.data_dir.join("roms"));
+    // `SOVEMU_MIRROR_SYSTEMS=` (empty) means all systems, not a system called "".
+    config.mirror_systems.retain(|s| !s.trim().is_empty());
+    for s in &mut config.mirror_systems {
+        *s = s.trim().to_lowercase();
+    }
+    if config.library_mode == LibraryMode::Mirror {
+        config.roms_dir = mirror::mirror_dir(&config.data_dir);
+        config.source_dir = Some(library);
+    } else {
+        config.roms_dir = library;
+    }
     std::fs::create_dir_all(&config.data_dir)
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
@@ -219,41 +279,72 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         system_dir: config.system.clone().unwrap_or_else(|| config.data_dir.join("system")),
         idle_timeout_secs: config.idle_timeout,
     });
-    let config_cache_dir = config.data_dir.join("cache");
-    let cache_bytes = config.cache_gb.saturating_mul(1 << 30);
-    if cache_bytes > 0 {
-        tracing::info!(
-            "caching up to {} GiB of the library in {}",
-            config.cache_gb,
-            config_cache_dir.display()
-        );
+    let cache_dir = config.data_dir.join("cache");
+    let cache_bytes = match config.library_mode {
+        LibraryMode::Cache => config.cache_gb.unwrap_or(20).saturating_mul(1 << 30),
+        _ => 0,
+    };
+    match config.library_mode {
+        LibraryMode::Direct => {
+            tracing::info!("library {}: played directly", config.roms_dir.display())
+        }
+        LibraryMode::Cache => tracing::info!(
+            "library {}: caching up to {} GiB in {}",
+            config.roms_dir.display(),
+            cache_bytes >> 30,
+            cache_dir.display()
+        ),
+        LibraryMode::Mirror => tracing::info!(
+            "library {}: mirrored into {}",
+            config.source_dir.as_deref().unwrap_or(&config.roms_dir).display(),
+            config.roms_dir.display()
+        ),
     }
+    let http = metadata::http_client();
+    let screenscraper = match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
+        (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => {
+            Some(metadata::screenscraper::ScreenScraper::new(
+                config.screenscraper_url.clone(),
+                metadata::screenscraper::Credentials {
+                    dev_id: id.clone(),
+                    dev_password: pw.clone(),
+                    user: config
+                        .screenscraper_user
+                        .clone()
+                        .filter(|u| !u.is_empty())
+                        .zip(config.screenscraper_password.clone()),
+                },
+                http.clone(),
+            ))
+        }
+        _ => None,
+    };
+    let thegamesdb = config.thegamesdb_key.clone().filter(|k| !k.is_empty()).map(|key| {
+        metadata::thegamesdb::TheGamesDb::new(config.thegamesdb_url.clone(), key, http.clone())
+    });
+    let metadata =
+        metadata::Metadata::new(config.data_dir.join("metadata"), screenscraper, thegamesdb);
     Ok(AppState {
         db,
         config: Arc::new(config),
         workers,
         dummy_hash: auth::hash_password("x")?,
         login_throttle: Arc::default(),
-        cache: cache::Cache::new(config_cache_dir, cache_bytes),
+        cache: cache::Cache::new(cache_dir, cache_bytes),
+        metadata,
+        mirror: Arc::default(),
     })
 }
 
 /// Scans the library in the background: a network library can take minutes, and the last
-/// scan's games are already in the database meanwhile.
+/// scan's games are already in the database meanwhile. In `mirror` mode, syncs first (scanning
+/// what is already mirrored while it runs), then scans again.
 fn spawn_initial_scan(state: &AppState) {
-    let (scan_db, roms) = (state.db.clone(), state.config.roms_dir.clone());
+    let state = state.clone();
     tokio::spawn(async move {
-        let started = std::time::Instant::now();
-        match library::scan(&scan_db, &roms).await {
-            Ok(report) => tracing::info!(
-                "library {}: {} games ({} new, {} removed) in {:.1} s",
-                roms.display(),
-                report.found,
-                report.added,
-                report.removed,
-                started.elapsed().as_secs_f64()
-            ),
-            Err(e) => tracing::error!("library scan failed: {e}"),
+        admin::scan_and_log(&state).await;
+        if state.config.library_mode == LibraryMode::Mirror {
+            admin::sync_then_scan(state).await;
         }
     });
 }

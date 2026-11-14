@@ -70,7 +70,14 @@ held 59.93 fps over 300 frames with no resyncs.
       of played games and artwork (`SOVEMU_CACHE_GB`), disc images cached only after their first
       session, system artwork prefetched, PlayStation CD read-ahead raised to 256 sectors, worker
       load deadline raised to 2 minutes
-- [ ] Full titles for arcade sets (FBNeo's DAT maps `mslug` to *Metal Slug*)
+- [x] Library modes: `direct` (NAS on the LAN, the default), `cache` (remote NAS), `mirror`
+      (a full local copy synced in the background, optionally per system), with a Library page
+- [x] Game information: FBNeo DATs (arcade and Neo Geo, no account; all 502 sets named on the
+      NAS), ScreenScraper (MD5 + size + name) and TheGamesDB (name + platform) clients, merged into
+      `game_metadata`; missing box art downloaded; descriptions, dates, developers, genres and
+      players in the game list
+- [ ] Live-test the ScreenScraper and TheGamesDB clients once credentials exist (tested against
+      mock services built from ES-DE's parsing code)
 - [ ] Group multi-disc games (`(Disc N)`) into one entry
 
 ## Phase 3: persistence
