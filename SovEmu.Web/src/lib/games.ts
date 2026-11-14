@@ -19,9 +19,8 @@ export interface GameFilters {
   tags?: string[];
 }
 
-/** The tags of a game ("USA, Europe" → ["USA", "Europe"]). */
-export const tagsOf = (g: Pick<Game, "tags">) =>
-  g.tags.split(",").map((t) => t.trim()).filter(Boolean);
+/** The tags of a game ("USA", "Europe" …). */
+export const tagsOf = (g: Pick<Game, "tags">) => g.tags;
 
 /** The most players a game takes, from "1-2", "2", "1 to 4" …, or null when unknown. */
 export function maxPlayers(players: string | null): number | null {
@@ -37,15 +36,15 @@ const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").to
 export function filterGames(games: Game[], query: string, filters: GameFilters): Game[] {
   const words = fold(query).split(/\s+/).filter(Boolean);
   return games.filter((g) => {
-    if (filters.played === "played" && !g.play_count) return false;
-    if (filters.played === "unplayed" && g.play_count) return false;
+    if (filters.played === "played" && !g.playCount) return false;
+    if (filters.played === "unplayed" && g.playCount) return false;
     if (filters.multiplayer && (maxPlayers(g.players) ?? 1) < 2) return false;
     if (filters.tags?.length) {
       const tags = tagsOf(g);
       if (!filters.tags.every((t) => tags.includes(t))) return false;
     }
     if (!words.length) return true;
-    const text = fold([g.title, g.file_title, g.genre, g.developer, g.publisher, g.tags].filter(Boolean).join(" "));
+    const text = fold([g.title, g.fileTitle, g.genre, g.developer, g.publisher, ...g.tags].filter(Boolean).join(" "));
     return words.every((w) => text.includes(w));
   });
 }
@@ -53,13 +52,13 @@ export function filterGames(games: Game[], query: string, filters: GameFilters):
 /** Sorted by `sort`; ties (and the title sort itself) go by title. */
 export function sortGames(games: Game[], sort: GameSort): Game[] {
   const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
-  const year = (g: Game) => Number(g.release_date?.slice(0, 4)) || 0;
-  const played = (g: Game) => (g.last_played_at ? Date.parse(g.last_played_at.replace(" ", "T") + "Z") : 0);
+  const year = (g: Game) => Number(g.releaseDate?.slice(0, 4)) || 0;
+  const played = (g: Game) => (g.lastPlayedAt ? Date.parse(g.lastPlayedAt.replace(" ", "T") + "Z") : 0);
   const key: Record<GameSort, (a: Game, b: Game) => number> = {
     title: () => 0,
     recent: (a, b) => played(b) - played(a),
     year: (a, b) => (year(a) || 9999) - (year(b) || 9999),
-    plays: (a, b) => (b.play_count ?? 0) - (a.play_count ?? 0),
+    plays: (a, b) => (b.playCount ?? 0) - (a.playCount ?? 0),
   };
   return [...games].sort((a, b) => key[sort](a, b) || byTitle(a, b));
 }

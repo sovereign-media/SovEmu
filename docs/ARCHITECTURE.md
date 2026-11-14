@@ -29,7 +29,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
         │  HTTPS + WebSocket (auth, library, signaling)
         ▼
  ┌──────────────────────── sovemu-server (axum/tokio) ────────────────────────┐
- │ REST API · auth · ROM library · SQLite · session orchestrator · signaling │
+ │ GraphQL API · auth · ROM library · SQLite · session orchestrator · signal │
  └──────────────┬─────────────────────────────────────────────────────────────┘
                 │ spawn + IPC (Unix socket, framed messages)
                 ▼
@@ -78,9 +78,20 @@ Dependencies point one way. `Worker` uses `RetroHost` (which uses `LibretroFfi`)
 `Protocol` is shared by `Worker` and `Server`. `Server` never links a core: it starts
 `sovemu-worker` processes and talks to them over IPC.
 
+### The API: GraphQL
+
+The API is GraphQL (async-graphql), chosen to match Sovereign's and so that the web, Android and
+iOS clients share one typed contract: `SovEmu.Server/schema.graphql`, checked in and kept current
+by a test, from which the web client's TypeScript is generated. There is no REST API. Plain HTTP
+remains only where GraphQL does not fit: files (`/media/…`, artwork and save screenshots, whose
+URLs the API returns), and `/health` and `/metrics` for probes and Prometheus. Long operations
+(starting a game, metadata lookups, mirror syncs) are followed by polling a query, not by
+subscriptions.
+
 ### Server, sessions and the library
 
-`sovemu-server` is the container's main process. It serves the web client and `/api/*`, owns
+`sovemu-server` is the container's main process. It serves the web client and the GraphQL API
+(`/graphql`; files the API points to under `/media/`), owns
 the SQLite database, scans the library, and runs game sessions. Each session is a
 `sovemu-worker session` child process. The server sends it JSON-line requests on stdin
 (`offer`, `reset`, `save_state`, `load_state`, `shutdown`, each with an id) and reads replies and
@@ -153,12 +164,12 @@ and deletes the files.
 island rendered in the browser (`client:only`), built from Radix UI primitives (dialogs, selects,
 menus, progress, toasts) and Lucide icons; the logic they drive (wire format, input, WebRTC, menu
 stack, loading bar, home navigation) stays framework-free in `src/lib/`. The same Rust
-process that serves `/api/*` serves those files, so the page and the API share one origin. That
+process that serves `/graphql` serves those files, so the page and the API share one origin. That
 process is `sovemu-server`; `sovemu-worker serve` does the same standalone for development.
 
-Signalling is a single request. The browser gathers all its ICE candidates, then `POST`s the
-complete offer (`{"type":"offer","sdp":...}`) to `/api/sessions/{id}/offer`, which the server
-relays to that session's worker. The answer carries the server's
+Signalling is a single request. The browser gathers all its ICE candidates, then sends the
+complete offer's SDP with the `sessionOffer` mutation, which the server relays to that session's
+worker and which returns the answer. The answer carries the server's
 host candidates. The worker is ICE-lite and uses one UDP port for everything in its session. The client offers receive-only video and audio plus the `input` DataChannel
 (unordered, no retransmits).
 

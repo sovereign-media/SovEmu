@@ -1,7 +1,7 @@
 // The home screen: a hero of featured games over rows (continue playing, systems, recently
 // added), as Sovereign's home. Moving between them with a pad or the keyboard, and which
 // picture each game shows, are worked out here.
-import { mediaUrl, type Game } from "./api";
+import type { Game, RecentGame } from "./api";
 import type { NavAction } from "./nav";
 
 /** Where the focus is: a row, and the column last focused in every row. */
@@ -54,20 +54,21 @@ export function nextScroll(left: number, width: number, total: number, dir: -1 |
 }
 
 /** The hero's backdrop: a screenshot-style image if there is one, else the box art. */
-export function heroArt(g: Game): string | null {
-  if (g.media.includes("image")) return mediaUrl(g.id, "image");
-  if (g.media.includes("thumb")) return mediaUrl(g.id, "thumb");
-  return null;
+export function heroArt(g: Pick<Game, "image" | "thumb">): string | null {
+  return g.image ?? g.thumb ?? null;
 }
 
 /** A card's picture: where the player left off (the auto save's screenshot), else artwork. */
-export function cardArt(g: Game & { screenshot_at?: number | null }): { url: string; kind: "screenshot" | "art" } | null {
-  if (g.screenshot_at) return { url: `/api/games/${g.id}/states/0/screenshot?t=${g.screenshot_at}`, kind: "screenshot" };
+export function cardArt(
+  g: Pick<Game, "image" | "thumb"> & { autoSave?: RecentGame["autoSave"] },
+): { url: string; kind: "screenshot" | "art" } | null {
+  const shot = g.autoSave?.screenshotUrl;
+  if (shot) return { url: shot, kind: "screenshot" };
   const art = heroArt(g);
   return art ? { url: art, kind: "art" } : null;
 }
 
 /** "1996 · Nintendo · Platform", from what is known. */
 export function byline(g: Game): string {
-  return [g.release_date?.slice(0, 4), g.developer ?? g.publisher, g.genre].filter(Boolean).join(" · ");
+  return [g.releaseDate?.slice(0, 4), g.developer ?? g.publisher, g.genre].filter(Boolean).join(" · ");
 }

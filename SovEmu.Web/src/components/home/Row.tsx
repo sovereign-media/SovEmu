@@ -107,7 +107,7 @@ export function GameCard({
         <p className="truncate text-sm font-semibold">{game.title}</p>
         <p className="truncate text-xs text-slate-400">
           {short}
-          {game.last_played_at && wide ? ` · ${formatAgo(game.last_played_at)}` : ""}
+          {game.lastPlayedAt && wide ? ` · ${formatAgo(game.lastPlayedAt)}` : ""}
         </p>
       </div>
     </button>
@@ -151,7 +151,7 @@ export function SystemCard({
       <div className="min-w-0 px-0.5">
         <p className="truncate text-sm font-semibold">{s.name}</p>
         <p className="text-xs text-slate-400">
-          {s.manufacturer} · {s.year} · {s.game_count} game{s.game_count === 1 ? "" : "s"}
+          {s.manufacturer} · {s.year} · {s.gameCount} game{s.gameCount === 1 ? "" : "s"}
         </p>
       </div>
     </button>

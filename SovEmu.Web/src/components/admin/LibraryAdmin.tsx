@@ -9,9 +9,9 @@ import { Button } from "../ui/button";
 import { Confirm, panel, Progress } from "../ui/primitives";
 
 const MODES: Record<LibraryStatus["mode"], [string, string]> = {
-  direct: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
-  cache: ["Cache", "The library is a remote share. Games and artwork are kept on local disk once used, so they start fast next time."],
-  mirror: ["Mirror", "A full local copy of the library is kept in sync in the background, and games are played from it."],
+  DIRECT: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
+  CACHE: ["Cache", "The library is a remote share. Games and artwork are kept on local disk once used, so they start fast next time."],
+  MIRROR: ["Mirror", "A full local copy of the library is kept in sync in the background, and games are played from it."],
 };
 
 function Card({ title, icon, actions, children }: { title: string; icon: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -32,9 +32,9 @@ function Card({ title, icon, actions, children }: { title: string; icon: ReactNo
 function syncText(m: NonNullable<LibraryStatus["mirror"]>): string {
   if (m.error) return m.error;
   if (m.running)
-    return `Copying ${m.files_done.toLocaleString()} of ${m.files_total.toLocaleString()} files (${formatSize(m.bytes_done)} of ${formatSize(m.bytes_total)})`;
-  if (m.finished_at)
-    return `Up to date as of ${new Date(m.finished_at * 1000).toLocaleString()}${m.failed ? ` · ${m.failed} failed` : ""}${m.removed ? ` · ${m.removed} removed` : ""}`;
+    return `Copying ${m.filesDone.toLocaleString()} of ${m.filesTotal.toLocaleString()} files (${formatSize(m.bytesDone)} of ${formatSize(m.bytesTotal)})`;
+  if (m.finishedAt)
+    return `Up to date as of ${new Date(m.finishedAt * 1000).toLocaleString()}${m.failed ? ` · ${m.failed} failed` : ""}${m.removed ? ` · ${m.removed} removed` : ""}`;
   return "Not synced yet.";
 }
 
@@ -45,13 +45,13 @@ function Library() {
   const [confirm, setConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [l, m] = await Promise.all([api.libraryStatus(), api.metadataStatus()]);
-    setLibrary(l);
-    setMetadata(m);
+    const status = await api.adminStatus();
+    setLibrary(status.libraryStatus);
+    setMetadata(status.metadataStatus);
   }, []);
 
   useEffect(() => {
-    api.status().then((s) => !s.user?.is_admin && location.replace("/"));
+    api.viewer().then((s) => !s.user?.isAdmin && location.replace("/"));
     void refresh();
     const t = setInterval(refresh, 2000);
     return () => clearInterval(t);
@@ -71,7 +71,7 @@ function Library() {
   if (!library || !metadata) return null;
   const [mode, help] = MODES[library.mode];
   const m = library.mirror;
-  const syncPct = m ? (m.bytes_total ? (100 * m.bytes_done) / m.bytes_total : m.running ? 0 : 100) : 0;
+  const syncPct = m ? (m.bytesTotal ? (100 * m.bytesDone) / m.bytesTotal : m.running ? 0 : 100) : 0;
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
   return (
     <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
@@ -89,10 +89,10 @@ function Library() {
           <dd>{mode}</dd>
           <dt className="text-slate-400">Games</dt>
           <dd>{library.games.toLocaleString()}</dd>
-          {library.cache_bytes !== null && (
+          {library.cacheBytes !== null && (
             <>
               <dt className="text-slate-400">Local cache</dt>
-              <dd>{formatSize(library.cache_bytes)}</dd>
+              <dd>{formatSize(library.cacheBytes)}</dd>
             </>
           )}
         </dl>
@@ -141,7 +141,7 @@ function Library() {
           {metadata.running
             ? `Looking up ${metadata.done.toLocaleString()} of ${metadata.total.toLocaleString()} games…`
             : metadata.done
-              ? `Last run: ${metadata.found} found, ${metadata.not_found} not found, ${metadata.failed} to retry.`
+              ? `Last run: ${metadata.found} found, ${metadata.notFound} not found, ${metadata.failed} to retry.`
               : ""}
         </p>
         {metadata.notes.length > 0 && (

@@ -53,7 +53,17 @@ instead (as Sovereign's server takes its SPA).
   `SovEmu.Server/migrations/`; never edit one that has shipped.
 - **The web client is served by the Rust process that serves the API**: `SovEmu.Web` builds to
   static files (`output: "static"`, no Astro server runtime, no Node in the image), and the Rust
-  side serves them next to `/api/*`. Never add a Node server or an SSR adapter.
+  side serves them next to `/graphql`. Never add a Node server or an SSR adapter.
+- **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
+  `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
+  REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
+  videos, save screenshots) and for `/health` and `/metrics`. Resolvers check access
+  (`user(ctx)`, `admin(ctx)`) and call plain functions in the other modules; errors carry
+  `extensions.code`. `Int` is 32-bit, so byte counts and Unix times are `Float`. The schema is
+  checked in as `SovEmu.Server/schema.graphql` (a test fails when it drifts:
+  `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`), and the web client's typed
+  documents are generated from it (`npm run codegen` in `SovEmu.Web`, committed in
+  `src/graphql/`). A schema change updates all three clients in the same change.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),
   each tested against the same byte vectors. Change both in
@@ -105,7 +115,7 @@ cargo test --workspace
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
-| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and `/api/*`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the systems table and library scanner (Recalbox folder names + aliases, extension fallback); one `sovemu-worker session` per game session with a UDP port from a pool. |
+| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the systems table and library scanner (Recalbox folder names + aliases, extension fallback); one `sovemu-worker session` per game session with a UDP port from a pool. |
 | `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
 
 ```
@@ -172,7 +182,7 @@ target/release/sovemu-worker headless --core ../cores/fceumm_libretro.dylib \
   --rom /path/to/game.nes --frames 600 --hold 200-205:start --out ../headless-out
 ```
 
-For web development, `npm run dev` in `SovEmu.Web` proxies `/api` to `127.0.0.1:8080`
+For web development, `npm run dev` in `SovEmu.Web` proxies `/graphql` and `/media` to `127.0.0.1:8080`
 (override with `SOVEMU_API`), so run `serve` on that address alongside it.
 
 ## Conventions

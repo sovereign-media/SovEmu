@@ -101,11 +101,11 @@ export function groupSettings(settings: CoreSetting[], categories: CoreCategory[
 /** The badge beside a setting, or null for a value the core chose itself. */
 export function sourceBadge(source: SettingSource): { text: string; title: string } | null {
   switch (source) {
-    case "sovemu":
+    case "SOVEMU":
       return { text: "SovEmu default", title: "SovEmu sets this for the system; change it to override" };
-    case "admin":
+    case "ADMIN":
       return { text: "Changed", title: "Changed here; reset to go back to the default" };
-    case "environment":
+    case "ENVIRONMENT":
       return { text: "Environment", title: "Set by a SOVEMU_SYSTEMS__… variable on the server, which always wins" };
     default:
       return null;

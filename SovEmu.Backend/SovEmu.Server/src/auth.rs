@@ -5,12 +5,10 @@
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use axum::Json;
-use axum::extract::{FromRef, FromRequestParts, State};
-use axum::http::header::{COOKIE, SET_COOKIE};
+use axum::extract::{FromRef, FromRequestParts};
+use axum::http::header::COOKIE;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -20,7 +18,8 @@ use crate::error::{ApiError, ApiResult};
 
 pub const COOKIE_NAME: &str = "sovemu_session";
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+/// An account.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, async_graphql::SimpleObject)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -193,7 +192,7 @@ async fn start_session(
     HeaderValue::from_str(&cookie).map_err(ApiError::internal)
 }
 
-fn cookie_token(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn cookie_token(headers: &HeaderMap) -> Option<String> {
     headers.get_all(COOKIE).iter().filter_map(|v| v.to_str().ok()).find_map(|cookies| {
         cookies.split(';').find_map(|c| {
             let (name, value) = c.trim().split_once('=')?;
@@ -202,7 +201,19 @@ fn cookie_token(headers: &HeaderMap) -> Option<String> {
     })
 }
 
-/// The signed-in user. Rejects with 401 if there is none.
+/// The user a sign-in cookie's token belongs to, if it is current.
+pub async fn user_for_token(db: &SqlitePool, token: Option<&str>) -> ApiResult<Option<User>> {
+    let Some(token) = token else { return Ok(None) };
+    Ok(sqlx::query_as::<_, User>(
+        "SELECT u.id, u.username, u.is_admin FROM auth_sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
+    )
+    .bind(token_hash(token))
+    .fetch_optional(db)
+    .await?)
+}
+
+/// The signed-in user (for the file routes). Rejects with 401 if there is none.
 #[derive(Debug, Clone)]
 pub struct CurrentUser(pub User);
 
@@ -215,56 +226,15 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        let token = cookie_token(&parts.headers).ok_or_else(ApiError::unauthorized)?;
-        let user = sqlx::query_as::<_, User>(
-            "SELECT u.id, u.username, u.is_admin FROM auth_sessions s JOIN users u ON u.id = s.user_id
-             WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
-        )
-        .bind(token_hash(&token))
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(ApiError::unauthorized)?;
-        Ok(Self(user))
+        let token = cookie_token(&parts.headers);
+        let user = user_for_token(&state.db, token.as_deref()).await?;
+        Ok(Self(user.ok_or_else(ApiError::unauthorized)?))
     }
 }
 
-/// The signed-in user, who must be an admin.
-#[derive(Debug, Clone)]
-pub struct AdminUser(pub User);
-
-impl<S> FromRequestParts<S> for AdminUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let CurrentUser(user) = CurrentUser::from_request_parts(parts, state).await?;
-        if user.is_admin { Ok(Self(user)) } else { Err(ApiError::forbidden()) }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct Status {
-    /// No account exists yet: the client should show first-run setup.
-    setup_required: bool,
-    user: Option<User>,
-}
-
-pub async fn status(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Status>> {
-    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db).await?;
-    let mut parts = axum::http::Request::new(()).into_parts().0;
-    parts.headers = headers;
-    let user = CurrentUser::from_request_parts(&mut parts, &state).await.ok().map(|u| u.0);
-    Ok(Json(Status { setup_required: users == 0, user }))
-}
-
-/// First-run setup: creates the admin account. Only works while there are no accounts.
-pub async fn setup(
-    State(state): State<AppState>,
-    Json(creds): Json<Credentials>,
-) -> ApiResult<Response> {
+/// First-run setup: creates the admin account and signs it in. Only works while there are no
+/// accounts. Returns the user and the `Set-Cookie` value.
+pub async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
     let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db).await?;
     if users > 0 {
         return Err(ApiError::new(StatusCode::CONFLICT, "setup is already done"));
@@ -277,13 +247,11 @@ pub async fn setup(
     let cookie =
         start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
             .await?;
-    Ok(([(SET_COOKIE, cookie)], Json(user)).into_response())
+    Ok((user, cookie))
 }
 
-pub async fn login(
-    State(state): State<AppState>,
-    Json(creds): Json<Credentials>,
-) -> ApiResult<Response> {
+/// Signs in. Returns the user and the `Set-Cookie` value.
+pub async fn login(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
     let now = std::time::Instant::now();
     if let Err(wait) = state.login_throttle.check(&creds.username, now) {
         return Err(ApiError::new(
@@ -311,40 +279,30 @@ pub async fn login(
     let cookie =
         start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
             .await?;
-    Ok(([(SET_COOKIE, cookie)], Json(user)).into_response())
+    Ok((user, cookie))
 }
 
-pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    if let Some(token) = cookie_token(&headers) {
+/// Ends the sign-in session; returns the `Set-Cookie` value that clears the cookie.
+pub async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<HeaderValue> {
+    if let Some(token) = token {
         sqlx::query("DELETE FROM auth_sessions WHERE token_hash = ?")
-            .bind(token_hash(&token))
+            .bind(token_hash(token))
             .execute(&state.db)
             .await?;
     }
-    let clear =
-        HeaderValue::from_static("sovemu_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
-    Ok(([(SET_COOKIE, clear)], StatusCode::NO_CONTENT).into_response())
+    Ok(HeaderValue::from_static("sovemu_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"))
 }
 
-pub async fn list_users(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-) -> ApiResult<Json<Vec<User>>> {
-    let users =
-        sqlx::query_as::<_, User>("SELECT id, username, is_admin FROM users ORDER BY username")
-            .fetch_all(&state.db)
-            .await?;
-    Ok(Json(users))
+pub async fn list_users(state: &AppState) -> ApiResult<Vec<User>> {
+    Ok(sqlx::query_as::<_, User>("SELECT id, username, is_admin FROM users ORDER BY username")
+        .fetch_all(&state.db)
+        .await?)
 }
 
-pub async fn add_user(
-    State(state): State<AppState>,
-    AdminUser(admin): AdminUser,
-    Json(new): Json<NewUser>,
-) -> ApiResult<(StatusCode, Json<User>)> {
-    let user = create_user(&state.db, &new).await?;
+pub async fn add_user(state: &AppState, admin: &User, new: &NewUser) -> ApiResult<User> {
+    let user = create_user(&state.db, new).await?;
     tracing::info!("{} added user {} (admin: {})", admin.username, user.username, user.is_admin);
-    Ok((StatusCode::CREATED, Json(user)))
+    Ok(user)
 }
 
 #[cfg(test)]

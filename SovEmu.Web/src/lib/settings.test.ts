@@ -4,7 +4,7 @@ import { choiceLabel, filterSettings, groupSettings, guessGroup, sourceBadge } f
 
 const s = (key: string, description: string, over: Partial<CoreSetting> = {}): CoreSetting => ({
   key, description, info: "", category: null, value: "off", default: "off", choices: ["off", "on"], labels: ["Off", "On"],
-  source: "core", ...over,
+  source: "CORE", ...over,
 });
 
 describe("emulator settings", () => {
@@ -22,9 +22,9 @@ describe("emulator settings", () => {
   });
 
   it("labels where a value comes from", () => {
-    expect(sourceBadge("core")).toBeNull();
-    expect(sourceBadge("admin")?.text).toBe("Changed");
-    expect(sourceBadge("environment")?.text).toBe("Environment");
+    expect(sourceBadge("CORE")).toBeNull();
+    expect(sourceBadge("ADMIN")?.text).toBe("Changed");
+    expect(sourceBadge("ENVIRONMENT")?.text).toBe("Environment");
   });
 
   it("shows the core's labels and marks the default", () => {
@@ -58,9 +58,9 @@ describe("grouping", () => {
         s("a_crop", "Crop Overscan", { category: "nope" }),
       ],
       [
-        { key: "video", description: "Video" },
+        { key: "video", description: "Video", info: "" },
         { key: "system", description: "System", info: "The console." },
-        { key: "empty", description: "Unused" },
+        { key: "empty", description: "Unused", info: "" },
       ],
     );
     expect(groups.map((g) => [g.title, g.settings.map((x) => x.key)])).toEqual([
@@ -78,8 +78,8 @@ describe("grouping", () => {
     const groups = groupSettings(
       [s("h", "Hack", { category: "hacks" }), s("r", "Region"), s("o", "Overclock"), s("l", "Light gun", { category: "gun" })],
       [
-        { key: "hacks", description: "Emulation Hacks" },
-        { key: "gun", description: "Light Gun" },
+        { key: "hacks", description: "Emulation Hacks", info: "" },
+        { key: "gun", description: "Light Gun", info: "" },
       ],
     );
     expect(groups.map((g) => g.title)).toEqual(["System", "Emulation Hacks", "Light Gun", "Performance and hacks"]);

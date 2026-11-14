@@ -22,8 +22,6 @@ import {
   api,
   formatAgo,
   formatSize,
-  mediaUrl,
-  screenshotUrl,
   type Game,
   type SaveSlot,
   type SystemSummary,
@@ -55,14 +53,14 @@ const SORT_KEY = "sovemu.sort";
 
 /** A small cover for a list row, or the system's colour where there is no art. */
 function Thumb({ game, color, short }: { game: Game; color: string; short: string }) {
-  const kind = game.media.includes("thumb") ? "thumb" : game.media.includes("image") ? "image" : null;
+  const art = game.thumb ?? game.image;
   return (
     <span
       className="relative grid h-9 w-12 shrink-0 place-items-center overflow-hidden rounded text-[9px] font-black text-white/70"
       style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 30%, black))` }}
     >
       {short}
-      {kind && <img src={mediaUrl(game.id, kind)} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
+      {art && <img src={art} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
     </span>
   );
 }
@@ -75,12 +73,12 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
   useEffect(() => {
     setVideo(false);
     setPlaying(false);
-    if (!game.media.includes("video")) return;
+    if (!game.video) return;
     const t = setTimeout(() => setVideo(true), 900);
     return () => clearTimeout(t);
   }, [game.id]);
-  const still = game.media.includes("image") ? "image" : game.media.includes("thumb") ? "thumb" : null;
-  const boxArt = still === "image" && game.media.includes("thumb");
+  const still = game.image ?? game.thumb;
+  const boxArt = game.image && game.thumb;
   return (
     <div
       className="relative grid aspect-video shrink-0 place-items-center overflow-hidden rounded-t-2xl text-6xl font-black text-white/80"
@@ -90,14 +88,14 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
       {still && (
         <img
           key={game.id}
-          src={mediaUrl(game.id, still)}
+          src={still}
           alt=""
-          className={cn("absolute inset-0 size-full", still === "image" ? "object-cover" : "object-contain")}
+          className={cn("absolute inset-0 size-full", game.image ? "object-cover" : "object-contain")}
         />
       )}
       {video && (
         <video
-          src={mediaUrl(game.id, "video")}
+          src={game.video ?? undefined}
           autoPlay
           muted
           loop
@@ -108,7 +106,7 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
       )}
       <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-panel to-transparent" />
       {boxArt && (
-        <img src={mediaUrl(game.id, "thumb")} alt="" className="absolute bottom-3 left-4 h-1/2 rounded-md object-contain shadow-2xl" />
+        <img src={boxArt} alt="" className="absolute bottom-3 left-4 h-1/2 rounded-md object-contain shadow-2xl" />
       )}
     </div>
   );
@@ -213,11 +211,11 @@ function Games() {
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([api.systems(), api.games(systemId)]).then(([systems, games]) => {
-      const s = systems.find((x) => x.id === systemId);
+    api.system(systemId).then((s) => {
       if (!s) return location.replace("/");
-      document.title = `${s.name} · SovEmu`;
-      setSystem(s);
+      const { games, ...system } = s;
+      document.title = `${system.name} · SovEmu`;
+      setSystem(system);
       setGames(games);
       const remembered = Number(localStorage.getItem(rememberKey));
       setSelectedId(games.some((g) => g.id === remembered) ? remembered : null);
@@ -241,7 +239,7 @@ function Games() {
     localStorage.setItem(rememberKey, String(game.id));
     list.current?.querySelector(`[data-id="${game.id}"]`)?.scrollIntoView({ block: "nearest" });
     setSlots([]);
-    const t = setTimeout(() => api.states(game.id).then(setSlots).catch(() => {}), 200);
+    const t = setTimeout(() => api.saves(game.id).then(setSlots).catch(() => {}), 200);
     return () => clearTimeout(t);
   }, [game?.id]);
 
@@ -283,7 +281,7 @@ function Games() {
 
   if (!system) return null;
   const color = system.color;
-  const year = game?.release_date?.slice(0, 4);
+  const year = game?.releaseDate?.slice(0, 4);
   const players = maxPlayers(game?.players ?? null);
   const filtered = shown.length !== games.length;
 
@@ -365,14 +363,14 @@ function Games() {
                       )}
                     </div>
                     <span className={cn("flex shrink-0 items-center gap-2 text-xs tabular-nums", on ? "text-white/85" : "text-slate-500")}>
-                      {!!g.play_count && <CircleCheck className="size-3.5" aria-label="Played" />}
+                      {!!g.playCount && <CircleCheck className="size-3.5" aria-label="Played" />}
                       {n !== null && n >= 2 && (
                         <span className="flex items-center gap-0.5">
                           <Users className="size-3.5" />
                           {n}
                         </span>
                       )}
-                      {g.release_date && <span>{g.release_date.slice(0, 4)}</span>}
+                      {g.releaseDate && <span>{g.releaseDate.slice(0, 4)}</span>}
                     </span>
                   </li>
                 );
@@ -442,10 +440,10 @@ function Games() {
                     <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Saves</p>
                     <div className="flex flex-wrap gap-2">
                       {slots.map((s) => (
-                        <Tooltip key={s.slot} content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.saved_at)}`}>
+                        <Tooltip key={s.slot} content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.savedAt)}`}>
                           <span className="pixelated grid h-12 w-16 place-items-center overflow-hidden rounded border border-white/10 bg-black/50 text-[10px] text-slate-400">
-                            {s.screenshot ? (
-                              <img src={screenshotUrl(game.id, s)} alt="" className="pixelated size-full object-cover" />
+                            {s.screenshotUrl ? (
+                              <img src={s.screenshotUrl} alt="" className="pixelated size-full object-cover" />
                             ) : s.slot === AUTO_SLOT ? (
                               "Auto"
                             ) : (
@@ -459,7 +457,7 @@ function Games() {
                 )}
 
                 <p className="border-t border-white/10 pt-3 text-xs text-slate-500">
-                  {game.play_count ? `Played ${game.play_count}× · last ${formatAgo(game.last_played_at)}` : "Not played yet"}
+                  {game.playCount ? `Played ${game.playCount}× · last ${formatAgo(game.lastPlayedAt)}` : "Not played yet"}
                   {" · "}
                   <span className="font-mono">{game.path}</span> · {formatSize(game.size)}
                 </p>

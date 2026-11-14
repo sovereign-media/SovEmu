@@ -1,34 +1,24 @@
 //! The home screen's feed: a hero of featured games and rows of the player's recent games and
-//! the library's newest, in one request (as Sovereign's home feed).
+//! the library's newest, in one query (as Sovereign's home feed). Where the player left off
+//! (the auto save) is each game's `autoSave` in the API.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::Json;
-use axum::extract::State;
 use serde::Serialize;
 
 use crate::AppState;
 use crate::api::{GAME_COLUMNS, Game};
-use crate::auth::CurrentUser;
+use crate::auth::User;
 use crate::error::ApiResult;
-
-#[derive(Debug, Serialize)]
-pub struct RecentGame {
-    #[serde(flatten)]
-    game: Game,
-    /// When the auto state (slot 0) was written, Unix seconds, if it has a screenshot: the
-    /// frame the player left the game on.
-    screenshot_at: Option<u64>,
-}
 
 #[derive(Debug, Serialize)]
 pub struct Home {
     /// The hero: games with artwork and a description first, a new pick each day.
-    featured: Vec<Game>,
+    pub(crate) featured: Vec<Game>,
     /// This player's games, most recently played first.
-    recent: Vec<RecentGame>,
+    pub(crate) recent: Vec<Game>,
     /// The library's newest games.
-    added: Vec<Game>,
+    pub(crate) added: Vec<Game>,
 }
 
 /// `AND g.system NOT IN (…)` for the systems the configuration hides, and the ids to bind.
@@ -80,18 +70,15 @@ async fn query(
     Ok(q.bind(limit).fetch_all(&state.db).await?.into_iter().map(Game::with_box_art).collect())
 }
 
-pub async fn home(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-) -> ApiResult<Json<Home>> {
+pub async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
     let row = state.config.home_row;
     let recent =
-        query(&state, user.id, "h.last_played_at IS NOT NULL", "h.last_played_at DESC", row, None)
+        query(state, user.id, "h.last_played_at IS NOT NULL", "h.last_played_at DESC", row, None)
             .await?;
     // Games with something to show first (artwork and a description), then a shuffle that
     // changes daily: a multiplicative hash of the id, offset by the day.
     let featured = query(
-        &state,
+        state,
         user.id,
         "g.media != '' OR m.box_art IS NOT NULL",
         "(m.description IS NOT NULL AND g.media LIKE '%image%') DESC,
@@ -101,18 +88,6 @@ pub async fn home(
         Some(day()),
     )
     .await?;
-    let added = query(&state, user.id, "1", "g.added_at DESC, g.id DESC", row, None).await?;
-    let recent = recent
-        .into_iter()
-        .map(|game| {
-            let (_, dir) = crate::api::save_dirs(&state, user.id, &game);
-            let screenshot_at = std::fs::metadata(dir.join("slot0.png"))
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs());
-            RecentGame { game, screenshot_at }
-        })
-        .collect();
-    Ok(Json(Home { featured, recent, added }))
+    let added = query(state, user.id, "1", "g.added_at DESC, g.id DESC", row, None).await?;
+    Ok(Home { featured, recent, added })
 }

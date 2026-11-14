@@ -4,16 +4,16 @@ import { groupByMaker, initials, systemBadge } from "./systems";
 
 const sys = (over: Partial<SystemSummary>): SystemSummary => ({
   id: "n64", name: "Nintendo 64", short: "N64", manufacturer: "Nintendo", year: 1996, color: "#000",
-  game_count: 1, playable: true, needs_gpu: false, ...over,
+  gameCount: 1, playable: true, needsGpu: false, rendering: null, ...over,
 });
 
 describe("system badges", () => {
   it("says why a system cannot play, or that it plays slowly", () => {
     expect(systemBadge(sys({}))).toBeNull();
     expect(systemBadge(sys({ playable: false }))).toBe("no core");
-    expect(systemBadge(sys({ needs_gpu: true, rendering: "gpu" }))).toBeNull();
-    expect(systemBadge(sys({ needs_gpu: true, rendering: "software" }))).toBe("software rendering");
-    expect(systemBadge(sys({ needs_gpu: true, rendering: "off", playable: false }))).toBe("no 3D rendering");
+    expect(systemBadge(sys({ needsGpu: true, rendering: "GPU" }))).toBeNull();
+    expect(systemBadge(sys({ needsGpu: true, rendering: "SOFTWARE" }))).toBe("software rendering");
+    expect(systemBadge(sys({ needsGpu: true, rendering: "OFF", playable: false }))).toBe("no 3D rendering");
   });
 });
 

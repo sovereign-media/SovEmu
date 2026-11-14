@@ -1,34 +1,21 @@
 //! Cheat codes per user and game. Enabled codes are sent to the game's session whenever it
 //! starts and whenever they change.
 
-use axum::Json;
-use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sovemu_protocol::ipc::Request;
 
 use crate::AppState;
-use crate::auth::CurrentUser;
+use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+/// A cheat code for a game, this user's.
+#[derive(Debug, Serialize, sqlx::FromRow, async_graphql::SimpleObject)]
 pub struct Cheat {
-    id: i64,
-    description: String,
-    code: String,
-    enabled: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct NewCheat {
-    #[serde(default)]
-    description: String,
-    code: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CheatUpdate {
-    enabled: bool,
+    pub id: i64,
+    pub description: String,
+    pub code: String,
+    pub enabled: bool,
 }
 
 /// The enabled codes for a user's game, in the order they were added.
@@ -70,21 +57,19 @@ async fn list_for(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Vec
     .await?)
 }
 
-pub async fn list(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(game_id): Path<i64>,
-) -> ApiResult<Json<Vec<Cheat>>> {
-    Ok(Json(list_for(&state, user.id, game_id).await?))
+pub async fn list(state: &AppState, user: &User, game_id: i64) -> ApiResult<Vec<Cheat>> {
+    list_for(state, user.id, game_id).await
 }
 
+/// Adds a cheat (enabled) and returns the game's cheats.
 pub async fn add(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(game_id): Path<i64>,
-    Json(new): Json<NewCheat>,
-) -> ApiResult<(StatusCode, Json<Vec<Cheat>>)> {
-    let code = new.code.trim();
+    state: &AppState,
+    user: &User,
+    game_id: i64,
+    code: &str,
+    description: &str,
+) -> ApiResult<Vec<Cheat>> {
+    let code = code.trim();
     if code.is_empty() || code.len() > 256 {
         return Err(ApiError::bad_request("a cheat needs a code (up to 256 characters)"));
     }
@@ -96,23 +81,25 @@ pub async fn add(
     sqlx::query("INSERT INTO cheats (user_id, game_id, description, code) VALUES (?, ?, ?, ?)")
         .bind(user.id)
         .bind(game_id)
-        .bind(new.description.trim())
+        .bind(description.trim())
         .bind(code)
         .execute(&state.db)
         .await?;
-    push(&state, user.id, game_id).await?;
-    Ok((StatusCode::CREATED, Json(list_for(&state, user.id, game_id).await?)))
+    push(state, user.id, game_id).await?;
+    list_for(state, user.id, game_id).await
 }
 
-pub async fn update(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path((game_id, cheat_id)): Path<(i64, i64)>,
-    Json(update): Json<CheatUpdate>,
-) -> ApiResult<Json<Vec<Cheat>>> {
+/// Turns a cheat on or off and returns the game's cheats.
+pub async fn set_enabled(
+    state: &AppState,
+    user: &User,
+    game_id: i64,
+    cheat_id: i64,
+    enabled: bool,
+) -> ApiResult<Vec<Cheat>> {
     let changed =
         sqlx::query("UPDATE cheats SET enabled = ? WHERE id = ? AND user_id = ? AND game_id = ?")
-            .bind(update.enabled)
+            .bind(enabled)
             .bind(cheat_id)
             .bind(user.id)
             .bind(game_id)
@@ -122,15 +109,11 @@ pub async fn update(
     if changed == 0 {
         return Err(ApiError::not_found("cheat"));
     }
-    push(&state, user.id, game_id).await?;
-    Ok(Json(list_for(&state, user.id, game_id).await?))
+    push(state, user.id, game_id).await?;
+    list_for(state, user.id, game_id).await
 }
 
-pub async fn remove(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path((game_id, cheat_id)): Path<(i64, i64)>,
-) -> ApiResult<StatusCode> {
+pub async fn remove(state: &AppState, user: &User, game_id: i64, cheat_id: i64) -> ApiResult<()> {
     let removed = sqlx::query("DELETE FROM cheats WHERE id = ? AND user_id = ? AND game_id = ?")
         .bind(cheat_id)
         .bind(user.id)
@@ -141,6 +124,6 @@ pub async fn remove(
     if removed == 0 {
         return Err(ApiError::not_found("cheat"));
     }
-    push(&state, user.id, game_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    push(state, user.id, game_id).await?;
+    Ok(())
 }

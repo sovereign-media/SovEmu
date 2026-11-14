@@ -1,11 +1,8 @@
 //! Library and metadata administration: status, mirror sync, metadata jobs.
 
-use axum::Json;
-use axum::extract::State;
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-use crate::auth::{AdminUser, CurrentUser};
 use crate::error::{ApiError, ApiResult};
 use crate::metadata::{self, JobStatus};
 use crate::mirror::{self, SyncStatus};
@@ -55,18 +52,15 @@ pub async fn sync_then_scan(state: AppState) {
 
 #[derive(Debug, Serialize)]
 pub struct LibraryStatus {
-    mode: LibraryMode,
-    games: i64,
+    pub(crate) mode: LibraryMode,
+    pub(crate) games: i64,
     /// `cache` mode: bytes on local disk.
-    cache_bytes: Option<u64>,
+    pub(crate) cache_bytes: Option<u64>,
     /// `mirror` mode: the current or last sync.
-    mirror: Option<SyncStatus>,
+    pub(crate) mirror: Option<SyncStatus>,
 }
 
-pub async fn library_status(
-    State(state): State<AppState>,
-    _user: CurrentUser,
-) -> ApiResult<Json<LibraryStatus>> {
+pub async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
     let games: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&state.db).await?;
     let cache_bytes = (state.config.library_mode == LibraryMode::Cache).then(|| {
         let dir = state.config.data_dir.join("cache");
@@ -85,53 +79,34 @@ pub async fn library_status(
     });
     let mirror = (state.config.library_mode == LibraryMode::Mirror)
         .then(|| state.mirror.lock().unwrap_or_else(|e| e.into_inner()).clone());
-    Ok(Json(LibraryStatus { mode: state.config.library_mode, games, cache_bytes, mirror }))
+    Ok(LibraryStatus { mode: state.config.library_mode, games, cache_bytes, mirror })
 }
 
 /// Starts a mirror sync (then a rescan) in the background.
-pub async fn library_sync(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-) -> ApiResult<StatusCode> {
+/// Starts a mirror sync in the background.
+pub fn library_sync(state: &AppState) -> ApiResult<()> {
     if state.config.library_mode != LibraryMode::Mirror {
         return Err(ApiError::bad_request("the library is not in mirror mode"));
     }
-    tokio::spawn(sync_then_scan(state));
-    Ok(StatusCode::ACCEPTED)
+    tokio::spawn(sync_then_scan(state.clone()));
+    Ok(())
 }
 
-pub async fn metadata_status(State(state): State<AppState>, _user: CurrentUser) -> Json<JobStatus> {
-    Json(state.metadata.status())
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct FetchRequest {
-    /// Only this system (an id such as `snes`); default all.
-    #[serde(default)]
-    system: Option<String>,
-    /// Look up games that already have metadata too.
-    #[serde(default)]
-    force: bool,
+pub fn metadata_status(state: &AppState) -> JobStatus {
+    state.metadata.status()
 }
 
 /// Starts a metadata job in the background.
-pub async fn metadata_fetch(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    body: Option<Json<FetchRequest>>,
-) -> ApiResult<(StatusCode, Json<JobStatus>)> {
-    let Json(request) = body.unwrap_or_default();
+/// Starts looking up game information in the background (`system`: one system only; `force`:
+/// look up games that already have it too).
+pub fn metadata_fetch(
+    state: &AppState,
+    system: Option<String>,
+    force: bool,
+) -> ApiResult<JobStatus> {
     if state.metadata.status().running {
         return Err(ApiError::new(StatusCode::CONFLICT, "a metadata job is already running"));
     }
-    tokio::spawn(metadata::run_job(state.clone(), request.system, request.force));
-    Ok((StatusCode::ACCEPTED, Json(state.metadata.status())))
-}
-
-/// Where 3D systems render, and every device the startup probe tried.
-pub async fn gpu_status(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-) -> Json<crate::gpu::GpuStatus> {
-    Json((*state.gpu).clone())
+    tokio::spawn(metadata::run_job(state.clone(), system, force));
+    Ok(state.metadata.status())
 }

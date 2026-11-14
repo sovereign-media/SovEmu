@@ -1,233 +1,116 @@
-// Typed calls to the SovEmu API (same origin). A 401 sends the browser to the sign-in page.
-import type { StartStatus } from "./launch";
+// The SovEmu API (GraphQL), as the pages use it: one function per operation, returning the
+// types codegen derived from the documents in queries.ts. Signed out, a call goes to sign-in.
+import type {
+  AdminStatusQuery,
+  CheatsQuery,
+  EmulatorSettingsQuery,
+  GameFieldsFragment,
+  HomeQuery,
+  SaveFieldsFragment,
+  SessionFieldsFragment,
+  SettingSource as GqlSettingSource,
+  StartProgressQuery,
+  SystemFieldsFragment,
+  ViewerQuery,
+} from "../graphql/graphql";
+import {
+  AddCheatMutation,
+  AdminStatusQuery as AdminStatusDocument,
+  ChangeEmulatorSettingsMutation,
+  CheatsQuery as CheatsDocument,
+  ClientConfigQuery,
+  EmulatorSettingsQuery as EmulatorSettingsDocument,
+  FetchMetadataMutation,
+  GameQuery,
+  HomeQuery as HomeDocument,
+  LoadStateMutation,
+  LoginMutation,
+  LogoutMutation,
+  ResetSessionMutation,
+  SaveStateMutation,
+  SavesQuery,
+  ScanLibraryMutation,
+  SessionOfferMutation,
+  SetCheatMutation,
+  SetupMutation,
+  StartProgressQuery as StartProgressDocument,
+  StartSessionMutation,
+  StopSessionMutation,
+  SyncLibraryMutation,
+  SystemGamesQuery,
+  SystemsQuery,
+  ViewerQuery as ViewerDocument,
+} from "./queries";
+import { onUnload, request } from "./graphql";
 
-export interface User {
-  id: number;
-  username: string;
-  is_admin: boolean;
-}
+export { ApiError } from "./graphql";
 
-export interface AuthStatus {
-  setup_required: boolean;
-  user: User | null;
-}
+export type Viewer = ViewerQuery["viewer"];
+export type User = NonNullable<Viewer["user"]>;
+export type SystemSummary = SystemFieldsFragment;
+export type Game = GameFieldsFragment;
+export type SaveSlot = SaveFieldsFragment;
+export type HomeFeed = HomeQuery["home"];
+export type RecentGame = HomeFeed["recent"][number];
+export type SessionInfo = SessionFieldsFragment;
+export type StartStatus = StartProgressQuery["startProgress"];
+export type Cheat = NonNullable<CheatsQuery["game"]>["cheats"][number];
+export type SystemSettings = EmulatorSettingsQuery["emulatorSettings"];
+export type CoreSetting = SystemSettings["settings"][number];
+export type CoreCategory = SystemSettings["categories"][number];
+export type SettingSource = GqlSettingSource;
+export type LibraryStatus = AdminStatusQuery["libraryStatus"];
+export type MetadataStatus = AdminStatusQuery["metadataStatus"];
 
-export interface SystemSummary {
-  id: string;
-  name: string;
-  short: string;
-  manufacturer: string;
-  year: number;
-  color: string;
-  game_count: number;
-  playable: boolean;
-  /** A 3D system: its cores render with OpenGL and read analog sticks. */
-  needs_gpu: boolean;
-  /** For a 3D system, where it renders here: on a GPU, in software (slow), or not at all. */
-  rendering?: "gpu" | "software" | "off";
-}
-
-export type SettingSource = "core" | "sovemu" | "admin" | "environment";
-
-/** A libretro core option for a system, as the admin Settings page shows it. */
-export interface CoreSetting {
-  key: string;
-  description: string;
-  /** What it does, in the core's words; empty where the core does not say. */
-  info: string;
-  /** The key of the core's category for it, where the core groups its options. */
-  category: string | null;
-  choices: string[];
-  /** A display label for each choice. */
-  labels: string[];
-  /** The core's own default. */
-  default: string;
-  value: string;
-  source: SettingSource;
-}
-
-export interface CoreCategory {
-  key: string;
-  description: string;
-  info?: string;
-}
-
-export interface SystemSettings {
-  system: string;
-  core: string;
-  settings: CoreSetting[];
-  /** The core's own groups ("Video", "Audio", …), in its order; empty for cores without. */
-  categories: CoreCategory[];
-  /** This emulator lists its settings only with a game loaded, and none has run yet. */
-  needs_game?: boolean;
-  /** The admin's changes as SOVEMU_SYSTEMS__… lines, to move into configuration. */
-  environment: string[];
-}
-
-export interface Game {
-  id: number;
-  system: string;
-  title: string;
-  tags: string;
-  path: string;
-  size: number;
-  last_played_at: string | null;
-  play_count: number | null;
-  /** Artwork available at mediaUrl(): "image", "thumb", "marquee", "video". */
-  media: string[];
-  /** The title from the file name, when metadata supplied `title`. */
-  file_title: string | null;
-  description: string | null;
-  release_date: string | null;
-  developer: string | null;
-  publisher: string | null;
-  genre: string | null;
-  players: string | null;
-  /** 0 to 1. */
-  rating: number | null;
-}
-
-/** A game on the home screen's "Continue playing" row. */
-export interface RecentGame extends Game {
-  /** When the auto save's screenshot was taken (Unix seconds), if there is one. */
-  screenshot_at: number | null;
-}
-
-export interface HomeFeed {
-  featured: Game[];
-  recent: RecentGame[];
-  added: Game[];
-}
-
-export interface SyncStatus {
-  running: boolean;
-  files_total: number;
-  files_done: number;
-  bytes_total: number;
-  bytes_done: number;
-  removed: number;
-  failed: number;
-  finished_at: number | null;
-  error: string | null;
-}
-
-export interface LibraryStatus {
-  mode: "direct" | "cache" | "mirror";
-  games: number;
-  cache_bytes: number | null;
-  mirror: SyncStatus | null;
-}
-
-export interface MetadataStatus {
-  running: boolean;
-  total: number;
-  done: number;
-  found: number;
-  not_found: number;
-  failed: number;
-  sources: string[];
-  notes: string[];
-}
-
-export const mediaUrl = (gameId: number, kind: string) => `/api/games/${gameId}/media/${kind}`;
-
-export interface SessionInfo {
-  id: string;
-  game_id: number;
-  system: string;
-  title: string;
-  core: string;
-  width: number;
-  height: number;
-  fps: number;
-  connected: boolean;
-}
-
-export interface SaveSlot {
-  slot: number;
-  /** Unix seconds. */
-  saved_at: number;
-  screenshot: boolean;
-}
-
-/** Slot 0 is the auto state, written whenever a session ends. */
+/** Slot 0 is the auto save, written whenever a session ends. */
 export const AUTO_SLOT = 0;
 
-export interface Cheat {
-  id: number;
-  description: string;
-  code: string;
-  enabled: boolean;
-}
-
-export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "same-origin",
-  });
-  if (res.status === 401 && !path.startsWith("/auth/")) {
-    location.href = `/login/?next=${encodeURIComponent(location.pathname + location.search)}`;
-    throw new ApiError(401, "sign in first");
-  }
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      message = (await res.json()).error ?? message;
-    } catch { /* not JSON */ }
-    throw new ApiError(res.status, message);
-  }
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
-}
-
 export const api = {
-  status: () => call<AuthStatus>("GET", "/auth/status"),
-  setup: (username: string, password: string) => call<User>("POST", "/auth/setup", { username, password }),
-  login: (username: string, password: string) => call<User>("POST", "/auth/login", { username, password }),
-  logout: () => call<void>("POST", "/auth/logout"),
-  config: () => call<{ ice_servers: RTCIceServer[] }>("GET", "/config"),
-  home: () => call<HomeFeed>("GET", "/home"),
-  systems: () => call<SystemSummary[]>("GET", "/systems"),
-  games: (system: string) => call<Game[]>("GET", `/systems/${encodeURIComponent(system)}/games`),
-  game: (id: number) => call<Game>("GET", `/games/${id}`),
-  scan: () => call<{ found: number; added: number; removed: number }>("POST", "/library/scan"),
-  libraryStatus: () => call<LibraryStatus>("GET", "/library/status"),
-  syncLibrary: () => call<void>("POST", "/library/sync"),
-  metadataStatus: () => call<MetadataStatus>("GET", "/metadata/status"),
-  fetchMetadata: (system?: string, force = false) => call<MetadataStatus>("POST", "/metadata/fetch", { system, force }),
-  /** `startId` lets `startProgress` follow the start while this request waits for it. */
-  startSession: (gameId: number, startId?: string) =>
-    call<SessionInfo>("POST", "/sessions", { game_id: gameId, start_id: startId }),
-  systemSettings: (id: string) => call<SystemSettings>("GET", `/systems/${encodeURIComponent(id)}/settings`),
+  viewer: async () => (await request(ViewerDocument)).viewer,
+  setup: async (username: string, password: string) => (await request(SetupMutation, { username, password })).setup,
+  login: async (username: string, password: string) => (await request(LoginMutation, { username, password })).login,
+  logout: () => request(LogoutMutation),
+  iceServers: async () => (await request(ClientConfigQuery)).clientConfig.iceServers as RTCIceServer[],
+  home: async () => (await request(HomeDocument)).home,
+  systems: async () => (await request(SystemsQuery)).systems,
+  /** A system and its games, or null for an unknown or hidden system. */
+  system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
+  game: async (id: number) => (await request(GameQuery, { id })).game,
+  saves: async (gameId: number) => (await request(SavesQuery, { id: gameId })).game.saves,
+  scan: async () => (await request(ScanLibraryMutation)).scanLibrary,
+  /** Admin: library and game-information status together. */
+  adminStatus: () => request(AdminStatusDocument),
+  syncLibrary: () => request(SyncLibraryMutation),
+  fetchMetadata: async (system?: string, force = false) =>
+    (await request(FetchMetadataMutation, { system: system ?? null, force })).fetchMetadata,
+  /** `startId` lets `startProgress` follow the start while this waits for it. */
+  startSession: async (gameId: number, startId?: string) =>
+    (await request(StartSessionMutation, { gameId, startId: startId ?? null })).startSession,
+  startProgress: async (startId: string) => (await request(StartProgressDocument, { startId })).startProgress,
+  /** The worker's answer (SDP) to a WebRTC offer for the session. */
+  answer: async (sessionId: string, sdp: string) =>
+    (await request(SessionOfferMutation, { id: sessionId, sdp })).sessionOffer,
+  stopSession: (id: string) => request(StopSessionMutation, { id }),
+  /** Stops a session as the page closes, so the auto save is written now. */
+  stopSessionOnUnload: (id: string) => onUnload(StopSessionMutation, { id }),
+  resetSession: (id: string) => request(ResetSessionMutation, { id }),
+  saveState: (sessionId: string, slot: number) => request(SaveStateMutation, { sessionId, slot }),
+  loadState: (sessionId: string, slot: number) => request(LoadStateMutation, { sessionId, slot }),
+  cheats: async (gameId: number) => (await request(CheatsDocument, { id: gameId })).game.cheats,
+  addCheat: async (gameId: number, code: string, description: string) =>
+    (await request(AddCheatMutation, { gameId, code, description })).addCheat,
+  setCheat: async (gameId: number, cheatId: number, enabled: boolean) =>
+    (await request(SetCheatMutation, { gameId, cheatId, enabled })).setCheatEnabled,
+  systemSettings: async (system: string) => (await request(EmulatorSettingsDocument, { system })).emulatorSettings,
   /** A value sets an option; null goes back to the default. */
-  changeSettings: (id: string, changes: Record<string, string | null>) =>
-    call<SystemSettings>("PUT", `/systems/${encodeURIComponent(id)}/settings`, changes),
-  startProgress: (startId: string) => call<StartStatus>("GET", `/sessions/starting/${encodeURIComponent(startId)}`),
-  currentSession: () => call<SessionInfo | null>("GET", "/sessions/current"),
-  stopSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
-  resetSession: (id: string) => call<void>("POST", `/sessions/${id}/reset`),
-  states: (gameId: number) => call<SaveSlot[]>("GET", `/games/${gameId}/states`),
-  saveState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}`),
-  loadState: (sessionId: string, slot: number) => call<void>("POST", `/sessions/${sessionId}/states/${slot}/load`),
-  deleteState: (gameId: number, slot: number) => call<void>("DELETE", `/games/${gameId}/states/${slot}`),
-  cheats: (gameId: number) => call<Cheat[]>("GET", `/games/${gameId}/cheats`),
-  addCheat: (gameId: number, code: string, description: string) =>
-    call<Cheat[]>("POST", `/games/${gameId}/cheats`, { code, description }),
-  setCheat: (gameId: number, id: number, enabled: boolean) =>
-    call<Cheat[]>("PATCH", `/games/${gameId}/cheats/${id}`, { enabled }),
-  deleteCheat: (gameId: number, id: number) => call<void>("DELETE", `/games/${gameId}/cheats/${id}`),
+  changeSettings: async (system: string, changes: Record<string, string | null>) =>
+    (
+      await request(ChangeEmulatorSettingsMutation, {
+        system,
+        changes: Object.entries(changes).map(([key, value]) => ({ key, value })),
+      })
+    ).changeEmulatorSettings,
 };
-
-/** A save slot's screenshot, cache-busted by when it was saved. */
-export const screenshotUrl = (gameId: number, s: SaveSlot) =>
-  `/api/games/${gameId}/states/${s.slot}/screenshot?t=${s.saved_at}`;
 
 /** Human-readable file size. */
 export function formatSize(bytes: number): string {

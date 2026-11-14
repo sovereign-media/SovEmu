@@ -3,14 +3,13 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sovemu_protocol::{SdpKind, SessionDescription};
 
 use crate::AppState;
-use crate::auth::{AdminUser, CurrentUser};
+use crate::auth::{CurrentUser, User};
 use crate::error::{ApiError, ApiResult};
 use crate::library::{self, ScanReport};
 use crate::systems::{self, System};
@@ -19,41 +18,41 @@ use crate::workers::{Launch, SessionInfo};
 #[derive(Debug, Serialize)]
 pub struct SystemSummary {
     #[serde(flatten)]
-    system: System,
-    game_count: i64,
+    pub(crate) system: System,
+    pub(crate) game_count: i64,
     /// Whether a core that plays it is installed (and, for a 3D system, it has a renderer).
-    playable: bool,
+    pub(crate) playable: bool,
     /// For a 3D system: `gpu`, `software` (slow) or `off` (unplayable here).
     #[serde(skip_serializing_if = "Option::is_none")]
-    rendering: Option<crate::gpu::Mode>,
+    pub(crate) rendering: Option<crate::gpu::Mode>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Game {
     pub(crate) id: i64,
     pub(crate) system: String,
-    title: String,
-    tags: String,
-    path: String,
-    size: i64,
-    last_played_at: Option<String>,
-    play_count: Option<i64>,
+    pub(crate) title: String,
+    pub(crate) tags: String,
+    pub(crate) path: String,
+    pub(crate) size: i64,
+    pub(crate) last_played_at: Option<String>,
+    pub(crate) play_count: Option<i64>,
     /// Artwork available through `/api/games/{id}/media/{kind}`.
     #[serde(serialize_with = "split_media")]
-    media: String,
+    pub(crate) media: String,
     /// The title from the file name, when metadata supplied a better `title`.
-    file_title: Option<String>,
-    description: Option<String>,
-    release_date: Option<String>,
-    developer: Option<String>,
-    publisher: Option<String>,
-    genre: Option<String>,
-    players: Option<String>,
+    pub(crate) file_title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) release_date: Option<String>,
+    pub(crate) developer: Option<String>,
+    pub(crate) publisher: Option<String>,
+    pub(crate) genre: Option<String>,
+    pub(crate) players: Option<String>,
     /// 0 to 1.
-    rating: Option<f64>,
+    pub(crate) rating: Option<f64>,
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
-    box_art: Option<String>,
+    pub(crate) box_art: Option<String>,
 }
 
 impl Game {
@@ -103,26 +102,23 @@ fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
     systems::by_id(id).filter(|s| enabled(state, s.id)).ok_or_else(|| ApiError::not_found("system"))
 }
 
-pub async fn list_systems(
-    State(state): State<AppState>,
-    _user: CurrentUser,
-) -> ApiResult<Json<Vec<SystemSummary>>> {
+pub async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
     let counts: Vec<(String, i64)> =
         sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system")
             .fetch_all(&state.db)
             .await?;
     let summaries = systems::SYSTEMS
         .iter()
-        .filter(|s| enabled(&state, s.id))
+        .filter(|s| enabled(state, s.id))
         .map(|s| SystemSummary {
             system: *s,
             game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
-            playable: find_core(&state, s).is_some()
+            playable: find_core(state, s).is_some()
                 && (!s.needs_gpu || state.gpu.mode != crate::gpu::Mode::Off),
             rendering: s.needs_gpu.then_some(state.gpu.mode),
         })
         .collect();
-    Ok(Json(summaries))
+    Ok(summaries)
 }
 
 pub(crate) const GAME_COLUMNS: &str =
@@ -132,12 +128,8 @@ pub(crate) const GAME_COLUMNS: &str =
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
      m.box_art";
 
-pub async fn list_games(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(system): Path<String>,
-) -> ApiResult<Json<Vec<Game>>> {
-    system_by_id(&state, &system)?;
+pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResult<Vec<Game>> {
+    system_by_id(state, system)?;
     let games = sqlx::query_as::<_, Game>(&format!(
         "SELECT {GAME_COLUMNS} FROM games g
          LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
@@ -145,11 +137,11 @@ pub async fn list_games(
          WHERE g.system = ? ORDER BY COALESCE(m.title, g.title) COLLATE NOCASE, g.path"
     ))
     .bind(user.id)
-    .bind(&system)
+    .bind(system)
     .fetch_all(&state.db)
     .await?;
-    prefetch_art(&state, &system, &games);
-    Ok(Json(games.into_iter().map(Game::with_box_art).collect()))
+    prefetch_art(state, system, &games);
+    Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 
 async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
@@ -167,33 +159,23 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
     .ok_or_else(|| ApiError::not_found("game"))
 }
 
-pub async fn get_game(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
-) -> ApiResult<Json<Game>> {
-    Ok(Json(fetch_game(&state, user.id, id).await?))
+pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
+    fetch_game(state, user.id, id).await
 }
 
-pub async fn scan(State(state): State<AppState>, _admin: AdminUser) -> ApiResult<Json<ScanReport>> {
-    Ok(Json(library::scan(&state.db, &state.config.roms_dir).await?))
+pub async fn scan(state: &AppState) -> ApiResult<ScanReport> {
+    Ok(library::scan(&state.db, &state.config.roms_dir).await?)
 }
 
-#[derive(Debug, Deserialize)]
-pub struct StartSession {
-    game_id: i64,
-    /// Chosen by the client to follow the start's progress (`GET /sessions/starting/{id}`).
-    #[serde(default)]
-    start_id: Option<String>,
-}
-
-/// Starts a game. Ends the user's current session first.
+/// Starts a game. Ends the user's current session first. `start_id`, chosen by the client, lets
+/// it follow the start's progress ([`start_progress`]) while this waits.
 pub async fn start_session(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Json(start): Json<StartSession>,
-) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
-    let start_id = match start.start_id.as_deref() {
+    state: &AppState,
+    user: &User,
+    game_id: i64,
+    start_id: Option<&str>,
+) -> ApiResult<SessionInfo> {
+    let start_id = match start_id {
         Some(id) if !crate::starts::valid_id(id) => {
             return Err(ApiError::bad_request("start_id: 8 to 64 letters, digits, - or _"));
         }
@@ -203,7 +185,7 @@ pub async fn start_session(
     if let Some(id) = &start_id {
         starts.begin(id, user.id, Instant::now());
     }
-    let result = launch(&state, &user, start.game_id, start_id.clone()).await;
+    let result = launch(state, user, game_id, start_id.clone()).await;
     if let Some(id) = &start_id {
         starts.finish(id, result.as_ref().err().map(|e| e.message.clone()), Instant::now());
     }
@@ -211,25 +193,24 @@ pub async fn start_session(
 }
 
 /// How far the start `start_id` has got (see [`crate::starts`]).
-pub async fn start_progress(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(start_id): Path<String>,
-) -> ApiResult<Json<crate::starts::StartStatus>> {
+pub fn start_progress(
+    state: &AppState,
+    user: &User,
+    start_id: &str,
+) -> ApiResult<crate::starts::StartStatus> {
     state
         .workers
         .starts
-        .get(&start_id, user.id, Instant::now())
-        .map(Json)
+        .get(start_id, user.id, Instant::now())
         .ok_or_else(|| ApiError::not_found("start"))
 }
 
 async fn launch(
     state: &AppState,
-    user: &crate::auth::User,
+    user: &User,
     game_id: i64,
     start_id: Option<String>,
-) -> ApiResult<(StatusCode, Json<SessionInfo>)> {
+) -> ApiResult<SessionInfo> {
     let state = state.clone();
     let game = fetch_game(&state, user.id, game_id).await?;
     let system = system_by_id(&state, &game.system)?;
@@ -312,14 +293,11 @@ async fn launch(
     .bind(game.id)
     .execute(&state.db)
     .await?;
-    Ok((StatusCode::CREATED, Json(session.info())))
+    Ok(session.info())
 }
 
-pub async fn current_session(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-) -> Json<Option<SessionInfo>> {
-    Json(state.workers.for_user(user.id).map(|s| s.info()))
+pub fn current_session(state: &AppState, user: &User) -> Option<SessionInfo> {
+    state.workers.for_user(user.id).map(|s| s.info())
 }
 
 fn owned_session(
@@ -334,41 +312,29 @@ fn owned_session(
         .ok_or_else(|| ApiError::not_found("session"))
 }
 
-pub async fn offer(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(id): Path<String>,
-    Json(offer): Json<SessionDescription>,
-) -> ApiResult<Json<SessionDescription>> {
-    if offer.kind != SdpKind::Offer {
-        return Err(ApiError::bad_request("expected an SDP offer"));
-    }
-    let session = owned_session(&state, user.id, &id)?;
-    let answer = session.offer(offer).await.map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
-    Ok(Json(answer))
+/// A client's SDP offer for the session; returns the worker's answer.
+pub async fn offer(state: &AppState, user: &User, id: &str, sdp: String) -> ApiResult<String> {
+    let session = owned_session(state, user.id, id)?;
+    let answer = session
+        .offer(SessionDescription { kind: SdpKind::Offer, sdp })
+        .await
+        .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(answer.sdp)
 }
 
-pub async fn reset(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(id): Path<String>,
-) -> ApiResult<StatusCode> {
-    let session = owned_session(&state, user.id, &id)?;
+pub async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
+    let session = owned_session(state, user.id, id)?;
     session
         .request(|id| sovemu_protocol::ipc::Request::Reset { id })
         .await
         .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
-pub async fn stop_session(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(id): Path<String>,
-) -> ApiResult<StatusCode> {
-    owned_session(&state, user.id, &id)?;
-    state.workers.stop(&id).await;
-    Ok(StatusCode::NO_CONTENT)
+pub async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
+    owned_session(state, user.id, id)?;
+    state.workers.stop(id).await;
+    Ok(())
 }
 
 /// Where a user's saves for a game live: battery saves in
@@ -387,20 +353,16 @@ const MAX_SLOT: u32 = 9;
 
 #[derive(Debug, Serialize)]
 pub struct SaveSlot {
-    slot: u32,
+    pub slot: u32,
     /// Unix seconds.
-    saved_at: u64,
-    screenshot: bool,
+    pub saved_at: u64,
+    pub screenshot: bool,
 }
 
-pub async fn list_states(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
-) -> ApiResult<Json<Vec<SaveSlot>>> {
-    let game = fetch_game(&state, user.id, id).await?;
-    let (_, dir) = save_dirs(&state, user.id, &game);
-    let slots = (0..=MAX_SLOT)
+/// A game's save slots (0 is the auto save), from the files in its state folder.
+pub(crate) fn slots(state: &AppState, user_id: i64, game: &Game) -> Vec<SaveSlot> {
+    let (_, dir) = save_dirs(state, user_id, game);
+    (0..=MAX_SLOT)
         .filter_map(|slot| {
             let meta = std::fs::metadata(dir.join(format!("slot{slot}.state"))).ok()?;
             let saved_at =
@@ -411,8 +373,7 @@ pub async fn list_states(
                 screenshot: dir.join(format!("slot{slot}.png")).is_file(),
             })
         })
-        .collect();
-    Ok(Json(slots))
+        .collect()
 }
 
 pub async fn state_screenshot(
@@ -429,20 +390,16 @@ pub async fn state_screenshot(
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes).into_response())
 }
 
-pub async fn delete_state(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path((id, slot)): Path<(i64, u32)>,
-) -> ApiResult<StatusCode> {
-    let game = fetch_game(&state, user.id, id).await?;
-    let (_, dir) = save_dirs(&state, user.id, &game);
+pub async fn delete_state(state: &AppState, user: &User, id: i64, slot: u32) -> ApiResult<()> {
+    let game = fetch_game(state, user.id, id).await?;
+    let (_, dir) = save_dirs(state, user.id, &game);
     let state_file = dir.join(format!("slot{slot}.state"));
     if !state_file.is_file() {
         return Err(ApiError::not_found("save state"));
     }
     let _ = tokio::fs::remove_file(&state_file).await;
     let _ = tokio::fs::remove_file(dir.join(format!("slot{slot}.png"))).await;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
 async fn session_request(
@@ -450,30 +407,22 @@ async fn session_request(
     user_id: i64,
     id: &str,
     make: impl FnOnce(u64) -> sovemu_protocol::ipc::Request,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<()> {
     let session = owned_session(state, user_id, id)?;
     session.request(make).await.map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
-pub async fn save_state(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path((id, slot)): Path<(String, u32)>,
-) -> ApiResult<StatusCode> {
-    session_request(&state, user.id, &id, |rid| sovemu_protocol::ipc::Request::SaveState {
+pub async fn save_state(state: &AppState, user: &User, id: &str, slot: u32) -> ApiResult<()> {
+    session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::SaveState {
         id: rid,
         slot,
     })
     .await
 }
 
-pub async fn load_state(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    Path((id, slot)): Path<(String, u32)>,
-) -> ApiResult<StatusCode> {
-    session_request(&state, user.id, &id, |rid| sovemu_protocol::ipc::Request::LoadState {
+pub async fn load_state(state: &AppState, user: &User, id: &str, slot: u32) -> ApiResult<()> {
+    session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::LoadState {
         id: rid,
         slot,
     })

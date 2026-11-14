@@ -1,4 +1,5 @@
-//! The API end to end through the router: accounts, the library and a real game session.
+//! The API (GraphQL) end to end through the router: accounts, the library and a real game
+//! session, plus the plain-HTTP media and ops routes.
 //!
 //! The session test starts a real `sovemu-worker session`, with `SovEmu.TestCore` installed as
 //! the "NES core" and an empty file as the ROM (the test core accepts any content).
@@ -121,15 +122,51 @@ impl Harness {
         (status, value)
     }
 
+    /// Runs a GraphQL operation; returns `data` and `errors` (null when there are none).
+    async fn gql(&mut self, query: &str, variables: Value) -> (Value, Value) {
+        let body = json!({"query": query, "variables": variables});
+        let (status, response) = self.call("POST", "/graphql", Some(body)).await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        (response["data"].clone(), response["errors"].clone())
+    }
+
+    /// A GraphQL operation that must succeed: its `data`.
+    async fn ok(&mut self, query: &str, variables: Value) -> Value {
+        let (data, errors) = self.gql(query, variables).await;
+        assert!(errors.is_null(), "{query}: {errors}");
+        data
+    }
+
+    /// A GraphQL operation that must fail: its first error's `code` and message.
+    async fn err(&mut self, query: &str, variables: Value) -> (String, String) {
+        let (_, errors) = self.gql(query, variables).await;
+        let first = &errors[0];
+        assert!(!first.is_null(), "{query} succeeded");
+        (
+            first["extensions"]["code"].as_str().unwrap_or_default().to_owned(),
+            first["message"].as_str().unwrap_or_default().to_owned(),
+        )
+    }
+
     async fn sign_up_admin(&mut self) {
-        let (status, _) = self
-            .call(
-                "POST",
-                "/api/auth/setup",
-                Some(json!({"username": "admin", "password": "password123"})),
-            )
-            .await;
-        assert_eq!(status, StatusCode::OK);
+        self.ok(SETUP, json!({"u": "admin", "p": "password123"})).await;
+    }
+
+    async fn login(&mut self, username: &str, password: &str) -> Result<Value, String> {
+        let (data, errors) = self.gql(LOGIN, json!({"u": username, "p": password})).await;
+        if errors.is_null() {
+            Ok(data["login"].clone())
+        } else {
+            Err(errors[0]["extensions"]["code"].as_str().unwrap_or_default().to_owned())
+        }
+    }
+
+    async fn systems(&mut self) -> Value {
+        self.ok(SYSTEMS, json!({})).await["systems"].clone()
+    }
+
+    async fn games(&mut self, system: &str) -> Value {
+        self.ok(GAMES, json!({"id": system})).await["system"]["games"].clone()
     }
 }
 
@@ -139,6 +176,21 @@ impl Drop for Harness {
     }
 }
 
+const SETUP: &str = "mutation($u: String!, $p: String!) { setup(username: $u, password: $p) { id username isAdmin } }";
+const LOGIN: &str = "mutation($u: String!, $p: String!) { login(username: $u, password: $p) { id username isAdmin } }";
+const VIEWER: &str = "{ viewer { setupRequired user { username isAdmin } } }";
+const SYSTEMS: &str = "{ systems { id name gameCount playable rendering } }";
+const GAMES: &str = "query($id: ID!) { system(id: $id) { games {
+    id title fileTitle tags lastPlayedAt playCount media mediaUrl(kind: THUMB) description
+    developer releaseDate rating players } } }";
+const START: &str =
+    "mutation($game: Int!, $start: String) { startSession(gameId: $game, startId: $start) {
+    id title core width height } }";
+const PROGRESS: &str =
+    "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
+const METADATA: &str = "{ metadataStatus { running total done found failed sources notes } }";
+const LIBRARY: &str = "{ libraryStatus { mode games cacheBytes mirror { running filesDone } } }";
+
 fn system<'a>(systems: &'a Value, id: &str) -> &'a Value {
     systems.as_array().unwrap().iter().find(|s| s["id"] == id).unwrap()
 }
@@ -146,37 +198,39 @@ fn system<'a>(systems: &'a Value, id: &str) -> &'a Value {
 #[tokio::test]
 async fn first_run_setup_then_sign_in() {
     let mut h = Harness::new("auth", false).await;
-    let (_, status) = h.call("GET", "/api/auth/status", None).await;
-    assert_eq!(status, json!({"setup_required": true, "user": null}));
-    assert_eq!(h.call("GET", "/api/systems", None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        h.ok(VIEWER, json!({})).await["viewer"],
+        json!({"setupRequired": true, "user": null})
+    );
+    assert_eq!(h.err(SYSTEMS, json!({})).await.0, "UNAUTHENTICATED");
 
     h.sign_up_admin().await;
-    let (_, status) = h.call("GET", "/api/auth/status", None).await;
-    assert_eq!(status["setup_required"], false);
-    assert_eq!(status["user"]["username"], "admin");
-    assert_eq!(status["user"]["is_admin"], true);
+    let viewer = h.ok(VIEWER, json!({})).await["viewer"].clone();
+    assert_eq!(
+        viewer,
+        json!({"setupRequired": false, "user": {"username": "admin", "isAdmin": true}})
+    );
 
     // Setup only works once.
-    let again = json!({"username": "eve", "password": "password123"});
-    assert_eq!(h.call("POST", "/api/auth/setup", Some(again)).await.0, StatusCode::CONFLICT);
+    assert_eq!(h.err(SETUP, json!({"u": "eve", "p": "password123"})).await.0, "CONFLICT");
 
     // The admin adds a player, who can sign in but not administer.
-    let player = json!({"username": "kid", "password": "password123"});
-    assert_eq!(h.call("POST", "/api/users", Some(player.clone())).await.0, StatusCode::CREATED);
-    assert_eq!(h.call("POST", "/api/users", Some(player)).await.0, StatusCode::CONFLICT);
-    assert_eq!(h.call("POST", "/api/auth/logout", None).await.0, StatusCode::NO_CONTENT);
-    h.cookie = None;
+    let add = "mutation($u: String!) { addUser(input: {username: $u, password: \"password123\"}) { id } }";
+    h.ok(add, json!({"u": "kid"})).await;
+    assert_eq!(h.err(add, json!({"u": "kid"})).await.0, "CONFLICT");
+    assert_eq!(h.ok("mutation { logout }", json!({})).await["logout"], true);
+    assert_eq!(
+        h.ok(VIEWER, json!({})).await["viewer"]["user"],
+        Value::Null,
+        "the cookie is cleared"
+    );
 
-    let wrong = json!({"username": "kid", "password": "nope-nope"});
-    assert_eq!(h.call("POST", "/api/auth/login", Some(wrong)).await.0, StatusCode::UNAUTHORIZED);
-    let nobody = json!({"username": "ghost", "password": "password123"});
-    assert_eq!(h.call("POST", "/api/auth/login", Some(nobody)).await.0, StatusCode::UNAUTHORIZED);
-    let right = json!({"username": "KID", "password": "password123"});
-    let (status, user) = h.call("POST", "/api/auth/login", Some(right)).await;
-    assert_eq!((status, user["is_admin"].clone()), (StatusCode::OK, json!(false)));
-    assert_eq!(h.call("GET", "/api/users", None).await.0, StatusCode::FORBIDDEN);
-    assert_eq!(h.call("POST", "/api/library/scan", None).await.0, StatusCode::FORBIDDEN);
-    assert_eq!(h.call("GET", "/api/systems", None).await.0, StatusCode::OK);
+    assert_eq!(h.login("kid", "nope-nope").await, Err("UNAUTHENTICATED".into()));
+    assert_eq!(h.login("ghost", "password123").await, Err("UNAUTHENTICATED".into()));
+    assert_eq!(h.login("KID", "password123").await.unwrap()["isAdmin"], false);
+    assert_eq!(h.err("{ users { username } }", json!({})).await.0, "FORBIDDEN");
+    assert_eq!(h.err("mutation { scanLibrary { found } }", json!({})).await.0, "FORBIDDEN");
+    assert!(h.systems().await.as_array().unwrap().len() > 5);
 }
 
 #[tokio::test]
@@ -184,22 +238,14 @@ async fn throttles_guessing_and_serves_ops_routes() {
     let mut h = Harness::new("ops", false).await;
     h.sign_up_admin().await;
     h.cookie = None;
-    let wrong = json!({"username": "admin", "password": "wrong-password"});
     for _ in 0..crate::ops::MAX_FAILURES {
-        assert_eq!(
-            h.call("POST", "/api/auth/login", Some(wrong.clone())).await.0,
-            StatusCode::UNAUTHORIZED
-        );
+        assert_eq!(h.login("admin", "wrong-password").await, Err("UNAUTHENTICATED".into()));
     }
-    let (status, body) = h.call("POST", "/api/auth/login", Some(wrong)).await;
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-    assert!(body["error"].as_str().unwrap().contains("try again"));
+    let (code, message) = h.err(LOGIN, json!({"u": "admin", "p": "wrong-password"})).await;
+    assert_eq!(code, "TOO_MANY_REQUESTS");
+    assert!(message.contains("try again"), "{message}");
     // Locked out even with the right password, until the window passes.
-    let right = json!({"username": "admin", "password": "password123"});
-    assert_eq!(
-        h.call("POST", "/api/auth/login", Some(right)).await.0,
-        StatusCode::TOO_MANY_REQUESTS
-    );
+    assert_eq!(h.login("admin", "password123").await, Err("TOO_MANY_REQUESTS".into()));
 
     let health = Request::builder().uri("/health").body(Body::empty()).unwrap();
     let response = router(h.state.clone()).oneshot(health).await.unwrap();
@@ -211,87 +257,84 @@ async fn throttles_guessing_and_serves_ops_routes() {
         StatusCode::NOT_FOUND,
         "off without a token"
     );
-    assert_eq!(h.call("GET", "/api/config", None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(h.err("{ clientConfig { iceServers } }", json!({})).await.0, "UNAUTHENTICATED");
+    // The REST API is gone.
+    assert_eq!(h.call("GET", "/api/systems", None).await.0, StatusCode::NOT_FOUND);
+    // GraphiQL, for trying queries in a browser.
+    assert_eq!(h.call("GET", "/graphql", None).await.0, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn browses_the_library() {
     let mut h = Harness::new("library", false).await;
     h.sign_up_admin().await;
-    assert_eq!(h.call("GET", "/api/config", None).await.1, json!({"ice_servers": []}));
-    let (_, systems) = h.call("GET", "/api/systems", None).await;
-    assert_eq!(system(&systems, "nes")["game_count"], 1);
+    assert_eq!(
+        h.ok("{ clientConfig { iceServers } }", json!({})).await["clientConfig"]["iceServers"],
+        json!([])
+    );
+    let systems = h.systems().await;
+    assert_eq!(system(&systems, "nes")["gameCount"], 1);
     assert_eq!(system(&systems, "nes")["name"], "Nintendo Entertainment System");
     assert_eq!(system(&systems, "nes")["playable"], false, "no cores installed");
-    assert_eq!(system(&systems, "snes")["game_count"], 0);
+    assert_eq!(system(&systems, "snes")["gameCount"], 0);
 
-    let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
+    let games = h.games("nes").await;
     assert_eq!(games[0]["title"], "Test Game");
-    assert_eq!(games[0]["tags"], "USA");
-    assert_eq!(games[0]["last_played_at"], Value::Null);
-    assert_eq!(games[0]["media"], json!(["thumb"]));
+    assert_eq!(games[0]["tags"], json!(["USA"]));
+    assert_eq!(games[0]["lastPlayedAt"], Value::Null);
+    assert_eq!(games[0]["playCount"], 0);
+    assert_eq!(games[0]["media"], json!(["THUMB"]));
     let id = games[0]["id"].as_i64().unwrap();
+    assert_eq!(games[0]["mediaUrl"], format!("/media/games/{id}/thumb"));
+    assert_eq!(h.call("GET", &format!("/media/games/{id}/thumb"), None).await.0, StatusCode::OK);
     assert_eq!(
-        h.call("GET", &format!("/api/games/{id}/media/thumb"), None).await.0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        h.call("GET", &format!("/api/games/{id}/media/video"), None).await.0,
+        h.call("GET", &format!("/media/games/{id}/video"), None).await.0,
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        h.call("GET", &format!("/api/games/{id}/media/../../etc"), None).await.0,
+        h.call("GET", &format!("/media/games/{id}/..%2F..%2Fetc"), None).await.0,
         StatusCode::NOT_FOUND
     );
-    assert_eq!(h.call("GET", &format!("/api/games/{id}"), None).await.1["system"], "nes");
+    let game = "query($id: Int!) { game(id: $id) { system } }";
+    assert_eq!(h.ok(game, json!({"id": id})).await["game"]["system"], "nes");
+    assert_eq!(h.err(game, json!({"id": 9999})).await.0, "NOT_FOUND");
+    assert_eq!(h.ok(GAMES, json!({"id": "saturn"})).await["system"], Value::Null);
 
     // The home feed: games with artwork are featured, every game is new, none played yet.
-    let (_, home) = h.call("GET", "/api/home", None).await;
-    assert_eq!(home["featured"].as_array().unwrap().len(), 1, "{home}");
-    assert_eq!(home["featured"][0]["title"], "Test Game");
-    assert_eq!(home["added"].as_array().unwrap().len(), 2);
-    assert_eq!(home["recent"], json!([]));
-    assert_eq!(h.call("GET", "/api/systems/saturn/games", None).await.0, StatusCode::NOT_FOUND);
-    assert_eq!(h.call("GET", "/api/games/9999", None).await.0, StatusCode::NOT_FOUND);
+    let home = h.ok("{ home { featured { title } recent { id } added { id } } }", json!({})).await;
+    assert_eq!(home["home"]["featured"], json!([{"title": "Test Game"}]));
+    assert_eq!(home["home"]["added"].as_array().unwrap().len(), 2);
+    assert_eq!(home["home"]["recent"], json!([]));
 
     // A new file appears after a rescan; a deleted one goes.
     std::fs::write(h.dir.join("roms/nes/Second (Japan).nes"), [0u8; 8]).unwrap();
     std::fs::remove_file(h.dir.join("roms/gba/Other.gba")).unwrap();
-    let (_, report) = h.call("POST", "/api/library/scan", None).await;
-    assert_eq!(report, json!({"found": 2, "added": 1, "removed": 1}));
+    let report = h.ok("mutation { scanLibrary { found added removed } }", json!({})).await;
+    assert_eq!(report["scanLibrary"], json!({"found": 2, "added": 1, "removed": 1}));
 
     // No core: starting a game says so, and so does its progress.
-    let start = json!({"game_id": id, "start_id": "no-core-start"});
-    let (status, body) = h.call("POST", "/api/sessions", Some(start)).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body["error"].as_str().unwrap().contains("no core"));
-    let (_, progress) = h.call("GET", "/api/sessions/starting/no-core-start", None).await;
-    assert_eq!(progress["phase"], "failed");
+    let (code, message) = h.err(START, json!({"game": id, "start": "no-core-start"})).await;
+    assert_eq!(code, "UNAVAILABLE");
+    assert!(message.contains("no core"), "{message}");
+    let progress = h.ok(PROGRESS, json!({"id": "no-core-start"})).await["startProgress"].clone();
+    assert_eq!(progress["phase"], "FAILED");
     assert!(progress["error"].as_str().unwrap().contains("no core"));
-    let bad = json!({"game_id": id, "start_id": "../../x"});
-    assert_eq!(h.call("POST", "/api/sessions", Some(bad)).await.0, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        h.call("GET", "/api/sessions/starting/never-started", None).await.0,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(h.call("GET", "/api/nope", None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.err(START, json!({"game": id, "start": "../../x"})).await.0, "BAD_REQUEST");
+    assert_eq!(h.err(PROGRESS, json!({"id": "never-started"})).await.0, "NOT_FOUND");
 }
 
 #[tokio::test]
 async fn runs_a_game_session_in_a_worker() {
     let mut h = Harness::new("session", true).await;
     h.sign_up_admin().await;
-    let (_, systems) = h.call("GET", "/api/systems", None).await;
-    assert_eq!(system(&systems, "nes")["playable"], true);
-    let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
-    let id = games[0]["id"].as_i64().unwrap();
+    assert_eq!(system(&h.systems().await, "nes")["playable"], true);
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
 
-    let start = json!({"game_id": id, "start_id": "first-start-1"});
-    let (status, session) = h.call("POST", "/api/sessions", Some(start)).await;
-    assert_eq!(status, StatusCode::CREATED, "{session}");
-    let (_, progress) = h.call("GET", "/api/sessions/starting/first-start-1", None).await;
-    assert_eq!(progress["phase"], "ready", "{progress}");
-    assert!(progress["elapsed_ms"].as_u64().is_some());
+    let session =
+        h.ok(START, json!({"game": id, "start": "first-start-1"})).await["startSession"].clone();
+    let progress = h.ok(PROGRESS, json!({"id": "first-start-1"})).await["startProgress"].clone();
+    assert_eq!(progress["phase"], "READY", "{progress}");
+    assert!(progress["elapsedMs"].as_f64().is_some());
     assert_eq!(session["core"], "SovEmu Test Core");
     assert_eq!((session["width"].clone(), session["height"].clone()), (json!(256), json!(224)));
     assert_eq!(session["title"], "Test Game");
@@ -306,91 +349,72 @@ async fn runs_a_game_session_in_a_worker() {
     assert!(core.starts_with("fceumm_libretro."), "{core}");
     assert!(options.contains("sovemu_test_pattern"), "{options}");
 
-    let (_, current) = h.call("GET", "/api/sessions/current", None).await;
-    assert_eq!(current["id"], sid.as_str());
-    assert_eq!(
-        h.call("POST", &format!("/api/sessions/{sid}/reset"), None).await.0,
-        StatusCode::NO_CONTENT
-    );
-    let bad = json!({"type": "offer", "sdp": "not sdp"});
-    assert_eq!(
-        h.call("POST", &format!("/api/sessions/{sid}/offer"), Some(bad)).await.0,
-        StatusCode::BAD_REQUEST
-    );
+    let current = h.ok("{ currentSession { id connected } }", json!({})).await;
+    assert_eq!(current["currentSession"]["id"], sid.as_str());
+    let reset = "mutation($id: ID!) { resetSession(id: $id) }";
+    assert_eq!(h.ok(reset, json!({"id": sid})).await["resetSession"], true);
+    let offer = "mutation($id: ID!) { sessionOffer(id: $id, sdp: \"not sdp\") }";
+    assert_eq!(h.err(offer, json!({"id": sid})).await.0, "BAD_REQUEST");
 
     // Save states: save slot 2, see it listed, load it; an empty slot cannot be loaded.
-    let states = format!("/api/games/{id}/states");
-    assert_eq!(h.call("GET", &states, None).await.1, json!([]));
+    let saves = "query($id: Int!) { game(id: $id) { saves { slot savedAt screenshotUrl } autoSave { slot } } }";
+    let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
+    let load = "mutation($s: ID!, $slot: Int!) { loadState(sessionId: $s, slot: $slot) }";
+    let delete = "mutation($g: Int!, $slot: Int!) { deleteSave(gameId: $g, slot: $slot) }";
+    assert_eq!(h.ok(saves, json!({"id": id})).await["game"]["saves"], json!([]));
+    h.ok(save, json!({"s": sid, "slot": 2})).await;
+    let game = h.ok(saves, json!({"id": id})).await["game"].clone();
+    assert_eq!(game["saves"][0]["slot"], 2);
+    assert_eq!(game["saves"][0]["screenshotUrl"], Value::Null, "no frame streamed yet");
+    assert_eq!(game["autoSave"], Value::Null);
+    h.ok(load, json!({"s": sid, "slot": 2})).await;
+    let (code, message) = h.err(load, json!({"s": sid, "slot": 5})).await;
+    assert_eq!(code, "BAD_REQUEST");
+    assert!(message.contains("empty"), "{message}");
     assert_eq!(
-        h.call("POST", &format!("/api/sessions/{sid}/states/2"), None).await.0,
-        StatusCode::NO_CONTENT
-    );
-    let (_, slots) = h.call("GET", &states, None).await;
-    assert_eq!(slots[0]["slot"], 2);
-    assert_eq!(slots[0]["screenshot"], false, "no frame streamed yet");
-    assert_eq!(
-        h.call("POST", &format!("/api/sessions/{sid}/states/2/load"), None).await.0,
-        StatusCode::NO_CONTENT
-    );
-    let (status, body) = h.call("POST", &format!("/api/sessions/{sid}/states/5/load"), None).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("empty"));
-    assert_eq!(
-        h.call("GET", &format!("{states}/2/screenshot"), None).await.0,
+        h.call("GET", &format!("/media/games/{id}/saves/2"), None).await.0,
         StatusCode::NOT_FOUND
     );
     assert!(h.dir.join("saves/1/nes/states/Test Game (USA)/slot2.state").is_file());
-    assert_eq!(h.call("DELETE", &format!("{states}/2"), None).await.0, StatusCode::NO_CONTENT);
-    assert_eq!(h.call("GET", &states, None).await.1, json!([]));
-    assert_eq!(h.call("DELETE", &format!("{states}/2"), None).await.0, StatusCode::NOT_FOUND);
+    h.ok(delete, json!({"g": id, "slot": 2})).await;
+    assert_eq!(h.ok(saves, json!({"id": id})).await["game"]["saves"], json!([]));
+    assert_eq!(h.err(delete, json!({"g": id, "slot": 2})).await.0, "NOT_FOUND");
 
     // Cheats: added, toggled and removed while the game runs (each change reaches the worker).
-    let cheats = format!("/api/games/{id}/cheats");
-    let (status, list) = h
-        .call("POST", &cheats, Some(json!({"code": " SXIOPO ", "description": "Infinite lives"})))
-        .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(list[0]["code"], "SXIOPO");
-    assert_eq!(list[0]["enabled"], true);
+    let add = "mutation($g: Int!, $c: String!, $d: String!) { addCheat(gameId: $g, code: $c, description: $d) { id code enabled } }";
+    let set = "mutation($g: Int!, $c: Int!) { setCheatEnabled(gameId: $g, cheatId: $c, enabled: false) { enabled } }";
+    let remove = "mutation($g: Int!, $c: Int!) { deleteCheat(gameId: $g, cheatId: $c) }";
+    let list =
+        h.ok(add, json!({"g": id, "c": " SXIOPO ", "d": "Infinite lives"})).await["addCheat"]
+            .clone();
+    assert_eq!(
+        (list[0]["code"].clone(), list[0]["enabled"].clone()),
+        (json!("SXIOPO"), json!(true))
+    );
     let cheat = list[0]["id"].as_i64().unwrap();
-    let (_, list) =
-        h.call("PATCH", &format!("{cheats}/{cheat}"), Some(json!({"enabled": false}))).await;
-    assert_eq!(list[0]["enabled"], false);
     assert_eq!(
-        h.call("POST", &cheats, Some(json!({"code": "  "}))).await.0,
-        StatusCode::BAD_REQUEST
+        h.ok(set, json!({"g": id, "c": cheat})).await["setCheatEnabled"][0]["enabled"],
+        false
     );
-    assert_eq!(
-        h.call("DELETE", &format!("{cheats}/{cheat}"), None).await.0,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(h.call("DELETE", &format!("{cheats}/{cheat}"), None).await.0, StatusCode::NOT_FOUND);
-    assert_eq!(
-        h.call("POST", "/api/games/9999/cheats", Some(json!({"code": "X"}))).await.0,
-        StatusCode::NOT_FOUND
-    );
+    assert_eq!(h.err(add, json!({"g": id, "c": "  ", "d": ""})).await.0, "BAD_REQUEST");
+    h.ok(remove, json!({"g": id, "c": cheat})).await;
+    assert_eq!(h.err(remove, json!({"g": id, "c": cheat})).await.0, "NOT_FOUND");
+    assert_eq!(h.err(add, json!({"g": 9999, "c": "X", "d": ""})).await.0, "NOT_FOUND");
 
     // Play history is recorded.
-    let (_, games) = h.call("GET", "/api/systems/nes/games", None).await;
-    assert_eq!(games[0]["play_count"], 1);
-    let (_, home) = h.call("GET", "/api/home", None).await;
-    assert_eq!(home["recent"][0]["id"], id, "the game just played comes first: {home}");
+    assert_eq!(h.games("nes").await[0]["playCount"], 1);
+    let home = h.ok("{ home { recent { id } } }", json!({})).await;
+    assert_eq!(home["home"]["recent"][0]["id"], id, "the game just played comes first");
 
     // Starting another game replaces the session; stopping ends it.
-    let (_, second) = h.call("POST", "/api/sessions", Some(json!({"game_id": id}))).await;
-    assert_ne!(second["id"], sid.as_str());
+    let second = h.ok(START, json!({"game": id})).await["startSession"]["id"].clone();
+    assert_ne!(second, sid.as_str());
     assert_eq!(h.state.workers.count(), 1);
-    let second_id = second["id"].as_str().unwrap().to_owned();
-    assert_eq!(
-        h.call("DELETE", &format!("/api/sessions/{second_id}"), None).await.0,
-        StatusCode::NO_CONTENT
-    );
+    let stop = "mutation($id: ID!) { stopSession(id: $id) }";
+    h.ok(stop, json!({"id": second})).await;
     assert_eq!(h.state.workers.count(), 0);
-    assert_eq!(h.call("GET", "/api/sessions/current", None).await.1, Value::Null);
-    assert_eq!(
-        h.call("DELETE", &format!("/api/sessions/{sid}"), None).await.0,
-        StatusCode::NOT_FOUND
-    );
+    assert_eq!(h.ok("{ currentSession { id } }", json!({})).await["currentSession"], Value::Null);
+    assert_eq!(h.err(stop, json!({"id": sid})).await.0, "NOT_FOUND");
 }
 
 /// A stand-in for ScreenScraper and TheGamesDB on a local port. ScreenScraper answers for the
@@ -476,7 +500,7 @@ fn metadata_args(base: &str) -> Vec<String> {
 
 async fn wait_for_job(h: &mut Harness) -> Value {
     for _ in 0..200 {
-        let (_, status) = h.call("GET", "/api/metadata/status", None).await;
+        let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
         if status["running"] == false && status["done"].as_u64() > Some(0) {
             return status;
         }
@@ -485,15 +509,17 @@ async fn wait_for_job(h: &mut Harness) -> Value {
     panic!("the metadata job did not finish");
 }
 
+const FETCH: &str = "mutation($s: ID) { fetchMetadata(system: $s) { running } }";
+
 #[tokio::test]
 async fn fetches_metadata_from_both_services() {
     let base = mock_services(false).await;
     let mut h = Harness::new_with("metadata", false, metadata_args(&base)).await;
     h.sign_up_admin().await;
-    let (_, status) = h.call("GET", "/api/metadata/status", None).await;
+    let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
     assert_eq!(status["sources"], json!(["fbneo", "screenscraper", "thegamesdb"]));
 
-    assert_eq!(h.call("POST", "/api/metadata/fetch", None).await.0, StatusCode::ACCEPTED);
+    h.ok(FETCH, json!({})).await;
     let status = wait_for_job(&mut h).await;
     assert_eq!(
         (status["found"].clone(), status["failed"].clone()),
@@ -502,32 +528,26 @@ async fn fetches_metadata_from_both_services() {
     );
 
     // ScreenScraper named the NES game and described it; the file's own title is kept too.
-    let (_, nes) = h.call("GET", "/api/systems/nes/games", None).await;
+    let nes = h.games("nes").await;
     assert_eq!(nes[0]["title"], "Castlevania");
-    assert_eq!(nes[0]["file_title"], "Test Game");
+    assert_eq!(nes[0]["fileTitle"], "Test Game");
     assert_eq!(nes[0]["developer"], "Konami");
-    assert_eq!(nes[0]["release_date"], "1987-05-01");
+    assert_eq!(nes[0]["releaseDate"], "1987-05-01");
     assert_eq!(nes[0]["rating"], 0.8);
 
     // TheGamesDB filled in the GBA game, and its box art stands in for the missing thumb.
-    let (_, gba) = h.call("GET", "/api/systems/gba/games", None).await;
+    let gba = h.games("gba").await;
     assert_eq!(gba[0]["description"], "From TGDB");
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
-    assert_eq!(gba[0]["media"], json!(["thumb"]));
+    assert_eq!(gba[0]["media"], json!(["THUMB"]));
     let id = gba[0]["id"].as_i64().unwrap();
-    assert_eq!(
-        h.call("GET", &format!("/api/games/{id}/media/thumb"), None).await.0,
-        StatusCode::OK
-    );
+    assert_eq!(h.call("GET", &format!("/media/games/{id}/thumb"), None).await.0, StatusCode::OK);
 
     // Looked-up games are not asked for again.
-    assert_eq!(
-        h.call("POST", "/api/metadata/fetch", Some(json!({}))).await.0,
-        StatusCode::ACCEPTED
-    );
+    h.ok(FETCH, json!({})).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(h.call("GET", "/api/metadata/status", None).await.1["total"], 0);
+    assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
 }
 
 #[tokio::test]
@@ -535,14 +555,13 @@ async fn stops_a_service_that_is_out_of_quota() {
     let base = mock_services(true).await;
     let mut h = Harness::new_with("metadata-quota", false, metadata_args(&base)).await;
     h.sign_up_admin().await;
-    h.call("POST", "/api/metadata/fetch", Some(json!({"system": "nes"}))).await;
+    h.ok(FETCH, json!({"s": "nes"})).await;
     let status = wait_for_job(&mut h).await;
     assert_eq!(status["total"], 1, "only the system asked for");
     assert!(status["notes"][0].as_str().unwrap().contains("quota"), "{status}");
     // A failed lookup is not stored, so the next job retries it.
-    let (_, nes) = h.call("GET", "/api/systems/nes/games", None).await;
-    assert_eq!(nes[0]["description"], Value::Null);
-    h.call("POST", "/api/metadata/fetch", Some(json!({"system": "nes"}))).await;
+    assert_eq!(h.games("nes").await[0]["description"], Value::Null);
+    h.ok(FETCH, json!({"s": "nes"})).await;
     assert_eq!(wait_for_job(&mut h).await["total"], 1);
 }
 
@@ -552,28 +571,29 @@ async fn mirror_mode_copies_the_library_and_plays_from_it() {
         Harness::new_with("mirror", false, vec!["--library-mode".into(), "mirror".into()]).await;
     h.sign_up_admin().await;
     assert_eq!(h.state.config.roms_dir, h.dir.join("library"), "the server plays from the mirror");
-    let (_, status) = h.call("GET", "/api/library/status", None).await;
-    assert_eq!((status["mode"].clone(), status["games"].clone()), (json!("mirror"), json!(0)));
+    let status = h.ok(LIBRARY, json!({})).await["libraryStatus"].clone();
+    assert_eq!((status["mode"].clone(), status["games"].clone()), (json!("MIRROR"), json!(0)));
 
     crate::admin::sync_then_scan(h.state.clone()).await;
     assert!(
         h.dir.join("library/nes/images/Test Game (USA)-thumb.png").is_file(),
         "artwork is mirrored too"
     );
-    let (_, status) = h.call("GET", "/api/library/status", None).await;
+    let status = h.ok(LIBRARY, json!({})).await["libraryStatus"].clone();
     assert_eq!(status["games"], 2);
-    assert_eq!(status["mirror"]["files_done"], 3);
-    assert_eq!(status["mirror"]["running"], false);
-    assert_eq!(h.call("POST", "/api/library/sync", None).await.0, StatusCode::ACCEPTED);
+    assert_eq!(status["mirror"], json!({"running": false, "filesDone": 3}));
+    assert_eq!(h.ok("mutation { syncLibrary }", json!({})).await["syncLibrary"], true);
 }
 
 #[tokio::test]
 async fn library_status_reports_direct_mode() {
     let mut h = Harness::new("direct", false).await;
     h.sign_up_admin().await;
-    let (_, status) = h.call("GET", "/api/library/status", None).await;
-    assert_eq!(status, json!({"mode": "direct", "games": 2, "cache_bytes": null, "mirror": null}));
-    assert_eq!(h.call("POST", "/api/library/sync", None).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        h.ok(LIBRARY, json!({})).await["libraryStatus"],
+        json!({"mode": "DIRECT", "games": 2, "cacheBytes": null, "mirror": null})
+    );
+    assert_eq!(h.err("mutation { syncLibrary }", json!({})).await.0, "BAD_REQUEST");
 }
 
 #[tokio::test]
@@ -587,11 +607,9 @@ async fn the_admin_comes_from_the_environment() {
         ]
     };
     let mut h = Harness::new_with("env-admin", false, admin("first-password")).await;
-    let (_, status) = h.call("GET", "/api/auth/status", None).await;
-    assert_eq!(status["setup_required"], false, "no first-run page when the admin is configured");
-    let login = |pw: &str| json!({"username": "boss", "password": pw});
-    let (code, user) = h.call("POST", "/api/auth/login", Some(login("first-password"))).await;
-    assert_eq!((code, user["is_admin"].clone()), (StatusCode::OK, json!(true)));
+    let viewer = h.ok(VIEWER, json!({})).await["viewer"].clone();
+    assert_eq!(viewer["setupRequired"], false, "no first-run page when the admin is configured");
+    assert_eq!(h.login("boss", "first-password").await.unwrap()["isAdmin"], true);
 
     // Restarting with a new password rotates it and signs existing browsers out.
     let config = Config::parse_from(
@@ -600,22 +618,11 @@ async fn the_admin_comes_from_the_environment() {
             .map(str::to_owned)
             .chain(admin("second-password")),
     );
-    let state = build_state(config).await.unwrap();
-    h.state = state;
-    assert_eq!(
-        h.call("GET", "/api/systems", None).await.0,
-        StatusCode::UNAUTHORIZED,
-        "old session gone"
-    );
+    h.state = build_state(config).await.unwrap();
+    assert_eq!(h.err(SYSTEMS, json!({})).await.0, "UNAUTHENTICATED", "old session gone");
     h.cookie = None;
-    assert_eq!(
-        h.call("POST", "/api/auth/login", Some(login("first-password"))).await.0,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        h.call("POST", "/api/auth/login", Some(login("second-password"))).await.0,
-        StatusCode::OK
-    );
+    assert_eq!(h.login("boss", "first-password").await, Err("UNAUTHENTICATED".into()));
+    assert!(h.login("boss", "second-password").await.is_ok());
 }
 
 #[tokio::test]
@@ -639,14 +646,7 @@ async fn declared_users_are_reconciled_and_pruned() {
         restart(vec![user("mum", "password-mum", true), user("kid", "password-kid", false)], false);
     h.state = build_state(config).await.unwrap();
     h.cookie = None;
-    let (code, me) = h
-        .call(
-            "POST",
-            "/api/auth/login",
-            Some(json!({"username": "kid", "password": "password-kid"})),
-        )
-        .await;
-    assert_eq!((code, me["is_admin"].clone()), (StatusCode::OK, json!(false)));
+    assert_eq!(h.login("kid", "password-kid").await.unwrap()["isAdmin"], false);
     let names = |state: &AppState| {
         let db = state.db.clone();
         async move {
@@ -684,73 +684,67 @@ async fn system_overrides_hide_systems_and_choose_cores() {
     ])
     .unwrap();
     h.state.config = std::sync::Arc::new(config);
-    let (_, systems) = h.call("GET", "/api/systems", None).await;
+    let systems = h.systems().await;
     let ids: Vec<&str> =
         systems.as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
     assert!(!ids.contains(&"gba"), "disabled systems are hidden");
-    assert_eq!(h.call("GET", "/api/systems/gba/games", None).await.0, StatusCode::NOT_FOUND);
-    let (_, home) = h.call("GET", "/api/home", None).await;
-    let added: Vec<&str> =
-        home["added"].as_array().unwrap().iter().map(|g| g["system"].as_str().unwrap()).collect();
-    assert_eq!(added, ["nes"], "hidden systems stay off the home screen");
+    assert_eq!(h.ok(GAMES, json!({"id": "gba"})).await["system"], Value::Null);
+    let home = h.ok("{ home { added { system } } }", json!({})).await;
+    assert_eq!(
+        home["home"]["added"],
+        json!([{"system": "nes"}]),
+        "hidden systems stay off the home screen"
+    );
 
     // NES now needs nestopia: an fceumm core does not count.
     let cores = h.state.config.cores_dir.clone();
     std::fs::write(cores.join("fceumm_libretro.so"), b"").unwrap();
-    let (_, systems) = h.call("GET", "/api/systems", None).await;
-    let nes = systems.as_array().unwrap().iter().find(|s| s["id"] == "nes").unwrap().clone();
-    assert_eq!(nes["playable"], false);
+    assert_eq!(system(&h.systems().await, "nes")["playable"], false);
     std::fs::write(cores.join("nestopia_libretro.so"), b"").unwrap();
-    let (_, systems) = h.call("GET", "/api/systems", None).await;
-    let nes = systems.as_array().unwrap().iter().find(|s| s["id"] == "nes").unwrap().clone();
-    assert_eq!(nes["playable"], true);
+    assert_eq!(system(&h.systems().await, "nes")["playable"], true);
 }
 
 #[tokio::test]
 async fn admins_change_emulator_settings() {
     let mut h = Harness::new("settings", true).await;
     h.sign_up_admin().await;
+    let get = "query($s: ID!) { emulatorSettings(system: $s) {
+        core environment settings { key choices labels value source info category } } }";
+    let change = "mutation($s: ID!, $c: [SettingChange!]!) { changeEmulatorSettings(system: $s, changes: $c) {
+        environment settings { key value source } } }";
     let setting = |body: &Value, key: &str| {
         body["settings"].as_array().unwrap().iter().find(|s| s["key"] == key).unwrap().clone()
     };
 
     // What the core declares, probed in a worker.
-    let (status, body) = h.call("GET", "/api/systems/nes/settings", None).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let body = h.ok(get, json!({"s": "nes"})).await["emulatorSettings"].clone();
     assert_eq!(body["core"], "SovEmu Test Core 1.0.0");
     let pattern = setting(&body, "sovemu_test_pattern");
     assert_eq!(pattern["choices"], json!(["gradient", "solid"]));
+    assert_eq!(pattern["labels"], json!(["Gradient", "Solid colour"]));
+    assert_eq!(pattern["category"], "video");
     assert_eq!(
         (pattern["value"].clone(), pattern["source"].clone()),
-        (json!("gradient"), json!("core"))
+        (json!("gradient"), json!("CORE"))
     );
 
     // Changed, kept, offered as an environment line, and reset.
-    let change = json!({"sovemu_test_pattern": "solid"});
-    let (status, body) = h.call("PUT", "/api/systems/nes/settings", Some(change)).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    let to = |v: Value| json!({"s": "nes", "c": [{"key": "sovemu_test_pattern", "value": v}]});
+    let body = h.ok(change, to(json!("solid"))).await["changeEmulatorSettings"].clone();
     let pattern = setting(&body, "sovemu_test_pattern");
     assert_eq!(
         (pattern["value"].clone(), pattern["source"].clone()),
-        (json!("solid"), json!("admin"))
+        (json!("solid"), json!("ADMIN"))
     );
     assert_eq!(
         body["environment"],
         json!(["SOVEMU_SYSTEMS__nes__OPTIONS__sovemu_test_pattern=solid"])
     );
-    let bad = json!({"sovemu_test_pattern": "plaid"});
-    assert_eq!(
-        h.call("PUT", "/api/systems/nes/settings", Some(bad)).await.0,
-        StatusCode::BAD_REQUEST
-    );
-    let unknown = json!({"no_such_option": "x"});
-    assert_eq!(
-        h.call("PUT", "/api/systems/nes/settings", Some(unknown)).await.0,
-        StatusCode::BAD_REQUEST
-    );
-    let reset = json!({"sovemu_test_pattern": null});
-    let (_, body) = h.call("PUT", "/api/systems/nes/settings", Some(reset)).await;
-    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "core");
+    assert_eq!(h.err(change, to(json!("plaid"))).await.0, "BAD_REQUEST");
+    let unknown = json!({"s": "nes", "c": [{"key": "no_such_option", "value": "x"}]});
+    assert_eq!(h.err(change, unknown).await.0, "BAD_REQUEST");
+    let body = h.ok(change, to(Value::Null)).await["changeEmulatorSettings"].clone();
+    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "CORE");
 
     // The environment wins and is locked.
     let mut config = (*h.state.config).clone();
@@ -760,15 +754,11 @@ async fn admins_change_emulator_settings() {
     )])
     .unwrap();
     h.state.config = std::sync::Arc::new(config);
-    let (_, body) = h.call("GET", "/api/systems/nes/settings", None).await;
-    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "environment");
-    let change = json!({"sovemu_test_pattern": "gradient"});
-    assert_eq!(
-        h.call("PUT", "/api/systems/nes/settings", Some(change)).await.0,
-        StatusCode::CONFLICT
-    );
+    let body = h.ok(get, json!({"s": "nes"})).await["emulatorSettings"].clone();
+    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "ENVIRONMENT");
+    assert_eq!(h.err(change, to(json!("gradient"))).await.0, "CONFLICT");
 
     // Admins only.
     h.cookie = None;
-    assert_eq!(h.call("GET", "/api/systems/nes/settings", None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(h.err(get, json!({"s": "nes"})).await.0, "UNAUTHENTICATED");
 }

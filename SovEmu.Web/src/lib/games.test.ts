@@ -4,15 +4,15 @@ import { activeFilters, filterGames, jumpTo, letterOf, maxPlayers, sortGames, ta
 
 let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
-  id: nextId++, system: "nes", title, tags: "", path: `${title}.nes`, size: 1, last_played_at: null, play_count: null,
-  media: [], file_title: null, description: null, release_date: null, developer: null, publisher: null, genre: null,
-  players: null, rating: null, ...over,
+  id: nextId++, system: "nes", title, tags: [], path: `${title}.nes`, size: 1, lastPlayedAt: null, playCount: 0,
+  image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
+  publisher: null, genre: null, players: null, rating: null, ...over,
 });
 
-const metroid = game("Metroid", { release_date: "1986-08-06", genre: "Action", players: "1", play_count: 3, last_played_at: "2026-11-13 10:00:00", tags: "USA" });
-const mario = game("Super Mario Bros.", { release_date: "1985-09-13", genre: "Platform", players: "1-2", play_count: 1, last_played_at: "2026-11-14 09:00:00", tags: "USA, Europe" });
-const pokemon = game("Pokémon Puzzle", { players: "2", tags: "Europe" });
-const tetris = game("Tetris", { release_date: "1989" });
+const metroid = game("Metroid", { releaseDate: "1986-08-06", genre: "Action", players: "1", playCount: 3, lastPlayedAt: "2026-11-13 10:00:00", tags: ["USA"] });
+const mario = game("Super Mario Bros.", { releaseDate: "1985-09-13", genre: "Platform", players: "1-2", playCount: 1, lastPlayedAt: "2026-11-14 09:00:00", tags: ["USA", "Europe"] });
+const pokemon = game("Pokémon Puzzle", { players: "2", tags: ["Europe"] });
+const tetris = game("Tetris", { releaseDate: "1989" });
 const all = [tetris, pokemon, mario, metroid];
 
 describe("searching and filtering", () => {

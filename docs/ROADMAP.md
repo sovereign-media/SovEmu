@@ -181,6 +181,8 @@ held 59.93 fps over 300 frames with no resyncs.
       image for every host. GPUs without a DRM node are used too
 - [x] Cores prebuilt from the libretro stable release (1.22.2, pinned by SHA-256) instead of
       compiled from source; the image is x86_64 only
+- [x] The API is GraphQL only (async-graphql; `schema.graphql` checked in; the web client typed
+      by codegen; Android and iOS moved to it); files stay plain HTTP under `/media/`
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend)
 - [ ] Hardware video encoding (VA-API) when a GPU is present
 

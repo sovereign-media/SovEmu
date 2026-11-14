@@ -7,15 +7,17 @@ import react from "@astrojs/react";
 // /api routes (in the container, from /opt/sovemu/web). Nothing here runs server-side: pages are
 // React islands (Radix UI primitives, Lucide icons) rendered in the browser.
 //
-// For `npm run dev`, /api is proxied to a locally running server, so start one with e.g.
-//   sovemu-worker serve --core ... --http 127.0.0.1:8080
+// For `npm run dev`, the API (/graphql) and files (/media) are proxied to a locally running
+// sovemu-server (SOVEMU_API, default 127.0.0.1:8080).
 export default defineConfig({
   output: "static",
   integrations: [react()],
   vite: {
     plugins: [tailwindcss()],
     server: {
-      proxy: { "/api": process.env.SOVEMU_API ?? "http://127.0.0.1:8080" },
+      proxy: Object.fromEntries(
+        ["/graphql", "/media"].map((path) => [path, process.env.SOVEMU_API ?? "http://127.0.0.1:8080"]),
+      ),
     },
   },
 });
