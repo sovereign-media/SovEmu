@@ -1,196 +1,126 @@
-// One system's games: a searchable, sortable, filterable list on the left (with an A–Z strip),
-// the chosen game's details on the right (artwork, facts, description, Continue / Start over,
-// save slots). Pad and keyboard: up/down choose, left/right (and the shoulder buttons) page,
-// A plays, Start searches, B goes home. The list logic is src/lib/games.ts.
-import {
-  Building2,
-  CalendarDays,
-  Check,
-  CircleCheck,
-  ListFilter,
-  Play,
-  RotateCcw,
-  Search,
-  Tag,
-  Users,
-  X,
-} from "lucide-react";
+// One system's games as a grid of covers, after Sovereign's browse pages: a header with a capsule
+// of chips (Sort, Filters, Jump), the grid, and a side panel with the chosen game's details.
+// The panel has its own URL (`/system/?id=nes&game=42`): opening one there opens the panel, Back
+// closes it, and moving between games with it open replaces the URL rather than stacking it.
+//
+// Pad and keyboard: the d-pad moves through the grid, A opens the panel (and in it plays), B
+// closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
+// The list logic is src/lib/games.ts.
+import { ArrowDownAZ, Check, CircleCheck, SlidersHorizontal, Users } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
 import {
-  AUTO_SLOT,
-  api,
-  formatAgo,
-  formatSize,
-  type Game,
-  type SaveSlot,
-  type SystemSummary,
-} from "../lib/api";
-import {
-  LETTERS,
   SORTS,
   activeFilters,
   filterGames,
+  gameFromUrl,
+  gridMove,
+  jumpStops,
   jumpTo,
   letterOf,
   maxPlayers,
   sortGames,
-  tagCounts,
-  tagsOf,
+  urlWithGame,
   type GameFilters,
   type GameSort,
 } from "../lib/games";
 import { listenNav } from "../lib/nav";
+import { FilterDrawer } from "./browse/FilterDrawer";
+import { GamePanel } from "./browse/GamePanel";
+import { JumpButton, JumpStrip } from "./browse/JumpStrip";
+import { CHIP, CHIP_ON, TabStrip, TabStripDivider } from "./browse/TabStrip";
 import HintBar from "./HintBar";
 import Shell from "./Shell";
 import SideNav, { NAV_SPACE } from "./SideNav";
-import { Button } from "./ui/button";
 import { cn } from "./ui/cn";
-import { Select, Tooltip } from "./ui/primitives";
 
-const PAGE = 10;
 const SORT_KEY = "sovemu.sort";
+/** How long the jump strip rests on a letter before the grid follows it. */
+const FOLLOW_DELAY_MS = 300;
 
-/** A small cover for a list row, or the system's colour where there is no art. */
-function Thumb({ game, color, short }: { game: Game; color: string; short: string }) {
+/** A cover in the grid. */
+function GameCard({
+  game,
+  system,
+  focused,
+  open,
+  onOpen,
+}: {
+  game: Game;
+  system: SystemSummary;
+  focused: boolean;
+  open: boolean;
+  onOpen: () => void;
+}) {
   const art = game.thumb ?? game.image;
+  const players = maxPlayers(game.players);
   return (
-    <span
-      className="relative grid h-9 w-12 shrink-0 place-items-center overflow-hidden rounded text-[9px] font-black text-white/70"
-      style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 30%, black))` }}
+    <button
+      type="button"
+      data-game-card={game.id}
+      onClick={onOpen}
+      aria-label={game.title}
+      aria-current={open || undefined}
+      className="group grid cursor-pointer content-start gap-2 text-left outline-none"
     >
-      {short}
-      {art && <img src={art} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
-    </span>
+      <div
+        className={cn(
+          "relative grid aspect-[3/4] place-items-center overflow-hidden rounded-xl border border-white/10 shadow-lg transition-all duration-150",
+          focused
+            ? "scale-105 ring-4 ring-white/80"
+            : open
+              ? "ring-2 ring-accent"
+              : "group-hover:scale-[1.03] group-focus-visible:ring-2 group-focus-visible:ring-white/60",
+        )}
+        style={{ background: `linear-gradient(145deg, ${system.color}, color-mix(in srgb, ${system.color} 30%, black))` }}
+      >
+        <span className="px-3 text-center text-sm font-bold text-white/80">{game.title}</span>
+        {art && <img src={art} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
+        {!!game.playCount && (
+          <span className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-white" title="Played">
+            <CircleCheck className="size-4" />
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 px-0.5">
+        <p className="truncate text-sm font-semibold">{game.title}</p>
+        <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+          {game.releaseDate?.slice(0, 4) ?? game.tags[0] ?? system.short}
+          {players !== null && players >= 2 && (
+            <span className="flex items-center gap-0.5">
+              · <Users className="size-3" /> {players}
+            </span>
+          )}
+        </p>
+      </div>
+    </button>
   );
 }
 
-/** The details pane's picture: the screenshot (or box art), then its video snap after a pause,
- *  with the box art over a corner when there is both. */
-function Art({ game, color, short }: { game: Game; color: string; short: string }) {
-  const [video, setVideo] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => {
-    setVideo(false);
-    setPlaying(false);
-    if (!game.video) return;
-    const t = setTimeout(() => setVideo(true), 900);
-    return () => clearTimeout(t);
-  }, [game.id]);
-  const still = game.image ?? game.thumb;
-  const boxArt = game.image && game.thumb;
-  return (
-    <div
-      className="relative grid aspect-video shrink-0 place-items-center overflow-hidden rounded-t-2xl text-6xl font-black text-white/80"
-      style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 30%, black))` }}
-    >
-      <span>{short}</span>
-      {still && (
-        <img
-          key={game.id}
-          src={still}
-          alt=""
-          className={cn("absolute inset-0 size-full", game.image ? "object-cover" : "object-contain")}
-        />
-      )}
-      {video && (
-        <video
-          src={game.video ?? undefined}
-          autoPlay
-          muted
-          loop
-          playsInline
-          onPlaying={() => setPlaying(true)}
-          className={cn("absolute inset-0 size-full object-cover", !playing && "hidden")}
-        />
-      )}
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-panel to-transparent" />
-      {boxArt && (
-        <img src={boxArt} alt="" className="absolute bottom-3 left-4 h-1/2 rounded-md object-contain shadow-2xl" />
-      )}
-    </div>
-  );
-}
-
-function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <span className="flex items-center gap-1.5 text-sm text-slate-300 [&_svg]:size-4 [&_svg]:text-slate-500">
-      {icon}
-      {children}
-    </span>
-  );
-}
-
-const ago = (unix: number) => formatAgo(new Date(unix * 1000).toISOString().replace("T", " ").slice(0, 19));
-
-/** Played, players and tags: a menu of checkboxes that stays open while ticking. */
-function FilterMenu({ games, filters, onChange }: { games: Game[]; filters: GameFilters; onChange: (f: GameFilters) => void }) {
-  const tags = useMemo(() => tagCounts(games).slice(0, 12), [games]);
-  const n = activeFilters(filters);
-  const item =
-    "relative flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 pl-7 text-sm text-slate-200 outline-none select-none data-[highlighted]:bg-white/10";
-  const check = (
-    <DropdownMenu.ItemIndicator className="absolute left-2">
-      <Check className="size-3.5" />
-    </DropdownMenu.ItemIndicator>
-  );
-  const label = "px-2 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase";
-  const toggleTag = (t: string) => {
-    const has = filters.tags?.includes(t);
-    onChange({ ...filters, tags: has ? filters.tags!.filter((x) => x !== t) : [...(filters.tags ?? []), t] });
-  };
-  const box = (checked: boolean, onCheck: (on: boolean) => void, children: ReactNode, key?: string) => (
-    <DropdownMenu.CheckboxItem
-      key={key}
-      className={item}
-      checked={checked}
-      onSelect={(e) => e.preventDefault()}
-      onCheckedChange={(on) => onCheck(on === true)}
-    >
-      {check}
-      {children}
-    </DropdownMenu.CheckboxItem>
-  );
+function SortChip({ sort, onSort }: { sort: GameSort; onSort: (s: GameSort) => void }) {
+  const label = SORTS.find((s) => s.value === sort)?.label ?? "Title";
   return (
     <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <Button variant="outline" className={cn("h-9", n > 0 && "border-accent text-white")}>
-          <ListFilter /> Filter
-          {n > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] leading-4">{n}</span>}
-        </Button>
+      <DropdownMenu.Trigger className={CHIP} aria-label={`Sort: ${label}`}>
+        <ArrowDownAZ /> {label}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={6}
-          collisionPadding={8}
-          className="z-50 max-h-[70dvh] w-56 overflow-y-auto rounded-lg border border-edge bg-panel p-1 shadow-2xl"
-        >
-          <DropdownMenu.Label className={label}>Played</DropdownMenu.Label>
-          {box(filters.played === "played", (on) => onChange({ ...filters, played: on ? "played" : undefined }), "Played before")}
-          {box(filters.played === "unplayed", (on) => onChange({ ...filters, played: on ? "unplayed" : undefined }), "Not played yet")}
-          <DropdownMenu.Label className={label}>Players</DropdownMenu.Label>
-          {box(!!filters.multiplayer, (on) => onChange({ ...filters, multiplayer: on || undefined }), "2 players or more")}
-          {tags.length > 0 && <DropdownMenu.Label className={label}>Tags</DropdownMenu.Label>}
-          {tags.map(({ tag, count }) =>
-            box(
-              !!filters.tags?.includes(tag),
-              () => toggleTag(tag),
-              <>
-                <span className="flex-1 truncate">{tag}</span>
-                <span className="text-xs text-slate-500 tabular-nums">{count}</span>
-              </>,
-              tag,
-            ),
-          )}
-          {n > 0 && (
-            <>
-              <DropdownMenu.Separator className="my-1 h-px bg-white/10" />
-              <DropdownMenu.Item className={cn(item, "pl-2 text-slate-400")} onSelect={() => onChange({})}>
-                <X className="size-3.5" /> Clear filters
-              </DropdownMenu.Item>
-            </>
-          )}
+        <DropdownMenu.Content sideOffset={8} align="start" className="z-50 min-w-44 rounded-xl border border-edge bg-panel p-1 shadow-2xl">
+          <DropdownMenu.RadioGroup value={sort} onValueChange={(v) => onSort(v as GameSort)}>
+            {SORTS.map((s) => (
+              <DropdownMenu.RadioItem
+                key={s.value}
+                value={s.value}
+                className="relative flex cursor-pointer items-center rounded-lg py-1.5 pr-3 pl-8 text-sm text-slate-200 outline-none select-none data-[highlighted]:bg-white/10"
+              >
+                <DropdownMenu.ItemIndicator className="absolute left-2.5">
+                  <Check className="size-3.5" />
+                </DropdownMenu.ItemIndicator>
+                {s.label}
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -199,16 +129,22 @@ function FilterMenu({ games, filters, onChange }: { games: Game[]; filters: Game
 
 function Games() {
   const systemId = new URLSearchParams(location.search).get("id") ?? "";
-  const rememberKey = `sovemu.game.${systemId}`;
   const [system, setSystem] = useState<SystemSummary | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<GameSort>(() => (localStorage.getItem(SORT_KEY) as GameSort) || "title");
   const [filters, setFilters] = useState<GameFilters>({});
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [focus, setFocus] = useState(0);
+  // Focus rings show once a pad or the keyboard is used, not for the mouse.
+  const [navigating, setNavigating] = useState(false);
+  const [openId, setOpenId] = useState<number | null>(() => gameFromUrl(location.search));
   const [slots, setSlots] = useState<SaveSlot[]>([]);
-  const list = useRef<HTMLOListElement>(null);
+  const [jump, setJump] = useState<{ index: number; scrollY: number } | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  /** Whether this page pushed the panel's history entry (so closing it goes Back). */
+  const pushed = useRef(false);
 
   useEffect(() => {
     api.system(systemId).then((s) => {
@@ -217,59 +153,136 @@ function Games() {
       document.title = `${system.name} · SovEmu`;
       setSystem(system);
       setGames(games);
-      const remembered = Number(localStorage.getItem(rememberKey));
-      setSelectedId(games.some((g) => g.id === remembered) ? remembered : null);
     });
+    const onPop = () => {
+      pushed.current = false;
+      setOpenId(gameFromUrl(location.search));
+    };
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
   }, []);
 
   const shown = useMemo(() => sortGames(filterGames(games, query, filters), sort), [games, query, filters, sort]);
-  const index = Math.max(0, shown.findIndex((g) => g.id === selectedId));
-  const game = shown[index];
-  const letters = useMemo(() => new Set(shown.map((g) => letterOf(g.title))), [shown]);
+  const stops = useMemo(() => jumpStops(shown), [shown]);
+  const open = openId === null ? null : (games.find((g) => g.id === openId) ?? null);
 
-  const select = (i: number) => {
-    const g = shown[Math.min(Math.max(i, 0), shown.length - 1)];
-    if (g) setSelectedId(g.id);
-  };
-
-  // Remember the choice, keep it in view, and read its saves (after a pause, so scrolling past
-  // games does not ask for each one).
+  // The panel's game in the grid, when it is shown: the focus starts there.
   useEffect(() => {
-    if (!game) return;
-    localStorage.setItem(rememberKey, String(game.id));
-    list.current?.querySelector(`[data-id="${game.id}"]`)?.scrollIntoView({ block: "nearest" });
-    setSlots([]);
-    const t = setTimeout(() => api.saves(game.id).then(setSlots).catch(() => {}), 200);
-    return () => clearTimeout(t);
-  }, [game?.id]);
+    if (openId === null) return;
+    const i = shown.findIndex((g) => g.id === openId);
+    if (i >= 0) setFocus(i);
+  }, [openId, shown]);
 
-  const auto = slots.find((s) => s.slot === AUTO_SLOT);
-  const play = (g: Game | undefined, start: "continue" | "new") => {
+  // Its saves, after a pause (moving quickly through games does not ask for each).
+  useEffect(() => {
+    setSlots([]);
+    if (openId === null) return;
+    const t = setTimeout(() => api.saves(openId).then(setSlots).catch(() => {}), 150);
+    return () => clearTimeout(t);
+  }, [openId]);
+
+  /** Opens the panel on a game: a new history entry, or the same one when it is already open. */
+  const openGame = (id: number) => {
+    const url = urlWithGame(location.href, id);
+    if (gameFromUrl(location.search) === null) {
+      history.pushState(null, "", url);
+      pushed.current = true;
+    } else {
+      history.replaceState(null, "", url);
+    }
+    setOpenId(id);
+  };
+  const closePanel = () => {
+    if (gameFromUrl(location.search) === null) return setOpenId(null);
+    if (pushed.current) {
+      history.back(); // popstate closes it
+    } else {
+      history.replaceState(null, "", urlWithGame(location.href, null));
+      setOpenId(null);
+    }
+  };
+  const play = (g: Game | null, start: "continue" | "new") => {
     if (g) location.href = `/play/?game=${g.id}&start=${start}`;
   };
+  const changeSort = (s: GameSort) => {
+    setSort(s);
+    localStorage.setItem(SORT_KEY, s);
+  };
 
-  const latest = useRef({ index, shown, auto, game });
-  latest.current = { index, shown, auto, game };
+  const cardAt = (i: number) => grid.current?.querySelector(`[data-game-card="${latest.current.shown[i]?.id}"]`);
+
+  // Keep the focused card in view.
+  useEffect(() => {
+    if (navigating) cardAt(focus)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focus, navigating]);
+
+  // The jump strip: the grid follows the letter it rests on.
+  useEffect(() => {
+    if (!jump) return;
+    const t = setTimeout(() => {
+      cardAt(jumpTo(shown, stops[jump.index]))?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, FOLLOW_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [jump?.index]);
+  const openJump = () => {
+    const at = shown[focus] ? stops.indexOf(letterOf(shown[focus].title)) : 0;
+    setJump({ index: Math.max(0, at), scrollY });
+  };
+  const commitJump = () => {
+    const { jump, shown, stops } = latest.current;
+    if (!jump) return;
+    setJump(null);
+    setNavigating(true);
+    setFocus(jumpTo(shown, stops[jump.index]));
+  };
+  const cancelJump = () => {
+    const { jump } = latest.current;
+    if (!jump) return;
+    scrollTo({ top: jump.scrollY });
+    setJump(null);
+  };
+
+  // Pad and keyboard, through the latest state.
+  const latest = useRef({ shown, focus, open, slots, jump, filtersOpen, stops });
+  latest.current = { shown, focus, open, slots, jump, filtersOpen, stops };
+  const handlers = useRef({ openGame, closePanel, commitJump, cancelJump });
+  handlers.current = { openGame, closePanel, commitJump, cancelJump };
   useEffect(() => {
     const nav = listenNav((action) => {
-      const { index, shown, auto, game } = latest.current;
-      const to = (i: number) => {
-        const g = shown[Math.min(Math.max(i, 0), shown.length - 1)];
-        if (g) setSelectedId(g.id);
-      };
-      if (action === "up") to(index - 1);
-      if (action === "down") to(index + 1);
-      if (action === "pageUp" || action === "left") to(index - PAGE);
-      if (action === "pageDown" || action === "right") to(index + PAGE);
-      if (action === "accept") play(game, auto ? "continue" : "new");
-      if (action === "menu") search.current?.focus();
-      if (action === "back") location.href = "/";
+      const { shown, focus, open, slots, jump, filtersOpen, stops } = latest.current;
+      const h = handlers.current;
+      if (jump) {
+        if (action === "left" || action === "right") {
+          const index = Math.min(stops.length - 1, Math.max(0, jump.index + (action === "left" ? -1 : 1)));
+          setJump({ ...jump, index });
+        }
+        if (action === "accept") h.commitJump();
+        if (action === "back") h.cancelJump();
+        return;
+      }
+      if (filtersOpen) {
+        if (action === "back" || action === "menu") setFiltersOpen(false);
+        return;
+      }
+      if (action === "menu") return setFiltersOpen(true);
+      if (action === "back") return open ? h.closePanel() : void (location.href = "/");
+      if (action === "accept") {
+        if (open) return play(open, slots.some((s) => s.slot === AUTO_SLOT) ? "continue" : "new");
+        if (shown[focus]) h.openGame(shown[focus].id);
+        return;
+      }
+      const cols = grid.current ? getComputedStyle(grid.current).gridTemplateColumns.split(" ").length : 1;
+      const next = gridMove(focus, action, cols, shown.length);
+      if (next < 0 || next === focus) return;
+      setNavigating(true);
+      setFocus(next);
+      // With the panel open it follows the focus.
+      if (open && shown[next]) h.openGame(shown[next].id);
     });
-    // "/" searches, as in most lists.
     const slash = (e: KeyboardEvent) => {
-      if (e.key === "/" && document.activeElement !== search.current) {
+      if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault();
-        search.current?.focus();
+        setFiltersOpen(true);
       }
     };
     addEventListener("keydown", slash);
@@ -280,199 +293,103 @@ function Games() {
   }, []);
 
   if (!system) return null;
-  const color = system.color;
-  const year = game?.releaseDate?.slice(0, 4);
-  const players = maxPlayers(game?.players ?? null);
-  const filtered = shown.length !== games.length;
+  const filterCount = activeFilters(filters) + (query.trim() ? 1 : 0);
+  const showJump = sort === "title" && shown.length > 12 && stops.length > 1;
+  const auto = slots.some((s) => s.slot === AUTO_SLOT);
 
   return (
     <>
       <div
         className="fixed inset-0 -z-10"
-        style={{ background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${color} 30%, transparent), #0b0d12 60%)` }}
+        style={{ background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${system.color} 25%, transparent), #0b0d12 55%)` }}
       />
-      <main className="mx-auto grid h-dvh max-w-7xl grid-rows-[auto_minmax(0,1fr)] gap-5 px-6 pt-16 pb-20 md:px-8">
-        <h1 className="flex flex-wrap items-baseline gap-3">
-          <span className="rounded-lg px-2.5 py-1 text-sm font-black" style={{ background: color }}>
-            {system.short}
-          </span>
-          <span className="text-2xl font-bold">{system.name}</span>
-          <span className="text-sm text-slate-400">
-            {filtered ? `${shown.length} of ${games.length} games` : `${games.length} game${games.length === 1 ? "" : "s"}`}
-          </span>
-        </h1>
-
-        <div className="grid min-h-0 grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-          {/* The list: search, sort, filter, rows, and the A–Z strip. */}
-          <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-black/30">
-            <div className="flex flex-wrap items-center gap-2 border-b border-white/10 p-3">
-              <label className="relative min-w-40 flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-500" />
-                <input
-                  ref={search}
-                  type="search"
-                  value={query}
-                  placeholder={`Search ${system.short} games  ( / )`}
-                  aria-label="Search games"
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === "ArrowDown") {
-                      e.preventDefault();
-                      search.current?.blur();
-                    }
-                    if (e.key === "Escape") {
-                      setQuery("");
-                      search.current?.blur();
-                    }
-                  }}
-                  className="h-9 w-full rounded-md border border-edge bg-black/30 pr-3 pl-8 text-sm outline-none focus:border-accent"
-                />
-              </label>
-              <Select
-                label="Sort"
-                value={sort}
-                options={SORTS}
-                onChange={(v) => {
-                  setSort(v as GameSort);
-                  localStorage.setItem(SORT_KEY, v);
-                }}
-                className="h-9 min-w-36"
-              />
-              <FilterMenu games={games} filters={filters} onChange={setFilters} />
-            </div>
-
-            <ol ref={list} className="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Games">
-              {shown.map((g) => {
-                const on = g.id === game?.id;
-                const n = maxPlayers(g.players);
-                const tags = tagsOf(g);
-                return (
-                  <li
-                    key={g.id}
-                    data-id={g.id}
-                    aria-selected={on}
-                    onClick={() => (on ? play(g, auto ? "continue" : "new") : setSelectedId(g.id))}
-                    className={cn("flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5", on ? "text-white" : "text-slate-300 hover:bg-white/5")}
-                    style={on ? { background: color } : undefined}
-                  >
-                    <Thumb game={g} color={color} short={system.short} />
-                    <div className="min-w-0 flex-1">
-                      <p className={cn("truncate", on && "font-semibold")}>{g.title}</p>
-                      {tags.length > 0 && (
-                        <p className={cn("truncate text-xs", on ? "text-white/75" : "text-slate-500")}>{tags.join(" · ")}</p>
-                      )}
-                    </div>
-                    <span className={cn("flex shrink-0 items-center gap-2 text-xs tabular-nums", on ? "text-white/85" : "text-slate-500")}>
-                      {!!g.playCount && <CircleCheck className="size-3.5" aria-label="Played" />}
-                      {n !== null && n >= 2 && (
-                        <span className="flex items-center gap-0.5">
-                          <Users className="size-3.5" />
-                          {n}
-                        </span>
-                      )}
-                      {g.releaseDate && <span>{g.releaseDate.slice(0, 4)}</span>}
-                    </span>
-                  </li>
-                );
-              })}
-              {!shown.length && (
-                <li className="px-3 py-8 text-center text-sm text-slate-400">
-                  {games.length ? "No games match. Try fewer words or clear the filters." : "No games for this system yet."}
-                </li>
-              )}
-            </ol>
-
-            {sort === "title" && shown.length > PAGE && (
-              <nav aria-label="Jump to letter" className="grid grid-cols-[repeat(27,minmax(0,1fr))] border-t border-white/10 px-2 py-1.5">
-                {LETTERS.map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    disabled={!letters.has(l)}
-                    onClick={() => select(jumpTo(shown, l))}
-                    className={cn(
-                      "h-6 rounded text-[11px] font-semibold text-slate-400 hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-25",
-                      game && letterOf(game.title) === l && "bg-white/10 text-white",
-                    )}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </nav>
-            )}
-          </section>
-
-          {/* The chosen game. */}
-          {game && (
-            <aside className="hidden min-h-0 flex-col overflow-y-auto rounded-2xl border border-white/10 bg-panel/80 shadow-2xl backdrop-blur md:flex">
-              <Art game={game} color={color} short={system.short} />
-              <div className="grid gap-4 p-6 pt-4">
-                <div>
-                  <h2 className="text-3xl leading-tight font-black">{game.title}</h2>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                    {year && <Fact icon={<CalendarDays />}>{year}</Fact>}
-                    {(game.developer || game.publisher) && <Fact icon={<Building2 />}>{game.developer ?? game.publisher}</Fact>}
-                    {game.genre && <Fact icon={<Tag />}>{game.genre}</Fact>}
-                    {players !== null && <Fact icon={<Users />}>{players === 1 ? "1 player" : `${game.players} players`}</Fact>}
-                  </div>
-                </div>
-                {game.description && <p className="line-clamp-4 text-sm leading-relaxed text-slate-300">{game.description}</p>}
-
-                <div className="flex flex-wrap gap-2">
-                  {auto ? (
-                    <>
-                      <Button size="lg" onClick={() => play(game, "continue")}>
-                        <Play className="fill-current" /> Continue
-                      </Button>
-                      <Button size="lg" variant="outline" onClick={() => play(game, "new")}>
-                        <RotateCcw /> Start over
-                      </Button>
-                    </>
-                  ) : (
-                    <Button size="lg" onClick={() => play(game, "new")}>
-                      <Play className="fill-current" /> Play
-                    </Button>
-                  )}
-                </div>
-
-                {slots.length > 0 && (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Saves</p>
-                    <div className="flex flex-wrap gap-2">
-                      {slots.map((s) => (
-                        <Tooltip key={s.slot} content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.savedAt)}`}>
-                          <span className="pixelated grid h-12 w-16 place-items-center overflow-hidden rounded border border-white/10 bg-black/50 text-[10px] text-slate-400">
-                            {s.screenshotUrl ? (
-                              <img src={s.screenshotUrl} alt="" className="pixelated size-full object-cover" />
-                            ) : s.slot === AUTO_SLOT ? (
-                              "Auto"
-                            ) : (
-                              `Slot ${s.slot}`
-                            )}
-                          </span>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <p className="border-t border-white/10 pt-3 text-xs text-slate-500">
-                  {game.playCount ? `Played ${game.playCount}× · last ${formatAgo(game.lastPlayedAt)}` : "Not played yet"}
-                  {" · "}
-                  <span className="font-mono">{game.path}</span> · {formatSize(game.size)}
-                </p>
-              </div>
-            </aside>
-          )}
+      <main className={cn("px-4 pt-10 pb-24 transition-[padding] duration-200 sm:px-8", open && "lg:pr-[31rem]")}>
+        {/* The header: the system, and the chips beside it where there is room. */}
+        <div className="mb-6 flex flex-col gap-4 pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <h1 className="flex flex-wrap items-baseline gap-3 text-3xl font-bold tracking-tight">
+            <span className="self-center rounded-lg px-2.5 py-1 text-sm font-black" style={{ background: system.color }}>
+              {system.short}
+            </span>
+            {system.name}
+            <span className="text-sm font-normal text-slate-400">
+              {shown.length === games.length ? `${games.length} games` : `${shown.length} of ${games.length}`}
+            </span>
+          </h1>
+          <div className="flex min-w-0">
+            <TabStrip label="Sort, filter and jump">
+              <SortChip sort={sort} onSort={changeSort} />
+              <TabStripDivider />
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(true)}
+                aria-pressed={filterCount > 0}
+                className={filterCount > 0 ? CHIP_ON : CHIP}
+              >
+                <SlidersHorizontal /> {filterCount > 0 ? `Filters (${filterCount})` : "Filters"}
+              </button>
+              {showJump && <JumpButton onClick={openJump} />}
+            </TabStrip>
+          </div>
         </div>
+
+        {shown.length ? (
+          <div ref={grid} className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-x-4 gap-y-6">
+            {shown.map((g, i) => (
+              <GameCard
+                key={g.id}
+                game={g}
+                system={system}
+                focused={navigating && i === focus}
+                open={g.id === openId}
+                onOpen={() => {
+                  setFocus(i);
+                  openGame(g.id);
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mx-auto max-w-lg rounded-xl border border-dashed border-white/15 bg-white/5 py-20 text-center text-slate-400">
+            {games.length ? "No games match. Try fewer words, or clear the filters." : "No games for this system yet."}
+          </div>
+        )}
       </main>
+
+      <GamePanel game={open} system={system} slots={slots} onClose={closePanel} onPlay={(start) => play(open, start)} />
+      <FilterDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        games={games}
+        query={query}
+        onQuery={setQuery}
+        filters={filters}
+        onFilters={setFilters}
+        searchRef={search}
+      />
+      {jump && (
+        <JumpStrip
+          stops={stops}
+          index={jump.index}
+          onIndex={(index) => setJump({ ...jump, index })}
+          onCommit={commitJump}
+          onCancel={cancelJump}
+        />
+      )}
       <HintBar
-        hints={[
-          { button: "dpad", label: "Choose" },
-          { button: "a", label: auto ? "Continue" : "Play" },
-          { button: "start", label: "Search" },
-          { button: "b", label: "Home" },
-        ]}
+        hints={
+          open
+            ? [
+                { button: "dpad", label: "Choose" },
+                { button: "a", label: auto ? "Continue" : "Play" },
+                { button: "b", label: "Close" },
+              ]
+            : [
+                { button: "dpad", label: "Choose" },
+                { button: "a", label: "Open" },
+                { button: "start", label: "Filters" },
+                { button: "b", label: "Home" },
+              ]
+        }
       />
     </>
   );
