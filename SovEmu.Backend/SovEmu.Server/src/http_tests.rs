@@ -683,3 +683,70 @@ async fn system_overrides_hide_systems_and_choose_cores() {
     let nes = systems.as_array().unwrap().iter().find(|s| s["id"] == "nes").unwrap().clone();
     assert_eq!(nes["playable"], true);
 }
+
+#[tokio::test]
+async fn admins_change_emulator_settings() {
+    let mut h = Harness::new("settings", true).await;
+    h.sign_up_admin().await;
+    let setting = |body: &Value, key: &str| {
+        body["settings"].as_array().unwrap().iter().find(|s| s["key"] == key).unwrap().clone()
+    };
+
+    // What the core declares, probed in a worker.
+    let (status, body) = h.call("GET", "/api/systems/nes/settings", None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["core"], "SovEmu Test Core 1.0.0");
+    let pattern = setting(&body, "sovemu_test_pattern");
+    assert_eq!(pattern["choices"], json!(["gradient", "solid"]));
+    assert_eq!(
+        (pattern["value"].clone(), pattern["source"].clone()),
+        (json!("gradient"), json!("core"))
+    );
+
+    // Changed, kept, offered as an environment line, and reset.
+    let change = json!({"sovemu_test_pattern": "solid"});
+    let (status, body) = h.call("PUT", "/api/systems/nes/settings", Some(change)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let pattern = setting(&body, "sovemu_test_pattern");
+    assert_eq!(
+        (pattern["value"].clone(), pattern["source"].clone()),
+        (json!("solid"), json!("admin"))
+    );
+    assert_eq!(
+        body["environment"],
+        json!(["SOVEMU_SYSTEMS__nes__OPTIONS__sovemu_test_pattern=solid"])
+    );
+    let bad = json!({"sovemu_test_pattern": "plaid"});
+    assert_eq!(
+        h.call("PUT", "/api/systems/nes/settings", Some(bad)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let unknown = json!({"no_such_option": "x"});
+    assert_eq!(
+        h.call("PUT", "/api/systems/nes/settings", Some(unknown)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let reset = json!({"sovemu_test_pattern": null});
+    let (_, body) = h.call("PUT", "/api/systems/nes/settings", Some(reset)).await;
+    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "core");
+
+    // The environment wins and is locked.
+    let mut config = (*h.state.config).clone();
+    config.systems = crate::structured::systems(&[(
+        "SOVEMU_SYSTEMS__nes__OPTIONS__sovemu_test_pattern".to_owned(),
+        "solid".to_owned(),
+    )])
+    .unwrap();
+    h.state.config = std::sync::Arc::new(config);
+    let (_, body) = h.call("GET", "/api/systems/nes/settings", None).await;
+    assert_eq!(setting(&body, "sovemu_test_pattern")["source"], "environment");
+    let change = json!({"sovemu_test_pattern": "gradient"});
+    assert_eq!(
+        h.call("PUT", "/api/systems/nes/settings", Some(change)).await.0,
+        StatusCode::CONFLICT
+    );
+
+    // Admins only.
+    h.cookie = None;
+    assert_eq!(h.call("GET", "/api/systems/nes/settings", None).await.0, StatusCode::UNAUTHORIZED);
+}

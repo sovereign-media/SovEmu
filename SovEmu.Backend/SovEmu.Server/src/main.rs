@@ -18,6 +18,7 @@ mod library;
 mod metadata;
 mod mirror;
 mod ops;
+mod settings;
 mod starts;
 mod structured;
 mod systems;
@@ -439,6 +440,8 @@ pub struct AppState {
     pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
     /// Where 3D systems render, decided at startup.
     pub gpu: Arc<gpu::GpuStatus>,
+    /// What each core offers as settings, probed once.
+    pub core_info: Arc<settings::CoreInfoCache>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -473,6 +476,7 @@ pub fn router(state: AppState) -> Router {
         .route("/metadata/status", get(admin::metadata_status))
         .route("/metadata/fetch", post(admin::metadata_fetch))
         .route("/gpu", get(admin::gpu_status))
+        .route("/systems/{id}/settings", get(settings::get_settings).put(settings::put_settings))
         .route("/sessions", post(api::start_session))
         .route("/sessions/current", get(api::current_session))
         .route("/sessions/starting/{start_id}", get(api::start_progress))
@@ -617,6 +621,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         metadata,
         mirror: Arc::default(),
         gpu: Arc::new(gpu),
+        core_info: Arc::default(),
     })
 }
 

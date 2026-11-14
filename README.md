@@ -73,6 +73,24 @@ as `gpu`, `software` or `off`.
 - **Analog sticks:** for 3D systems, the web client sends the gamepad's sticks and triggers as
   analog values. For 2D systems the left stick still acts as a D-pad.
 
+## Emulator settings
+
+Each emulator has its own settings: rendering, internal resolution, frame skipping and so on
+(41 for Snes9x, 113 for Dolphin). Admins change them per system on the **Settings** page.
+Changes apply to the next game started.
+
+A game starts with each setting taken from these, in order, the last one winning:
+
+1. the emulator's default;
+2. SovEmu's default for the system (Dreamcast memory cards per game, for example);
+3. the admin's choice;
+4. the environment (`SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`).
+
+The environment always wins, and those settings show as locked on the page. The page also
+lists the admin's changes as environment variables to copy into `.env` or the Helm values, so
+the configuration never depends on the page. The API is `GET` and `PUT /api/systems/{id}/settings`
+(admin).
+
 ## Loading progress
 
 Starting a game can take a while on a slow library, so the player shows a loading bar. It

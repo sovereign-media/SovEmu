@@ -24,6 +24,16 @@ struct ProbeResult {
     valid_extensions: Vec<String>,
     need_fullpath: bool,
     supports_no_game: bool,
+    /// The core options it declares, with their choices; the first choice is the default.
+    variables: Vec<ProbeVariable>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProbeVariable {
+    key: String,
+    description: String,
+    choices: Vec<String>,
+    default: String,
 }
 
 /// Whether `path` looks like a shared library on this platform.
@@ -59,6 +69,7 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
         valid_extensions: Vec::new(),
         need_fullpath: false,
         supports_no_game: false,
+        variables: Vec::new(),
     };
     let options = CoreOptions {
         system_dir: scratch.to_owned(),
@@ -75,6 +86,17 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
             result.valid_extensions = info.valid_extensions.clone();
             result.need_fullpath = info.need_fullpath;
             result.supports_no_game = core.supports_no_game();
+            // Loaded with no overrides, so each value is the core's default.
+            result.variables = core
+                .variables()
+                .into_iter()
+                .map(|v| ProbeVariable {
+                    key: v.key,
+                    description: v.description,
+                    choices: v.options,
+                    default: v.value,
+                })
+                .collect();
         }
         Err(err) => result.error = Some(format!("{err:#}")),
     }
