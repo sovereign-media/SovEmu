@@ -18,14 +18,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::Json;
-use axum::extract::{Path as UrlPath, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::AppState;
-use crate::auth::AdminUser;
 use crate::error::{ApiError, ApiResult};
 use crate::systems::System;
 
@@ -191,32 +188,32 @@ fn environment(state: &AppState, system: &System) -> BTreeMap<String, String> {
 
 #[derive(Debug, Serialize)]
 pub struct Setting {
-    key: String,
-    description: String,
+    pub(crate) key: String,
+    pub(crate) description: String,
     /// What it does, in the core's words (empty where the core does not say).
-    info: String,
+    pub(crate) info: String,
     /// The key of the core's category for it; the web client groups the rest itself.
-    category: Option<String>,
-    choices: Vec<String>,
+    pub(crate) category: Option<String>,
+    pub(crate) choices: Vec<String>,
     /// A display label per choice.
-    labels: Vec<String>,
+    pub(crate) labels: Vec<String>,
     /// The core's own default.
-    default: String,
-    value: String,
-    source: Source,
+    pub(crate) default: String,
+    pub(crate) value: String,
+    pub(crate) source: Source,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SystemSettings {
-    system: String,
-    core: String,
-    settings: Vec<Setting>,
+    pub(crate) system: String,
+    pub(crate) core: String,
+    pub(crate) settings: Vec<Setting>,
     /// The core's own option categories, in its order.
-    categories: Vec<CoreCategory>,
+    pub(crate) categories: Vec<CoreCategory>,
     /// The core lists its settings only with a game loaded, and none has run yet.
-    needs_game: bool,
+    pub(crate) needs_game: bool,
     /// The admin's choices as environment lines, to make them part of the configuration.
-    environment: Vec<String>,
+    pub(crate) environment: Vec<String>,
 }
 
 async fn describe(state: &AppState, system: &'static System) -> ApiResult<SystemSettings> {
@@ -289,23 +286,18 @@ fn system(id: &str) -> ApiResult<&'static System> {
     crate::systems::by_id(id).ok_or_else(|| ApiError::not_found("system"))
 }
 
-pub async fn get_settings(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    UrlPath(id): UrlPath<String>,
-) -> ApiResult<Json<SystemSettings>> {
-    Ok(Json(describe(&state, system(&id)?).await?))
+pub async fn get_settings(state: &AppState, id: &str) -> ApiResult<SystemSettings> {
+    describe(state, system(id)?).await
 }
 
-/// `{"<key>": "<value>" | null}`: sets an option, or with null goes back to the default.
+/// Sets options (`key` → `Some(value)`), or with `None` goes back to the default.
 pub async fn put_settings(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    UrlPath(id): UrlPath<String>,
-    Json(changes): Json<BTreeMap<String, Option<String>>>,
-) -> ApiResult<Json<SystemSettings>> {
-    let system = system(&id)?;
-    let core = crate::api::find_core(&state, system).ok_or_else(|| {
+    state: &AppState,
+    id: &str,
+    changes: BTreeMap<String, Option<String>>,
+) -> ApiResult<SystemSettings> {
+    let system = system(id)?;
+    let core = crate::api::find_core(state, system).ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             format!("no core installed for {}", system.name),
@@ -313,7 +305,7 @@ pub async fn put_settings(
     })?;
     let info = state.core_info.get(&state.workers.worker_bin(), &core).await?;
     let (options, _, _) = offered(&info, remembered(&state.db, &core).await?);
-    let locked = environment(&state, system);
+    let locked = environment(state, system);
     for (key, value) in &changes {
         if locked.contains_key(key) {
             return Err(ApiError::new(
@@ -360,7 +352,7 @@ pub async fn put_settings(
         }
     }
     tx.commit().await?;
-    Ok(Json(describe(&state, system).await?))
+    describe(state, system).await
 }
 
 #[cfg(test)]

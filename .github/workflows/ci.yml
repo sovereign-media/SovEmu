@@ -74,6 +74,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Generated GraphQL types match the schema
+        run: npm run codegen:check
+
       - name: Test
         run: npm test
 

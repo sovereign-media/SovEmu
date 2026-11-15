@@ -13,7 +13,10 @@ paths:
   the safe API. New crates join the graph as documented there; update the graph in the same PR.
 - **Server.** `SovEmu.Server` depends on `Protocol` only. Database access is plain `sqlx::query`
   / `query_as` with bound parameters (never format values into SQL); schema changes are new
-  files in `migrations/`. Handlers take `CurrentUser` / `AdminUser` extractors for auth.
+  files in `migrations/`. The API is GraphQL (`graphql.rs`): resolvers check access with
+  `user(ctx)` / `admin(ctx)` and call plain functions (`&AppState`, `&User`, arguments) in the
+  other modules; never add a REST route. After changing the schema, regenerate
+  `schema.graphql` (`UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`) and the clients.
 - **unsafe.** Only `LibretroFfi`, `RetroHost`, `Media` and `TestCore` contain `unsafe`. Every `unsafe`
   block gets a `// SAFETY:` comment saying why it holds; every `unsafe fn` gets a `# Safety`
   section. `unsafe_op_in_unsafe_fn` is denied.

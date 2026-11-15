@@ -24,7 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
-import { AUTO_SLOT, api, screenshotUrl, type Game, type SaveSlot, type SessionInfo, type SystemSummary } from "../../lib/api";
+import { AUTO_SLOT, api, type Game, type SaveSlot, type SessionInfo, type SystemSummary } from "../../lib/api";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
 import { DEFAULT_BINDINGS, InputState, bind, captureNextInput, describeBinding } from "../../lib/input";
 import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
@@ -113,16 +113,16 @@ function Player() {
     let cleanup = () => {};
 
     void (async () => {
-      const [game, systems, initialSlots, config] = await Promise.all([
+      const [game, systems, initialSlots, iceServers] = await Promise.all([
         api.game(gameId),
         api.systems(),
-        api.states(gameId),
-        api.config(),
+        api.saves(gameId),
+        api.iceServers(),
       ]);
       const system = systems.find((s) => s.id === game.system);
       document.title = `${game.title} · SovEmu`;
       setLoaded({ game, system });
-      input.analogSticks = !!system?.needs_gpu;
+      input.analogSticks = !!system?.needsGpu;
       if (filter.supported) {
         setFiltered(true);
         filter.setMode(filterMode);
@@ -134,7 +134,7 @@ function Player() {
       const bar = new ForwardOnly();
       const showProgress = (p: StartStatus) => {
         const view = describeStart(p);
-        setProgress({ label: view.label, detail: view.detail, percent: Math.round(bar.next(view.fraction) * 100), failed: p.phase === "failed" });
+        setProgress({ label: view.label, detail: view.detail, percent: Math.round(bar.next(view.fraction) * 100), failed: p.phase === "FAILED" });
       };
       void (async () => {
         while (polling) {
@@ -146,7 +146,7 @@ function Player() {
       })();
       const starting = api.startSession(gameId, startId).then((s) => {
         polling = false;
-        showProgress({ phase: "ready", elapsed_ms: 0, phase_ms: 0 });
+        showProgress({ phase: "READY", elapsedMs: 0, phaseMs: 0 });
         timers.push(window.setTimeout(() => setProgress(null), 600));
         info = s;
         setAspect(["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
@@ -155,7 +155,7 @@ function Player() {
       });
       starting.catch((e) => {
         polling = false;
-        showProgress({ phase: "failed", elapsed_ms: 0, phase_ms: 0, error: (e as Error).message });
+        showProgress({ phase: "FAILED", elapsedMs: 0, phaseMs: 0, error: (e as Error).message });
         setProgress((p) => p && { ...p, percent: 0 });
       });
 
@@ -171,7 +171,7 @@ function Player() {
         stack.close();
         setSplash(false);
         session = new Session(
-          `/api/sessions/${s.id}/offer`,
+          (sdp) => api.answer(s.id, sdp),
           video.current!,
           input,
           {
@@ -183,7 +183,7 @@ function Player() {
               if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
             },
           },
-          { iceServers: config.ice_servers },
+          { iceServers },
         );
         setPlaying(true);
         await session.connect();
@@ -204,15 +204,15 @@ function Player() {
           const s = slots.find((x) => x.slot === n);
           return {
             label: n === AUTO_SLOT ? "Auto save" : `Slot ${n}`,
-            detail: s ? ago(s.saved_at) : "Empty",
-            image: s?.screenshot ? screenshotUrl(gameId, s) : "",
+            detail: s ? ago(s.savedAt) : "Empty",
+            image: s?.screenshotUrl ?? "",
             disabled: !s && !emptyEnabled,
             run: () => onPick(n),
           };
         });
 
       async function saveMenu() {
-        const slots = await api.states(gameId);
+        const slots = await api.saves(gameId);
         stack.push({
           title: "Save state",
           items: slotItems(slots, SLOTS, async (slot) => {
@@ -229,7 +229,7 @@ function Player() {
       }
 
       async function loadMenu() {
-        const slots = await api.states(gameId);
+        const slots = await api.saves(gameId);
         stack.push({
           title: "Load state",
           items: slotItems(slots, [AUTO_SLOT, ...SLOTS], async (slot) => {
@@ -367,8 +367,8 @@ function Player() {
               {
                 label: "Continue",
                 icon: "play",
-                detail: `Auto save, ${ago(auto.saved_at)}`,
-                image: auto.screenshot ? screenshotUrl(gameId, auto) : "",
+                detail: `Auto save, ${ago(auto.savedAt)}`,
+                image: auto.screenshotUrl ?? "",
                 run: () => begin(AUTO_SLOT),
               },
               { label: "Start over", icon: "restart", run: () => begin(null) },
@@ -429,7 +429,7 @@ function Player() {
       // Leaving the page ends the session (which writes the auto save) rather than waiting for
       // the idle timeout.
       addEventListener("pagehide", () => {
-        if (info) navigator.sendBeacon?.(`/api/sessions/${info.id}/stop`);
+        if (info) api.stopSessionOnUnload(info.id);
       });
 
       cleanup = () => {

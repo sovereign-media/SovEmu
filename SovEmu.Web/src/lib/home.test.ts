@@ -3,9 +3,9 @@ import type { Game } from "./api";
 import { byline, cardArt, heroArt, moveFocus, nextScroll, startFocus, type RowShape } from "./home";
 
 const game = (over: Partial<Game> = {}): Game => ({
-  id: 7, system: "snes", title: "A Game", tags: "", path: "a.sfc", size: 1, last_played_at: null, play_count: null,
-  media: [], file_title: null, description: null, release_date: null, developer: null, publisher: null, genre: null,
-  players: null, rating: null, ...over,
+  id: 7, system: "snes", title: "A Game", tags: [], path: "a.sfc", size: 1, lastPlayedAt: null, playCount: 0,
+  image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
+  publisher: null, genre: null, players: null, rating: null, ...over,
 });
 
 describe("home focus", () => {
@@ -49,22 +49,24 @@ describe("home focus", () => {
 
 describe("home art", () => {
   it("prefers the image, then box art", () => {
-    expect(heroArt(game({ media: ["thumb", "image"] }))).toBe("/api/games/7/media/image");
-    expect(heroArt(game({ media: ["thumb"] }))).toBe("/api/games/7/media/thumb");
+    expect(heroArt(game({ thumb: "/media/games/7/thumb", image: "/media/games/7/image" }))).toBe("/media/games/7/image");
+    expect(heroArt(game({ thumb: "/media/games/7/thumb" }))).toBe("/media/games/7/thumb");
     expect(heroArt(game())).toBeNull();
   });
 
   it("shows where the player left off on a recent game", () => {
-    expect(cardArt({ ...game({ media: ["image"] }), screenshot_at: 1700 })).toEqual({
-      url: "/api/games/7/states/0/screenshot?t=1700",
+    const autoSave = { slot: 0, savedAt: 1700, screenshotUrl: "/media/games/7/saves/0?t=1700" };
+    expect(cardArt({ ...game({ image: "/media/games/7/image" }), autoSave })).toEqual({
+      url: "/media/games/7/saves/0?t=1700",
       kind: "screenshot",
     });
-    expect(cardArt(game({ media: ["thumb"] }))?.kind).toBe("art");
+    expect(cardArt({ ...game({ thumb: "/t" }), autoSave: { ...autoSave, screenshotUrl: null } })?.kind).toBe("art");
+    expect(cardArt(game({ thumb: "/t" }))?.kind).toBe("art");
     expect(cardArt(game())).toBeNull();
   });
 
   it("builds a byline from what is known", () => {
-    expect(byline(game({ release_date: "1996-06-23", developer: "Nintendo", genre: "Platform" }))).toBe("1996 · Nintendo · Platform");
+    expect(byline(game({ releaseDate: "1996-06-23", developer: "Nintendo", genre: "Platform" }))).toBe("1996 · Nintendo · Platform");
     expect(byline(game({ publisher: "Capcom" }))).toBe("Capcom");
     expect(byline(game())).toBe("");
   });

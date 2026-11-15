@@ -12,6 +12,7 @@ mod cheats;
 mod db;
 mod error;
 mod gpu;
+mod graphql;
 mod home;
 #[cfg(test)]
 mod http_tests;
@@ -36,7 +37,7 @@ use axum::http::HeaderValue;
 use axum::http::header::CACHE_CONTROL;
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{delete, get, post};
+use axum::routing::get;
 use clap::Parser;
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
@@ -454,6 +455,8 @@ pub struct AppState {
     pub gpu: Arc<gpu::GpuStatus>,
     /// What each core offers as settings, probed once.
     pub core_info: Arc<settings::CoreInfoCache>,
+    /// The GraphQL schema (cheap to clone: shared).
+    pub schema: graphql::ApiSchema,
 }
 
 impl std::fmt::Debug for AppState {
@@ -463,49 +466,14 @@ impl std::fmt::Debug for AppState {
 }
 
 pub fn router(state: AppState) -> Router {
-    let api = Router::new()
-        .route("/config", get(ops::client_config))
-        .route("/auth/status", get(auth::status))
-        .route("/auth/setup", post(auth::setup))
-        .route("/auth/login", post(auth::login))
-        .route("/auth/logout", post(auth::logout))
-        .route("/users", get(auth::list_users).post(auth::add_user))
-        .route("/home", get(home::home))
-        .route("/systems", get(api::list_systems))
-        .route("/systems/{id}/games", get(api::list_games))
-        .route("/games/{id}", get(api::get_game))
-        .route("/games/{id}/media/{kind}", get(api::game_media))
-        .route("/games/{id}/cheats", get(cheats::list).post(cheats::add))
-        .route(
-            "/games/{id}/cheats/{cheat}",
-            axum::routing::patch(cheats::update).delete(cheats::remove),
-        )
-        .route("/games/{id}/states", get(api::list_states))
-        .route("/games/{id}/states/{slot}", delete(api::delete_state))
-        .route("/games/{id}/states/{slot}/screenshot", get(api::state_screenshot))
-        .route("/library/scan", post(api::scan))
-        .route("/library/status", get(admin::library_status))
-        .route("/library/sync", post(admin::library_sync))
-        .route("/metadata/status", get(admin::metadata_status))
-        .route("/metadata/fetch", post(admin::metadata_fetch))
-        .route("/gpu", get(admin::gpu_status))
-        .route("/systems/{id}/settings", get(settings::get_settings).put(settings::put_settings))
-        .route("/sessions", post(api::start_session))
-        .route("/sessions/current", get(api::current_session))
-        .route("/sessions/starting/{start_id}", get(api::start_progress))
-        .route("/sessions/{id}", delete(api::stop_session))
-        .route("/sessions/{id}/offer", post(api::offer))
-        .route("/sessions/{id}/reset", post(api::reset))
-        .route("/sessions/{id}/states/{slot}", post(api::save_state))
-        .route("/sessions/{id}/states/{slot}/load", post(api::load_state))
-        // For `navigator.sendBeacon` when a player closes the page: beacons can only POST.
-        .route("/sessions/{id}/stop", post(api::stop_session))
-        .fallback(|| async { error::ApiError::not_found("route") });
-
+    // The API is GraphQL. Files (artwork, videos, save screenshots) are plain HTTP, at URLs
+    // the API hands out; so are the probe and Prometheus routes.
     let mut app = Router::new()
+        .route("/graphql", get(graphql::graphiql).post(graphql::handler))
+        .route("/media/games/{id}/{kind}", get(api::game_media))
+        .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
         .route("/health", get(ops::health))
         .route("/metrics", get(ops::metrics))
-        .nest("/api", api)
         .with_state(state.clone());
     if let Some(dir) = &state.config.web_dir {
         app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
@@ -635,6 +603,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         mirror: Arc::default(),
         gpu: Arc::new(gpu),
         core_info: Arc::default(),
+        schema: graphql::schema(),
     })
 }
 

@@ -51,8 +51,8 @@ GPU probe:
 3D systems render on the GPU: AMD Radeon RX 6600 (radeonsi, navi23, …)
 ```
 
-`GET /api/gpu` (admin) returns the same, and the system list marks each 3D system's `rendering`
-as `gpu`, `software` or `off`.
+The API's `gpu` query (admin) returns the same, and each 3D system's `rendering` is `GPU`,
+`SOFTWARE` or `OFF`.
 
 - **Docker, AMD or Intel:** `docker compose -f compose.yaml -f compose.gpu.yaml up -d` passes
   `/dev/dri` through. Set `SOVEMU_RENDER_GID` in `.env` to the group that owns the render node
@@ -101,8 +101,8 @@ A game starts with each setting taken from these, in order, the last one winning
 
 The environment always wins, and those settings show as locked on the page. The page also
 lists the admin's changes as environment variables to copy into `.env` or the Helm values, so
-the configuration never depends on the page. The API is `GET` and `PUT /api/systems/{id}/settings`
-(admin).
+the configuration never depends on the page. In the API: the `emulatorSettings` query and the
+`changeEmulatorSettings` mutation (admin).
 
 ## Loading progress
 
@@ -111,9 +111,22 @@ covers each step: saving the previous game, starting the emulator, opening the c
 the game, with the megabytes read and the seconds taken. The bar is exact when SovEmu reads the
 file. When a core reads a disc itself, the bar eases forward while the megabytes count up.
 
-Clients send a `start_id` with `POST /api/sessions` and poll
-`GET /api/sessions/starting/{start_id}` while the request waits. Clients that don't send one
-work as before.
+Clients give `startSession` a `startId` and poll the `startProgress(startId)` query while the
+mutation waits. Clients that don't send one work as before.
+
+## The API
+
+SovEmu's API is GraphQL, at `POST /graphql`; open `/graphql` in a browser for GraphiQL. The web,
+Android and iOS clients all use it. The schema, with every type and field documented, is
+[SovEmu.Backend/SovEmu.Server/schema.graphql](SovEmu.Backend/SovEmu.Server/schema.graphql).
+
+- **Sign-in** is a cookie: the `login` (or first-run `setup`) mutation sets it, `logout` clears it.
+- **Errors** come back in `errors`, each with an `extensions.code`: `UNAUTHENTICATED`,
+  `FORBIDDEN`, `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `GONE`, `TOO_MANY_REQUESTS`, `UNAVAILABLE`.
+- **Files** (artwork, videos, save screenshots) are plain HTTP under `/media/`, at the URLs the
+  API returns (`Game.mediaUrl`, `SaveSlot.screenshotUrl`).
+- **Playing** a game: `startSession`, then `sessionOffer` with the browser's WebRTC offer (it
+  returns the answer). Media and controller input then flow over WebRTC.
 
 ## A library on a NAS
 

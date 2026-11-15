@@ -35,7 +35,7 @@ function SystemRow({ s, href }: { s: SystemSummary; href: string }) {
       <a href={href}>
         <span className="size-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
         <span className="min-w-0 flex-1 truncate">{s.name}</span>
-        <span className="text-xs text-slate-500 tabular-nums">{badge ?? s.game_count}</span>
+        <span className="text-xs text-slate-500 tabular-nums">{badge ?? s.gameCount}</span>
       </a>
     </DropdownMenu.Item>
   );
@@ -166,8 +166,8 @@ function Entries({
   systems: SystemSummary[];
   onMenu: (open: boolean) => void;
 }) {
-  const withGames = systems.filter((s) => s.game_count > 0);
-  const configurable = systems.filter((s) => s.playable || s.needs_gpu);
+  const withGames = systems.filter((s) => s.gameCount > 0);
+  const configurable = systems.filter((s) => s.playable || s.needsGpu);
   const signOut = async () => {
     await api.logout();
     location.href = "/login/";
@@ -217,7 +217,7 @@ function Entries({
           </DropdownMenu.Item>
         </MenuEntry>
       )}
-      {user?.is_admin && (
+      {user?.isAdmin && (
         <MenuEntry icon={<Settings />} label="Admin" heading="Admin" current={section === "admin"} shape={shape} onOpenChange={onMenu}>
           <DropdownMenu.Item asChild className={ROW}>
             <a href="/admin/">
@@ -262,7 +262,7 @@ export default function SideNav({ section }: { section: Section }) {
   const intent = useRef(0);
 
   useEffect(() => {
-    api.status().then((s) => setUser(s.user));
+    api.viewer().then((s) => setUser(s.user));
     api.systems().then(setSystems).catch(() => {});
   }, []);
 

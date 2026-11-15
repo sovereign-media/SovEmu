@@ -82,7 +82,7 @@ export function Hero({
       {/* Every slide stays mounted, so changing game cross-fades instead of blanking. */}
       {games.map((g, i) => {
         const art = heroArt(g);
-        const boxArtOnly = !g.media.includes("image");
+        const boxArtOnly = !g.image;
         const c = color(g.system);
         return (
           <div

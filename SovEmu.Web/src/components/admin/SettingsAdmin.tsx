@@ -16,7 +16,7 @@ import { panel, Select, Tooltip } from "../ui/primitives";
 
 function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, value: string | null) => void }) {
   const badge = sourceBadge(s.source);
-  const locked = s.source === "environment";
+  const locked = s.source === "ENVIRONMENT";
   const choices = s.choices.includes(s.value) || !s.choices.length ? s.choices : [...s.choices, s.value];
   return (
     <li className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -28,7 +28,7 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
               <span
                 className={cn(
                   "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold",
-                  locked ? "bg-amber-500/20 text-amber-200" : s.source === "admin" ? "bg-accent/25 text-blue-200" : "bg-white/10 text-slate-300",
+                  locked ? "bg-amber-500/20 text-amber-200" : s.source === "ADMIN" ? "bg-accent/25 text-blue-200" : "bg-white/10 text-slate-300",
                 )}
               >
                 {locked && <Lock className="size-3" />}
@@ -53,7 +53,7 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
         ) : (
           <code className="text-sm text-slate-300">{s.value}</code>
         )}
-        {s.source === "admin" && (
+        {s.source === "ADMIN" && (
           <Tooltip content="Go back to the default">
             <Button variant="ghost" size="icon" aria-label={`Reset ${s.description}`} onClick={() => onChange(s.key, null)}>
               <RotateCcw />
@@ -86,9 +86,9 @@ function Settings() {
   }, []);
 
   useEffect(() => {
-    api.status().then((s) => !s.user?.is_admin && location.replace("/"));
+    api.viewer().then((s) => !s.user?.isAdmin && location.replace("/"));
     api.systems().then((all) => {
-      const offered = all.filter((s) => s.playable || s.needs_gpu);
+      const offered = all.filter((s) => s.playable || s.needsGpu);
       setSystems(offered);
       const wanted = new URLSearchParams(location.search).get("id");
       const first = offered.find((s) => s.id === wanted) ?? offered[0];
@@ -116,7 +116,7 @@ function Settings() {
     () => (loaded ? groupSettings(filterSettings(loaded.settings, query), loaded.categories ?? []) : []),
     [loaded, query],
   );
-  const changed = loaded?.settings.filter((s) => s.source === "admin").length ?? 0;
+  const changed = loaded?.settings.filter((s) => s.source === "ADMIN").length ?? 0;
 
   return (
     <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-16 pb-16">
@@ -171,7 +171,7 @@ function Settings() {
       {loaded && !loaded.settings.length && (
         <p className={cn(panel, "flex items-start gap-3 text-sm text-slate-300")}>
           <Info className="mt-0.5 size-4 shrink-0 text-slate-400" />
-          {loaded.needs_game
+          {loaded.needsGame
             ? `This emulator lists its settings only once a game is running. Start any ${current?.name ?? ""} game once, and they will appear here.`
             : "This emulator has no settings."}
         </p>
@@ -184,7 +184,7 @@ function Settings() {
           <nav aria-label="Setting groups" className="hidden lg:block">
             <ul className="sticky top-24 grid gap-0.5">
               {groups.map((g) => {
-                const n = g.settings.filter((s) => s.source === "admin").length;
+                const n = g.settings.filter((s) => s.source === "ADMIN").length;
                 return (
                   <li key={g.id}>
                     <a

@@ -5,15 +5,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use axum::Json;
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
 
 use crate::AppState;
-use crate::auth::CurrentUser;
 use crate::error::{ApiError, ApiResult};
 
 /// Default failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
@@ -124,19 +121,6 @@ pub async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> ApiRe
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClientConfig {
-    /// `RTCIceServer` objects for the browser (STUN/TURN), from `SOVEMU_ICE_SERVERS`.
-    ice_servers: serde_json::Value,
-}
-
-pub async fn client_config(
-    State(state): State<AppState>,
-    _user: CurrentUser,
-) -> Json<ClientConfig> {
-    Json(ClientConfig { ice_servers: state.config.ice_servers.clone() })
 }
 
 /// Headers every response carries.

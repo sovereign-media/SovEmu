@@ -13,9 +13,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.status().then((s) => {
+    api.viewer().then((s) => {
       if (s.user) location.replace(safeNext);
-      setSetup(s.setup_required);
+      setSetup(s.setupRequired);
     });
   }, []);
 

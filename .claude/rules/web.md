@@ -6,11 +6,16 @@ paths:
 # Web client (SovEmu.Web)
 
 - **Astro + Tailwind v4, static output only.** `astro build` writes `dist/`, which the Rust
-  server serves next to `/api/*` (in the image, from `/opt/sovemu/web`). No SSR adapter, no
+  server serves next to `/graphql` (in the image, from `/opt/sovemu/web`). No SSR adapter, no
   Astro server endpoints, no Node at runtime. Anything dynamic is client-side TypeScript talking
-  to `/api/*` and WebRTC.
-- **Same origin.** The page and the API share an origin, so fetch relative paths (`/api/offer`),
-  never an absolute URL or a configured host. `npm run dev` proxies `/api` to a local server.
+  to the GraphQL API and WebRTC.
+- **Same origin.** The page and the API share an origin, so use relative paths (`/graphql`,
+  the `/media/…` URLs the API returns), never an absolute URL or a configured host.
+  `npm run dev` proxies `/graphql` and `/media` to a local server.
+- **GraphQL, typed.** Every operation is written once in `src/lib/queries.ts` and typed by
+  codegen into `src/graphql/` (`npm run codegen`; committed; CI runs `codegen:check`). Pages
+  call `api.*` in `src/lib/api.ts`, never `fetch`. Errors are `ApiError` with the server's
+  `code`; `UNAUTHENTICATED` sends the page to sign-in.
 - **Tailwind v4 is CSS-first.** Theme tokens live in `@theme` in `src/styles/global.css`; there
   is no `tailwind.config.js`. A component `<style>` that uses `@apply` needs
   `@reference "../styles/global.css";` first.

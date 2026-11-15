@@ -39,7 +39,7 @@ function HomeScreen() {
     try {
       const [home, all] = await Promise.all([api.home(), api.systems()]);
       setFeed(home);
-      setSystems(all.filter((s) => s.game_count > 0));
+      setSystems(all.filter((s) => s.gameCount > 0));
     } catch (e) {
       setError((e as Error).message);
     }

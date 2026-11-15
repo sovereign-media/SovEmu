@@ -1,6 +1,6 @@
 // One WebRTC connection to a game session: receive-only video and audio, plus the unordered,
-// no-retransmit input channel. Signalling is a single POST of the complete offer (non-trickle)
-// to the session's offer URL (`/api/sessions/{id}/offer`).
+// no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
+// the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
 import { InputState } from "./input";
 import { type Analog, CENTRED, INPUT_CHANNEL, analogEqual, decodeAck, encodeAnalog, encodeHotkeys, encodeInput } from "./protocol";
 
@@ -15,7 +15,7 @@ export interface SessionEvents {
 }
 
 export interface SessionOptions {
-  /** STUN/TURN servers from the server's configuration (`/api/config`). */
+  /** STUN/TURN servers from the server's configuration (`clientConfig.iceServers`). */
   iceServers?: RTCIceServer[];
 }
 
@@ -37,7 +37,8 @@ export class Session {
   suspended = false;
 
   constructor(
-    private readonly offerUrl: string,
+    /** Sends the offer (SDP) and returns the answer (SDP). */
+    private readonly signal: (offer: string) => Promise<string>,
     private readonly video: HTMLVideoElement,
     private readonly input: InputState,
     private readonly events: SessionEvents = {},
@@ -65,13 +66,8 @@ export class Session {
   async connect(): Promise<void> {
     await this.pc.setLocalDescription(await this.pc.createOffer());
     await this.iceGathered();
-    const res = await fetch(this.offerUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "offer", sdp: this.pc.localDescription?.sdp }),
-    });
-    if (!res.ok) throw new Error(`offer rejected (${res.status}): ${await res.text()}`);
-    await this.pc.setRemoteDescription(await res.json());
+    const answer = await this.signal(this.pc.localDescription?.sdp ?? "");
+    await this.pc.setRemoteDescription({ type: "answer", sdp: answer });
     this.video.play().catch(() => { /* needs a user gesture; Connect is one */ });
     this.raf = requestAnimationFrame(this.pump);
   }
