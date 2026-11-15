@@ -225,6 +225,19 @@ struct Pending {
     status: Option<String>,
     /// The services asked last time.
     tried: Option<String>,
+    /// The artwork found beside the ROM (`thumb,video`, …).
+    media: String,
+    /// Box art an earlier job downloaded.
+    box_art: Option<String>,
+}
+
+impl Pending {
+    /// Whether box art is worth downloading: it only stands in for a missing local thumb, and
+    /// one already downloaded is kept.
+    fn wants_box_art(&self, media_dir: &Path) -> bool {
+        !self.media.split(',').any(|k| k == "thumb")
+            && !self.box_art.as_ref().is_some_and(|f| media_dir.join(f).is_file())
+    }
 }
 
 /// Whether a game should be looked up: never looked up, or not found by the services asked
@@ -254,6 +267,9 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         *s = JobStatus { running: true, sources, ..JobStatus::default() };
     }
     let mut available = vec!["fbneo"];
+    if meta.launchbox.is_some() {
+        available.push("launchbox");
+    }
     if meta.screenscraper.is_some() {
         available.push("screenscraper");
     }
@@ -261,7 +277,8 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         available.push("thegamesdb");
     }
     let games: Vec<Pending> = sqlx::query_as::<_, Pending>(
-        "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried FROM games g
+        "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried, g.media,
+           m.box_art FROM games g
          LEFT JOIN game_metadata m ON m.game_id = g.id
          WHERE (?1 IS NULL OR g.system = ?1)
            AND (?2 OR m.game_id IS NULL OR m.status = 'not_found')
@@ -278,8 +295,10 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
     meta.update(|s| s.total = games.len() as u64);
     tracing::info!("metadata: looking up {} game(s)", games.len());
 
-    // Download, refresh or read the LaunchBox dump once for the whole job.
+    // Download, refresh or read the LaunchBox dump once for the whole job (not at all when
+    // there is nothing to look up, as after most scans).
     let launchbox = match &meta.launchbox {
+        Some(_) if games.is_empty() => None,
         Some(lb) => match lb.prepare().await {
             Ok(index) => Some(index),
             Err(e) => {
@@ -319,6 +338,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             sources.push("fbneo");
         }
         if let Some(index) = &launchbox {
+            tried.push("launchbox");
             // Arcade files are set names (`mslug`): match the title FBNeo gave them.
             let title = info.title.as_deref().unwrap_or(&input.title);
             if let Some(found) = index.lookup(&input.system, title) {
@@ -374,8 +394,10 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         let found = !sources.is_empty();
         if found || !failed {
             let box_art = match &info.box_art_url {
-                Some(url) => download_box_art(&meta, game.id, url).await,
-                None => None,
+                Some(url) if game.wants_box_art(&meta.media_dir) => {
+                    download_box_art(&meta, game.id, url).await
+                }
+                _ => None,
             };
             let _ = store(&state, game.id, &info, &sources, &tried, box_art.as_deref()).await;
         }
@@ -507,6 +529,30 @@ mod tests {
             MetaError::Quota(_)
         ));
         assert!(matches!(status_error("x", StatusCode::BAD_GATEWAY, ""), MetaError::Other(_)));
+    }
+
+    #[test]
+    fn box_art_only_for_games_without_a_thumb() {
+        let dir = std::env::temp_dir().join(format!("sovemu-boxart-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("1-box.png"), b"png").unwrap();
+        let game = |media: &str, box_art: Option<&str>| Pending {
+            id: 1,
+            system: "nes".into(),
+            path: "nes/a.nes".into(),
+            title: "A".into(),
+            size: 0,
+            status: None,
+            tried: None,
+            media: media.into(),
+            box_art: box_art.map(String::from),
+        };
+        assert!(game("", None).wants_box_art(&dir));
+        assert!(game("image,video", None).wants_box_art(&dir));
+        assert!(!game("image,thumb", None).wants_box_art(&dir), "the local thumb is shown");
+        assert!(!game("", Some("1-box.png")).wants_box_art(&dir), "already downloaded");
+        assert!(game("", Some("2-box.png")).wants_box_art(&dir), "downloaded, then deleted");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
