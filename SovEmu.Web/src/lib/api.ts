@@ -58,6 +58,8 @@ export interface SystemSettings {
   settings: CoreSetting[];
   /** The core's own groups ("Video", "Audio", …), in its order; empty for cores without. */
   categories: CoreCategory[];
+  /** This emulator lists its settings only with a game loaded, and none has run yet. */
+  needs_game?: boolean;
   /** The admin's changes as SOVEMU_SYSTEMS__… lines, to move into configuration. */
   environment: string[];
 }

@@ -17,6 +17,7 @@ mod core;
 mod error;
 pub mod gl;
 mod input;
+mod stdio;
 mod video;
 
 pub use crate::core::{
@@ -25,6 +26,7 @@ pub use crate::core::{
 pub use crate::error::Error;
 pub use crate::gl::GpuChoice;
 pub use crate::input::{AnalogSticks, JoypadButtons, ParseButtonsError};
+pub use crate::stdio::take_stdout;
 pub use crate::video::{PixelFormat, VideoFrame};
 
 /// The highest controller port SovEmu exposes to a core (ports `0..MAX_PORTS`).

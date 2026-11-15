@@ -21,6 +21,7 @@ mod rewind;
 mod schedule;
 mod serve;
 mod session;
+mod standin;
 mod stream;
 mod sysdir;
 mod web;

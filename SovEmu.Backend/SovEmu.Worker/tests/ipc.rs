@@ -72,16 +72,23 @@ impl Worker {
                 }
             }
         });
-        // Progress first (opening the core, then the game), then ready.
+        // Progress first (opening the core, then the game), the core's options, then ready.
         let mut phases = Vec::new();
+        let mut options = None;
         let ready = loop {
             match replies.recv_timeout(Duration::from_secs(10)).expect("ready") {
                 Reply::Progress { phase, .. } => phases.push(phase),
+                Reply::Options { options: o, categories } => options = Some((o, categories)),
                 other => break other,
             }
         };
         phases.dedup();
         assert_eq!(phases, [LoadPhase::Core, LoadPhase::Content], "loading progress before ready");
+        let (options, categories) = options.expect("the core's options before ready");
+        let keys: Vec<&str> = options.iter().map(|o| o.key.as_str()).collect();
+        assert_eq!(keys, ["sovemu_test_pattern", "sovemu_test_render"]);
+        assert_eq!(options[0].labels, ["Gradient", "Solid colour"]);
+        assert_eq!(categories[0].description, "Video");
         (Self { child, stdin, replies }, ready)
     }
 

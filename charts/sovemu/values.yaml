@@ -60,15 +60,19 @@ systems: {}
 
 # Rendering for the 3D systems (N64, Dreamcast, GameCube, PS2). At startup the server tries
 # every GPU the pod can see (drawing a frame on each) and uses the first that works, else Mesa's
-# software renderer. Mesa drives AMD and Intel GPUs; NVIDIA's driver does not load in the
-# Alpine image.
+# software renderer. Mesa (in the image) drives AMD and Intel GPUs; for NVIDIA's own driver,
+# request `nvidia.com/gpu` and, where the cluster needs one, the NVIDIA runtime class.
 gpu:
   # SOVEMU_GPU: auto | software | off | a render node such as /dev/dri/renderD128.
   mode: auto
   # Device-plugin resources that put a GPU in the pod (the usual way), e.g.
   #   gpu.intel.com/i915: 1     (Intel GPU device plugin)
   #   amd.com/gpu: 1            (AMD GPU device plugin)
+  #   nvidia.com/gpu: 1         (NVIDIA device plugin / GPU operator)
   resources: {}
+  # The runtime class that injects NVIDIA's driver into the pod (`nvidia` with the NVIDIA GPU
+  # operator or container toolkit), where the cluster does not make it the default.
+  runtimeClassName: ""
   # Without a device plugin: mount the node's /dev/dri. Needs the render group's GID (on the
   # node: stat -c %g /dev/dri/renderD128), and a runtime that allows the device; some only do
   # for privileged pods.
@@ -165,7 +169,10 @@ shmSize: 1Gi
 
 podAnnotations: {}
 podLabels: {}
-nodeSelector: {}
+# The image is x86_64 only (its cores come from libretro's stable x86_64 release), so pods stay
+# off arm64 nodes. Add to this rather than replacing it.
+nodeSelector:
+  kubernetes.io/arch: amd64
 tolerations: []
 affinity: {}
 

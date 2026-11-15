@@ -1,7 +1,7 @@
 //! FinalBurn Neo's DATs: arcade and Neo Geo set names (`mslug`) to titles, years and makers.
 //!
-//! The DATs come from FBNeo's repository at the commit SovEmu builds the core from (so names
-//! match the sets that core plays), downloaded once and kept in `<data>/metadata/fbneo/`.
+//! The DATs come from FBNeo's repository at the commit of the core SovEmu ships (so names match
+//! the sets that core plays), downloaded once and kept in `<data>/metadata/fbneo/`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,8 +10,9 @@ use tokio::sync::OnceCell;
 
 use super::{GameInfo, LookupInput};
 
-/// Must match the FBNeo commit in scripts/cores.list.
-const FBNEO_COMMIT: &str = "e6c7ee3d3a34b12f03054d669123ebe813397a8c";
+/// The FBNeo in the libretro stable release scripts/cores.list names (1.22.2); its probe
+/// version ends in this commit. Bump it with the release.
+const FBNEO_COMMIT: &str = "01e29d5020880990cff42ac43bc6f016fc048761";
 const ARCADE_DAT: &str = "FinalBurn Neo (ClrMame Pro XML, Arcade only).dat";
 const NEOGEO_DAT: &str = "FinalBurn Neo (ClrMame Pro XML, Neogeo only).dat";
 
@@ -64,6 +65,12 @@ pub fn parse(xml: &str) -> Dat {
         .collect()
 }
 
+/// Where a DAT is kept: under the commit it came from, so a new core release brings new DATs
+/// instead of reusing the old core's.
+fn cached(dir: &Path, file: &str) -> PathBuf {
+    dir.join(&FBNEO_COMMIT[..12]).join(file)
+}
+
 impl FbNeoDats {
     pub fn new(dir: PathBuf) -> Self {
         Self { dir, arcade: OnceCell::new(), neogeo: OnceCell::new() }
@@ -76,7 +83,7 @@ impl FbNeoDats {
         file: &str,
     ) -> &'a Dat {
         cell.get_or_init(|| async {
-            let path = self.dir.join(file);
+            let path = cached(&self.dir, file);
             if !path.is_file() {
                 let url = format!(
                     "https://raw.githubusercontent.com/libretro/FBNeo/{FBNEO_COMMIT}/dats/{}",
@@ -177,9 +184,9 @@ mod tests {
     #[tokio::test]
     async fn looks_up_cached_dats_by_file_name() {
         let dir = std::env::temp_dir().join(format!("sovemu-fbneo-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(NEOGEO_DAT), SAMPLE).unwrap();
-        std::fs::write(dir.join(ARCADE_DAT), "<datafile/>").unwrap();
+        std::fs::create_dir_all(cached(&dir, "")).unwrap();
+        std::fs::write(cached(&dir, NEOGEO_DAT), SAMPLE).unwrap();
+        std::fs::write(cached(&dir, ARCADE_DAT), "<datafile/>").unwrap();
         let dats = FbNeoDats::new(dir);
         let http = reqwest::Client::new();
         let input = |system: &str, file: &str| LookupInput {

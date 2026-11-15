@@ -1,0 +1,21 @@
+# Render 3D systems (N64, Dreamcast, GameCube, PS2) on an NVIDIA GPU with NVIDIA's own driver:
+#
+#   docker compose -f compose.yaml -f compose.nvidia.yaml up -d
+#   (add -f compose.nas.yaml for the NAS library, in any order)
+#
+# Needs NVIDIA's driver and the NVIDIA container toolkit on the host
+# (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/). The toolkit adds the
+# host driver's libraries to the container: the image asks for OpenGL/EGL and Vulkan
+# (`graphics`) and NVENC (`video`) through NVIDIA_DRIVER_CAPABILITIES. At startup the server
+# tries every GPU it can see and logs which one 3D games use.
+#
+# For AMD and Intel GPUs (Mesa), use compose.gpu.yaml instead.
+services:
+  sovemu:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, graphics, video, utility]

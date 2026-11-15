@@ -1,13 +1,15 @@
 //! `sovemu-worker probe`: load each core, report what it says about itself, unload it.
 //!
 //! The container build runs this over every core it ships, so a core that cannot be loaded
-//! (a missing shared library, a glibc-only build on musl) fails the build instead of a session.
+//! (a missing shared library, a build for another platform) fails the build instead of a session.
 //! Cores are probed one after another, which the one-core-per-process rule allows.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
+use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 use sovemu_retro_host::{Core, CoreOptions};
 
 use crate::ProbeArgs;
@@ -24,33 +26,10 @@ struct ProbeResult {
     valid_extensions: Vec<String>,
     need_fullpath: bool,
     supports_no_game: bool,
-    /// The core options it declares, in its order, with their choices.
-    variables: Vec<ProbeVariable>,
+    /// The core options it declares without a game, in its order, with their choices.
+    variables: Vec<CoreOption>,
     /// The groups the core puts its options in ("Video", "Audio", …), if it does.
-    categories: Vec<ProbeCategory>,
-}
-
-#[derive(Debug, Serialize)]
-struct ProbeVariable {
-    key: String,
-    description: String,
-    /// What the option does, where the core explains it.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    info: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    category: Option<String>,
-    choices: Vec<String>,
-    /// A display label per choice.
-    labels: Vec<String>,
-    default: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ProbeCategory {
-    key: String,
-    description: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    info: String,
+    categories: Vec<CoreCategory>,
 }
 
 /// Whether `path` looks like a shared library on this platform.
@@ -93,35 +72,33 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
         system_dir: scratch.to_owned(),
         save_dir: scratch.to_owned(),
         variables: Vec::new(),
-        // Loading is enough to probe; no game, so no context is ever made.
+        // A stand-in game (see `standin`) makes a GPU core create its context, so allow one.
         gpu: Some(sovemu_retro_host::GpuChoice::Auto),
     };
     match Core::load(path, options) {
-        Ok(core) => {
+        Ok(mut core) => {
             let info = core.system_info();
             result.name = Some(info.library_name.clone());
             result.version = Some(info.library_version.clone());
             result.valid_extensions = info.valid_extensions.clone();
             result.need_fullpath = info.need_fullpath;
             result.supports_no_game = core.supports_no_game();
-            result.variables = core
-                .variables()
-                .into_iter()
-                .map(|v| ProbeVariable {
-                    key: v.key,
-                    description: v.description,
-                    info: v.info,
-                    category: v.category,
-                    choices: v.options,
-                    labels: v.labels,
-                    default: v.default,
-                })
-                .collect();
-            result.categories = core
-                .option_categories()
-                .into_iter()
-                .map(|c| ProbeCategory { key: c.key, description: c.description, info: c.info })
-                .collect();
+            (result.variables, result.categories) = crate::stream::declared_options(&core);
+            // Cores that declare their options only with a game loaded: load a stand-in.
+            if result.variables.is_empty()
+                && let Some((ext, bytes)) = crate::standin::for_extensions(&result.valid_extensions)
+            {
+                let file = scratch.join(format!("standin.{ext}"));
+                match std::fs::write(&file, bytes).map_err(|e| e.to_string()).and_then(|()| {
+                    core.load_game(Some(&file)).map(|_| ()).map_err(|e| format!("{e:#}"))
+                }) {
+                    Ok(()) => {
+                        (result.variables, result.categories) =
+                            crate::stream::declared_options(&core);
+                    }
+                    Err(e) => tracing::warn!("{}: stand-in game did not load: {e}", path.display()),
+                }
+            }
         }
         Err(err) => result.error = Some(format!("{err:#}")),
     }
@@ -129,6 +106,8 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
 }
 
 pub fn run(args: ProbeArgs) -> Result<()> {
+    // Cores may print to stdout; the JSON report must be the only thing on it.
+    let mut out = sovemu_retro_host::take_stdout().context("keeping stdout for the report")?;
     let cores = expand(&args.cores)?;
     if cores.is_empty() {
         bail!("no cores found in {:?}", args.cores);
@@ -139,7 +118,7 @@ pub fn run(args: ProbeArgs) -> Result<()> {
     let results: Vec<ProbeResult> = cores.iter().map(|core| probe_one(core, &scratch)).collect();
     std::fs::remove_dir_all(&scratch).ok();
 
-    println!("{}", serde_json::to_string_pretty(&results)?);
+    writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
     let failed: Vec<_> = results.iter().filter(|r| r.error.is_some()).collect();
     for r in &failed {
         tracing::error!("{}: {}", r.path.display(), r.error.as_deref().unwrap_or_default());

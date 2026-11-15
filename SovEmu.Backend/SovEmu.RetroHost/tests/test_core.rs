@@ -267,7 +267,7 @@ fn a_gpu_core_is_refused_when_gpu_rendering_is_off() {
     assert!(core.renderer().is_none());
 }
 
-/// Needs libEGL with a working device (Mesa's llvmpipe will do): Linux CI and the musl image
+/// Needs libEGL with a working device (Mesa's llvmpipe will do): Linux CI and the image's tests
 /// have it; elsewhere the test says so and passes.
 #[test]
 fn renders_a_gpu_core_and_reads_frames_back_upright() {

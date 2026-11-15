@@ -4,7 +4,7 @@
 // apply to the next game started. Options set in the server's environment win and are shown
 // locked; the admin's changes can be copied out as environment lines, so the configuration
 // stays reproducible without this page.
-import { Check, Copy, Cpu, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
+import { Check, Copy, Cpu, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
 import { choiceLabel, filterSettings, groupSettings, sourceBadge } from "../../lib/settings";
@@ -168,7 +168,14 @@ function Settings() {
         {message && <p className={cn("mt-3 text-sm", message.error ? "text-red-300" : "text-emerald-300")}>{message.text}</p>}
       </section>
 
-      {loaded && !loaded.settings.length && <p className="text-sm text-slate-400">This emulator has no settings.</p>}
+      {loaded && !loaded.settings.length && (
+        <p className={cn(panel, "flex items-start gap-3 text-sm text-slate-300")}>
+          <Info className="mt-0.5 size-4 shrink-0 text-slate-400" />
+          {loaded.needs_game
+            ? `This emulator lists its settings only once a game is running. Start any ${current?.name ?? ""} game once, and they will appear here.`
+            : "This emulator has no settings."}
+        </p>
+      )}
       {loaded && loaded.settings.length > 0 && !groups.length && <p className="text-sm text-slate-400">No settings match "{query}".</p>}
 
       {groups.length > 0 && (

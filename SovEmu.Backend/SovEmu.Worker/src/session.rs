@@ -1,7 +1,9 @@
 //! `sovemu-worker session`: one game session driven by `sovemu-server`.
 //!
 //! The server talks to the worker in JSON lines ([`sovemu_protocol::ipc`]): requests on stdin,
-//! replies and events on stdout. Logs go to stderr, so stdout carries nothing but protocol.
+//! replies and events on stdout. Logs go to stderr, so stdout carries nothing but protocol:
+//! before the core loads, stdout is kept for the replies and descriptor 1 (where a core's
+//! `printf` goes) is pointed at stderr.
 //! The worker exits when stdin closes (the server went away), on `shutdown`, or after
 //! `--idle-timeout` seconds with no client connected.
 
@@ -20,7 +22,7 @@ use crate::stream::{self, Command, Session, SessionConfig, StreamEvent};
 
 /// Writes one reply as a JSON line. Shared by the stream thread and the reply threads.
 #[derive(Clone)]
-struct Out(Arc<Mutex<std::io::Stdout>>);
+struct Out(Arc<Mutex<std::fs::File>>);
 
 impl Out {
     fn send(&self, reply: &Reply) {
@@ -33,7 +35,8 @@ impl Out {
 
 pub fn run(args: SessionArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
-    let out = Out(Arc::new(Mutex::new(std::io::stdout())));
+    let stdout = sovemu_retro_host::take_stdout().context("keeping stdout for replies")?;
+    let out = Out(Arc::new(Mutex::new(stdout)));
     let report_out = out.clone();
     let report = move |phase, read, total| {
         report_out.send(&Reply::Progress { phase, read, total });
@@ -57,12 +60,14 @@ pub fn run(args: SessionArgs) -> Result<()> {
         &report,
     )?;
     let (core, av) = session.describe();
+    let (options, categories) = session.options();
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
     tracing::info!("session ready: WebRTC on UDP {udp_addr}, advertising {advertised}");
 
+    out.send(&Reply::Options { options, categories });
     out.send(&Reply::Ready {
         udp_port: udp_addr.port(),
         core,

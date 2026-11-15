@@ -13,9 +13,13 @@
 services:
   sovemu:
     image: sovemu:dev
+    # x86_64 only (the cores come from libretro's stable x86_64 release); an arm64 host runs it
+    # under emulation.
+    platform: linux/amd64
     build:
       context: .
       dockerfile: SovEmu.Backend/Dockerfile
+      platforms: [linux/amd64]
     # Every SovEmu setting is an environment variable (see the README's table); put yours in
     # .env, which is loaded here as a whole, so no setting needs this file edited. Workers do
     # not inherit it: the server starts them with an empty environment.

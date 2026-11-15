@@ -142,6 +142,12 @@ pub fn decide(setting: &str, probe: Probe) -> GpuStatus {
         },
         "" | "auto" => match probe.best.as_deref() {
             Some("software") => fall_back("no working GPU".into()),
+            // A working GPU with no render node (NVIDIA without nvidia-drm): workers pick it
+            // with `auto` too, hardware before software.
+            Some("auto") => {
+                let gpu = probe.devices.iter().find(|d| d.works && d.kind == "hardware");
+                with(Mode::Gpu, "auto".into(), gpu.and_then(|d| d.renderer.clone()), None)
+            }
             Some(node) => {
                 with(Mode::Gpu, node.to_owned(), renderer_of(&probe.devices, Some(node)), None)
             }
@@ -223,6 +229,16 @@ mod tests {
 
         let s = decide("auto", probe(vec![], None));
         assert_eq!((s.mode, s.worker_arg.as_str()), (Mode::Off, "off"));
+    }
+
+    #[test]
+    fn a_gpu_without_a_render_node_is_still_used() {
+        // NVIDIA's driver without nvidia-drm: an EGL device with no DRM node.
+        let nvidia = device(None, "hardware", true);
+        let soft = device(None, "software", true);
+        let s = decide("auto", probe(vec![soft, nvidia], Some("auto")));
+        assert_eq!((s.mode, s.worker_arg.as_str()), (Mode::Gpu, "auto"));
+        assert_eq!(s.renderer.as_deref(), Some("hardware renderer"));
     }
 
     #[test]

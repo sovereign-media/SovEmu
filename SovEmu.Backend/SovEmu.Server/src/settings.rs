@@ -2,7 +2,10 @@
 //! change in the web app.
 //!
 //! What a core offers is only known by loading it, and the server never loads a core: it asks a
-//! worker (`sovemu-worker probe <core>`) once per core and keeps the answer. A game starts with
+//! worker (`sovemu-worker probe <core>`) once per core and keeps the answer. Some cores declare
+//! their options only once a game is loaded, which the probe cannot see; for those, the options
+//! the core's last game session reported (`core_options`) are used, and until a game has run
+//! the page says to start one. A game starts with
 //! each option taken from, last one winning: the core's default, SovEmu's own default for the
 //! system ([`crate::systems`]), the admin's choice (the `system_settings` table), and the
 //! environment (`SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`). The environment always wins and is shown
@@ -26,32 +29,7 @@ use crate::auth::AdminUser;
 use crate::error::{ApiError, ApiResult};
 use crate::systems::System;
 
-/// One option as the core declares it.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct CoreOption {
-    pub key: String,
-    pub description: String,
-    /// What it does, where the core explains it.
-    #[serde(default)]
-    pub info: String,
-    /// The key of its category, where the core groups its options.
-    #[serde(default)]
-    pub category: Option<String>,
-    pub choices: Vec<String>,
-    /// A display label per choice.
-    #[serde(default)]
-    pub labels: Vec<String>,
-    pub default: String,
-}
-
-/// A group of options the core declares ("Video", "Audio", …).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct CoreCategory {
-    pub key: String,
-    pub description: String,
-    #[serde(default)]
-    pub info: String,
-}
+pub use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 
 /// What the probe says about a core.
 #[derive(Debug, Clone, Deserialize)]
@@ -98,6 +76,62 @@ impl CoreInfoCache {
         }
         self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(core.to_owned(), info.clone());
         Ok(info)
+    }
+}
+
+/// The file name a core is remembered by (`fceumm_libretro.so`).
+fn core_name(core: &Path) -> String {
+    core.file_name().map_or_else(|| core.display().to_string(), |n| n.to_string_lossy().into())
+}
+
+/// Keeps the options a core declared in a game session, for cores the probe cannot see them
+/// in. Failing to keep them only costs the Settings page, so it is logged, not returned.
+pub async fn remember(
+    db: &SqlitePool,
+    core: &Path,
+    (options, categories): &crate::workers::Declared,
+) {
+    let result = sqlx::query(
+        "INSERT INTO core_options (core, options, categories) VALUES (?, ?, ?)
+         ON CONFLICT(core) DO UPDATE SET options = excluded.options,
+           categories = excluded.categories, updated_at = datetime('now')",
+    )
+    .bind(core_name(core))
+    .bind(serde_json::to_string(options).unwrap_or_default())
+    .bind(serde_json::to_string(categories).unwrap_or_default())
+    .execute(db)
+    .await;
+    if let Err(e) = result {
+        tracing::warn!("remembering {}'s options: {e}", core.display());
+    }
+}
+
+/// The options a core's last session reported, if any.
+async fn remembered(
+    db: &SqlitePool,
+    core: &Path,
+) -> sqlx::Result<Option<crate::workers::Declared>> {
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT options, categories FROM core_options WHERE core = ?")
+            .bind(core_name(core))
+            .fetch_optional(db)
+            .await?;
+    Ok(row
+        .and_then(|(o, c)| Some((serde_json::from_str(&o).ok()?, serde_json::from_str(&c).ok()?))))
+}
+
+/// What a core offers: the probe's options, or where the probe saw none (the core declares
+/// them with a game), the last session's. The flag says neither has any yet.
+fn offered(
+    probe: &CoreInfo,
+    remembered: Option<crate::workers::Declared>,
+) -> (Vec<CoreOption>, Vec<CoreCategory>, bool) {
+    if !probe.variables.is_empty() {
+        return (probe.variables.clone(), probe.categories.clone(), false);
+    }
+    match remembered {
+        Some((options, categories)) if !options.is_empty() => (options, categories, false),
+        _ => (Vec::new(), Vec::new(), true),
     }
 }
 
@@ -179,6 +213,8 @@ pub struct SystemSettings {
     settings: Vec<Setting>,
     /// The core's own option categories, in its order.
     categories: Vec<CoreCategory>,
+    /// The core lists its settings only with a game loaded, and none has run yet.
+    needs_game: bool,
     /// The admin's choices as environment lines, to make them part of the configuration.
     environment: Vec<String>,
 }
@@ -192,10 +228,10 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
     })?;
     let worker = state.workers.worker_bin();
     let info = state.core_info.get(&worker, &core).await?;
+    let (options, categories, needs_game) = offered(&info, remembered(&state.db, &core).await?);
     let admin = admin_values(&state.db, system.id).await?;
     let mut layers = layered(system, &admin, &environment(state, system));
-    let mut settings: Vec<Setting> = info
-        .variables
+    let mut settings: Vec<Setting> = options
         .iter()
         .map(|o| {
             let (value, source) =
@@ -243,7 +279,8 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
         system: system.id.to_owned(),
         core: core.join(" "),
         settings,
-        categories: info.categories.clone(),
+        categories,
+        needs_game,
         environment,
     })
 }
@@ -275,6 +312,7 @@ pub async fn put_settings(
         )
     })?;
     let info = state.core_info.get(&state.workers.worker_bin(), &core).await?;
+    let (options, _, _) = offered(&info, remembered(&state.db, &core).await?);
     let locked = environment(&state, system);
     for (key, value) in &changes {
         if locked.contains_key(key) {
@@ -283,7 +321,7 @@ pub async fn put_settings(
                 format!("{key} is set by SOVEMU_SYSTEMS__{}__OPTIONS__{key}", system.id),
             ));
         }
-        let option = info.variables.iter().find(|o| &o.key == key);
+        let option = options.iter().find(|o| &o.key == key);
         match (option, value) {
             (None, Some(_)) => {
                 return Err(ApiError::bad_request(format!("{} has no option {key}", system.name)));
@@ -328,6 +366,39 @@ pub async fn put_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn option(key: &str) -> CoreOption {
+        CoreOption {
+            key: key.into(),
+            description: key.into(),
+            info: String::new(),
+            category: None,
+            choices: vec!["a".into(), "b".into()],
+            labels: Vec::new(),
+            default: "a".into(),
+        }
+    }
+
+    #[test]
+    fn falls_back_to_what_a_session_reported() {
+        let probe = |variables| CoreInfo {
+            name: None,
+            version: None,
+            error: None,
+            variables,
+            categories: Vec::new(),
+        };
+        let session = Some((vec![option("from_session")], Vec::new()));
+        // The probe saw options: they win.
+        let (o, _, needs) = offered(&probe(vec![option("from_probe")]), session.clone());
+        assert_eq!((o[0].key.as_str(), needs), ("from_probe", false));
+        // It saw none (declared with a game): the last session's.
+        let (o, _, needs) = offered(&probe(Vec::new()), session);
+        assert_eq!((o[0].key.as_str(), needs), ("from_session", false));
+        // Neither yet: start a game first.
+        let (o, _, needs) = offered(&probe(Vec::new()), None);
+        assert!(o.is_empty() && needs);
+    }
 
     #[test]
     fn the_environment_wins_then_the_admin_then_sovemu() {
