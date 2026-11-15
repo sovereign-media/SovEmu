@@ -98,6 +98,13 @@ graphql(`
     failed
     sources
     notes
+    artwork {
+      running
+      total
+      done
+      downloaded
+      failed
+    }
   }
 `);
 

@@ -73,6 +73,8 @@ function Library() {
   const m = library.mirror;
   const syncPct = m ? (m.bytesTotal ? (100 * m.bytesDone) / m.bytesTotal : m.running ? 0 : 100) : 0;
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
+  const art = metadata.artwork;
+  const artPct = art.total ? (100 * art.done) / art.total : 0;
   return (
     <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
       <Card
@@ -145,6 +147,16 @@ function Library() {
               ? `Last run: ${metadata.found} found, ${metadata.notFound} not found, ${metadata.failed} to retry.`
               : ""}
         </p>
+        {art.total > 0 && (
+          <>
+            <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Box art" />
+            <p className="mt-2 text-sm text-slate-300">
+              {art.running
+                ? `Downloading box art in the background: ${art.done.toLocaleString()} of ${art.total.toLocaleString()} games without a local thumb…`
+                : `Box art: ${art.downloaded.toLocaleString()} downloaded${art.failed ? `, ${art.failed.toLocaleString()} failed` : ""}.`}
+            </p>
+          </>
+        )}
         {metadata.notes.length > 0 && (
           <ul className="mt-2 grid gap-1 text-sm text-amber-300">
             {metadata.notes.map((n) => (

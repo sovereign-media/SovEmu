@@ -192,7 +192,8 @@ const START: &str =
     id title core width height } }";
 const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
-const METADATA: &str = "{ metadataStatus { running total done found failed sources notes } }";
+const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
+                        artwork { running total done downloaded failed } } }";
 const LIBRARY: &str = "{ libraryStatus { mode games cacheBytes mirror { running filesDone } } }";
 
 fn system<'a>(systems: &'a Value, id: &str) -> &'a Value {
@@ -510,7 +511,11 @@ fn metadata_args(base: &str) -> Vec<String> {
 async fn wait_for_job(h: &mut Harness) -> Value {
     for _ in 0..200 {
         let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
-        if status["running"] == false && status["done"].as_u64() > Some(0) {
+        // The lookup, then the box art downloads that follow it.
+        if status["running"] == false
+            && status["done"].as_u64() > Some(0)
+            && status["artwork"]["running"] == false
+        {
             return status;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -569,6 +574,11 @@ async fn fetches_metadata_from_both_services() {
         (status["found"].clone(), status["failed"].clone()),
         (json!(2), json!(0)),
         "{status}"
+    );
+    // Box art in the background, only for the GBA game (the NES one has a local thumb).
+    assert_eq!(
+        status["artwork"],
+        json!({"running": false, "total": 1, "done": 1, "downloaded": 1, "failed": 0})
     );
 
     // ScreenScraper named the NES game and described it; the file's own title is kept too.

@@ -12,9 +12,13 @@
 //!   account raises the quota.
 //! - [`thegamesdb`]: TheGamesDB, by name and platform. Needs an API key.
 //!
+//! A lookup stores what it finds at once, box art included as a URL; [`artwork`] downloads the
+//! box art afterwards, in the background, for the games that will show it.
+//!
 //! ScreenScraper and TheGamesDB are only asked about games the sources before them left
 //! incomplete, so their quotas go on what LaunchBox does not know.
 
+pub mod artwork;
 pub mod fbneo;
 pub mod launchbox;
 pub mod screenscraper;
@@ -146,6 +150,8 @@ pub struct JobStatus {
     pub sources: Vec<&'static str>,
     /// Why a source stopped early (bad credentials, quota), if one did.
     pub notes: Vec<String>,
+    /// The box art downloads that follow a lookup.
+    pub artwork: artwork::ArtworkStatus,
 }
 
 /// The configured sources and the job's shared state.
@@ -156,6 +162,9 @@ pub struct Metadata {
     pub thegamesdb: Option<thegamesdb::TheGamesDb>,
     pub media_dir: PathBuf,
     pub status: Mutex<JobStatus>,
+    pub artwork: Mutex<artwork::ArtworkStatus>,
+    /// Box art downloads at once.
+    pub artwork_downloads: usize,
     http: reqwest::Client,
     screenscraper_delay: Duration,
 }
@@ -173,6 +182,7 @@ impl Metadata {
         screenscraper: Option<screenscraper::ScreenScraper>,
         thegamesdb: Option<thegamesdb::TheGamesDb>,
         screenscraper_delay: Duration,
+        artwork_downloads: usize,
     ) -> Arc<Self> {
         let mut sources = vec!["fbneo"];
         if launchbox.is_some() {
@@ -191,13 +201,21 @@ impl Metadata {
             thegamesdb,
             media_dir: dir.join("media"),
             status: Mutex::new(JobStatus { sources, ..JobStatus::default() }),
+            artwork: Mutex::new(artwork::ArtworkStatus::default()),
+            artwork_downloads,
             http: http_client(),
             screenscraper_delay,
         })
     }
 
     pub fn status(&self) -> JobStatus {
-        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        status.artwork = self.artwork_status();
+        status
+    }
+
+    pub fn artwork_status(&self) -> artwork::ArtworkStatus {
+        self.artwork.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn update(&self, f: impl FnOnce(&mut JobStatus)) {
@@ -225,19 +243,6 @@ struct Pending {
     status: Option<String>,
     /// The services asked last time.
     tried: Option<String>,
-    /// The artwork found beside the ROM (`thumb,video`, …).
-    media: String,
-    /// Box art an earlier job downloaded.
-    box_art: Option<String>,
-}
-
-impl Pending {
-    /// Whether box art is worth downloading: it only stands in for a missing local thumb, and
-    /// one already downloaded is kept.
-    fn wants_box_art(&self, media_dir: &Path) -> bool {
-        !self.media.split(',').any(|k| k == "thumb")
-            && !self.box_art.as_ref().is_some_and(|f| media_dir.join(f).is_file())
-    }
 }
 
 /// Whether a game should be looked up: never looked up, or not found by the services asked
@@ -277,8 +282,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         available.push("thegamesdb");
     }
     let games: Vec<Pending> = sqlx::query_as::<_, Pending>(
-        "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried, g.media,
-           m.box_art FROM games g
+        "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried FROM games g
          LEFT JOIN game_metadata m ON m.game_id = g.id
          WHERE (?1 IS NULL OR g.system = ?1)
            AND (?2 OR m.game_id IS NULL OR m.status = 'not_found')
@@ -333,8 +337,10 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         // a service not among them.
         let mut tried = vec!["fbneo"];
         let mut failed = false;
+        // The source of the box art URL, which the box art job needs (for credentials).
+        let mut art = None;
         if let Some(found) = meta.fbneo.lookup(&meta.http, &input).await {
-            info.merge(found);
+            merge_from(&mut info, &mut art, found, "fbneo");
             sources.push("fbneo");
         }
         if let Some(index) = &launchbox {
@@ -342,7 +348,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             // Arcade files are set names (`mslug`): match the title FBNeo gave them.
             let title = info.title.as_deref().unwrap_or(&input.title);
             if let Some(found) = index.lookup(&input.system, title) {
-                info.merge(found);
+                merge_from(&mut info, &mut art, found, "launchbox");
                 sources.push("launchbox");
             }
         }
@@ -350,7 +356,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             let ss = meta.screenscraper.as_ref().expect("checked");
             match ss.lookup(&input).await {
                 Ok(Some(found)) => {
-                    info.merge(found);
+                    merge_from(&mut info, &mut art, found, "screenscraper");
                     sources.push("screenscraper");
                     tried.push("screenscraper");
                 }
@@ -373,7 +379,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             let tgdb = meta.thegamesdb.as_ref().expect("checked");
             match tgdb.lookup(&input).await {
                 Ok(Some(found)) => {
-                    info.merge(found);
+                    merge_from(&mut info, &mut art, found, "thegamesdb");
                     sources.push("thegamesdb");
                     tried.push("thegamesdb");
                 }
@@ -393,13 +399,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
 
         let found = !sources.is_empty();
         if found || !failed {
-            let box_art = match &info.box_art_url {
-                Some(url) if game.wants_box_art(&meta.media_dir) => {
-                    download_box_art(&meta, game.id, url).await
-                }
-                _ => None,
-            };
-            let _ = store(&state, game.id, &info, &sources, &tried, box_art.as_deref()).await;
+            let _ = store(&state, game.id, &info, art, &sources, &tried).await;
         }
         meta.update(|s| {
             s.done += 1;
@@ -412,6 +412,8 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             }
         });
     }
+    // Claimed before this job reads as finished, so no one sees both idle in between.
+    let artwork = artwork::claim(&meta);
     meta.update(|s| s.running = false);
     let s = meta.status();
     tracing::info!(
@@ -420,25 +422,48 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         s.not_found,
         s.failed
     );
+    // Box art in the background: the scan loop waits for this job, not for the downloads.
+    if artwork {
+        tokio::spawn(artwork::run_claimed(state));
+    }
+}
+
+/// Merges `found` into `info`, noting `source` in `art` if it is where the box art URL came
+/// from (an earlier source's URL wins, as every field does).
+fn merge_from(
+    info: &mut GameInfo,
+    art: &mut Option<&'static str>,
+    found: GameInfo,
+    source: &'static str,
+) {
+    if info.box_art_url.is_none() && found.box_art_url.is_some() {
+        *art = Some(source);
+    }
+    info.merge(found);
 }
 
 async fn store(
     state: &AppState,
     game_id: i64,
     info: &GameInfo,
+    box_art_source: Option<&str>,
     sources: &[&str],
     tried: &[&str],
-    box_art: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    // Downloaded box art is kept; a new URL is tried afresh (box_art_attempts back to 0).
     sqlx::query(
         "INSERT INTO game_metadata (game_id, status, sources, title, description, release_date,
-           developer, publisher, genre, players, rating, box_art, tried, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           developer, publisher, genre, players, rating, box_art_url, box_art_source, tried,
+           fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(game_id) DO UPDATE SET status = excluded.status, sources = excluded.sources,
            title = excluded.title, description = excluded.description,
            release_date = excluded.release_date, developer = excluded.developer,
            publisher = excluded.publisher, genre = excluded.genre, players = excluded.players,
-           rating = excluded.rating, box_art = COALESCE(excluded.box_art, game_metadata.box_art),
+           rating = excluded.rating,
+           box_art_attempts = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
+             THEN game_metadata.box_art_attempts ELSE 0 END,
+           box_art_url = excluded.box_art_url, box_art_source = excluded.box_art_source,
            tried = excluded.tried, fetched_at = excluded.fetched_at",
     )
     .bind(game_id)
@@ -452,7 +477,8 @@ async fn store(
     .bind(&info.genre)
     .bind(&info.players)
     .bind(info.rating)
-    .bind(box_art)
+    .bind(&info.box_art_url)
+    .bind(box_art_source)
     .bind(tried.join(","))
     .execute(&state.db)
     .await?;
@@ -529,30 +555,6 @@ mod tests {
             MetaError::Quota(_)
         ));
         assert!(matches!(status_error("x", StatusCode::BAD_GATEWAY, ""), MetaError::Other(_)));
-    }
-
-    #[test]
-    fn box_art_only_for_games_without_a_thumb() {
-        let dir = std::env::temp_dir().join(format!("sovemu-boxart-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("1-box.png"), b"png").unwrap();
-        let game = |media: &str, box_art: Option<&str>| Pending {
-            id: 1,
-            system: "nes".into(),
-            path: "nes/a.nes".into(),
-            title: "A".into(),
-            size: 0,
-            status: None,
-            tried: None,
-            media: media.into(),
-            box_art: box_art.map(String::from),
-        };
-        assert!(game("", None).wants_box_art(&dir));
-        assert!(game("image,video", None).wants_box_art(&dir));
-        assert!(!game("image,thumb", None).wants_box_art(&dir), "the local thumb is shown");
-        assert!(!game("", Some("1-box.png")).wants_box_art(&dir), "already downloaded");
-        assert!(game("", Some("2-box.png")).wants_box_art(&dir), "downloaded, then deleted");
-        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

@@ -269,6 +269,10 @@ pub struct Config {
     )]
     pub metadata_languages: Vec<String>,
 
+    /// Box art downloaded at once by the background job that follows a lookup.
+    #[arg(long, env = "SOVEMU_ARTWORK_DOWNLOADS", default_value_t = 4)]
+    pub artwork_downloads: usize,
+
     /// Pause between ScreenScraper requests, milliseconds (free accounts: one at a time).
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_DELAY_MS", default_value_t = 1200)]
     pub screenscraper_delay_ms: u64,
@@ -460,10 +464,12 @@ impl Config {
                 self.cache_large_game_mb, self.copy_threads
             ),
             format!(
-                "metadata_regions={} metadata_languages={} screenscraper_delay_ms={}",
+                "metadata_regions={} metadata_languages={} screenscraper_delay_ms={} \
+                 artwork_downloads={}",
                 self.metadata_regions.join(","),
                 self.metadata_languages.join(","),
-                self.screenscraper_delay_ms
+                self.screenscraper_delay_ms,
+                self.artwork_downloads
             ),
         ];
         let mut lines = lines.to_vec();
@@ -661,6 +667,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         screenscraper,
         thegamesdb,
         std::time::Duration::from_millis(config.screenscraper_delay_ms),
+        config.artwork_downloads,
     );
     let login_throttle = ops::LoginThrottle::new(
         config.login_max_failures,

@@ -20,7 +20,7 @@ type Documents = {
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": typeof types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": typeof types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": typeof types.SettingsFieldsFragmentDoc,
-    "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n  }\n": typeof types.MetadataFieldsFragmentDoc,
+    "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": typeof types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": typeof types.ViewerDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.SetupDocument,
     "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.LoginDocument,
@@ -64,7 +64,7 @@ const documents: Documents = {
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": types.SettingsFieldsFragmentDoc,
-    "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n  }\n": types.MetadataFieldsFragmentDoc,
+    "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": types.ViewerDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.SetupDocument,
     "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.LoginDocument,
@@ -126,7 +126,7 @@ export function graphql(source: "\n  fragment SettingsFields on EmulatorSettings
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n  }\n"): typeof import('./graphql').MetadataFieldsFragmentDoc;
+export function graphql(source: "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n"): typeof import('./graphql').MetadataFieldsFragmentDoc;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
