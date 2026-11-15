@@ -7,6 +7,7 @@
 mod admin;
 mod api;
 mod auth;
+mod bios;
 mod cache;
 mod cheats;
 mod controllers;
@@ -61,9 +62,10 @@ pub struct Config {
     #[arg(long = "roms-dir", env = "SOVEMU_ROMS_DIR")]
     roms: Option<PathBuf>,
 
-    /// BIOS and system files for cores. Default: `<data-dir>/system`.
-    #[arg(long = "system-dir", env = "SOVEMU_SYSTEM_DIR")]
-    system: Option<PathBuf>,
+    /// BIOS files, one folder per system named like its ROM folder (`psx/`, `ps2/` …).
+    /// Default: `<data-dir>/bios`.
+    #[arg(long = "bios-dir", env = "SOVEMU_BIOS_DIR")]
+    bios: Option<PathBuf>,
 
     /// Directory of libretro cores (`<name>_libretro.so`).
     #[arg(long, env = "SOVEMU_CORES_DIR", default_value = "cores")]
@@ -291,6 +293,15 @@ const SECRETS: &[&str] = &[
 ];
 
 impl Config {
+    /// Where BIOS files live: `<bios_dir>/<system>/`.
+    pub fn bios_dir(&self) -> PathBuf {
+        // `SOVEMU_BIOS_DIR=` (empty) means the default, not the working directory.
+        self.bios
+            .clone()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| self.data_dir.join("bios"))
+    }
+
     fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
@@ -329,6 +340,7 @@ impl Config {
             format!("http={}", self.http),
             format!("data_dir={}", self.data_dir.display()),
             format!("roms_dir={}", self.roms_dir.display()),
+            format!("bios_dir={}", self.bios_dir().display()),
             format!("library_mode={:?}", self.library_mode),
             format!("cache_gb={}", self.cache_gb.map_or("(default)".into(), |g| g.to_string())),
             format!(
@@ -534,6 +546,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     std::fs::create_dir_all(&config.data_dir)
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
+    bios::prepare(&config.bios_dir());
     let db = db::open(&config.data_dir.join("sovemu.db")).await?;
     reconcile_users(&db, &config).await?;
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
@@ -544,7 +557,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ports: config.udp_ports,
         bind_ip: config.udp_bind,
         advertise_ip: config.advertise_ip,
-        system_dir: config.system.clone().unwrap_or_else(|| config.data_dir.join("system")),
+        bios_dir: config.bios_dir(),
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
         audio_kbps: config.audio_kbps,

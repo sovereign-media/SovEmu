@@ -102,7 +102,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 sovemu \
     && useradd -u 1000 -g sovemu -d /data -M -s /usr/sbin/nologin sovemu \
-    && mkdir -p /data/roms /data/system /data/saves \
+    && mkdir -p /data/roms /data/bios /data/saves \
     && chown -R sovemu:sovemu /data
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/

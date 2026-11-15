@@ -2,6 +2,7 @@
 // types codegen derived from the documents in queries.ts. Signed out, a call goes to sign-in.
 import type {
   AdminStatusQuery,
+  BiosQuery as BiosQueryResult,
   ControllerDefaultsQuery,
   CheatsQuery,
   EmulatorSettingsQuery,
@@ -18,6 +19,7 @@ import type {
 import {
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
+  BiosQuery,
   ChangeEmulatorSettingsMutation,
   ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerMappingsQuery,
@@ -67,6 +69,10 @@ export type SystemSettings = EmulatorSettingsQuery["emulatorSettings"];
 export type CoreSetting = SystemSettings["settings"][number];
 export type CoreCategory = SystemSettings["categories"][number];
 export type SettingSource = GqlSettingSource;
+export type BiosSystem = BiosQueryResult["systems"][number];
+export type SystemBios = NonNullable<BiosSystem["bios"]>;
+export type BiosGroup = SystemBios["groups"][number];
+export type BiosFile = BiosGroup["files"][number];
 export type LibraryStatus = AdminStatusQuery["libraryStatus"];
 export type ControllerDefaults = ControllerDefaultsQuery["controllerDefaults"];
 export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
@@ -83,6 +89,8 @@ export const api = {
   iceServers: async () => (await request(ClientConfigQuery)).clientConfig.iceServers as RTCIceServer[],
   home: async () => (await request(HomeDocument)).home,
   systems: async () => (await request(SystemsQuery)).systems,
+  /** Every system with its BIOS files checked (null for one that uses none). */
+  bios: async () => (await request(BiosQuery)).systems,
   /** A system and its games, or null for an unknown or hidden system. */
   system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
   game: async (id: number) => (await request(GameQuery, { id })).game,

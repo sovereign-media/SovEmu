@@ -632,6 +632,39 @@ async fn library_status_reports_direct_mode() {
 }
 
 #[tokio::test]
+async fn checks_bios_files_per_system() {
+    let mut h = Harness::new("bios", false).await;
+    h.sign_up_admin().await;
+    let bios = h.dir.join("bios");
+    assert!(bios.join("ps2").is_dir() && bios.join("snes").is_dir(), "a folder per system");
+    // A PCSX-ReARMed BIOS in the wrong case, and a Neo Geo set beside the games.
+    std::fs::write(bios.join("psx/SCPH1001.BIN"), vec![0u8; 512 * 1024]).unwrap();
+    std::fs::create_dir_all(h.dir.join("roms/neogeo")).unwrap();
+    std::fs::write(h.dir.join("roms/neogeo/neogeo.zip"), b"zip").unwrap();
+
+    let query = "{ systems { id biosMissing bios { state folder groups { importance anyOne \
+                 satisfied files { name state foundAt } } } } }";
+    let systems = h.ok(query, json!({})).await["systems"].clone();
+    let get =
+        |id: &str| systems.as_array().unwrap().iter().find(|s| s["id"] == id).unwrap().clone();
+    assert_eq!(get("snes")["bios"], Value::Null);
+    assert_eq!(get("snes")["biosMissing"], false);
+    assert_eq!(get("ps2")["biosMissing"], true);
+    assert_eq!(get("ps2")["bios"]["state"], "MISSING");
+    assert_eq!(get("neogeo")["biosMissing"], false, "found beside the games");
+    assert_eq!(get("neogeo")["bios"]["state"], "WARNING", "not the known version");
+    let psx = get("psx")["bios"].clone();
+    assert_eq!(psx["state"], "INCOMPLETE");
+    assert_eq!(psx["folder"], "psx");
+    assert_eq!(psx["groups"][0]["importance"], "RECOMMENDED");
+    assert_eq!(psx["groups"][0]["anyOne"], true);
+    let files = psx["groups"][0]["files"].as_array().unwrap();
+    let scph1001 = files.iter().find(|f| f["name"] == "scph1001.bin").unwrap();
+    assert_eq!(scph1001["state"], "MISPLACED");
+    assert_eq!(scph1001["foundAt"], "psx/SCPH1001.BIN");
+}
+
+#[tokio::test]
 async fn the_admin_comes_from_the_environment() {
     let admin = |pw: &str| {
         vec![

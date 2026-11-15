@@ -11,7 +11,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Scale | Personal/family, single node |
 | Database | SQLite (WAL mode) via `sqlx` with migrations; large files stay on disk |
 | Licensing | Non-commercial, so non-commercial cores (snes9x, genesis_plus_gx, etc.) are allowed |
-| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder and BIOS files live in `system/`. No user uploads. |
+| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are local, in `bios/<system>/` (named like the ROM folder), checked by name and MD5. No user uploads. |
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with admin invites, plus optional OIDC |
@@ -195,7 +195,7 @@ exited workers are reaped.
 - **Every shipped core is probed at image build time** (`sovemu-worker probe`), which writes
   `/opt/sovemu/cores/manifest.json`. The server will read it to map file extensions to cores.
 - The image runs as uid 1000 and keeps everything mutable under the `/data` volume: `roms/`,
-  `system/` (BIOS), `saves/`, and later the SQLite database.
+  `bios/` (one folder per system), `saves/`, and later the SQLite database.
 - The runtime image carries `libvpx` and `libopus` for encoding, from Debian.
 
 ### Draft schema

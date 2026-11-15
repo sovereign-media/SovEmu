@@ -11,6 +11,36 @@ export type BindingInput = {
   input: string;
 };
 
+/** One BIOS file. */
+export type BiosFileState =
+  /** A known dump, or the right name in the wrong case, but not where the core looks. */
+  | 'MISPLACED'
+  | 'MISSING'
+  /** Where the core looks, and a known good dump. */
+  | 'OK'
+  /** Where the core looks, but not a dump the list knows: a bad dump, or a revision it lacks. */
+  | 'UNVERIFIED';
+
+/** How much a system depends on a BIOS file. */
+export type BiosImportance =
+  /** A boot logo, an add-on. */
+  | 'OPTIONAL'
+  /** The core has a built-in replacement that plays most games. */
+  | 'RECOMMENDED'
+  /** Games will not start without it. */
+  | 'REQUIRED';
+
+/** A system's BIOS files as a whole. */
+export type BiosState =
+  /** Playable, without a recommended file. */
+  | 'INCOMPLETE'
+  /** A required file is missing: games will not start. */
+  | 'MISSING'
+  /** Everything required and recommended is there and verified. */
+  | 'READY'
+  /** Playable, but a file is unverified or misplaced. */
+  | 'WARNING';
+
 /** How the library is read. */
 export type LibraryMode =
   /** From the library, keeping local copies of what is used. */
@@ -87,7 +117,7 @@ export type StartPhase =
 
 export type GameFieldsFragment = { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, image: string | null, thumb: string | null, video: string | null };
 
-export type SystemFieldsFragment = { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null };
+export type SystemFieldsFragment = { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean };
 
 export type SaveFieldsFragment = { slot: number, savedAt: number, screenshotUrl: string | null };
 
@@ -136,14 +166,19 @@ export type HomeQuery = { home: { featured: Array<{ id: number, system: string, 
 export type SystemsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type SystemsQuery = { systems: Array<{ id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null }> };
+export type SystemsQuery = { systems: Array<{ id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean }> };
+
+export type BiosQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type BiosQuery = { systems: Array<{ id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean, bios: { state: BiosState, folder: string, groups: Array<{ label: string, importance: BiosImportance, help: string, anyOne: boolean, satisfied: boolean, files: Array<{ name: string, label: string, state: BiosFileState, foundAt: string | null, md5: string | null, size: number }> }> } | null }> };
 
 export type SystemGamesQueryVariables = Exact<{
   id: string | number;
 }>;
 
 
-export type SystemGamesQuery = { system: { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, image: string | null, thumb: string | null, video: string | null }> } | null };
+export type SystemGamesQuery = { system: { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, image: string | null, thumb: string | null, video: string | null }> } | null };
 
 export type GameQueryVariables = Exact<{
   id: number;
@@ -370,6 +405,7 @@ export const SystemFieldsFragmentDoc = new TypedDocumentString(`
   playable
   needsGpu
   rendering
+  biosMissing
 }
     `, {"fragmentName":"SystemFields"}) as unknown as TypedDocumentString<SystemFieldsFragment, unknown>;
 export const SaveFieldsFragmentDoc = new TypedDocumentString(`
@@ -530,7 +566,46 @@ export const SystemsDocument = new TypedDocumentString(`
   playable
   needsGpu
   rendering
+  biosMissing
 }`) as unknown as TypedDocumentString<SystemsQuery, SystemsQueryVariables>;
+export const BiosDocument = new TypedDocumentString(`
+    query Bios {
+  systems {
+    ...SystemFields
+    bios {
+      state
+      folder
+      groups {
+        label
+        importance
+        help
+        anyOne
+        satisfied
+        files {
+          name
+          label
+          state
+          foundAt
+          md5
+          size
+        }
+      }
+    }
+  }
+}
+    fragment SystemFields on System {
+  id
+  name
+  short
+  manufacturer
+  year
+  color
+  gameCount
+  playable
+  needsGpu
+  rendering
+  biosMissing
+}`) as unknown as TypedDocumentString<BiosQuery, BiosQueryVariables>;
 export const SystemGamesDocument = new TypedDocumentString(`
     query SystemGames($id: ID!) {
   system(id: $id) {
@@ -572,6 +647,7 @@ fragment SystemFields on System {
   playable
   needsGpu
   rendering
+  biosMissing
 }`) as unknown as TypedDocumentString<SystemGamesQuery, SystemGamesQueryVariables>;
 export const GameDocument = new TypedDocumentString(`
     query Game($id: Int!) {

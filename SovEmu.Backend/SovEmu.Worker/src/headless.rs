@@ -93,8 +93,11 @@ pub fn run(args: HeadlessArgs) -> Result<()> {
     fs::create_dir_all(&save_dir)?;
     fs::create_dir_all(&args.system_dir)?;
 
-    let system_dir =
-        crate::sysdir::SystemDir::for_core(&args.core, &args.system_dir.canonicalize()?)?;
+    let system_dir = crate::sysdir::SystemDir::for_core(
+        &args.core,
+        &args.system_dir.canonicalize()?,
+        &args.bios_path,
+    )?;
     let options = CoreOptions {
         system_dir: system_dir.path().to_owned(),
         save_dir: save_dir.canonicalize()?,

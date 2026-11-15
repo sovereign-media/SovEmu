@@ -33,9 +33,36 @@ docker compose up --build             # then open http://localhost:8080
 
 The first visit creates the admin account. `./data` is mounted at `/data`: the database,
 `data/roms/` (one folder per system: `nes/`, `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`,
-`mastersystem/`, `gamegear/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …), `data/system/` for BIOS files and `data/saves/`. Browsers on other
-machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
+`mastersystem/`, `gamegear/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …), `data/bios/`
+for BIOS files (see [BIOS files](#bios-files)) and `data/saves/`. Browsers on other machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
 UDP 50000-50009 reachable.
+
+## BIOS files
+
+BIOS files live on the server, never in the library: one folder per system in `data/bios/`
+(`SOVEMU_BIOS_DIR`), named like the system's folder of games. The server creates the folders.
+Put each file under the name below; letter case matters. **Systems → BIOS files** in the web
+client checks each one by name and MD5 against libretro's list of known dumps (`System.dat`),
+finds known dumps under the wrong name or in the wrong folder, and the Systems menu marks a
+system that cannot start games without one.
+
+| Folder | Files | Without them |
+|---|---|---|
+| `bios/ps2/` | any PS2 BIOS dump, any name (`*.bin`) | **no games start** |
+| `bios/neogeo/` | `neogeo.zip` (or beside the games in `roms/neogeo/`) | **no games start** |
+| `bios/psx/` | one of `scph5501.bin`, `scph5500.bin`, `scph5502.bin`, `scph1001.bin`, `scph7001.bin`, `scph101.bin` | built-in BIOS: most games play |
+| `bios/dreamcast/` | `dc_boot.bin`; optionally `dc_flash.bin` | built-in BIOS: many games play |
+| `bios/gba/` | `gba_bios.bin` | built-in BIOS: almost every game plays |
+| `bios/fbneo/` | `neogeo.zip`, for Neo Geo games in the arcade folder | those games only |
+| `bios/nes/` | `disksys.rom` | no Famicom Disk System games |
+| `bios/gb/`, `bios/gbc/` | `gb_bios.bin`, `gbc_bios.bin` | no boot logo |
+| `bios/megadrive/`, `bios/mastersystem/`, `bios/gamegear/` | `bios_MD.bin`; `bios_E.sms`, `bios_U.sms`, `bios_J.sms`; `bios.gg` | no start-up screen |
+| `bios/gamecube/` | `USA/IPL.bin`, `EUR/IPL.bin`, `JAP/IPL.bin` | no start-up animation |
+
+Each core finds its files where it expects them: the worker links the system's folder into
+the core's system directory (Flycast's `dc/`, PCSX2's `pcsx2/bios/`, Dolphin's
+`dolphin-emu/Sys/GC/`). Files a core writes there (Flycast's `dc_nvmem.bin`) land in the
+system's folder.
 
 ## 3D systems and the GPU
 
@@ -67,12 +94,10 @@ The API's `gpu` query (admin) returns the same, and each 3D system's `rendering`
 - **Which GPUs:** AMD (radeonsi) and Intel (iris, crocus) through Mesa in the image; NVIDIA
   through NVIDIA's own driver (or Mesa's nouveau/NVK on the open-source driver).
 - **Dolphin** needs its `Sys` data folder. The image ships it beside the cores and overlays it on
-  the BIOS folder, so the library stays read-only.
-- **3D systems need BIOS files**, laid out as in Batocera:
-  - PS2: a BIOS dump in `bios/ps2/` (or `bios/pcsx2/bios/`);
-  - Dreamcast: `bios/dc/dc_boot.bin` and `dc_flash.bin`.
+  the BIOS files, so neither is changed.
+- **PS2 needs a BIOS dump**, and Dreamcast plays best with one: see [BIOS files](#bios-files).
 - **Memory cards** for Dreamcast (VMUs) and PS2 are kept per game in the player's save folder,
-  never under the shared, often read-only, BIOS folder.
+  never under the shared BIOS folder.
 - **GameCube needs `/dev/shm`**, at least 1 GB: Dolphin maps its emulated memory there.
   `compose.yaml` sets `shm_size` and the chart mounts one (`shmSize`). Docker's default 64 MB
   makes Dolphin die with a bus error.
@@ -131,8 +156,9 @@ Android and iOS clients all use it. The schema, with every type and field docume
 ## A library on a NAS
 
 `compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a
-Batocera-style layout: `roms/<system>/` with `images/` and `videos/` artwork beside the ROMs,
-plus `bios/`. Put the share, credentials and mode in `.env`, which git ignores (see
+Batocera-style layout: `roms/<system>/` with `images/` and `videos/` artwork beside the ROMs.
+BIOS files stay local, in `data/bios/` (copy a Batocera `bios/` folder's files into the
+per-system folders). Put the share, credentials and mode in `.env`, which git ignores (see
 `.env.example`), then:
 
 ```bash
@@ -193,7 +219,7 @@ effective configuration at startup, with secrets redacted.
 | **Library** | | |
 | `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
 | `SOVEMU_ROMS_DIR` | `<data>/roms` | The library, one folder per system |
-| `SOVEMU_SYSTEM_DIR` | `<data>/system` | BIOS files |
+| `SOVEMU_BIOS_DIR` | `<data>/bios` | BIOS files, one folder per system (see [BIOS files](#bios-files)) |
 | `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
 | `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB kept locally |
 | `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids |

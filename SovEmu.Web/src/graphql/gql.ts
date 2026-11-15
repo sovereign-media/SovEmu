@@ -16,7 +16,7 @@ import * as types from './graphql';
  */
 type Documents = {
     "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": typeof types.GameFieldsFragmentDoc,
-    "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n  }\n": typeof types.SystemFieldsFragmentDoc,
+    "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": typeof types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": typeof types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": typeof types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": typeof types.SettingsFieldsFragmentDoc,
@@ -28,6 +28,7 @@ type Documents = {
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": typeof types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": typeof types.SystemsDocument,
+    "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": typeof types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.SystemGamesDocument,
     "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": typeof types.GameDocument,
     "\n  query Saves($id: Int!) {\n    game(id: $id) {\n      id\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": typeof types.SavesDocument,
@@ -56,7 +57,7 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": types.GameFieldsFragmentDoc,
-    "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n  }\n": types.SystemFieldsFragmentDoc,
+    "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": types.SettingsFieldsFragmentDoc,
@@ -68,6 +69,7 @@ const documents: Documents = {
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": types.SystemsDocument,
+    "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": types.SystemGamesDocument,
     "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": types.GameDocument,
     "\n  query Saves($id: Int!) {\n    game(id: $id) {\n      id\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": types.SavesDocument,
@@ -102,7 +104,7 @@ export function graphql(source: "\n  fragment GameFields on Game {\n    id\n    
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n  }\n"): typeof import('./graphql').SystemFieldsFragmentDoc;
+export function graphql(source: "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n"): typeof import('./graphql').SystemFieldsFragmentDoc;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -147,6 +149,10 @@ export function graphql(source: "\n  query Home {\n    home {\n      featured {\
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n"): typeof import('./graphql').SystemsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n"): typeof import('./graphql').BiosDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

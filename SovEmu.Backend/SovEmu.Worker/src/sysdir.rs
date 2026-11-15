@@ -1,23 +1,22 @@
 //! The system (BIOS) directory a core sees.
 //!
-//! Some cores need data files of their own next to the BIOS files: Dolphin reads
-//! `<system>/dolphin-emu/Sys`. SovEmu ships those in a `system/` folder beside the cores, but
-//! the BIOS folder is usually the library's, read-only on a NAS. So when there is core data,
-//! the worker gives the core a merged view instead: a temporary directory of symlinks to
-//! everything in the BIOS folder, plus the shipped core data the BIOS folder lacks (the
-//! library's own copy wins). A folder both have becomes a real folder of the merged contents,
-//! which also lets a core create its working files there (they last the session). Nothing is
-//! written to either source.
+//! BIOS files are kept one folder per system (`<bios>/psx/scph5501.bin`,
+//! `<bios>/dreamcast/dc_boot.bin`), named like the system's ROM folder, and the server hands the
+//! worker that system's folder. Cores look for them elsewhere: Flycast reads `dc/dc_boot.bin`,
+//! PCSX2 `pcsx2/bios/`, Dolphin `dolphin-emu/Sys/GC/`, most others the root. `--bios-path`
+//! says where; the folder's files appear there.
 //!
-//! Some cores look for BIOS files under a different name than Batocera's layout uses:
-//! [`ALIASES`] links them (PCSX2 reads `pcsx2/bios`, Batocera keeps PS2 BIOSes in `ps2`).
+//! Some cores also need data files of their own: Dolphin reads `<system>/dolphin-emu/Sys`,
+//! which SovEmu ships in a `system/` folder beside the cores. When the BIOS files must move or
+//! there is core data, the worker gives the core a merged view: a temporary directory of
+//! symlinks to the shipped core data, with the BIOS folder's entries linked in at `--bios-path`
+//! (the BIOS folder's copies win). A folder both have becomes a real folder of the merged
+//! contents, which also lets a core create its working files there (they last the session).
+//! Nothing is written to the shipped data.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-
-/// `(path a core reads, Batocera's folder)`, linked when the first is missing.
-const ALIASES: &[(&str, &str)] = &[("pcsx2/bios", "ps2")];
 
 /// A merged system directory, removed when dropped.
 #[derive(Debug)]
@@ -28,13 +27,15 @@ pub struct SystemDir {
 }
 
 impl SystemDir {
-    /// The system directory for `core`: `bios` itself, or a merge of `bios` and the core data
-    /// shipped beside the core (`<core's folder>/system`), if there is any.
-    pub fn for_core(core: &Path, bios: &Path) -> Result<Self> {
+    /// The system directory for `core`: `bios` itself when its files belong at the root and
+    /// the core ships no data, or else a merge of the core data shipped beside the core
+    /// (`<core's folder>/system`) and `bios`'s files at `at` (a relative path, `""` the root).
+    pub fn for_core(core: &Path, bios: &Path, at: &str) -> Result<Self> {
+        let at = Path::new(at.trim_matches('/'));
         let shipped = core.parent().map(|d| d.join("system")).filter(|d| d.is_dir());
-        let Some(shipped) = shipped else {
+        if shipped.is_none() && at.as_os_str().is_empty() {
             return Ok(Self { path: bios.to_owned(), owned: false });
-        };
+        }
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let name = format!("sovemu-system-{}-{n}", std::process::id());
@@ -42,17 +43,21 @@ impl SystemDir {
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).with_context(|| format!("creating {}", path.display()))?;
         let dir = Self { path, owned: true };
-        // The library's BIOS files first, so its copies win over the shipped ones.
-        merge(&dir.path, &[bios, shipped.as_path()])?;
-        for (wanted, batocera) in ALIASES {
-            let source = bios.join(batocera);
-            let link = dir.path.join(wanted);
-            if source.is_dir() && link.symlink_metadata().is_err() {
-                if let Some(parent) = link.parent() {
-                    make_real_dir(parent)?;
-                }
-                symlink(&source, &link).with_context(|| format!("linking {}", link.display()))?;
-            }
+        if let Some(shipped) = &shipped {
+            merge(&dir.path, &[shipped.as_path()])?;
+        }
+        let target = dir.path.join(at);
+        let mut real = dir.path.clone();
+        for part in at.parent().into_iter().flat_map(Path::components) {
+            real.push(part);
+            make_real_dir(&real)?;
+        }
+        if at.as_os_str().is_empty() || target.symlink_metadata().is_ok() {
+            // Shipped data is already there (Dolphin's `Sys/GC` fonts): add the BIOS files.
+            make_real_dir(&target)?;
+            overlay(&target, bios)?;
+        } else {
+            symlink(bios, &target).with_context(|| format!("linking {}", target.display()))?;
         }
         Ok(dir)
     }
@@ -69,6 +74,29 @@ impl Drop for SystemDir {
             let _ = std::fs::remove_dir_all(&self.path);
         }
     }
+}
+
+/// Links `source`'s entries into `dest` (a real folder this worker made), replacing what is
+/// there: a folder both have is merged.
+fn overlay(dest: &Path, source: &Path) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(source) else { return Ok(()) };
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let link = dest.join(entry.file_name());
+        match link.symlink_metadata() {
+            Ok(_) if link.is_dir() && from.is_dir() => {
+                make_real_dir(&link)?;
+                overlay(&link, &from)?;
+                continue;
+            }
+            // Only links and folders of links live here: removing them touches no source.
+            Ok(m) if m.is_dir() => std::fs::remove_dir_all(&link)?,
+            Ok(_) => std::fs::remove_file(&link)?,
+            Err(_) => {}
+        }
+        symlink(&from, &link).with_context(|| format!("linking {}", link.display()))?;
+    }
+    Ok(())
 }
 
 /// Fills `dest` with links to the entries of `sources`, earlier sources winning; a folder found
@@ -138,8 +166,26 @@ mod tests {
     fn without_core_data_the_bios_folder_is_used_as_is() {
         let root = tmp("plain");
         std::fs::write(root.join("core.so"), b"").unwrap();
-        let dir = SystemDir::for_core(&root.join("core.so"), Path::new("/nas/bios")).unwrap();
-        assert_eq!(dir.path(), Path::new("/nas/bios"));
+        let dir =
+            SystemDir::for_core(&root.join("core.so"), Path::new("/data/bios/psx"), "").unwrap();
+        assert_eq!(dir.path(), Path::new("/data/bios/psx"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn the_bios_folder_is_linked_where_the_core_looks() {
+        let root = tmp("at");
+        let bios = root.join("bios/dreamcast");
+        std::fs::create_dir_all(&bios).unwrap();
+        std::fs::write(bios.join("dc_boot.bin"), b"boot").unwrap();
+        std::fs::write(root.join("flycast_libretro.so"), b"").unwrap();
+
+        let dir = SystemDir::for_core(&root.join("flycast_libretro.so"), &bios, "dc").unwrap();
+        let merged = dir.path().to_owned();
+        assert_eq!(std::fs::read(merged.join("dc/dc_boot.bin")).unwrap(), b"boot");
+        drop(dir);
+        assert!(!merged.exists(), "the merge is removed");
+        assert!(bios.join("dc_boot.bin").exists(), "the source is untouched");
         std::fs::remove_dir_all(root).ok();
     }
 
@@ -147,44 +193,59 @@ mod tests {
     fn merges_bios_files_with_shipped_core_data_and_cleans_up() {
         let root = tmp("merge");
         let cores = root.join("cores");
-        let bios = root.join("bios");
+        let bios = root.join("bios/psx");
         std::fs::create_dir_all(cores.join("system/dolphin-emu/Sys")).unwrap();
         std::fs::create_dir_all(cores.join("system/shared")).unwrap();
+        std::fs::write(cores.join("system/shared/theirs"), b"").unwrap();
         std::fs::create_dir_all(bios.join("shared")).unwrap();
         std::fs::write(bios.join("scph5501.bin"), b"bios").unwrap();
         std::fs::write(bios.join("shared/mine"), b"").unwrap();
 
-        let dir = SystemDir::for_core(&cores.join("dolphin_libretro.so"), &bios).unwrap();
+        let dir = SystemDir::for_core(&cores.join("dolphin_libretro.so"), &bios, "").unwrap();
         let merged = dir.path().to_owned();
         assert_eq!(std::fs::read(merged.join("scph5501.bin")).unwrap(), b"bios");
         assert!(merged.join("dolphin-emu/Sys").is_dir(), "shipped core data");
-        assert!(merged.join("shared/mine").exists(), "the library's copy wins");
+        assert!(merged.join("shared/mine").exists(), "a folder in both is merged");
+        assert!(merged.join("shared/theirs").exists());
         drop(dir);
         assert!(!merged.exists(), "the merge is removed");
         assert!(bios.join("scph5501.bin").exists(), "the sources are untouched");
         assert!(cores.join("system/dolphin-emu/Sys").exists());
+        assert!(cores.join("system/shared/theirs").exists());
         std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
-    fn folders_in_both_are_merged_and_batocera_names_aliased() {
-        let root = tmp("alias");
+    fn bios_files_join_shipped_folders_on_the_way() {
+        let root = tmp("nested");
         let cores = root.join("cores");
-        let bios = root.join("bios");
         std::fs::create_dir_all(cores.join("system/pcsx2/resources")).unwrap();
-        std::fs::create_dir_all(bios.join("ps2")).unwrap();
-        std::fs::write(bios.join("ps2/scph39001.bin"), b"ps2").unwrap();
-        std::fs::create_dir_all(bios.join("dc")).unwrap();
-        std::fs::create_dir_all(cores.join("system/dc/extra")).unwrap();
+        std::fs::create_dir_all(cores.join("system/dolphin-emu/Sys/GC")).unwrap();
+        std::fs::write(cores.join("system/dolphin-emu/Sys/GC/font_western.bin"), b"font").unwrap();
+        let ps2 = root.join("bios/ps2");
+        std::fs::create_dir_all(&ps2).unwrap();
+        std::fs::write(ps2.join("scph39001.bin"), b"ps2").unwrap();
+        let gc = root.join("bios/gamecube");
+        std::fs::create_dir_all(gc.join("USA")).unwrap();
+        std::fs::write(gc.join("USA/IPL.bin"), b"ipl").unwrap();
 
-        let dir = SystemDir::for_core(&cores.join("pcsx2_libretro.so"), &bios).unwrap();
+        let dir =
+            SystemDir::for_core(&cores.join("pcsx2_libretro.so"), &ps2, "pcsx2/bios").unwrap();
         let m = dir.path();
         assert_eq!(std::fs::read(m.join("pcsx2/bios/scph39001.bin")).unwrap(), b"ps2");
         assert!(m.join("pcsx2/resources").is_dir(), "shipped resources kept");
         assert!(!m.join("pcsx2").symlink_metadata().unwrap().file_type().is_symlink());
         std::fs::create_dir(m.join("pcsx2/memcards")).expect("a core can create folders there");
-        assert!(m.join("dc/extra").is_dir(), "a folder in both is merged");
         assert!(!cores.join("system/pcsx2/memcards").exists(), "the sources are untouched");
+        drop(dir);
+
+        let dir =
+            SystemDir::for_core(&cores.join("dolphin_libretro.so"), &gc, "dolphin-emu/Sys/GC")
+                .unwrap();
+        let m = dir.path();
+        assert_eq!(std::fs::read(m.join("dolphin-emu/Sys/GC/USA/IPL.bin")).unwrap(), b"ipl");
+        assert!(m.join("dolphin-emu/Sys/GC/font_western.bin").exists(), "shipped fonts kept");
+        assert!(!cores.join("system/dolphin-emu/Sys/GC/USA").exists());
         drop(dir);
         std::fs::remove_dir_all(root).ok();
     }

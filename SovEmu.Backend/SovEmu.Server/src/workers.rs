@@ -33,7 +33,8 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
-    pub system_dir: PathBuf,
+    /// BIOS files, a folder per system (see [`crate::bios`]).
+    pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
     pub video_kbps: u32,
     pub audio_kbps: u32,
@@ -261,10 +262,10 @@ impl Workers {
         after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
     ) -> Result<Arc<Session>> {
         std::fs::create_dir_all(&launch.save_dir)?;
-        // The BIOS folder may sit on a read-only library that has none: most cores need no BIOS,
-        // so a missing one is not a reason to refuse the game.
-        if let Err(e) = std::fs::create_dir_all(&self.config.system_dir) {
-            tracing::debug!("system dir {}: {e}", self.config.system_dir.display());
+        // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
+        let bios = self.config.bios_dir.join(&launch.system);
+        if let Err(e) = std::fs::create_dir_all(&bios) {
+            tracing::debug!("BIOS folder {}: {e}", bios.display());
         }
         let mut command = Command::new(&self.config.worker_bin);
         command.env_clear();
@@ -286,7 +287,9 @@ impl Workers {
             .arg("--udp")
             .arg(format!("{}:{port}", self.config.bind_ip))
             .arg("--system-dir")
-            .arg(&self.config.system_dir)
+            .arg(&bios)
+            .arg("--bios-path")
+            .arg(crate::bios::core_path(&launch.system))
             .arg("--save-dir")
             .arg(&launch.save_dir)
             .arg("--state-dir")

@@ -28,6 +28,7 @@ pub fn run(args: ServeArgs) -> Result<()> {
             core: args.core.clone(),
             rom: args.rom.clone(),
             system_dir: args.system_dir.clone(),
+            bios_path: args.bios_path.clone(),
             save_dir: args.save_dir.clone(),
             variables: args.variables.clone(),
             video_kbps: args.video_kbps,
