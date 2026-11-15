@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { activeFilters, filterGames, gameFromUrl, gridMove, jumpStops, jumpTo, letterOf, maxPlayers, sortGames, stepStop, stripWindow, tagCounts, urlWithGame } from "./games";
+import { activeFilters, filterGames, gameFromUrl, genreCounts, gridMove, jumpStops, jumpTo, knowsPlayers, letterOf, maxPlayers, sortGames, stepStop, stripWindow, urlWithGame } from "./games";
 
 let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
@@ -11,7 +11,7 @@ const game = (title: string, over: Partial<Game> = {}): Game => ({
 
 const metroid = game("Metroid", { releaseDate: "1986-08-06", genre: "Action", players: "1", playCount: 3, lastPlayedAt: "2026-11-13 10:00:00", tags: ["USA"] });
 const mario = game("Super Mario Bros.", { releaseDate: "1985-09-13", genre: "Platform", players: "1-2", playCount: 1, lastPlayedAt: "2026-11-14 09:00:00", tags: ["USA", "Europe"] });
-const pokemon = game("Pokémon Puzzle", { players: "2", tags: ["Europe"] });
+const pokemon = game("Pokémon Puzzle", { players: "2", genre: "Puzzle, Action", tags: ["Europe"] });
 const tetris = game("Tetris", { releaseDate: "1989" });
 const all = [tetris, pokemon, mario, metroid];
 
@@ -24,18 +24,21 @@ describe("searching and filtering", () => {
     expect(filterGames(all, "", {})).toHaveLength(4);
   });
 
-  it("filters by played, players and tags", () => {
+  it("filters by played, players and genres", () => {
     expect(filterGames(all, "", { played: "played" }).map((g) => g.title).sort()).toEqual(["Metroid", "Super Mario Bros."]);
     expect(filterGames(all, "", { played: "unplayed" })).toHaveLength(2);
     expect(filterGames(all, "", { multiplayer: true }).map((g) => g.title).sort()).toEqual(["Pokémon Puzzle", "Super Mario Bros."]);
-    expect(filterGames(all, "", { tags: ["USA", "Europe"] }).map((g) => g.title)).toEqual(["Super Mario Bros."]);
-    expect(activeFilters({ played: "played", multiplayer: true, tags: ["USA"] })).toBe(3);
+    expect(filterGames(all, "", { genres: ["Action"] }).map((g) => g.title)).toEqual(["Pokémon Puzzle", "Metroid"]);
+    expect(filterGames(all, "", { genres: ["Puzzle", "Platform"] }).map((g) => g.title)).toEqual(["Pokémon Puzzle", "Super Mario Bros."]);
+    expect(activeFilters({ played: "played", multiplayer: true, genres: ["Action"] })).toBe(3);
   });
 
   it("reads the most players from the metadata's wording", () => {
     expect(maxPlayers("1-2")).toBe(2);
     expect(maxPlayers("1 to 4")).toBe(4);
     expect(maxPlayers(null)).toBeNull();
+    expect(knowsPlayers(all)).toBe(true);
+    expect(knowsPlayers([tetris])).toBe(false);
   });
 });
 
@@ -71,10 +74,11 @@ describe("the A–Z strip", () => {
     expect(jumpTo([], "A")).toBe(-1);
   });
 
-  it("counts tags for the filter menu", () => {
-    expect(tagCounts(all)).toEqual([
-      { tag: "Europe", count: 2 },
-      { tag: "USA", count: 2 },
+  it("counts genres for the filters, splitting a game's list", () => {
+    expect(genreCounts(all)).toEqual([
+      { genre: "Action", count: 2 },
+      { genre: "Platform", count: 1 },
+      { genre: "Puzzle", count: 1 },
     ]);
   });
 });

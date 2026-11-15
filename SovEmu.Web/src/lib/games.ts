@@ -15,12 +15,13 @@ export interface GameFilters {
   played?: "played" | "unplayed";
   /** Only games for at least two players. */
   multiplayer?: boolean;
-  /** Only games with every one of these tags ("USA", "Rev 1" …). */
-  tags?: string[];
+  /** Only games in any of these genres ("Platform", "Shooter" …). */
+  genres?: string[];
 }
 
-/** The tags of a game ("USA", "Europe" …). */
-export const tagsOf = (g: Pick<Game, "tags">) => g.tags;
+/** A game's genres: the metadata lists them comma-separated ("Platform, Action"). */
+export const genresOf = (g: Pick<Game, "genre">) =>
+  (g.genre ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 /** The most players a game takes, from "1-2", "2", "1 to 4" …, or null when unknown. */
 export function maxPlayers(players: string | null): number | null {
@@ -39,9 +40,9 @@ export function filterGames(games: Game[], query: string, filters: GameFilters):
     if (filters.played === "played" && !g.playCount) return false;
     if (filters.played === "unplayed" && g.playCount) return false;
     if (filters.multiplayer && (maxPlayers(g.players) ?? 1) < 2) return false;
-    if (filters.tags?.length) {
-      const tags = tagsOf(g);
-      if (!filters.tags.every((t) => tags.includes(t))) return false;
+    if (filters.genres?.length) {
+      const genres = genresOf(g);
+      if (!filters.genres.some((x) => genres.includes(x))) return false;
     }
     if (!words.length) return true;
     const text = fold([g.title, g.fileTitle, g.genre, g.developer, g.publisher, ...g.tags].filter(Boolean).join(" "));
@@ -82,15 +83,21 @@ export function jumpTo(games: Game[], letter: string): number {
   return at >= 0 ? at : games.length - 1;
 }
 
-/** Every tag in the list with how many games carry it, most common first, for the filter menu. */
-export function tagCounts(games: Game[]): { tag: string; count: number }[] {
+/** Every genre in the list with how many games are in it, most common first, for the filters.
+ *  Empty until game information has been fetched. */
+export function genreCounts(games: Game[]): { genre: string; count: number }[] {
   const counts = new Map<string, number>();
-  for (const g of games) for (const t of tagsOf(g)) counts.set(t, (counts.get(t) ?? 0) + 1);
-  return [...counts].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  for (const g of games) for (const x of genresOf(g)) counts.set(x, (counts.get(x) ?? 0) + 1);
+  return [...counts]
+    .map(([genre, count]) => ({ genre, count }))
+    .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
 }
 
+/** Whether any game says how many players it takes, so the players filter can do something. */
+export const knowsPlayers = (games: Game[]) => games.some((g) => maxPlayers(g.players) !== null);
+
 /** How many filters are on, for the filter button's badge. */
-export const activeFilters = (f: GameFilters) => (f.played ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.tags?.length ?? 0);
+export const activeFilters = (f: GameFilters) => (f.played ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.genres?.length ?? 0);
 
 // --- The grid ---------------------------------------------------------------------------------
 
