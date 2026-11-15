@@ -1,10 +1,11 @@
 // Search and filters for a system's games, in a drawer from the right (Sovereign's
-// SearchFilterDrawer): search, played or not, players, and the library's tags.
+// SearchFilterDrawer): search, played or not, and, once game information has been fetched,
+// players and genres.
 import { Check, Search, SlidersHorizontal, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useMemo, type ReactNode } from "react";
 import type { Game } from "../../lib/api";
-import { activeFilters, tagCounts, type GameFilters } from "../../lib/games";
+import { activeFilters, genreCounts, knowsPlayers, type GameFilters } from "../../lib/games";
 import { cn } from "../ui/cn";
 
 function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
@@ -52,11 +53,12 @@ export function FilterDrawer({
   onFilters: (f: GameFilters) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
-  const tags = useMemo(() => tagCounts(games).slice(0, 16), [games]);
+  const genres = useMemo(() => genreCounts(games).slice(0, 24), [games]);
+  const players = useMemo(() => knowsPlayers(games), [games]);
   const n = activeFilters(filters) + (query.trim() ? 1 : 0);
-  const toggleTag = (t: string) => {
-    const has = filters.tags?.includes(t);
-    onFilters({ ...filters, tags: has ? filters.tags!.filter((x) => x !== t) : [...(filters.tags ?? []), t] });
+  const toggleGenre = (x: string) => {
+    const has = filters.genres?.includes(x);
+    onFilters({ ...filters, genres: has ? filters.genres!.filter((y) => y !== x) : [...(filters.genres ?? []), x] });
   };
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -103,20 +105,27 @@ export function FilterDrawer({
                 Not played yet
               </Toggle>
             </Section>
-            <Section title="Players">
-              <Toggle on={!!filters.multiplayer} onClick={() => onFilters({ ...filters, multiplayer: !filters.multiplayer || undefined })}>
-                2 players or more
-              </Toggle>
-            </Section>
-            {tags.length > 0 && (
-              <Section title="Tags">
-                {tags.map(({ tag, count }) => (
-                  <Toggle key={tag} on={!!filters.tags?.includes(tag)} onClick={() => toggleTag(tag)}>
-                    {tag}
+            {players && (
+              <Section title="Players">
+                <Toggle on={!!filters.multiplayer} onClick={() => onFilters({ ...filters, multiplayer: !filters.multiplayer || undefined })}>
+                  2 players or more
+                </Toggle>
+              </Section>
+            )}
+            {genres.length > 0 && (
+              <Section title="Genre">
+                {genres.map(({ genre, count }) => (
+                  <Toggle key={genre} on={!!filters.genres?.includes(genre)} onClick={() => toggleGenre(genre)}>
+                    {genre}
                     <span className="text-xs opacity-60 tabular-nums">{count}</span>
                   </Toggle>
                 ))}
               </Section>
+            )}
+            {!players && genres.length === 0 && (
+              <p className="text-sm text-slate-500">
+                Player and genre filters appear once game information has been fetched for these games.
+              </p>
             )}
           </div>
           {n > 0 && (
