@@ -1,6 +1,7 @@
-// The navigation, after Sovereign's: on a monitor a floating dock on the left edge (icons at
-// rest, labelled pills on hover or keyboard focus), on a phone a tab bar along the bottom. The
-// SovEmu wordmark sits in the corner above the dock. Entries: Home; Systems, a menu nested by
+// The navigation, after Sovereign's: on a monitor a rail down the whole left edge (icons at
+// rest; on hover or keyboard focus it widens over the page, labels each entry and dims the page
+// behind it), on a phone a tab bar along the bottom. The SovEmu wordmark sits at the top, beside
+// the rail. Entries: Home; Systems, a menu nested by
 // maker (Nintendo ▸ NES, SNES …); the account (sign out); and for admins the gear, a menu of
 // Library and Emulator settings ▸ each system. Menus are Radix DropdownMenus.
 import { ChevronRight, Gamepad2, House, Library, LogOut, Settings, SlidersHorizontal } from "lucide-react";
@@ -137,7 +138,7 @@ function MenuEntry({
         <DropdownMenu.Content
           side={shape === "dock" ? "right" : "top"}
           align={shape === "dock" ? "center" : "end"}
-          sideOffset={12}
+          sideOffset={shape === "dock" ? 18 : 12}
           collisionPadding={8}
           className={cn(PANE, shape === "bar" && "max-h-[70dvh] overflow-y-auto")}
         >
@@ -198,7 +199,8 @@ function Entries({
           <p className="px-4 py-2 text-sm text-slate-500">No games yet.</p>
         )}
       </MenuEntry>
-      {shape === "dock" && <div className="mx-2 my-1 h-px bg-white/10" />}
+      {/* On the rail, the account and admin entries sit at the bottom. */}
+      {shape === "dock" && <div className="flex-1" />}
       {user && (
         <MenuEntry
           icon={
@@ -272,11 +274,11 @@ export default function SideNav({ section }: { section: Section }) {
 
   return (
     <>
-      {/* The brand, in the corner above the dock. */}
+      {/* The brand, at the top beside the rail. */}
       <a
         href="/"
         aria-label="SovEmu home"
-        className="fixed top-4 left-4 z-40 hidden items-center gap-2 text-lg font-black tracking-tight text-white drop-shadow md:flex"
+        className="fixed top-4 left-20 z-30 hidden items-center gap-2 text-lg font-black tracking-tight text-white drop-shadow md:flex"
       >
         <Gamepad2 className="size-6 text-accent" aria-hidden />
         <span>
@@ -284,26 +286,33 @@ export default function SideNav({ section }: { section: Section }) {
         </span>
       </a>
 
-      {/* The dock: centred on the viewport's height, clear of the brand. */}
-      <div className="pointer-events-none fixed inset-y-0 left-0 z-40 hidden grid-rows-[minmax(4.5rem,1fr)_auto_1fr] md:grid">
-        <nav
-          aria-label="Main navigation"
-          data-open={open}
-          onMouseEnter={() => {
-            clearTimeout(intent.current);
-            intent.current = window.setTimeout(() => setHovered(true), HOVER_INTENT_MS);
-          }}
-          onMouseLeave={() => {
-            clearTimeout(intent.current);
-            setHovered(false);
-          }}
-          onFocus={(e) => setFocused(e.target.matches(":focus-visible"))}
-          onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
-          className="group/dock pointer-events-auto row-start-2 ml-2.5 flex w-max flex-col gap-1 rounded-3xl border border-white/10 bg-surface/90 p-0.5 shadow-xl backdrop-blur-md"
-        >
-          <Entries shape="dock" section={section} user={user} systems={systems} onMenu={onMenu} />
-        </nav>
-      </div>
+      {/* Dims the page while the rail is open; it widens over the page, never pushing it. */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none fixed inset-0 z-[35] hidden bg-black/60 transition-opacity duration-200 md:block",
+          open ? "opacity-100" : "opacity-0",
+        )}
+      />
+
+      {/* The rail: the full height of the left edge, square, flush with the screen. */}
+      <nav
+        aria-label="Main navigation"
+        data-open={open}
+        onMouseEnter={() => {
+          clearTimeout(intent.current);
+          intent.current = window.setTimeout(() => setHovered(true), HOVER_INTENT_MS);
+        }}
+        onMouseLeave={() => {
+          clearTimeout(intent.current);
+          setHovered(false);
+        }}
+        onFocus={(e) => setFocused(e.target.matches(":focus-visible"))}
+        onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
+        className="group/dock fixed inset-y-0 left-0 z-40 hidden w-16 flex-col gap-1 border-r border-white/10 bg-surface px-2.5 py-3 transition-[width,box-shadow] duration-200 data-[open=true]:w-[13.25rem] data-[open=true]:shadow-2xl md:flex"
+      >
+        <Entries shape="dock" section={section} user={user} systems={systems} onMenu={onMenu} />
+      </nav>
 
       {/* A phone: the same entries along the bottom. */}
       <nav
