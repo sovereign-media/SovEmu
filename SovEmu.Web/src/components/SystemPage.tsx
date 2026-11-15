@@ -6,7 +6,7 @@
 // Pad and keyboard: the d-pad moves through the grid, A opens the panel (and in it plays), B
 // closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
 // The list logic is src/lib/games.ts.
-import { ArrowDownAZ, Check, CircleCheck, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
@@ -315,6 +315,14 @@ function Games() {
             <span className="text-sm font-normal text-slate-400">
               {shown.length === games.length ? `${games.length} games` : `${shown.length} of ${games.length}`}
             </span>
+            {system.biosMissing && (
+              <a
+                href={`/bios/?id=${encodeURIComponent(system.id)}`}
+                className="flex items-center gap-1.5 self-center rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/30 [&_svg]:size-3.5"
+              >
+                <Microchip /> BIOS missing: games will not start
+              </a>
+            )}
           </h1>
           <div className="flex min-w-0">
             <TabStrip label="Sort, filter and jump">

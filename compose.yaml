@@ -5,7 +5,7 @@
 #   docker compose up --build
 #
 # ./data is mounted at /data: the database, data/roms (one folder per system: nes/, snes/, …),
-# data/system (BIOS files) and data/saves.
+# data/bios (BIOS files, one folder per system: psx/, ps2/, …) and data/saves.
 #
 # Each game session streams WebRTC on its own UDP port (50000-50009). Browsers send media to
 # SOVEMU_ADVERTISE_IP, which a container cannot discover for itself: 127.0.0.1 works for a

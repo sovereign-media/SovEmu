@@ -1,9 +1,10 @@
 // The navigation, after Sovereign's: on a monitor a floating dock on the left edge (icons at
 // rest, labelled pills on hover or keyboard focus), on a phone a tab bar along the bottom. The
 // SovEmu wordmark sits in the corner above the dock. Entries: Home; Systems, a menu nested by
-// maker (Nintendo ▸ NES, SNES …); the account (sign out); and for admins the gear, a menu of
-// Library, Controllers and Emulator settings ▸ each system. Menus are Radix DropdownMenus.
-import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Settings, SlidersHorizontal } from "lucide-react";
+// maker (Nintendo ▸ NES, SNES …), then the BIOS check; the account (sign out); and for admins
+// the gear, a menu of Library, Controllers and Emulator settings ▸ each system. Menus are Radix
+// DropdownMenus.
+import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Microchip, Settings, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type SystemSummary, type User } from "../lib/api";
@@ -167,6 +168,7 @@ function Entries({
   onMenu: (open: boolean) => void;
 }) {
   const withGames = systems.filter((s) => s.gameCount > 0);
+  const biosMissing = systems.filter((s) => s.biosMissing).length;
   const configurable = systems.filter((s) => s.playable || s.needsGpu);
   const signOut = async () => {
     await api.logout();
@@ -197,6 +199,14 @@ function Entries({
         ) : (
           <p className="px-4 py-2 text-sm text-slate-500">No games yet.</p>
         )}
+        <DropdownMenu.Separator className="my-1 h-px bg-edge" />
+        <DropdownMenu.Item asChild className={ROW}>
+          <a href="/bios/">
+            <Microchip />
+            <span className="flex-1">BIOS files</span>
+            {biosMissing > 0 && <span className="text-xs text-amber-300 tabular-nums">{biosMissing} missing</span>}
+          </a>
+        </DropdownMenu.Item>
       </MenuEntry>
       {shape === "dock" && <div className="mx-2 my-1 h-px bg-white/10" />}
       {user && (

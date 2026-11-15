@@ -4,6 +4,7 @@ import type { SystemSummary } from "./api";
 export function systemBadge(s: SystemSummary): string | null {
   if (s.needsGpu && s.rendering === "OFF") return "no 3D rendering";
   if (!s.playable) return "no core";
+  if (s.biosMissing) return "no BIOS";
   if (s.needsGpu && s.rendering === "SOFTWARE") return "software rendering";
   return null;
 }

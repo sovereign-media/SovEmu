@@ -49,7 +49,6 @@ values, with `settings` on top.
 {{- end }}
 {{- if ne .Values.library.type "none" }}
 {{- $_ := set $env "SOVEMU_ROMS_DIR" (printf "/library/%s" .Values.library.romsPath) }}
-{{- $_ := set $env "SOVEMU_SYSTEM_DIR" (printf "/library/%s" .Values.library.biosPath) }}
 {{- end }}
 {{- if .Values.ingress.tls }}
 {{- $_ := set $env "SOVEMU_SECURE_COOKIES" "true" }}

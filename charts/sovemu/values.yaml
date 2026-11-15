@@ -88,7 +88,7 @@ iceServers: []
 #    username: sovemu
 #    credential: secret
 
-# The library (Batocera layout: roms/<system>/, bios/). Mounted read-only at /library;
+# The library (Batocera layout: roms/<system>/). Mounted read-only at /library;
 # SovEmu never writes to it.
 library:
   # none | existingClaim | nfs | hostPath
@@ -98,9 +98,9 @@ library:
     server: ""
     path: ""
   hostPath: ""
-  # Paths inside the library.
+  # The ROM folder inside the library. BIOS files stay on the data volume, in
+  # /data/bios/<system>/ (SOVEMU_BIOS_DIR).
   romsPath: roms
-  biosPath: bios
 
 # The database, saves, states, caches and (in mirror mode) the mirror, at /data.
 persistence:

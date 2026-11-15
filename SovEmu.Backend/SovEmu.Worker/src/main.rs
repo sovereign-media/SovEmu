@@ -90,9 +90,14 @@ struct SessionArgs {
     #[arg(long = "advertise-ip")]
     advertise: Option<IpAddr>,
 
-    /// BIOS and system files directory.
+    /// The system's BIOS folder.
     #[arg(long)]
     system_dir: PathBuf,
+
+    /// Where in the core's system directory `--system-dir`'s files belong (`dc` for Flycast,
+    /// `pcsx2/bios` for PCSX2); empty for the root.
+    #[arg(long, default_value = "")]
+    bios_path: String,
 
     /// Directory for battery saves (`<game>.srm`).
     #[arg(long)]
@@ -179,9 +184,14 @@ struct ServeArgs {
     #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_key_value)]
     variables: Vec<(String, String)>,
 
-    /// BIOS and system files directory.
+    /// The system's BIOS folder.
     #[arg(long, default_value = "system")]
     system_dir: PathBuf,
+
+    /// Where in the core's system directory `--system-dir`'s files belong (`dc` for Flycast,
+    /// `pcsx2/bios` for PCSX2); empty for the root.
+    #[arg(long, default_value = "")]
+    bios_path: String,
 
     /// Directory the core may save into.
     #[arg(long, default_value = "saves")]
@@ -250,9 +260,14 @@ struct HeadlessArgs {
     #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_key_value)]
     variables: Vec<(String, String)>,
 
-    /// BIOS and system files directory.
+    /// The system's BIOS folder.
     #[arg(long, default_value = "system")]
     system_dir: PathBuf,
+
+    /// Where in the core's system directory `--system-dir`'s files belong (`dc` for Flycast,
+    /// `pcsx2/bios` for PCSX2); empty for the root.
+    #[arg(long, default_value = "")]
+    bios_path: String,
 
     /// Directory the core may save into (defaults to `<out>/saves`).
     #[arg(long)]

@@ -3,13 +3,13 @@
 #   docker compose -f compose.yaml -f compose.nas.yaml up -d
 #
 # Mounts //$SOVEMU_NAS_HOST/$SOVEMU_NAS_PATH read-only. That folder holds a Batocera-style
-# library: roms/<system>/ (with images/ and videos/ artwork beside the ROMs) and bios/.
+# library: roms/<system>/ (with images/ and videos/ artwork beside the ROMs). BIOS files stay
+# local, in data/bios/<system>/.
 # Credentials come from .env (gitignored; see .env.example), never from this file.
 services:
   sovemu:
     environment:
       SOVEMU_ROMS_DIR: /nas/roms
-      SOVEMU_SYSTEM_DIR: /nas/bios
       # SOVEMU_LIBRARY_MODE (direct | cache | mirror), SOVEMU_CACHE_GB and SOVEMU_MIRROR_SYSTEMS
       # come from .env like every other setting.
       # The share's credentials are only for the mount below: blank them inside the container

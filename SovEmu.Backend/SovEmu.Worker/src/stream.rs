@@ -72,7 +72,10 @@ pub enum StreamEvent {
 pub struct SessionConfig {
     pub core: PathBuf,
     pub rom: Option<PathBuf>,
+    /// The system's BIOS folder.
     pub system_dir: PathBuf,
+    /// Where its files belong in the core's system directory (see [`SystemDir`]).
+    pub bios_path: String,
     pub save_dir: PathBuf,
     pub variables: Vec<(String, String)>,
     pub video_kbps: u32,
@@ -132,7 +135,7 @@ pub struct Session {
 impl Session {
     /// Loads the core and content and sets up the encoders.
     pub fn open(config: &SessionConfig, report: Report<'_>) -> Result<Self> {
-        // The BIOS folder may be on a read-only library without one; most cores need none.
+        // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
         if let Err(e) = std::fs::create_dir_all(&config.system_dir) {
             tracing::debug!("system dir {}: {e}", config.system_dir.display());
         }
@@ -141,7 +144,7 @@ impl Session {
             .system_dir
             .canonicalize()
             .or_else(|_| std::path::absolute(&config.system_dir))?;
-        let system_dir = SystemDir::for_core(&config.core, &bios)?;
+        let system_dir = SystemDir::for_core(&config.core, &bios, &config.bios_path)?;
         let options = CoreOptions {
             system_dir: system_dir.path().to_owned(),
             save_dir: config.save_dir.canonicalize()?,

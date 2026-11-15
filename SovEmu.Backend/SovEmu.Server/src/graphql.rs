@@ -195,11 +195,162 @@ impl SystemNode {
     async fn rendering(&self) -> Option<Rendering> {
         self.0.rendering.map(Into::into)
     }
+    /// A BIOS file it cannot start games without is missing. Cheap: no checksums (see `bios`).
+    async fn bios_missing(&self, ctx: &Context<'_>) -> bool {
+        let (dir, games) = bios_places(state(ctx), self.0.system);
+        let id = self.0.system.id;
+        tokio::task::spawn_blocking(move || crate::bios::missing_required(&dir, games, id))
+            .await
+            .unwrap_or(false)
+    }
+    /// Its BIOS files, checked by name and MD5; null for a system that uses none.
+    async fn bios(&self, ctx: &Context<'_>) -> Option<SystemBios> {
+        let (dir, games) = bios_places(state(ctx), self.0.system);
+        let id = self.0.system.id;
+        let report = tokio::task::spawn_blocking(move || crate::bios::check(&dir, &games(), id))
+            .await
+            .ok()??;
+        Some(SystemBios::from(report, id))
+    }
     /// Its games, by title.
     async fn games(&self, ctx: &Context<'_>) -> Result<Vec<GameNode>> {
         let user = user(ctx).await?;
         let games = crate::api::list_games(state(ctx), &user, self.0.system.id).await.api()?;
         Ok(games.into_iter().map(GameNode).collect())
+    }
+}
+
+/// The BIOS folder, and how to find the system's game folders (where FBNeo also looks). In
+/// cache mode the core plays a copy of the game alone, so only the BIOS folder counts.
+fn bios_places(
+    state: &AppState,
+    system: crate::systems::System,
+) -> (std::path::PathBuf, impl Fn() -> Vec<std::path::PathBuf> + Send + 'static) {
+    let roms = (state.config.library_mode != crate::LibraryMode::Cache)
+        .then(|| state.config.roms_dir.clone());
+    let games =
+        move || roms.as_deref().map(|r| crate::bios::game_dirs(r, &system)).unwrap_or_default();
+    (state.config.bios_dir(), games)
+}
+
+/// How much a system depends on a BIOS file.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum BiosImportance {
+    /// Games will not start without it.
+    Required,
+    /// The core has a built-in replacement that plays most games.
+    Recommended,
+    /// A boot logo, an add-on.
+    Optional,
+}
+
+/// One BIOS file.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum BiosFileState {
+    /// Where the core looks, and a known good dump.
+    Ok,
+    /// Where the core looks, but not a dump the list knows: a bad dump, or a revision it lacks.
+    Unverified,
+    /// A known dump, or the right name in the wrong case, but not where the core looks.
+    Misplaced,
+    Missing,
+}
+
+/// A system's BIOS files as a whole.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum BiosState {
+    /// Everything required and recommended is there and verified.
+    Ready,
+    /// Playable, but a file is unverified or misplaced.
+    Warning,
+    /// Playable, without a recommended file.
+    Incomplete,
+    /// A required file is missing: games will not start.
+    Missing,
+}
+
+#[derive(SimpleObject)]
+struct SystemBios {
+    state: BiosState,
+    /// The system's folder, relative to the server's BIOS folder (`SOVEMU_BIOS_DIR`).
+    folder: String,
+    groups: Vec<BiosGroup>,
+}
+
+/// A BIOS the system uses: one file, or any one of several.
+#[derive(SimpleObject)]
+struct BiosGroup {
+    label: String,
+    importance: BiosImportance,
+    /// What it does, and what happens without it.
+    help: String,
+    /// Any one of `files` is enough.
+    any_one: bool,
+    satisfied: bool,
+    files: Vec<BiosFile>,
+}
+
+#[derive(SimpleObject)]
+struct BiosFile {
+    /// Its name in the system's folder.
+    name: String,
+    label: String,
+    state: BiosFileState,
+    /// Where it was found, relative to the BIOS folder (`roms/<folder>/…` beside the games).
+    found_at: Option<String>,
+    /// Of the file found.
+    md5: Option<String>,
+    /// Bytes expected.
+    size: f64,
+}
+
+impl SystemBios {
+    fn from(r: crate::bios::Report, system: &str) -> Self {
+        use crate::bios::{FileState, Importance, Kind, State};
+        Self {
+            state: match r.state {
+                State::Ready => BiosState::Ready,
+                State::Warning => BiosState::Warning,
+                State::Incomplete => BiosState::Incomplete,
+                State::Missing => BiosState::Missing,
+            },
+            folder: system.to_owned(),
+            groups: r
+                .groups
+                .into_iter()
+                .map(|g| BiosGroup {
+                    label: g.group.label.to_owned(),
+                    importance: match g.group.importance {
+                        Importance::Required => BiosImportance::Required,
+                        Importance::Recommended => BiosImportance::Recommended,
+                        Importance::Optional => BiosImportance::Optional,
+                    },
+                    help: g.group.help.to_owned(),
+                    any_one: match &g.group.kind {
+                        Kind::AnyOf(files) => files.len() > 1,
+                        Kind::Dumps { .. } => true,
+                    },
+                    satisfied: g.satisfied,
+                    files: g
+                        .files
+                        .into_iter()
+                        .map(|f| BiosFile {
+                            name: f.name,
+                            label: f.label,
+                            state: match f.state {
+                                FileState::Ok => BiosFileState::Ok,
+                                FileState::Unverified => BiosFileState::Unverified,
+                                FileState::Misplaced => BiosFileState::Misplaced,
+                                FileState::Missing => BiosFileState::Missing,
+                            },
+                            found_at: f.found_at,
+                            md5: f.md5,
+                            size: f.size as f64,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
     }
 }
 

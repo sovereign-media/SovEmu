@@ -20,6 +20,104 @@ input BindingInput {
 	button: PadButton!
 }
 
+type BiosFile {
+	"""
+	Its name in the system's folder.
+	"""
+	name: String!
+	label: String!
+	state: BiosFileState!
+	"""
+	Where it was found, relative to the BIOS folder (`roms/<folder>/…` beside the games).
+	"""
+	foundAt: String
+	"""
+	Of the file found.
+	"""
+	md5: String
+	"""
+	Bytes expected.
+	"""
+	size: Float!
+}
+
+"""
+One BIOS file.
+"""
+enum BiosFileState {
+	"""
+	Where the core looks, and a known good dump.
+	"""
+	OK
+	"""
+	Where the core looks, but not a dump the list knows: a bad dump, or a revision it lacks.
+	"""
+	UNVERIFIED
+	"""
+	A known dump, or the right name in the wrong case, but not where the core looks.
+	"""
+	MISPLACED
+	MISSING
+}
+
+"""
+A BIOS the system uses: one file, or any one of several.
+"""
+type BiosGroup {
+	label: String!
+	importance: BiosImportance!
+	"""
+	What it does, and what happens without it.
+	"""
+	help: String!
+	"""
+	Any one of `files` is enough.
+	"""
+	anyOne: Boolean!
+	satisfied: Boolean!
+	files: [BiosFile!]!
+}
+
+"""
+How much a system depends on a BIOS file.
+"""
+enum BiosImportance {
+	"""
+	Games will not start without it.
+	"""
+	REQUIRED
+	"""
+	The core has a built-in replacement that plays most games.
+	"""
+	RECOMMENDED
+	"""
+	A boot logo, an add-on.
+	"""
+	OPTIONAL
+}
+
+"""
+A system's BIOS files as a whole.
+"""
+enum BiosState {
+	"""
+	Everything required and recommended is there and verified.
+	"""
+	READY
+	"""
+	Playable, but a file is unverified or misplaced.
+	"""
+	WARNING
+	"""
+	Playable, without a recommended file.
+	"""
+	INCOMPLETE
+	"""
+	A required file is missing: games will not start.
+	"""
+	MISSING
+}
+
 """
 A cheat code for a game, this user's.
 """
@@ -699,9 +797,26 @@ type System {
 	"""
 	rendering: Rendering
 	"""
+	A BIOS file it cannot start games without is missing. Cheap: no checksums (see `bios`).
+	"""
+	biosMissing: Boolean!
+	"""
+	Its BIOS files, checked by name and MD5; null for a system that uses none.
+	"""
+	bios: SystemBios
+	"""
 	Its games, by title.
 	"""
 	games: [Game!]!
+}
+
+type SystemBios {
+	state: BiosState!
+	"""
+	The system's folder, relative to the server's BIOS folder (`SOVEMU_BIOS_DIR`).
+	"""
+	folder: String!
+	groups: [BiosGroup!]!
 }
 
 """

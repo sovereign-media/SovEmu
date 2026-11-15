@@ -37,6 +37,7 @@ graphql(`
     playable
     needsGpu
     rendering
+    biosMissing
   }
 `);
 
@@ -170,6 +171,33 @@ export const SystemsQuery = graphql(`
   query Systems {
     systems {
       ...SystemFields
+    }
+  }
+`);
+
+export const BiosQuery = graphql(`
+  query Bios {
+    systems {
+      ...SystemFields
+      bios {
+        state
+        folder
+        groups {
+          label
+          importance
+          help
+          anyOne
+          satisfied
+          files {
+            name
+            label
+            state
+            foundAt
+            md5
+            size
+          }
+        }
+      }
     }
   }
 `);
