@@ -61,6 +61,19 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 
 const ago = (unix: number) => formatAgo(new Date(unix * 1000).toISOString().replace("T", " ").slice(0, 19));
 
+
+/** Stops the wheel and touch from scrolling the page through the dimming. React's own wheel
+ *  and touch listeners are passive, so they could not cancel it. */
+function blockScroll(el: HTMLDivElement | null) {
+  if (!el) return;
+  const stop = (e: Event) => e.preventDefault();
+  el.addEventListener("wheel", stop, { passive: false });
+  el.addEventListener("touchmove", stop, { passive: false });
+  return () => {
+    el.removeEventListener("wheel", stop);
+    el.removeEventListener("touchmove", stop);
+  };
+}
 export function GamePanel({
   game,
   system,
@@ -86,13 +99,22 @@ export function GamePanel({
     <Dialog.Root open={!!game} modal={false} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         {/* Dims the page, side nav included. A non-modal dialog has no Overlay, so this stands
-            in for one; it lets clicks through, so another card still switches the panel. */}
-        <div aria-hidden data-state={game ? "open" : "closed"} className="pointer-events-none z-[41] fixed inset-0 bg-black/60 motion-safe:data-[state=open]:animate-fade-in motion-safe:data-[state=closed]:animate-fade-out" />
+            in for one: it takes the pointer, so nothing under it can be clicked or scrolled, and
+            a click on it only closes the panel (Radix sees it as outside the panel). It keeps the
+            pointer while it fades, so that click cannot land on a card under it. The pad and
+            keyboard still move through the grid, the panel following. */}
+        <div
+          aria-hidden
+          ref={blockScroll}
+          data-state={game ? "open" : "closed"}
+          className="fixed inset-0 z-[41] bg-black/60 motion-safe:data-[state=open]:animate-fade-in motion-safe:data-[state=closed]:animate-fade-out"
+        />
         <Dialog.Content
           aria-describedby={undefined}
-          // The page's pad navigation handles Escape (its Back); a click on another card switches
-          // the panel instead of closing it.
+          // The page's pad navigation handles Escape (its Back).
           onEscapeKeyDown={(e) => e.preventDefault()}
+          // Moving the focus to another card (the pad, the keyboard) switches the panel rather
+          // than closing it.
           onInteractOutside={(e) => {
             const target = e.target as Element | null;
             if (target?.closest?.("[data-game-card], [data-radix-popper-content-wrapper], nav")) e.preventDefault();
