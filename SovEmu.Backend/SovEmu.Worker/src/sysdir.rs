@@ -13,6 +13,11 @@
 //! (the BIOS folder's copies win). A folder both have becomes a real folder of the merged
 //! contents, which also lets a core create its working files there (they last the session).
 //! Nothing is written to the shipped data.
+//!
+//! The BIOS files always arrive as a real folder of links to the files, never as a link to the
+//! BIOS folder itself: PCSX2 lists `pcsx2/bios` and writes its NVRAM and MEC files there, and
+//! those writes belong in the merge. Through a link they would go to the library, often a
+//! read-only network share, and a worker killed mid-write there can wedge the share's folder.
 
 use std::path::{Path, PathBuf};
 
@@ -52,13 +57,10 @@ impl SystemDir {
             real.push(part);
             make_real_dir(&real)?;
         }
-        if at.as_os_str().is_empty() || target.symlink_metadata().is_ok() {
-            // Shipped data is already there (Dolphin's `Sys/GC` fonts): add the BIOS files.
-            make_real_dir(&target)?;
-            overlay(&target, bios)?;
-        } else {
-            symlink(bios, &target).with_context(|| format!("linking {}", target.display()))?;
-        }
+        // A real folder even when nothing is shipped there (see the module docs); where shipped
+        // data is (Dolphin's `Sys/GC` fonts), the BIOS files join it.
+        make_real_dir(&target)?;
+        overlay(&target, bios)?;
         Ok(dir)
     }
 
@@ -233,6 +235,10 @@ mod tests {
             SystemDir::for_core(&cores.join("pcsx2_libretro.so"), &ps2, "pcsx2/bios").unwrap();
         let m = dir.path();
         assert_eq!(std::fs::read(m.join("pcsx2/bios/scph39001.bin")).unwrap(), b"ps2");
+        let bios_dir = m.join("pcsx2/bios").symlink_metadata().unwrap();
+        assert!(bios_dir.is_dir(), "a real folder, not a link to the library's");
+        std::fs::write(m.join("pcsx2/bios/scph39001.nvm"), b"nvram").expect("NVRAM is writable");
+        assert!(!ps2.join("scph39001.nvm").exists(), "and lands in the merge");
         assert!(m.join("pcsx2/resources").is_dir(), "shipped resources kept");
         assert!(!m.join("pcsx2").symlink_metadata().unwrap().file_type().is_symlink());
         std::fs::create_dir(m.join("pcsx2/memcards")).expect("a core can create folders there");
