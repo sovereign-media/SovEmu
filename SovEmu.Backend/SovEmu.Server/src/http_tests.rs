@@ -89,6 +89,10 @@ impl Harness {
             std::fs::copy(core, cores.join(format!("fceumm_libretro.{ext}"))).unwrap();
             args.extend(["--worker".into(), worker.display().to_string()]);
         }
+        // Never the real LaunchBox server: a test that wants it points it at a mock.
+        if !extra.iter().any(|a| a.starts_with("--launchbox")) {
+            args.extend(["--launchbox".into(), "false".into()]);
+        }
         args.extend(extra);
         let state = build_state(Config::parse_from(args)).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
@@ -420,6 +424,7 @@ async fn runs_a_game_session_in_a_worker() {
 /// A stand-in for ScreenScraper and TheGamesDB on a local port. ScreenScraper answers for the
 /// NES game (checking the exact query a real client must send) and not for the GBA one;
 /// TheGamesDB answers for the GBA one, with box art. `quota` makes ScreenScraper refuse.
+/// `/lb/Metadata.zip` is a LaunchBox dump that knows the NES game.
 async fn mock_services(quota: bool) -> String {
     use axum::extract::Query;
     use axum::routing::get;
@@ -474,6 +479,10 @@ async fn mock_services(quota: bool) -> String {
                         "images": {"5": [{"type": "boxart", "side": "front", "filename": "box.png"}]}}}))
                 }
             }),
+        )
+        .route(
+            "/lb/Metadata.zip",
+            get(|| async { crate::metadata::launchbox::tests::zip_bytes(LAUNCHBOX_DUMP) }),
         )
         .route("/img/box.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }));
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -548,6 +557,52 @@ async fn fetches_metadata_from_both_services() {
     h.ok(FETCH, json!({})).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
+}
+
+const LAUNCHBOX_DUMP: &str = r#"<?xml version="1.0" standalone="yes"?>
+<LaunchBox>
+  <Game>
+    <Name>Test Game</Name>
+    <ReleaseDate>1990-01-01T00:00:00+00:00</ReleaseDate>
+    <Overview>From LaunchBox</Overview>
+    <DatabaseID>1</DatabaseID>
+    <CommunityRating>4</CommunityRating>
+    <Platform>Nintendo Entertainment System</Platform>
+  </Game>
+  <GameImage><DatabaseID>1</DatabaseID><FileName>box.png</FileName><Type>Box - Front</Type></GameImage>
+</LaunchBox>"#;
+
+#[tokio::test]
+async fn launchbox_answers_before_screenscraper() {
+    // ScreenScraper is out of quota: asking it at all would leave a note.
+    let base = mock_services(true).await;
+    let mut args = metadata_args(&base);
+    args.extend(
+        [
+            "--launchbox",
+            "true",
+            "--launchbox-url",
+            &format!("{base}/lb/Metadata.zip"),
+            "--launchbox-images-url",
+            &format!("{base}/img"),
+        ]
+        .map(String::from),
+    );
+    let mut h = Harness::new_with("metadata-launchbox", false, args).await;
+    h.sign_up_admin().await;
+    let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
+    assert_eq!(status["sources"], json!(["fbneo", "launchbox", "screenscraper", "thegamesdb"]));
+
+    h.ok(FETCH, json!({"s": "nes"})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(status["found"], 1, "{status}");
+    assert_eq!(status["notes"], json!([]), "ScreenScraper was not asked: {status}");
+    assert!(h.dir.join("metadata/launchbox/Metadata.zip").is_file(), "the dump is kept");
+    let nes = h.games("nes").await;
+    assert_eq!(nes[0]["description"], "From LaunchBox");
+    assert_eq!(nes[0]["releaseDate"], "1990-01-01");
+    assert_eq!(nes[0]["rating"], 0.8);
+    assert_eq!(nes[0]["media"], json!(["THUMB"]), "the scraped thumb, kept over the box art");
 }
 
 #[tokio::test]

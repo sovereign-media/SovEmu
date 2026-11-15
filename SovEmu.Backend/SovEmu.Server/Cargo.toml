@@ -29,6 +29,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 roxmltree = "0.21.2"
 md-5 = "0.11.0"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "query"] }
+quick-xml = "0.42.0"
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 axum = "0.8"

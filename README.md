@@ -154,17 +154,26 @@ shows them. Scans run in the background, in parallel.
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
-publishers, genres, player counts and box art. Missing box art is downloaded. Sources, in order:
+publishers, genres, player counts, ratings and box art. Missing box art is downloaded. Sources,
+in order:
 
 1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
    `mslug` becomes *Metal Slug - Super Vehicle-001* (1996, Nazca).
-2. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
+2. **The [LaunchBox Games Database](https://gamesdb.launchbox-app.com)**, by name and platform,
+   with community ratings. No account needed, on by default. LaunchBox publishes the whole
+   database as one file (`Metadata.zip`, about 110 MB). The server downloads it into
+   `data/metadata/launchbox/` on the first lookup, and looks for a newer one when a lookup
+   starts and the last check is a week old (`SOVEMU_LAUNCHBOX_REFRESH_HOURS`).
+3. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
    ES-DE scrape from. It matches by MD5, size and file name. It needs developer credentials
    (requested on its forum); a free user account raises the daily quota.
-3. **[TheGamesDB](https://thegamesdb.net)**, by name and platform. It needs an API key (requested
+4. **[TheGamesDB](https://thegamesdb.net)**, by name and platform. It needs an API key (requested
    on its forum).
 
-Add credentials in `.env` (`SOVEMU_SCREENSCRAPER_*`, `SOVEMU_THEGAMESDB_KEY`). A job stops
+ScreenScraper and TheGamesDB are only asked about games the sources before them left without a
+description, release date or box art, so their quotas go on what LaunchBox doesn't know (hacks,
+translations, homebrew). Add credentials in `.env` (`SOVEMU_SCREENSCRAPER_*`,
+`SOVEMU_THEGAMESDB_KEY`). A job stops
 using a service that rejects credentials or runs out of quota, and retries those games next time.
 
 Supported systems: NES, SNES, Game Boy, Game Boy Color, GBA, Mega Drive, Master System, Game
@@ -203,6 +212,9 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, core options (see below) |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
+| `SOVEMU_LAUNCHBOX` | `true` | Use the LaunchBox Games Database dump |
+| `SOVEMU_LAUNCHBOX_REFRESH_HOURS` | `168` | Look for a newer dump when the last check is this old (`0`: never) |
+| `SOVEMU_LAUNCHBOX_URL`, `SOVEMU_LAUNCHBOX_IMAGES_URL` | LaunchBox's | The dump and the image server for its box art |
 | `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD` | unset | ScreenScraper developer credentials |
 | `SOVEMU_SCREENSCRAPER_USER`, `_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |

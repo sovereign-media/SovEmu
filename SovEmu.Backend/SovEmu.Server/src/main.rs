@@ -102,6 +102,24 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_MIRROR_SYSTEMS", value_delimiter = ',')]
     pub mirror_systems: Vec<String>,
 
+    /// Look games up in the LaunchBox Games Database dump (free, no account; about 110 MB,
+    /// downloaded into `<data>/metadata/launchbox/`).
+    #[arg(long, env = "SOVEMU_LAUNCHBOX", default_value_t = true, action = clap::ArgAction::Set)]
+    pub launchbox: bool,
+    #[arg(long, env = "SOVEMU_LAUNCHBOX_URL", default_value = metadata::launchbox::DEFAULT_URL)]
+    pub launchbox_url: String,
+    /// Where the dump's image file names are served from (box art).
+    #[arg(
+        long,
+        env = "SOVEMU_LAUNCHBOX_IMAGES_URL",
+        default_value = metadata::launchbox::DEFAULT_IMAGES_URL
+    )]
+    pub launchbox_images_url: String,
+    /// Look for a newer LaunchBox dump when a metadata job starts and the last check is this
+    /// many hours old (0: download it once, never again).
+    #[arg(long, env = "SOVEMU_LAUNCHBOX_REFRESH_HOURS", default_value_t = 168)]
+    pub launchbox_refresh_hours: u64,
+
     /// ScreenScraper developer id and password (request them from screenscraper.fr).
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVID")]
     pub screenscraper_devid: Option<String>,
@@ -361,6 +379,14 @@ impl Config {
                 secret(&self.screenscraper_password)
             ),
             format!("thegamesdb_key={}", secret(&self.thegamesdb_key)),
+            format!(
+                "launchbox={} launchbox_url={} launchbox_images_url={} \
+                 launchbox_refresh_hours={}",
+                self.launchbox,
+                self.launchbox_url,
+                self.launchbox_images_url,
+                self.launchbox_refresh_hours
+            ),
             format!("metrics_token={}", secret(&self.metrics_token)),
             format!(
                 "session_days={} login_max_failures={} login_lockout_minutes={}",
@@ -581,8 +607,18 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let thegamesdb = config.thegamesdb_key.clone().filter(|k| !k.is_empty()).map(|key| {
         metadata::thegamesdb::TheGamesDb::new(config.thegamesdb_url.clone(), key, http.clone())
     });
+    let launchbox = config.launchbox.then(|| {
+        metadata::launchbox::LaunchBox::new(
+            config.launchbox_url.clone(),
+            config.launchbox_images_url.clone(),
+            config.data_dir.join("metadata").join("launchbox"),
+            config.launchbox_refresh_hours,
+            config.metadata_regions.clone(),
+        )
+    });
     let metadata = metadata::Metadata::new(
         config.data_dir.join("metadata"),
+        launchbox,
         screenscraper,
         thegamesdb,
         std::time::Duration::from_millis(config.screenscraper_delay_ms),

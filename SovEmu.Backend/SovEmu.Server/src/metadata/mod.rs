@@ -4,12 +4,19 @@
 //! Sources, tried in order and merged (an earlier source's fields win):
 //! - [`fbneo`]: FinalBurn Neo's own DATs, for arcade and Neo Geo sets. No account needed; turns
 //!   `mslug` into *Metal Slug - Super Vehicle-001* with its year and maker.
+//! - [`launchbox`]: the LaunchBox Games Database, from the dump it publishes (downloaded and
+//!   refreshed by the server). By name and platform. No account needed: the default source,
+//!   and the one with the most community ratings.
 //! - [`screenscraper`]: ScreenScraper, the service retro frontends (Recalbox, Batocera, RetroBat,
 //!   ES-DE) scrape from. Matches by MD5 + size + file name. Needs developer credentials; a user
 //!   account raises the quota.
 //! - [`thegamesdb`]: TheGamesDB, by name and platform. Needs an API key.
+//!
+//! ScreenScraper and TheGamesDB are only asked about games the sources before them left
+//! incomplete, so their quotas go on what LaunchBox does not know.
 
 pub mod fbneo;
+pub mod launchbox;
 pub mod screenscraper;
 pub mod thegamesdb;
 
@@ -144,6 +151,7 @@ pub struct JobStatus {
 /// The configured sources and the job's shared state.
 pub struct Metadata {
     pub fbneo: fbneo::FbNeoDats,
+    pub launchbox: Option<launchbox::LaunchBox>,
     pub screenscraper: Option<screenscraper::ScreenScraper>,
     pub thegamesdb: Option<thegamesdb::TheGamesDb>,
     pub media_dir: PathBuf,
@@ -161,11 +169,15 @@ impl std::fmt::Debug for Metadata {
 impl Metadata {
     pub fn new(
         dir: PathBuf,
+        launchbox: Option<launchbox::LaunchBox>,
         screenscraper: Option<screenscraper::ScreenScraper>,
         thegamesdb: Option<thegamesdb::TheGamesDb>,
         screenscraper_delay: Duration,
     ) -> Arc<Self> {
         let mut sources = vec!["fbneo"];
+        if launchbox.is_some() {
+            sources.push("launchbox");
+        }
         if screenscraper.is_some() {
             sources.push("screenscraper");
         }
@@ -174,6 +186,7 @@ impl Metadata {
         }
         Arc::new(Self {
             fbneo: fbneo::FbNeoDats::new(dir.join("fbneo")),
+            launchbox,
             screenscraper,
             thegamesdb,
             media_dir: dir.join("media"),
@@ -236,6 +249,18 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
     meta.update(|s| s.total = games.len() as u64);
     tracing::info!("metadata: looking up {} game(s)", games.len());
 
+    // Download, refresh or read the LaunchBox dump once for the whole job.
+    let launchbox = match &meta.launchbox {
+        Some(lb) => match lb.prepare().await {
+            Ok(index) => Some(index),
+            Err(e) => {
+                tracing::warn!("metadata: LaunchBox unavailable: {e}");
+                meta.update(|s| s.notes.push(format!("LaunchBox: {e}")));
+                None
+            }
+        },
+        None => None,
+    };
     let (mut use_ss, mut use_tgdb) = (meta.screenscraper.is_some(), meta.thegamesdb.is_some());
     for game in games {
         let path = state.config.roms_dir.join(&game.path);
@@ -260,6 +285,14 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         if let Some(found) = meta.fbneo.lookup(&meta.http, &input).await {
             info.merge(found);
             sources.push("fbneo");
+        }
+        if let Some(index) = &launchbox {
+            // Arcade files are set names (`mslug`): match the title FBNeo gave them.
+            let title = info.title.as_deref().unwrap_or(&input.title);
+            if let Some(found) = index.lookup(&input.system, title) {
+                info.merge(found);
+                sources.push("launchbox");
+            }
         }
         if use_ss && !info.complete() {
             let ss = meta.screenscraper.as_ref().expect("checked");

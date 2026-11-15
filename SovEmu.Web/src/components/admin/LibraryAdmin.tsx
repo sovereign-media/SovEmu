@@ -129,8 +129,9 @@ function Library() {
         }
       >
         <p className="mt-3 text-sm text-slate-400">
-          Titles, descriptions, release dates, developers, genres and box art. Arcade and Neo Geo names come from FinalBurn
-          Neo's own lists. ScreenScraper and TheGamesDB need credentials, set on the server (<code>SOVEMU_SCREENSCRAPER_*</code>
+          Titles, descriptions, release dates, developers, genres, ratings and box art. Arcade and Neo Geo names come from
+          FinalBurn Neo's own lists, and most games from the LaunchBox Games Database, which needs no account (its dump is
+          downloaded by the server). ScreenScraper and TheGamesDB fill the gaps and need credentials, set on the server (<code>SOVEMU_SCREENSCRAPER_*</code>
           , <code>SOVEMU_THEGAMESDB_KEY</code>).
         </p>
         <p className="mt-3 text-sm">
