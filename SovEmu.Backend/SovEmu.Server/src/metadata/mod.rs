@@ -208,10 +208,28 @@ struct Pending {
     path: String,
     title: String,
     size: i64,
+    /// `not_found`, or null for a game never looked up.
+    status: Option<String>,
+    /// The services asked last time.
+    tried: Option<String>,
 }
 
-/// Looks up every game without metadata (all of a system's, or every game with `force`), one
-/// at a time, and stores what it finds. Returns at once if a job is already running.
+/// Whether a game should be looked up: never looked up, or not found by the services asked
+/// then while one it was not asked is now configured.
+fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -> bool {
+    match status {
+        None => true,
+        Some("not_found") => {
+            let tried: Vec<&str> = tried.unwrap_or("").split(',').collect();
+            available.iter().any(|s| !tried.contains(s))
+        }
+        Some(_) => false,
+    }
+}
+
+/// Looks up every game without metadata, and every game no service found while a service it was
+/// not asked is now configured (all of a system's, or every game with `force`), one at a time,
+/// and stores what it finds. Returns at once if a job is already running.
 pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
     let meta = state.metadata.clone();
     {
@@ -222,17 +240,28 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
         let sources = std::mem::take(&mut s.sources);
         *s = JobStatus { running: true, sources, ..JobStatus::default() };
     }
-    let games = sqlx::query_as::<_, Pending>(
-        "SELECT g.id, g.system, g.path, g.title, g.size FROM games g
+    let mut available = vec!["fbneo"];
+    if meta.screenscraper.is_some() {
+        available.push("screenscraper");
+    }
+    if meta.thegamesdb.is_some() {
+        available.push("thegamesdb");
+    }
+    let games: Vec<Pending> = sqlx::query_as::<_, Pending>(
+        "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried FROM games g
          LEFT JOIN game_metadata m ON m.game_id = g.id
-         WHERE (?1 IS NULL OR g.system = ?1) AND (?2 OR m.game_id IS NULL)
+         WHERE (?1 IS NULL OR g.system = ?1)
+           AND (?2 OR m.game_id IS NULL OR m.status = 'not_found')
          ORDER BY g.system, g.title",
     )
     .bind(&system)
     .bind(force)
     .fetch_all(&state.db)
     .await
-    .unwrap_or_default();
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|g| force || needs_lookup(g.status.as_deref(), g.tried.as_deref(), &available))
+    .collect();
     meta.update(|s| s.total = games.len() as u64);
     tracing::info!("metadata: looking up {} game(s)", games.len());
 
@@ -256,6 +285,9 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
 
         let mut info = GameInfo::default();
         let mut sources = Vec::new();
+        // The services that answered, found or not: a game none found is asked again only by
+        // a service not among them.
+        let mut tried = vec!["fbneo"];
         let mut failed = false;
         if let Some(found) = meta.fbneo.lookup(&meta.http, &input).await {
             info.merge(found);
@@ -267,8 +299,9 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
                 Ok(Some(found)) => {
                     info.merge(found);
                     sources.push("screenscraper");
+                    tried.push("screenscraper");
                 }
-                Ok(None) => {}
+                Ok(None) => tried.push("screenscraper"),
                 Err(e @ (MetaError::Unauthorized(_) | MetaError::Quota(_))) => {
                     tracing::warn!("metadata: ScreenScraper stopped: {e}");
                     meta.update(|s| s.notes.push(format!("ScreenScraper: {e}")));
@@ -289,8 +322,9 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
                 Ok(Some(found)) => {
                     info.merge(found);
                     sources.push("thegamesdb");
+                    tried.push("thegamesdb");
                 }
-                Ok(None) => {}
+                Ok(None) => tried.push("thegamesdb"),
                 Err(e @ (MetaError::Unauthorized(_) | MetaError::Quota(_))) => {
                     tracing::warn!("metadata: TheGamesDB stopped: {e}");
                     meta.update(|s| s.notes.push(format!("TheGamesDB: {e}")));
@@ -310,7 +344,7 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
                 Some(url) => download_box_art(&meta, game.id, url).await,
                 None => None,
             };
-            let _ = store(&state, game.id, &info, &sources, box_art.as_deref()).await;
+            let _ = store(&state, game.id, &info, &sources, &tried, box_art.as_deref()).await;
         }
         meta.update(|s| {
             s.done += 1;
@@ -338,18 +372,19 @@ async fn store(
     game_id: i64,
     info: &GameInfo,
     sources: &[&str],
+    tried: &[&str],
     box_art: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO game_metadata (game_id, status, sources, title, description, release_date,
-           developer, publisher, genre, players, rating, box_art, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           developer, publisher, genre, players, rating, box_art, tried, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(game_id) DO UPDATE SET status = excluded.status, sources = excluded.sources,
            title = excluded.title, description = excluded.description,
            release_date = excluded.release_date, developer = excluded.developer,
            publisher = excluded.publisher, genre = excluded.genre, players = excluded.players,
            rating = excluded.rating, box_art = COALESCE(excluded.box_art, game_metadata.box_art),
-           fetched_at = excluded.fetched_at",
+           tried = excluded.tried, fetched_at = excluded.fetched_at",
     )
     .bind(game_id)
     .bind(if sources.is_empty() { "not_found" } else { "found" })
@@ -363,6 +398,7 @@ async fn store(
     .bind(&info.players)
     .bind(info.rating)
     .bind(box_art)
+    .bind(tried.join(","))
     .execute(&state.db)
     .await?;
     Ok(())
@@ -391,6 +427,17 @@ pub fn normalize(title: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn asks_again_only_when_a_new_service_could_answer() {
+        let all = ["fbneo", "screenscraper", "thegamesdb"];
+        assert!(needs_lookup(None, None, &["fbneo"]), "never looked up");
+        assert!(!needs_lookup(Some("found"), Some("fbneo"), &all), "found stays found");
+        assert!(!needs_lookup(Some("not_found"), Some("fbneo"), &["fbneo"]), "nothing new");
+        assert!(needs_lookup(Some("not_found"), Some("fbneo"), &all), "credentials added");
+        assert!(needs_lookup(Some("not_found"), Some(""), &["fbneo"]), "before this was kept");
+        assert!(!needs_lookup(Some("not_found"), Some("fbneo,screenscraper,thegamesdb"), &all));
+    }
     use super::*;
 
     #[test]
