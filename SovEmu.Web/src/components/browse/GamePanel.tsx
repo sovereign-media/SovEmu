@@ -1,7 +1,7 @@
 // A game's details in a side panel over the grid: artwork (and its video snap), facts,
-// description, Continue / Start over or Play, save slots and play history. A translucent overlay:
-// the grid shows through it and never reflows for it. Not modal: the grid stays usable, and
-// choosing another card switches the panel to it.
+// description, Continue / Start over or Play, save slots and play history. Full height on the
+// right edge, over the page, which dims behind it and never reflows for it. Not modal: the grid
+// stays usable, and choosing another card switches the panel to it.
 import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useEffect, useState, type ReactNode } from "react";
@@ -85,6 +85,9 @@ export function GamePanel({
   return (
     <Dialog.Root open={!!game} modal={false} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
+        {/* Dims the page, side nav included. A non-modal dialog has no Overlay, so this stands
+            in for one; it lets clicks through, so another card still switches the panel. */}
+        <div aria-hidden data-state={game ? "open" : "closed"} className="pointer-events-none z-[41] fixed inset-0 bg-black/60 motion-safe:data-[state=open]:animate-fade-in motion-safe:data-[state=closed]:animate-fade-out" />
         <Dialog.Content
           aria-describedby={undefined}
           // The page's pad navigation handles Escape (its Back); a click on another card switches
@@ -95,7 +98,7 @@ export function GamePanel({
             if (target?.closest?.("[data-game-card], [data-radix-popper-content-wrapper], nav")) e.preventDefault();
           }}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed inset-y-3 right-3 z-30 flex w-[min(28rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[2rem] border border-white/15 bg-surface/60 shadow-2xl outline-none backdrop-blur-xl backdrop-saturate-150 motion-safe:data-[state=open]:animate-slide-in-right motion-safe:data-[state=closed]:animate-slide-out-right"
+          className="fixed inset-y-0 right-0 z-[42] flex w-[min(28rem,100vw)] flex-col overflow-hidden border-l border-white/10 bg-surface/85 shadow-2xl outline-none backdrop-blur-xl backdrop-saturate-150 motion-safe:data-[state=open]:animate-slide-in-right motion-safe:data-[state=closed]:animate-slide-out-right"
         >
           {shown && (
             <>
