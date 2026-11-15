@@ -166,6 +166,8 @@ publishers, genres, player counts and box art. Missing box art is downloaded. So
 
 Add credentials in `.env` (`SOVEMU_SCREENSCRAPER_*`, `SOVEMU_THEGAMESDB_KEY`). A job stops
 using a service that rejects credentials or runs out of quota, and retries those games next time.
+Games no service found are asked again once a service they were not asked is configured, so
+adding credentials later fills in the library on the next scan, without fetching everything again.
 
 Supported systems: NES, SNES, Game Boy, Game Boy Color, GBA, Mega Drive, Master System, Game
 Gear, PlayStation, and arcade / Neo Geo (FBNeo). N64, Dreamcast, GameCube and PS2 need GPU cores,

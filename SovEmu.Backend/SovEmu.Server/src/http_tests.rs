@@ -512,6 +512,41 @@ async fn wait_for_job(h: &mut Harness) -> Value {
 const FETCH: &str = "mutation($s: ID) { fetchMetadata(system: $s) { running } }";
 
 #[tokio::test]
+async fn asks_again_about_games_not_found_once_a_service_is_added() {
+    // Both games were looked up before any service was configured: FBNeo alone, nothing found.
+    let base = mock_services(false).await;
+    let mut h = Harness::new_with("metadata-retry", false, metadata_args(&base)).await;
+    h.sign_up_admin().await;
+    sqlx::query(
+        "INSERT INTO game_metadata (game_id, status, sources, tried) SELECT id, 'not_found', '', 'fbneo' FROM games",
+    )
+    .execute(&h.state.db)
+    .await
+    .unwrap();
+
+    // The services are configured now, so an ordinary (not forced) job asks them.
+    h.ok(FETCH, json!({})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(
+        (status["total"].clone(), status["found"].clone()),
+        (json!(2), json!(2)),
+        "{status}"
+    );
+    assert_eq!(h.games("nes").await[0]["title"], "Castlevania");
+
+    // Once every configured service has been asked, a game is not asked again.
+    sqlx::query(
+        "UPDATE game_metadata SET status = 'not_found', tried = 'fbneo,screenscraper,thegamesdb'",
+    )
+    .execute(&h.state.db)
+    .await
+    .unwrap();
+    h.ok(FETCH, json!({})).await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
+}
+
+#[tokio::test]
 async fn fetches_metadata_from_both_services() {
     let base = mock_services(false).await;
     let mut h = Harness::new_with("metadata", false, metadata_args(&base)).await;
