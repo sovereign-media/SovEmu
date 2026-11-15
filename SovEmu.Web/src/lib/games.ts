@@ -91,3 +91,59 @@ export function tagCounts(games: Game[]): { tag: string; count: number }[] {
 
 /** How many filters are on, for the filter button's badge. */
 export const activeFilters = (f: GameFilters) => (f.played ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.tags?.length ?? 0);
+
+// --- The grid ---------------------------------------------------------------------------------
+
+/** Where a pad or arrow key moves the focus in a grid of `count` games, `cols` wide: left and
+ *  right along the row (wrapping onto the next or previous row), up and down a row, the
+ *  shoulders three rows. Stops at the ends. */
+export function gridMove(index: number, action: string, cols: number, count: number): number {
+  if (count <= 0) return -1;
+  const step: Record<string, number> = { left: -1, right: 1, up: -cols, down: cols, pageUp: -3 * cols, pageDown: 3 * cols };
+  const delta = step[action];
+  if (delta === undefined) return index;
+  const next = index + delta;
+  // Down from the last full row lands on the last game rather than nowhere.
+  if (action === "down" || action === "pageDown") return Math.min(next, count - 1);
+  return Math.max(0, Math.min(next, count - 1));
+}
+
+// --- The jump strip (Sovereign's letter carousel) -----------------------------------------------
+
+/** How many letters the strip shows either side of the current one. */
+export const STRIP_REACH = 3;
+
+/** The strip's stops: only letters some shown game files under, "#" first. */
+export function jumpStops(games: Pick<Game, "title">[]): string[] {
+  const present = new Set(games.map((g) => letterOf(g.title)));
+  return LETTERS.filter((l) => present.has(l));
+}
+
+/** The current stop and up to `reach` either side of it. */
+export function stripWindow(stops: string[], index: number, reach = STRIP_REACH) {
+  return {
+    before: stops.slice(Math.max(0, index - reach), index),
+    current: stops[index] ?? "",
+    after: stops.slice(index + 1, index + 1 + reach),
+  };
+}
+
+/** One step left or right along the strip, clamped (it does not wrap). */
+export const stepStop = (stops: string[], index: number, delta: -1 | 1) =>
+  Math.min(stops.length - 1, Math.max(0, index + delta));
+
+// --- The panel's URL ----------------------------------------------------------------------------
+
+/** The game a URL's `?game=` opens, if any. */
+export function gameFromUrl(search: string): number | null {
+  const n = Number(new URLSearchParams(search).get("game"));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** `href` with `?game=` set to `id`, or removed for null; every other parameter is kept. */
+export function urlWithGame(href: string, id: number | null): string {
+  const url = new URL(href);
+  if (id === null) url.searchParams.delete("game");
+  else url.searchParams.set("game", String(id));
+  return url.pathname + url.search + url.hash;
+}

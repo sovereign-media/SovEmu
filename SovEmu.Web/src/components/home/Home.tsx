@@ -19,11 +19,10 @@ const SYSTEMS = 2;
 const ADDED = 3;
 
 const play = (g: Game) => (location.href = `/play/?game=${g.id}`);
-/** Opens the game's system with the game selected. */
-const browse = (g: Game) => {
-  localStorage.setItem(`sovemu.game.${g.system}`, String(g.id));
-  location.href = `/system/?id=${encodeURIComponent(g.system)}`;
-};
+/** Opens the game's system with its side panel open (its own URL). */
+const browse = (g: Game) => (location.href = `/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
+/** Opens the game's system. */
+const browseSystem = (g: Game) => (location.href = `/system/?id=${encodeURIComponent(g.system)}`);
 const openSystem = (s: SystemSummary) => (location.href = `/system/?id=${encodeURIComponent(s.id)}`);
 
 function HomeScreen() {
@@ -126,7 +125,7 @@ function HomeScreen() {
         color={colorOf}
         short={shortOf}
         onPlay={play}
-        onBrowse={browse}
+        onBrowse={browseSystem}
         empty={empty}
       />
       <div className="relative z-10 -mt-8 grid grid-cols-1 gap-10">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { activeFilters, filterGames, jumpTo, letterOf, maxPlayers, sortGames, tagCounts } from "./games";
+import { activeFilters, filterGames, gameFromUrl, gridMove, jumpStops, jumpTo, letterOf, maxPlayers, sortGames, stepStop, stripWindow, tagCounts, urlWithGame } from "./games";
 
 let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
@@ -76,5 +76,51 @@ describe("the A–Z strip", () => {
       { tag: "Europe", count: 2 },
       { tag: "USA", count: 2 },
     ]);
+  });
+});
+
+describe("the grid", () => {
+  // 10 games, 4 a row: rows 0-3, 4-7, 8-9.
+  it("moves along rows and between them", () => {
+    expect(gridMove(0, "right", 4, 10)).toBe(1);
+    expect(gridMove(3, "right", 4, 10)).toBe(4);
+    expect(gridMove(4, "left", 4, 10)).toBe(3);
+    expect(gridMove(1, "down", 4, 10)).toBe(5);
+    expect(gridMove(5, "up", 4, 10)).toBe(1);
+  });
+
+  it("stops at the ends, and down from the last full row lands on the last game", () => {
+    expect(gridMove(0, "left", 4, 10)).toBe(0);
+    expect(gridMove(1, "up", 4, 10)).toBe(0);
+    expect(gridMove(9, "right", 4, 10)).toBe(9);
+    expect(gridMove(7, "down", 4, 10)).toBe(9);
+    expect(gridMove(2, "pageDown", 4, 10)).toBe(9);
+    expect(gridMove(0, "accept", 4, 10)).toBe(0);
+    expect(gridMove(0, "right", 4, 0)).toBe(-1);
+  });
+});
+
+describe("the jump strip", () => {
+  const stops = jumpStops([game("1942"), game("Contra"), game("Castlevania"), game("Metroid"), game("Zelda")]);
+
+  it("offers only letters that have games", () => {
+    expect(stops).toEqual(["#", "C", "M", "Z"]);
+  });
+
+  it("shows the current letter with its neighbours, and steps without wrapping", () => {
+    expect(stripWindow(stops, 1, 1)).toEqual({ before: ["#"], current: "C", after: ["M"] });
+    expect(stepStop(stops, 3, 1)).toBe(3);
+    expect(stepStop(stops, 0, -1)).toBe(0);
+  });
+});
+
+describe("the panel's URL", () => {
+  it("reads and writes ?game= and keeps the rest", () => {
+    expect(gameFromUrl("?id=nes&game=42")).toBe(42);
+    expect(gameFromUrl("?id=nes")).toBeNull();
+    expect(gameFromUrl("?game=abc")).toBeNull();
+    expect(urlWithGame("http://x/system/?id=nes", 42)).toBe("/system/?id=nes&game=42");
+    expect(urlWithGame("http://x/system/?id=nes&game=42", null)).toBe("/system/?id=nes");
+    expect(urlWithGame("http://x/system/?id=nes&game=1", 7)).toBe("/system/?id=nes&game=7");
   });
 });
