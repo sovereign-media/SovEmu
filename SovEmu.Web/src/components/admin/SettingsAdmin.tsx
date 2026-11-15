@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
 import { choiceLabel, filterSettings, groupSettings, sourceBadge } from "../../lib/settings";
 import Shell from "../Shell";
-import TopBar from "../TopBar";
+import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
@@ -119,7 +119,7 @@ function Settings() {
   const changed = loaded?.settings.filter((s) => s.source === "admin").length ?? 0;
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-24 pb-16">
+    <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-16 pb-16">
       <section className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -243,8 +243,10 @@ function Settings() {
 export default function SettingsAdmin() {
   return (
     <Shell>
-      <TopBar crumb="Settings" />
-      <Settings />
+      <SideNav section="admin" />
+      <div className={NAV_SPACE}>
+        <Settings />
+      </div>
     </Shell>
   );
 }

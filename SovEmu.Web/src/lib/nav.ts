@@ -71,9 +71,12 @@ export function listenNav(handler: (action: NavAction) => void): { stop: () => v
 
   const isTyping = (e: KeyboardEvent) =>
     e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  // Keys pressed inside an open menu (the side nav's) belong to the menu, not to the page.
+  const inMenu = (e: KeyboardEvent) =>
+    e.target instanceof Element && !!e.target.closest('[role="menu"], [role="menubar"]');
   const down = (e: KeyboardEvent) => {
     const action = KEY_ACTIONS[e.code] ?? KEY_ACTIONS[e.key];
-    if (!action || isTyping(e) || control.paused) return;
+    if (!action || isTyping(e) || inMenu(e) || control.paused) return;
     keys.add(action);
     e.preventDefault();
   };

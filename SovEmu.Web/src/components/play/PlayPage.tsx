@@ -380,6 +380,11 @@ function Player() {
             ],
       });
 
+      // Chosen already on the game list (?start=continue or ?start=new): skip the question.
+      const chosen = new URLSearchParams(location.search).get("start");
+      if (chosen === "continue" && auto) void begin(AUTO_SLOT);
+      else if (chosen === "new" || chosen === "continue") void begin(null);
+
       // Menu navigation. While playing with no menu open, game keys must not drive menus.
       // Escape both opens the menu and means Back: the press that opened it must not also
       // close it on the next frame.

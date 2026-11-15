@@ -4,7 +4,7 @@ import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, Tria
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import Shell from "../Shell";
-import TopBar from "../TopBar";
+import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { Confirm, panel, Progress } from "../ui/primitives";
 
@@ -74,7 +74,7 @@ function Library() {
   const syncPct = m ? (m.bytes_total ? (100 * m.bytes_done) / m.bytes_total : m.running ? 0 : 100) : 0;
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-24 pb-16">
+    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
       <Card
         title="Library"
         icon={<HardDrive />}
@@ -170,8 +170,10 @@ function Library() {
 export default function LibraryAdmin() {
   return (
     <Shell>
-      <TopBar crumb="Library" />
-      <Library />
+      <SideNav section="admin" />
+      <div className={NAV_SPACE}>
+        <Library />
+      </div>
     </Shell>
   );
 }

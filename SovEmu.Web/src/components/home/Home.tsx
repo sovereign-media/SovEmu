@@ -8,7 +8,7 @@ import { moveFocus, startFocus, type Focus, type RowShape } from "../../lib/home
 import { listenNav } from "../../lib/nav";
 import HintBar from "../HintBar";
 import Shell from "../Shell";
-import TopBar from "../TopBar";
+import SideNav, { NAV_SPACE } from "../SideNav";
 import { useToast } from "../ui/toast";
 import { Hero } from "./Hero";
 import { GameCard, Row, SystemCard } from "./Row";
@@ -179,8 +179,10 @@ function HomeScreen() {
 export default function Home() {
   return (
     <Shell>
-      <TopBar />
-      <HomeScreen />
+      <SideNav section="home" />
+      <div className={NAV_SPACE}>
+        <HomeScreen />
+      </div>
     </Shell>
   );
 }
