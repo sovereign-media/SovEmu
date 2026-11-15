@@ -180,8 +180,9 @@ shows them. Scans run in the background, in parallel.
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
-publishers, genres, player counts, ratings and box art. Missing box art is downloaded. Sources,
-in order:
+publishers, genres, player counts, ratings and box art. The information is stored as each game
+is looked up. Box art follows in the background, only for games with no thumb of their own,
+`SOVEMU_ARTWORK_DOWNLOADS` at a time. Sources, in order:
 
 1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
    `mslug` becomes *Metal Slug - Super Vehicle-001* (1996, Nazca).
@@ -250,6 +251,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
 | `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests |
+| `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art downloaded at once, in the background after a lookup |
 | `SOVEMU_SCREENSCRAPER_URL`, `SOVEMU_THEGAMESDB_URL` | the services | API base URLs (mirrors, tests) |
 | **Streaming** | | |
 | `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |

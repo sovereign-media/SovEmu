@@ -125,7 +125,7 @@ export type SessionFieldsFragment = { id: string, gameId: number, system: string
 
 export type SettingsFieldsFragment = { system: string, core: string, needsGame: boolean, environment: Array<string>, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> };
 
-export type MetadataFieldsFragment = { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string> };
+export type MetadataFieldsFragment = { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string>, artwork: { running: boolean, total: number, done: number, downloaded: number, failed: number } };
 
 export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -347,7 +347,7 @@ export type SyncLibraryMutation = { syncLibrary: boolean };
 export type AdminStatusQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type AdminStatusQuery = { libraryStatus: { mode: LibraryMode, games: number, cacheBytes: number | null, mirror: { running: boolean, filesTotal: number, filesDone: number, bytesTotal: number, bytesDone: number, removed: number, failed: number, finishedAt: number | null, error: string | null } | null }, metadataStatus: { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string> } };
+export type AdminStatusQuery = { libraryStatus: { mode: LibraryMode, games: number, cacheBytes: number | null, mirror: { running: boolean, filesTotal: number, filesDone: number, bytesTotal: number, bytesDone: number, removed: number, failed: number, finishedAt: number | null, error: string | null } | null }, metadataStatus: { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string>, artwork: { running: boolean, total: number, done: number, downloaded: number, failed: number } } };
 
 export type FetchMetadataMutationVariables = Exact<{
   system?: string | number | null | undefined;
@@ -355,7 +355,7 @@ export type FetchMetadataMutationVariables = Exact<{
 }>;
 
 
-export type FetchMetadataMutation = { fetchMetadata: { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string> } };
+export type FetchMetadataMutation = { fetchMetadata: { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string>, artwork: { running: boolean, total: number, done: number, downloaded: number, failed: number } } };
 
 export type EmulatorSettingsQueryVariables = Exact<{
   system: string | number;
@@ -482,6 +482,13 @@ export const MetadataFieldsFragmentDoc = new TypedDocumentString(`
   failed
   sources
   notes
+  artwork {
+    running
+    total
+    done
+    downloaded
+    failed
+  }
 }
     `, {"fragmentName":"MetadataFields"}) as unknown as TypedDocumentString<MetadataFieldsFragment, unknown>;
 export const PadLayoutFieldsFragmentDoc = new TypedDocumentString(`
@@ -1010,6 +1017,13 @@ export const AdminStatusDocument = new TypedDocumentString(`
   failed
   sources
   notes
+  artwork {
+    running
+    total
+    done
+    downloaded
+    failed
+  }
 }`) as unknown as TypedDocumentString<AdminStatusQuery, AdminStatusQueryVariables>;
 export const FetchMetadataDocument = new TypedDocumentString(`
     mutation FetchMetadata($system: ID, $force: Boolean!) {
@@ -1026,6 +1040,13 @@ export const FetchMetadataDocument = new TypedDocumentString(`
   failed
   sources
   notes
+  artwork {
+    running
+    total
+    done
+    downloaded
+    failed
+  }
 }`) as unknown as TypedDocumentString<FetchMetadataMutation, FetchMetadataMutationVariables>;
 export const EmulatorSettingsDocument = new TypedDocumentString(`
     query EmulatorSettings($system: ID!) {

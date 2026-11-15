@@ -130,8 +130,12 @@ incomplete. A background job, started by an admin, tries the sources in order.
 Earlier sources' fields win, and later ones fill the gaps. The result goes into `game_metadata`,
 one row per game, found or not, so the next job skips it. A lookup that failed is not stored,
 so it's retried next time. A source that rejects credentials or runs out of quota is skipped
-for the rest of the job. Downloaded box art lives in `data/metadata/media` and stands in for a
-missing local thumb. The game API returns the looked-up title, with the file's own title in
+for the rest of the job. A lookup stores box art only as a URL, with its source, never with
+credentials (ScreenScraper's are stripped, and added again when downloading). When the lookup
+ends, a second background job (`metadata/artwork.rs`) downloads, `SOVEMU_ARTWORK_DOWNLOADS` at a
+time, the box art of the games that will show it (no local thumb), giving up on a URL after
+three failures. Its queue is the table, so a restart resumes it. Downloaded box art lives in
+`data/metadata/media` and stands in for a missing local thumb. The game API returns the looked-up title, with the file's own title in
 `file_title`, plus description, release date, developer, publisher, genre, players and rating.
 
 ### A remote library

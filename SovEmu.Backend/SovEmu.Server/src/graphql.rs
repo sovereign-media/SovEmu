@@ -665,6 +665,19 @@ struct MetadataStatus {
     sources: Vec<String>,
     /// Why a source stopped early (bad credentials, quota), if one did.
     notes: Vec<String>,
+    /// The box art downloads that follow a lookup, in the background.
+    artwork: ArtworkStatus,
+}
+
+/// Box art being downloaded after a lookup, for the games that have no local thumb.
+#[derive(SimpleObject)]
+struct ArtworkStatus {
+    running: bool,
+    /// Downloads queued since the job started.
+    total: i64,
+    done: i64,
+    downloaded: i64,
+    failed: i64,
 }
 
 impl From<crate::metadata::JobStatus> for MetadataStatus {
@@ -678,6 +691,13 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
             failed: j.failed as i64,
             sources: j.sources.into_iter().map(str::to_owned).collect(),
             notes: j.notes,
+            artwork: ArtworkStatus {
+                running: j.artwork.running,
+                total: j.artwork.total as i64,
+                done: j.artwork.done as i64,
+                downloaded: j.artwork.downloaded as i64,
+                failed: j.artwork.failed as i64,
+            },
         }
     }
 }

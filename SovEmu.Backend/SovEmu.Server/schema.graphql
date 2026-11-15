@@ -1,4 +1,18 @@
 """
+Box art being downloaded after a lookup, for the games that have no local thumb.
+"""
+type ArtworkStatus {
+	running: Boolean!
+	"""
+	Downloads queued since the job started.
+	"""
+	total: Int!
+	done: Int!
+	downloaded: Int!
+	failed: Int!
+}
+
+"""
 One input driving one button.
 """
 type Binding {
@@ -453,6 +467,10 @@ type MetadataStatus {
 	Why a source stopped early (bad credentials, quota), if one did.
 	"""
 	notes: [String!]!
+	"""
+	The box art downloads that follow a lookup, in the background.
+	"""
+	artwork: ArtworkStatus!
 }
 
 """

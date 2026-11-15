@@ -4,6 +4,10 @@
 //! XML (the shape ES-DE parses). Requests carry developer credentials (`devid`/`devpassword`,
 //! requested from ScreenScraper) and optionally a user account (`ssid`/`sspassword`), which raises
 //! the daily quota and thread count.
+//!
+//! Its media URLs carry the same credentials. They are stripped from the box art URL a lookup
+//! stores ([`strip_credentials`]) and added again when the box art job downloads it
+//! ([`ScreenScraper::authorize`]), so no credential is ever written to the database.
 
 use super::{GameInfo, LookupInput, MetaError, status_error};
 
@@ -41,6 +45,28 @@ pub struct ScreenScraper {
     http: reqwest::Client,
     regions: Vec<String>,
     languages: Vec<String>,
+}
+
+/// Query parameters that hold credentials.
+const CREDENTIAL_PARAMS: &[&str] = &["devid", "devpassword", "ssid", "sspassword"];
+
+/// `url` without its credential parameters.
+pub fn strip_credentials(url: &str) -> String {
+    let Ok(mut parsed) = reqwest::Url::parse(url) else { return url.to_owned() };
+    if !parsed.query_pairs().any(|(k, _)| CREDENTIAL_PARAMS.contains(&k.as_ref())) {
+        return url.to_owned();
+    }
+    let kept: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(k, _)| !CREDENTIAL_PARAMS.contains(&k.as_ref()))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    if kept.is_empty() {
+        parsed.set_query(None);
+    } else {
+        parsed.query_pairs_mut().clear().extend_pairs(kept);
+    }
+    parsed.into()
 }
 
 /// Default region preference for names, dates and media: USA first, as most sets are.
@@ -112,7 +138,7 @@ pub fn parse_with<S: AsRef<str>>(xml: &str, regions: &[S], languages: &[S]) -> O
         .iter()
         .find_map(|r| box_art.iter().find(|(reg, _)| *reg == r.as_ref()))
         .or_else(|| box_art.first())
-        .map(|(_, url)| url.clone());
+        .map(|(_, url)| strip_credentials(url));
 
     Some(GameInfo {
         title,
@@ -152,6 +178,22 @@ impl ScreenScraper {
             self.languages = languages;
         }
         self
+    }
+
+    /// A media URL a lookup stored, with this account's credentials added again.
+    pub fn authorize(&self, url: &str) -> String {
+        let Ok(mut parsed) = reqwest::Url::parse(&strip_credentials(url)) else {
+            return url.to_owned();
+        };
+        {
+            let c = &self.credentials;
+            let mut query = parsed.query_pairs_mut();
+            query.append_pair("devid", &c.dev_id).append_pair("devpassword", &c.dev_password);
+            if let Some((user, password)) = &c.user {
+                query.append_pair("ssid", user).append_pair("sspassword", password);
+            }
+        }
+        parsed.into()
     }
 
     pub async fn lookup(&self, input: &LookupInput) -> Result<Option<GameInfo>, MetaError> {
@@ -271,6 +313,38 @@ pub(crate) mod tests {
             .is_none()
         );
         assert!(parse("not xml").is_none());
+    }
+
+    #[test]
+    fn media_urls_are_stored_without_credentials() {
+        let url = "https://neoclone.screenscraper.fr/api2/mediaJeu.php?devid=dev&devpassword=pw\
+                   &softname=SovEmu&ssid=me&sspassword=secret&systemeid=3&jeuid=1234\
+                   &media=box-2D(us)";
+        let stored = strip_credentials(url);
+        assert!(!stored.contains("pw") && !stored.contains("secret") && !stored.contains("ssid"));
+        assert!(stored.contains("jeuid=1234") && stored.contains("softname=SovEmu"), "{stored}");
+        assert_eq!(
+            strip_credentials("https://x.invalid/box%20us.png"),
+            "https://x.invalid/box%20us.png"
+        );
+
+        let ss = ScreenScraper::new(
+            DEFAULT_BASE,
+            Credentials {
+                dev_id: "dev2".into(),
+                dev_password: "pw2".into(),
+                user: Some(("me2".into(), "secret2".into())),
+            },
+            reqwest::Client::new(),
+        );
+        let signed = reqwest::Url::parse(&ss.authorize(&stored)).unwrap();
+        let q: std::collections::HashMap<_, _> = signed.query_pairs().into_owned().collect();
+        assert_eq!(q["devid"], "dev2");
+        assert_eq!(q["devpassword"], "pw2");
+        assert_eq!(q["ssid"], "me2");
+        assert_eq!(q["sspassword"], "secret2");
+        assert_eq!(q["jeuid"], "1234");
+        assert_eq!(q["media"], "box-2D(us)");
     }
 
     #[test]
