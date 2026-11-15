@@ -118,8 +118,15 @@ by path, so game ids (and with them play history and saves) survive a rescan.
 
 ### Game information
 
-`metadata/` holds one module per source (FBNeo DATs, ScreenScraper, TheGamesDB), each turning
-a lookup into a `GameInfo`. A background job, started by an admin, tries the sources in order.
+`metadata/` holds one module per source (FBNeo DATs, LaunchBox, ScreenScraper, TheGamesDB),
+each turning a lookup into a `GameInfo`. LaunchBox has no lookup API, only a daily dump of its
+whole database (`Metadata.zip`, 110 MB, a 500 MB XML file inside), so it is the one source the
+server keeps a copy of: downloaded into `data/metadata/launchbox`, checked again (by ETag) once
+the last check is `SOVEMU_LAUNCHBOX_REFRESH_HOURS` old, and read in one streaming pass into an
+in-memory index of the games on SovEmu's platforms (about 35,000; under two seconds), rebuilt
+only when the file changes. It needs no account and has no quota, so it is the default and
+comes right after FBNeo; ScreenScraper and TheGamesDB are only asked about what is still
+incomplete. A background job, started by an admin, tries the sources in order.
 Earlier sources' fields win, and later ones fill the gaps. The result goes into `game_metadata`,
 one row per game, found or not, so the next job skips it. A lookup that failed is not stored,
 so it's retried next time. A source that rejects credentials or runs out of quota is skipped

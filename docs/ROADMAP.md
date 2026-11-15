@@ -81,6 +81,8 @@ held 59.93 fps over 300 frames with no resyncs.
       NAS), ScreenScraper (MD5 + size + name) and TheGamesDB (name + platform) clients, merged into
       `game_metadata`; missing box art downloaded; descriptions, dates, developers, genres and
       players in the game list
+- [x] LaunchBox Games Database as the default source: its dump downloaded and refreshed by the
+      server, matched by name and alternate names per platform, with community ratings
 - [ ] Live-test the ScreenScraper and TheGamesDB clients once credentials exist (tested against
       mock services built from ES-DE's parsing code)
 - [ ] Group multi-disc games (`(Disc N)`) into one entry
