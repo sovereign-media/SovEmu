@@ -73,22 +73,41 @@ these names. `Tab` and `Backspace` are the fast-forward and rewind keys and cann
 
 ## Mappings
 
-A mapping is a list of `{input, button}` pairs. Each input drives one RetroPad button (`B Y SELECT START UP DOWN LEFT RIGHT A X L R L2 R2 L3 R3`), and a button may have several inputs. A mapping **replaces** the built-in defaults for that controller. The mapping in force for a user is, in order:
+A mapping is a list of `{input, button}` pairs. Each input drives one RetroPad button (`B Y SELECT START UP DOWN LEFT RIGHT A X L R L2 R2 L3 R3`), and a button may have several inputs. A mapping **replaces** the built-in defaults for that controller.
 
-1. **their own**, saved from any client;
-2. **the environment's default** for that model: `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS` (`south:B,east:A,…`) and `__NAME`. The admin page shows these locked;
-3. **an admin's default**, set on the admin page (Admin ▸ Controllers), which offers its defaults as environment lines;
-4. **the built-in defaults** below.
+Consoles label their buttons differently: the Mega Drive's A, B and C are RetroPad Y, B and A. So a mapping is for a controller model **on one system**, or on **every system** (`system` null, the mapping that applies wherever there is no system's own). The mapping in force for a user playing a system is the first of:
 
-The server merges the first three: `controllerMappings` returns the mapping in force for each model that has one, with its `source` (`USER`, `ADMIN` or `ENVIRONMENT`). A model missing from the list uses the built-in defaults. After `resetControllerMapping`, a client fetches the list again, so that the user gets the server's default rather than the built-in one. The built-in defaults:
+1. **their own** for that system;
+2. **their own** for every system;
+3. **the default** for that system;
+4. **the default** for every system;
+5. **the built-in defaults** below.
+
+The user's own choices come before any default. A default comes from the environment, or from an admin on the admin page (Admin ▸ Controllers). For the same controller and system, the environment wins, and the admin page shows that default locked. The environment variables are `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` and `__NAME`. The admin page offers its own defaults in that form.
+
+`controllerMappings(system:)` returns the mapping in force for each model that has one on that system. Each comes with its `source` (`USER`, `ADMIN` or `ENVIRONMENT`) and its `system` (null when it is an every-system mapping). Without `system`, it returns the every-system mappings. A model missing from the list uses the built-in defaults. After a reset, a client fetches the list again, so the next layer applies. The built-in defaults:
 
 - **Controllers**: by position, as libretro's SNES-shaped RetroPad expects: `south` B, `east` A, `west` Y, `north` X, `l1` L, `r1` R, `l2` L2, `r2` R2, `select` SELECT, `start` START, `l3` L3, `r3` R3, and the D-pad to the D-pad.
 - **Keyboard**: arrows to the D-pad, `KeyZ` B, `KeyX` A, `KeyA` Y, `KeyS` X, `KeyQ` L, `KeyW` R, `Enter` START, `ShiftLeft` and `ShiftRight` SELECT.
 
-The server stores one mapping per user and controller ID, and one default per controller ID
-(GraphQL: `controllerMappings`, `saveControllerMapping`, `resetControllerMapping`; admins:
-`controllerDefaults`, `saveControllerDefault`, `resetControllerDefault`). It checks the IDs and
-input names above, in the API and in the environment.
+The server stores one mapping per user, controller ID and system (or every system), and one default per controller ID and system. The GraphQL operations are `controllerMappings`, `saveControllerMapping` and `resetControllerMapping`, each with an optional `system`; for admins, `controllerDefaults`, `saveControllerDefault` and `resetControllerDefault`. The server checks the IDs, systems and input names above, in the API and in the environment.
+
+## Systems and diagrams
+
+Clients show each system's own labels, and side-by-side diagrams. The server gives both, so that every client draws the same thing:
+
+- **`System.controls.buttons`**: the RetroPad buttons the system's pad has, in order, each with the system's label (Mega Drive: `Y` → `A`, `B` → `B`, `A` → `C` …). A client lists these when remapping for that system; for every system, it lists all sixteen by RetroPad name.
+- **`System.controls.layout`**: the system's pad, whose keys are RetroPad buttons (`B`, `START` …) labelled as the console prints them.
+- **`controllerLayouts`**: the player's controllers by family (`xbox`, `playstation`, `nintendo`, `generic`), whose keys are input names (`south`, `l1` …) labelled as in Families above. The keyboard has no diagram; it shows key names.
+
+A layout is drawn on a `width` × `height` canvas (160 × 100) from rounded rectangles, `{x, y, w, h, r}`. A shape is a circle when `r` is half its size.
+
+- **`body`**: shapes filled in one colour, with `tone` 1 for a darker recess (a screen, a stick's well).
+- **`keys`**: one shape per button, with its `label` drawn in it.
+
+A client highlights the button being remapped on both diagrams at once: the system's key for the RetroPad button, and the controller's keys for every input mapped to it.
+
+The drawings are SovEmu's own schematics, not any maker's artwork. The 3D systems' labels follow their cores' defaults and are the least certain.
 
 ## Remapping
 

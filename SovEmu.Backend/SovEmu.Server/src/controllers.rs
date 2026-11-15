@@ -28,8 +28,8 @@ const MAX_ID: usize = 64;
 const MAX_NAME: usize = 128;
 const MAX_KEY: usize = 32;
 const MAX_BINDINGS: usize = 64;
-/// Mappings a user may keep: far more controller models than anyone owns.
-const MAX_MAPPINGS: i64 = 64;
+/// Mappings a user may keep, across controller models and systems.
+const MAX_MAPPINGS: i64 = 256;
 
 /// A RetroPad button (libretro's RETRO_DEVICE_ID_JOYPAD_*).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, async_graphql::Enum)]
@@ -83,11 +83,13 @@ pub enum MappingSource {
     Environment,
 }
 
-/// A mapping for one controller model.
+/// A mapping for one controller model, on one system or on every system.
 #[derive(Debug, Clone, async_graphql::SimpleObject)]
 pub struct ControllerMapping {
     /// `keyboard`, a known model (`xbox`, `dualsense` …) or `pad:<vendor>:<product>`.
     pub controller: String,
+    /// The system it is for, or null for every system.
+    pub system: Option<String>,
     /// What the controller called itself when the mapping was saved, for lists.
     pub name: String,
     pub bindings: Vec<Binding>,
@@ -98,6 +100,8 @@ pub struct ControllerMapping {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControllerSpec {
     pub controller: String,
+    /// A system id, or empty for every system.
+    pub system: String,
     pub name: String,
     pub bindings: Vec<Binding>,
 }
@@ -105,15 +109,27 @@ pub struct ControllerSpec {
 #[derive(sqlx::FromRow)]
 struct Row {
     controller: String,
+    system: String,
     name: String,
     bindings: String,
+}
+
+/// A system id as the API gives it (null for every system) and as the tables keep it ('').
+fn scope(system: &str) -> Option<String> {
+    (!system.is_empty()).then(|| system.to_owned())
 }
 
 impl Row {
     fn into_mapping(self, source: MappingSource) -> ControllerMapping {
         // Only this module writes the column, so it parses; an empty list is the safe fallback.
         let bindings = serde_json::from_str(&self.bindings).unwrap_or_default();
-        ControllerMapping { controller: self.controller, name: self.name, bindings, source }
+        ControllerMapping {
+            controller: self.controller,
+            system: scope(&self.system),
+            name: self.name,
+            bindings,
+            source,
+        }
     }
 }
 
@@ -121,10 +137,21 @@ impl ControllerSpec {
     fn mapping(&self) -> ControllerMapping {
         ControllerMapping {
             controller: self.controller.clone(),
+            system: scope(&self.system),
             name: self.name.clone(),
             bindings: self.bindings.clone(),
             source: MappingSource::Environment,
         }
+    }
+}
+
+/// Checks an optional system id and gives the tables' form of it.
+pub fn system_key(system: Option<&str>) -> Result<String, String> {
+    match system.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(String::new()),
+        Some(id) => crate::systems::by_id(id)
+            .map(|s| s.id.to_owned())
+            .ok_or_else(|| format!("{id:?} is not a system")),
     }
 }
 
@@ -207,38 +234,65 @@ pub fn check(controller: &str, name: &str, bindings: &[Binding]) -> Result<(), S
     Ok(())
 }
 
-/// The defaults: the environment's, then an admin's for the models it leaves alone.
+type Key = (String, String);
+
+/// Every default, for every system and for single systems: the environment's, then an admin's
+/// where the environment leaves a controller and system alone.
 pub async fn defaults(state: &AppState) -> ApiResult<Vec<ControllerMapping>> {
-    let mut out: BTreeMap<String, ControllerMapping> =
-        admin_defaults(state).await?.into_iter().map(|m| (m.controller.clone(), m)).collect();
+    let mut out: BTreeMap<Key, ControllerMapping> = admin_defaults(state)
+        .await?
+        .into_iter()
+        .map(|m| ((m.controller.clone(), m.system.clone().unwrap_or_default()), m))
+        .collect();
     for spec in &state.config.controllers {
-        out.insert(spec.controller.clone(), spec.mapping());
+        out.insert((spec.controller.clone(), spec.system.clone()), spec.mapping());
     }
     Ok(out.into_values().collect())
 }
 
 async fn admin_defaults(state: &AppState) -> ApiResult<Vec<ControllerMapping>> {
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT controller, name, bindings FROM controller_defaults ORDER BY controller",
+        "SELECT controller, system, name, bindings FROM controller_defaults
+         ORDER BY controller, system",
     )
     .fetch_all(&state.db)
     .await?;
     Ok(rows.into_iter().map(|r| r.into_mapping(MappingSource::Admin)).collect())
 }
 
-/// The mappings in force for a user, by controller ID: their own over the defaults. A model
-/// missing here uses the clients' built-in defaults.
-pub async fn list(state: &AppState, user: &User) -> ApiResult<Vec<ControllerMapping>> {
-    let mut out: BTreeMap<String, ControllerMapping> =
-        defaults(state).await?.into_iter().map(|m| (m.controller.clone(), m)).collect();
+/// The mapping in force for each controller model a user has one for, on `system` (or, with
+/// none, on every system). For each model, the first of: their own for the system, their own
+/// for every system, the default for the system, the default for every system. A model missing
+/// here uses the clients' built-in defaults.
+pub async fn list(
+    state: &AppState,
+    user: &User,
+    system: Option<&str>,
+) -> ApiResult<Vec<ControllerMapping>> {
+    let system = system_key(system).map_err(ApiError::bad_request)?;
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT controller, name, bindings FROM controller_mappings WHERE user_id = ?",
+        "SELECT controller, system, name, bindings FROM controller_mappings WHERE user_id = ?",
     )
     .bind(user.id)
     .fetch_all(&state.db)
     .await?;
-    for m in rows.into_iter().map(|r| r.into_mapping(MappingSource::User)) {
-        out.insert(m.controller.clone(), m);
+    let own: Vec<ControllerMapping> =
+        rows.into_iter().map(|r| r.into_mapping(MappingSource::User)).collect();
+    let defaults = defaults(state).await?;
+    // Most specific last, so it is the one kept.
+    let mut out: BTreeMap<String, ControllerMapping> = BTreeMap::new();
+    let mut layers: Vec<(&[ControllerMapping], &str)> = vec![(&defaults, "")];
+    if !system.is_empty() {
+        layers.push((&defaults, &system));
+    }
+    layers.push((&own, ""));
+    if !system.is_empty() {
+        layers.push((&own, &system));
+    }
+    for (mappings, scope) in layers {
+        for m in mappings.iter().filter(|m| m.system.as_deref().unwrap_or("") == scope) {
+            out.insert(m.controller.clone(), m.clone());
+        }
     }
     Ok(out.into_values().collect())
 }
@@ -250,10 +304,14 @@ pub async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>> {
     let mut lines = Vec::new();
     let mut n = configured.len();
     for m in admin_defaults(state).await? {
-        if configured.iter().any(|c| c.controller == m.controller) {
+        let system = m.system.clone().unwrap_or_default();
+        if configured.iter().any(|c| c.controller == m.controller && c.system == system) {
             continue;
         }
         lines.push(format!("SOVEMU_CONTROLLERS__{n}__ID={}", m.controller));
+        if !system.is_empty() {
+            lines.push(format!("SOVEMU_CONTROLLERS__{n}__SYSTEM={system}"));
+        }
         if !m.name.is_empty() {
             lines.push(format!("SOVEMU_CONTROLLERS__{n}__NAME={}", m.name));
         }
@@ -263,16 +321,19 @@ pub async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>> {
     Ok(lines)
 }
 
-/// Saves (replaces) the default for a controller model, for every user without their own.
+/// Saves (replaces) the default for a controller model on a system (or every system), for
+/// every user without their own.
 pub async fn save_default(
     state: &AppState,
     controller: &str,
+    system: Option<&str>,
     name: &str,
     bindings: Vec<Binding>,
 ) -> ApiResult<ControllerMapping> {
     let name = name.trim();
     check(controller, name, &bindings).map_err(ApiError::bad_request)?;
-    if state.config.controllers.iter().any(|c| c.controller == controller) {
+    let system = system_key(system).map_err(ApiError::bad_request)?;
+    if state.config.controllers.iter().any(|c| c.controller == controller && c.system == system) {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
             format!("{controller}'s default is set in the environment (SOVEMU_CONTROLLERS)"),
@@ -280,50 +341,63 @@ pub async fn save_default(
     }
     let json = serde_json::to_string(&bindings).map_err(ApiError::internal)?;
     sqlx::query(
-        "INSERT INTO controller_defaults (controller, name, bindings) VALUES (?, ?, ?)
-         ON CONFLICT(controller) DO UPDATE SET name = excluded.name,
+        "INSERT INTO controller_defaults (controller, system, name, bindings) VALUES (?, ?, ?, ?)
+         ON CONFLICT(controller, system) DO UPDATE SET name = excluded.name,
            bindings = excluded.bindings, updated_at = datetime('now')",
     )
     .bind(controller)
+    .bind(&system)
     .bind(name)
     .bind(&json)
     .execute(&state.db)
     .await?;
     Ok(ControllerMapping {
         controller: controller.to_owned(),
+        system: scope(&system),
         name: name.to_owned(),
         bindings,
         source: MappingSource::Admin,
     })
 }
 
-/// Forgets an admin's default, so the model is back on the built-in one. Returns whether there
-/// was one.
-pub async fn reset_default(state: &AppState, controller: &str) -> ApiResult<bool> {
-    let removed = sqlx::query("DELETE FROM controller_defaults WHERE controller = ?")
-        .bind(controller)
-        .execute(&state.db)
-        .await?
-        .rows_affected();
+/// Forgets an admin's default for a controller model on a system (or every system). Returns
+/// whether there was one.
+pub async fn reset_default(
+    state: &AppState,
+    controller: &str,
+    system: Option<&str>,
+) -> ApiResult<bool> {
+    let system = system_key(system).map_err(ApiError::bad_request)?;
+    let removed =
+        sqlx::query("DELETE FROM controller_defaults WHERE controller = ? AND system = ?")
+            .bind(controller)
+            .bind(&system)
+            .execute(&state.db)
+            .await?
+            .rows_affected();
     Ok(removed > 0)
 }
 
-/// Saves (replaces) the user's mapping for a controller model.
+/// Saves (replaces) the user's mapping for a controller model on a system (or every system).
 pub async fn save(
     state: &AppState,
     user: &User,
     controller: &str,
+    system: Option<&str>,
     name: &str,
     bindings: Vec<Binding>,
 ) -> ApiResult<ControllerMapping> {
     let name = name.trim();
     check(controller, name, &bindings).map_err(ApiError::bad_request)?;
+    let system = system_key(system).map_err(ApiError::bad_request)?;
     let json = serde_json::to_string(&bindings).map_err(ApiError::internal)?;
     let mut tx = state.db.begin().await?;
     let (count, exists): (i64, bool) = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(MAX(controller = ?), 0) FROM controller_mappings WHERE user_id = ?",
+        "SELECT COUNT(*), COALESCE(MAX(controller = ? AND system = ?), 0)
+         FROM controller_mappings WHERE user_id = ?",
     )
     .bind(controller)
+    .bind(&system)
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
@@ -331,12 +405,14 @@ pub async fn save(
         return Err(ApiError::bad_request("too many controller mappings: reset one first"));
     }
     sqlx::query(
-        "INSERT INTO controller_mappings (user_id, controller, name, bindings) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, controller) DO UPDATE SET name = excluded.name,
+        "INSERT INTO controller_mappings (user_id, controller, system, name, bindings)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, controller, system) DO UPDATE SET name = excluded.name,
            bindings = excluded.bindings, updated_at = datetime('now')",
     )
     .bind(user.id)
     .bind(controller)
+    .bind(&system)
     .bind(name)
     .bind(&json)
     .execute(&mut *tx)
@@ -344,23 +420,31 @@ pub async fn save(
     tx.commit().await?;
     Ok(ControllerMapping {
         controller: controller.to_owned(),
+        system: scope(&system),
         name: name.to_owned(),
         bindings,
         source: MappingSource::User,
     })
 }
 
-/// Forgets the user's mapping for a controller model, so it is back on the defaults (an
-/// admin's or the environment's, else the built-in one). Returns
-/// whether there was one.
-pub async fn reset(state: &AppState, user: &User, controller: &str) -> ApiResult<bool> {
-    let removed =
-        sqlx::query("DELETE FROM controller_mappings WHERE user_id = ? AND controller = ?")
-            .bind(user.id)
-            .bind(controller)
-            .execute(&state.db)
-            .await?
-            .rows_affected();
+/// Forgets the user's mapping for a controller model on a system (or every system), so the
+/// next layer applies (docs/CONTROLLERS.md). Returns whether there was one.
+pub async fn reset(
+    state: &AppState,
+    user: &User,
+    controller: &str,
+    system: Option<&str>,
+) -> ApiResult<bool> {
+    let system = system_key(system).map_err(ApiError::bad_request)?;
+    let removed = sqlx::query(
+        "DELETE FROM controller_mappings WHERE user_id = ? AND controller = ? AND system = ?",
+    )
+    .bind(user.id)
+    .bind(controller)
+    .bind(&system)
+    .execute(&state.db)
+    .await?
+    .rows_affected();
     Ok(removed > 0)
 }
 
