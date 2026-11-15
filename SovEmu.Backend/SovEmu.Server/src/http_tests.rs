@@ -638,6 +638,11 @@ async fn launchbox_answers_before_screenscraper() {
     assert_eq!(nes[0]["releaseDate"], "1990-01-01");
     assert_eq!(nes[0]["rating"], 0.8);
     assert_eq!(nes[0]["media"], json!(["THUMB"]), "the scraped thumb, kept over the box art");
+    let id = nes[0]["id"].as_i64().unwrap();
+    assert!(
+        !h.dir.join(format!("metadata/media/{id}-box.png")).exists(),
+        "no box art downloaded for a game with a local thumb"
+    );
 }
 
 #[tokio::test]
