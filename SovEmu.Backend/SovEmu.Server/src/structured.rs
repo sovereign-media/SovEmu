@@ -5,7 +5,8 @@
 //! - Systems: `SOVEMU_SYSTEMS__<id>__CORE` (the core to use), `__ENABLED` (false hides it), and
 //!   `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
 //! - Controller defaults: `SOVEMU_CONTROLLERS__<n>__ID` (a controller ID from
-//!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`) and `__NAME` (optional).
+//!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` (a
+//!   system id: the default for that system only) and `__NAME`.
 //!
 //! Keys after the prefix are case-insensitive except core option names and system ids, which are
 //! passed through as written (lower-cased ids, as option names are).
@@ -139,6 +140,7 @@ pub fn controllers(vars: &[(String, String)]) -> Result<Vec<crate::controllers::
         let var = |field: &str| format!("SOVEMU_CONTROLLERS__{n}__{field}");
         let mut spec = crate::controllers::ControllerSpec {
             controller: String::new(),
+            system: String::new(),
             name: String::new(),
             bindings: Vec::new(),
         };
@@ -147,12 +149,19 @@ pub fn controllers(vars: &[(String, String)]) -> Result<Vec<crate::controllers::
             match field.to_ascii_uppercase().as_str() {
                 "ID" => spec.controller = value.trim().to_owned(),
                 "NAME" => spec.name = value.trim().to_owned(),
+                "SYSTEM" => {
+                    spec.system = crate::controllers::system_key(Some(&value))
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", var("SYSTEM")))?;
+                }
                 "BINDINGS" => {
                     spec.bindings = crate::controllers::parse_bindings(&value)
                         .map_err(|e| anyhow::anyhow!("{}: {e}", var("BINDINGS")))?;
                     has_bindings = true;
                 }
-                other => bail!("{}: unknown setting {other:?} (ID, NAME or BINDINGS)", var(other)),
+                other => bail!(
+                    "{}: unknown setting {other:?} (ID, SYSTEM, NAME or BINDINGS)",
+                    var(other)
+                ),
             }
         }
         if spec.controller.is_empty() || !has_bindings {
@@ -160,9 +169,13 @@ pub fn controllers(vars: &[(String, String)]) -> Result<Vec<crate::controllers::
         }
         crate::controllers::check(&spec.controller, &spec.name, &spec.bindings)
             .map_err(|e| anyhow::anyhow!("SOVEMU_CONTROLLERS__{n}: {e}"))?;
-        if let Some((m, _)) = indexed.iter().find(|(_, s)| s.controller == spec.controller) {
+        if let Some((m, _)) =
+            indexed.iter().find(|(_, s)| s.controller == spec.controller && s.system == spec.system)
+        {
+            let on =
+                if spec.system.is_empty() { String::new() } else { format!(" on {}", spec.system) };
             bail!(
-                "SOVEMU_CONTROLLERS__{n}: {} is already set by SOVEMU_CONTROLLERS__{m}",
+                "SOVEMU_CONTROLLERS__{n}: {}{on} is already set by SOVEMU_CONTROLLERS__{m}",
                 spec.controller
             );
         }
@@ -260,9 +273,29 @@ mod tests {
         assert_eq!(specs[0].controller, "pad:2dc8:6101");
         assert_eq!(specs[0].name, "8BitDo SN30 Pro");
         assert_eq!(specs[1].bindings, vec![Binding { input: "KeyJ".into(), button: PadButton::B }]);
+        assert_eq!(specs[0].system, "");
+
+        let per_system = controllers(&vars(&[
+            ("SOVEMU_CONTROLLERS__0__ID", "xbox"),
+            ("SOVEMU_CONTROLLERS__0__BINDINGS", "south:A"),
+            ("SOVEMU_CONTROLLERS__1__ID", "xbox"),
+            ("SOVEMU_CONTROLLERS__1__SYSTEM", "megadrive"),
+            ("SOVEMU_CONTROLLERS__1__BINDINGS", "south:B"),
+        ]))
+        .unwrap();
+        assert_eq!(
+            per_system[1].system, "megadrive",
+            "the same model on one system is not a repeat"
+        );
 
         let fails = |v: &[(&str, &str)]| format!("{:#}", controllers(&vars(v)).unwrap_err());
         assert!(fails(&[("SOVEMU_CONTROLLERS__0__ID", "xbox")]).contains("__BINDINGS"));
+        let unknown_system = [
+            ("SOVEMU_CONTROLLERS__0__ID", "xbox"),
+            ("SOVEMU_CONTROLLERS__0__SYSTEM", "atari"),
+            ("SOVEMU_CONTROLLERS__0__BINDINGS", ""),
+        ];
+        assert!(fails(&unknown_system).contains("not a system"));
         let key_on_pad =
             [("SOVEMU_CONTROLLERS__0__ID", "xbox"), ("SOVEMU_CONTROLLERS__0__BINDINGS", "KeyZ:B")];
         assert!(fails(&key_on_pad).contains("KeyZ"));

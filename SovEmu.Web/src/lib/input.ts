@@ -18,6 +18,7 @@ import {
   Players,
   readHotkeys,
   RESERVED_KEYS,
+  toMapping,
 } from "./controllers";
 import { type Analog, bit, CENTRED, type Hotkeys, MAX_PORTS } from "./protocol";
 
@@ -40,6 +41,14 @@ export function axisToStick(v: number): number {
 
 /** A trigger (0..1) as a libretro analog button value. */
 export const triggerValue = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 32767);
+
+/** A mapping as the server lists it (docs/CONTROLLERS.md, "Mappings"). */
+export interface ServerMapping {
+  controller: string;
+  system?: string | null;
+  source: string;
+  bindings: { input: string; button: string }[];
+}
 
 export interface InputReading {
   /** RetroPad state per port, from port 0 to the highest port in use. */
@@ -75,6 +84,7 @@ export class InputState {
   analogSticks = false;
   /** The user's saved mappings by controller ID; anything missing uses the defaults. */
   private saved = new Map<string, Mapping>();
+  private entries = new Map<string, ServerMapping>();
   /** Gamepads' players; the keyboard does not take a slot, so the first pad is player 1 too. */
   private players = new Players<string>();
   private keyboardPort = 0;
@@ -91,21 +101,20 @@ export class InputState {
     for (const pad of this.pads()) this.players.join(`pad:${pad.index}`);
   }
 
-  setMappings(mappings: { controller: string; bindings: { input: string; button: string }[] }[]) {
-    this.saved = new Map(
-      mappings.map((m) => [m.controller, Object.fromEntries(m.bindings.map((b) => [b.input, b.button])) as Mapping]),
-    );
+  /** The mappings in force on this game's system, as the server lists them. */
+  setMappings<M extends ServerMapping>(mappings: M[]) {
+    this.entries = new Map(mappings.map((m) => [m.controller, m]));
+    this.saved = new Map(mappings.map((m) => [m.controller, toMapping(m.bindings)]));
   }
 
-  /** The mapping in force for a controller model: the user's, else the defaults. */
+  /** The server's entry in force for a controller model (with its source), or null. */
+  inForce(controller: string): ServerMapping | null {
+    return this.entries.get(controller) ?? null;
+  }
+
+  /** The mapping in force for a controller model: the server's, else the built-in defaults. */
   mapping(controller: string): Mapping {
     return this.saved.get(controller) ?? defaultMapping(controller);
-  }
-
-  /** Records a saved (or, with null, reset) mapping. */
-  remember(controller: string, mapping: Mapping | null) {
-    if (mapping) this.saved.set(controller, mapping);
-    else this.saved.delete(controller);
   }
 
   /** A gamepad's model, from its `Gamepad.id` (cached: read() runs every frame). */

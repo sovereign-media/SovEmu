@@ -11,6 +11,7 @@ mod bios;
 mod cache;
 mod cheats;
 mod controllers;
+mod controls;
 mod db;
 mod error;
 mod gpu;

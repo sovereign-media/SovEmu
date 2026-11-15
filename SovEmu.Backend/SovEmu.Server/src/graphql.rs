@@ -163,6 +163,10 @@ impl SystemNode {
     async fn id(&self) -> ID {
         ID::from(self.0.system.id)
     }
+    /// What the system calls its buttons, and a diagram of its pad (docs/CONTROLLERS.md).
+    async fn controls(&self) -> crate::controls::SystemControls {
+        crate::controls::system_controls(&self.0.system)
+    }
     async fn name(&self) -> &str {
         self.0.system.name
     }
@@ -951,6 +955,12 @@ impl Query {
         crate::settings::get_settings(state(ctx), &system).await.api().map(Into::into)
     }
 
+    /// Diagrams of the player's controllers, by family (`xbox`, `playstation`, `nintendo`,
+    /// `generic`), keyed by input (`south`, `l1` …).
+    async fn controller_layouts(&self) -> Vec<crate::controls::PadLayout> {
+        crate::controls::controller_layouts()
+    }
+
     /// Admins: the default controller mappings every user starts from, and the admin's as
     /// environment lines.
     async fn controller_defaults(&self, ctx: &Context<'_>) -> Result<ControllerDefaults> {
@@ -962,15 +972,17 @@ impl Query {
         })
     }
 
-    /// The controller mappings in force for this user, one per controller model
-    /// (docs/CONTROLLERS.md): their own, else a default. A model missing here uses the
-    /// clients' built-in defaults.
+    /// The controller mappings in force for this user on a system (or, with none, on every
+    /// system), one per controller model (docs/CONTROLLERS.md): their own for the system, their
+    /// own for every system, the default for the system, the default for every system. A model
+    /// missing here uses the clients' built-in defaults.
     async fn controller_mappings(
         &self,
         ctx: &Context<'_>,
+        system: Option<ID>,
     ) -> Result<Vec<crate::controllers::ControllerMapping>> {
         let user = user(ctx).await?;
-        crate::controllers::list(state(ctx), &user).await.api()
+        crate::controllers::list(state(ctx), &user, system.as_ref().map(|s| s.as_str())).await.api()
     }
 }
 
@@ -1145,30 +1157,51 @@ impl Mutation {
         Ok(true)
     }
 
-    /// Saves this user's mapping for a controller model, replacing its defaults everywhere
-    /// they play.
+    /// Saves this user's mapping for a controller model on a system, or on every system without
+    /// one, replacing its defaults wherever they play.
     async fn save_controller_mapping(
         &self,
         ctx: &Context<'_>,
         controller: String,
+        system: Option<ID>,
         #[graphql(default)] name: String,
         bindings: Vec<crate::controllers::Binding>,
     ) -> Result<crate::controllers::ControllerMapping> {
         let user = user(ctx).await?;
-        crate::controllers::save(state(ctx), &user, &controller, &name, bindings).await.api()
+        let state = state(ctx);
+        crate::controllers::save(
+            state,
+            &user,
+            &controller,
+            system.as_ref().map(|s| s.as_str()),
+            &name,
+            bindings,
+        )
+        .await
+        .api()
     }
 
-    /// Admins: sets the default mapping for a controller model, for every user without their
-    /// own. A model whose default is in the environment cannot be changed here (CONFLICT).
+    /// Admins: sets the default mapping for a controller model on a system (or every system),
+    /// for every user without their own. A model whose default is in the environment cannot be changed here (CONFLICT).
     async fn save_controller_default(
         &self,
         ctx: &Context<'_>,
         controller: String,
+        system: Option<ID>,
         #[graphql(default)] name: String,
         bindings: Vec<crate::controllers::Binding>,
     ) -> Result<crate::controllers::ControllerMapping> {
         admin(ctx).await?;
-        crate::controllers::save_default(state(ctx), &controller, &name, bindings).await.api()
+        let state = state(ctx);
+        crate::controllers::save_default(
+            state,
+            &controller,
+            system.as_ref().map(|s| s.as_str()),
+            &name,
+            bindings,
+        )
+        .await
+        .api()
     }
 
     /// Admins: forgets the admin's default for a controller model. Returns whether it had one.
@@ -1176,9 +1209,16 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         controller: String,
+        system: Option<ID>,
     ) -> Result<bool> {
         admin(ctx).await?;
-        crate::controllers::reset_default(state(ctx), &controller).await.api()
+        crate::controllers::reset_default(
+            state(ctx),
+            &controller,
+            system.as_ref().map(|s| s.as_str()),
+        )
+        .await
+        .api()
     }
 
     /// Puts a controller model back on the defaults (an admin's, else the built-in ones).
@@ -1187,9 +1227,17 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         controller: String,
+        system: Option<ID>,
     ) -> Result<bool> {
         let user = user(ctx).await?;
-        crate::controllers::reset(state(ctx), &user, &controller).await.api()
+        crate::controllers::reset(
+            state(ctx),
+            &user,
+            &controller,
+            system.as_ref().map(|s| s.as_str()),
+        )
+        .await
+        .api()
     }
 }
 

@@ -997,3 +997,76 @@ async fn controller_defaults_come_from_the_environment_then_the_admin() {
     assert_eq!(h.ok(RESET_DEFAULT, json!({"c": "xbox"})).await["resetControllerDefault"], true);
     assert_eq!(sources(&h.ok(LIST, json!({})).await), ["dualsense=ENVIRONMENT"]);
 }
+
+#[tokio::test]
+async fn controller_mappings_are_kept_per_system_too() {
+    const LIST: &str = "query($s: ID) { controllerMappings(system: $s) {
+        controller system source bindings { input button } } }";
+    const SAVE: &str = "mutation($c: String!, $s: ID, $b: [BindingInput!]!) {
+        saveControllerMapping(controller: $c, system: $s, bindings: $b) { system } }";
+    const RESET: &str =
+        "mutation($c: String!, $s: ID) { resetControllerMapping(controller: $c, system: $s) }";
+    const SET_DEFAULT: &str = "mutation($c: String!, $s: ID, $b: [BindingInput!]!) {
+        saveControllerDefault(controller: $c, system: $s, bindings: $b) { system } }";
+    const DEFAULTS: &str = "{ controllerDefaults { environment } }";
+    let mut h = Harness::new_with("controllers-per-system", false, Vec::new()).await;
+    h.sign_up_admin().await;
+    let one = |input: &str| json!([{"input": input, "button": "B"}]);
+    // What each layer binds to B tells them apart.
+    let b_of = |list: &Value| {
+        let m = &list["controllerMappings"][0];
+        format!(
+            "{}/{}/{}",
+            m["source"].as_str().unwrap_or("-"),
+            m["system"].as_str().unwrap_or("all"),
+            m["bindings"][0]["input"].as_str().unwrap_or("-")
+        )
+    };
+    let md = json!({"s": "megadrive"});
+
+    h.ok(SET_DEFAULT, json!({"c": "xbox", "b": one("north")})).await;
+    assert_eq!(b_of(&h.ok(LIST, md.clone()).await), "ADMIN/all/north");
+    h.ok(SET_DEFAULT, json!({"c": "xbox", "s": "megadrive", "b": one("west")})).await;
+    assert_eq!(b_of(&h.ok(LIST, md.clone()).await), "ADMIN/megadrive/west");
+    assert_eq!(b_of(&h.ok(LIST, json!({"s": "snes"})).await), "ADMIN/all/north", "other systems");
+    // The user's own, even for every system, wins over any default.
+    h.ok(SAVE, json!({"c": "xbox", "b": one("east")})).await;
+    assert_eq!(b_of(&h.ok(LIST, md.clone()).await), "USER/all/east");
+    h.ok(SAVE, json!({"c": "xbox", "s": "megadrive", "b": one("south")})).await;
+    assert_eq!(b_of(&h.ok(LIST, md.clone()).await), "USER/megadrive/south");
+    assert_eq!(b_of(&h.ok(LIST, json!({})).await), "USER/all/east", "no system: every system's");
+    // Resetting the system's mapping falls back to the user's own for every system.
+    h.ok(RESET, json!({"c": "xbox", "s": "megadrive"})).await;
+    assert_eq!(b_of(&h.ok(LIST, md.clone()).await), "USER/all/east");
+
+    assert_eq!(h.err(LIST, json!({"s": "atari"})).await.0, "BAD_REQUEST");
+    let lines = h.ok(DEFAULTS, json!({})).await["controllerDefaults"]["environment"].clone();
+    assert!(
+        lines.as_array().unwrap().contains(&json!("SOVEMU_CONTROLLERS__1__SYSTEM=megadrive")),
+        "{lines}"
+    );
+}
+
+#[tokio::test]
+async fn systems_describe_their_buttons_and_pads() {
+    let mut h = Harness::new("system-controls", false).await;
+    h.sign_up_admin().await;
+    let data = h
+        .ok(
+            "{ system(id: \"nes\") { controls { buttons { button label } layout { id width keys { key label } } } }
+               controllerLayouts { id keys { key label } } }",
+            json!({}),
+        )
+        .await;
+    let controls = &data["system"]["controls"];
+    assert_eq!(controls["buttons"][4], json!({"button": "A", "label": "A"}));
+    assert_eq!(controls["layout"]["id"], "nes");
+    assert_eq!(controls["layout"]["keys"].as_array().unwrap().len(), 8);
+    let families: Vec<&str> = data["controllerLayouts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(families, ["xbox", "playstation", "nintendo", "generic"]);
+}

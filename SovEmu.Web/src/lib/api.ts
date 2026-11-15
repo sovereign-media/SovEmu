@@ -8,6 +8,8 @@ import type {
   EmulatorSettingsQuery,
   GameFieldsFragment,
   PadButton,
+  PadLayoutFieldsFragment,
+  SystemControlsQuery as SystemControlsData,
   HomeQuery,
   SaveFieldsFragment,
   SessionFieldsFragment,
@@ -22,6 +24,7 @@ import {
   BiosQuery,
   ChangeEmulatorSettingsMutation,
   ControllerDefaultsQuery as ControllerDefaultsDocument,
+  ControllerLayoutsQuery,
   ControllerMappingsQuery,
   CheatsQuery as CheatsDocument,
   ClientConfigQuery,
@@ -47,6 +50,7 @@ import {
   StartSessionMutation,
   StopSessionMutation,
   SyncLibraryMutation,
+  SystemControlsQuery,
   SystemGamesQuery,
   SystemsQuery,
   ViewerQuery as ViewerDocument,
@@ -74,6 +78,10 @@ export type SystemBios = NonNullable<BiosSystem["bios"]>;
 export type BiosGroup = SystemBios["groups"][number];
 export type BiosFile = BiosGroup["files"][number];
 export type LibraryStatus = AdminStatusQuery["libraryStatus"];
+type Binding = { input: string; button: PadButton };
+export type PadLayout = PadLayoutFieldsFragment;
+export type SystemControls = NonNullable<NonNullable<SystemControlsData["system"]>["controls"]>;
+export type ControllerMappingList = Awaited<ReturnType<typeof api.controllerMappings>>;
 export type ControllerDefaults = ControllerDefaultsQuery["controllerDefaults"];
 export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
 export type MetadataStatus = AdminStatusQuery["metadataStatus"];
@@ -119,16 +127,26 @@ export const api = {
     (await request(AddCheatMutation, { gameId, code, description })).addCheat,
   setCheat: async (gameId: number, cheatId: number, enabled: boolean) =>
     (await request(SetCheatMutation, { gameId, cheatId, enabled })).setCheatEnabled,
-  /** This user's button mappings per controller model (docs/CONTROLLERS.md). */
-  controllerMappings: async () => (await request(ControllerMappingsQuery)).controllerMappings,
-  saveControllerMapping: (controller: string, name: string, bindings: { input: string; button: PadButton }[]) =>
-    request(SaveControllerMappingMutation, { controller, name, bindings }),
-  resetControllerMapping: (controller: string) => request(ResetControllerMappingMutation, { controller }),
+  /** The mappings in force for this user on a system, or on every system with none (docs/CONTROLLERS.md). */
+  controllerMappings: async (system: string | null = null) =>
+    (await request(ControllerMappingsQuery, { system })).controllerMappings,
+  /** Saves this user's mapping for a controller model on a system, or on every system with null. */
+  saveControllerMapping: (controller: string, system: string | null, name: string, bindings: Binding[]) =>
+    request(SaveControllerMappingMutation, { controller, system, name, bindings }),
+  resetControllerMapping: (controller: string, system: string | null) =>
+    request(ResetControllerMappingMutation, { controller, system }),
+  /** A system's buttons and pad, and the player's controllers' pads, for diagrams. */
+  systemControls: async (id: string) => {
+    const data = await request(SystemControlsQuery, { id });
+    return { controls: data.system?.controls ?? null, layouts: data.controllerLayouts };
+  },
+  controllerLayouts: async () => (await request(ControllerLayoutsQuery)).controllerLayouts,
   /** Admins: the default mappings every user starts from, and the admin's as environment lines. */
   controllerDefaults: async () => (await request(ControllerDefaultsDocument)).controllerDefaults,
-  saveControllerDefault: (controller: string, name: string, bindings: { input: string; button: PadButton }[]) =>
-    request(SaveControllerDefaultMutation, { controller, name, bindings }),
-  resetControllerDefault: (controller: string) => request(ResetControllerDefaultMutation, { controller }),
+  saveControllerDefault: (controller: string, system: string | null, name: string, bindings: Binding[]) =>
+    request(SaveControllerDefaultMutation, { controller, system, name, bindings }),
+  resetControllerDefault: (controller: string, system: string | null) =>
+    request(ResetControllerDefaultMutation, { controller, system }),
   systemSettings: async (system: string) => (await request(EmulatorSettingsDocument, { system })).emulatorSettings,
   /** A value sets an option; null goes back to the default. */
   changeSettings: async (system: string, changes: Record<string, string | null>) =>

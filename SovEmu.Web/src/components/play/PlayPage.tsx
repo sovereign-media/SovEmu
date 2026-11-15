@@ -25,16 +25,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
-import { AUTO_SLOT, api, type Game, type SaveSlot, type SessionInfo, type SystemSummary } from "../../lib/api";
+import { AUTO_SLOT, api, type ControllerMappingList, type Game, type PadLayout, type SaveSlot, type SessionInfo, type SystemControls, type SystemSummary } from "../../lib/api";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
-import { boundTo, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings } from "../../lib/controllers";
+import { defaultMapping, inputLabel, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings, toMapping } from "../../lib/controllers";
 import { captureInput, InputState } from "../../lib/input";
 import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
 import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
-import { MAX_PORTS } from "../../lib/protocol";
+import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { StatsSampler, type StatItem } from "../../lib/stats";
+import { PadDiagram } from "../PadDiagram";
 import Shell from "../Shell";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
@@ -115,15 +116,30 @@ function Player() {
     const timers: number[] = [];
     let stopped = false;
     let cleanup = () => {};
+    /** This game's system, its buttons and pad, the controllers' pads, and the every-system mappings. */
+    let pads: {
+      system: string;
+      short: string;
+      controls: SystemControls | null;
+      layouts: PadLayout[];
+      everywhere: ControllerMappingList;
+    } = { system: "", short: "", controls: null, layouts: [], everywhere: [] };
 
     void (async () => {
-      const [game, systems, initialSlots, iceServers, mappings] = await Promise.all([
+      const [game, systems, initialSlots, iceServers] = await Promise.all([
         api.game(gameId),
         api.systems(),
         api.saves(gameId),
         api.iceServers(),
-        api.controllerMappings().catch(() => []),
       ]);
+      // The mappings in force on this system (and on every system, for the controls menu), and
+      // the pads to draw there.
+      const [mappings, everywhere, controls] = await Promise.all([
+        api.controllerMappings(game.system).catch(() => []),
+        api.controllerMappings(null).catch(() => []),
+        api.systemControls(game.system).catch(() => null),
+      ]);
+      pads = { system: game.system, short: systems.find((s) => s.id === game.system)?.short ?? game.system, controls: controls?.controls ?? null, layouts: controls?.layouts ?? [], everywhere };
       const system = systems.find((s) => s.id === game.system);
       document.title = `${game.title} · SovEmu`;
       setLoaded({ game, system });
@@ -279,32 +295,58 @@ function Player() {
         })),
       });
 
+      /** Which mappings a device's menu edits: this system's, or every system's. */
+      const scopes = new Map<string, "system" | "all">();
+
       const deviceMenu = (key: string): Menu => {
         const device = input.devices().find((d) => d.key === key);
         if (!device) {
           return { title: "That controller is no longer connected", items: [{ label: "Back", icon: "back", run: () => stack.pop() }] };
         }
         const { id, name, family } = device.info;
-        const labels = key === KEYBOARD ? null : family;
-        const mapping = input.mapping(id);
+        const keyboard = key === KEYBOARD;
+        const labels = keyboard ? null : family;
+        const scope = scopes.get(key) ?? "system";
+        const onSystem = scope === "system";
+        const forSystem = (m: { controller: string }) => m.controller === id;
+        // The mapping being edited: in force on this system, or the every-system one.
+        const current = onSystem ? input.inForce(id) : (pads.everywhere.find(forSystem) ?? null);
+        const mapping: Mapping = current ? toMapping(current.bindings) : defaultMapping(id);
+        const where =
+          !current ? "Built-in default"
+          : current.source !== "USER" ? (current.system ? `Default for ${pads.short}` : "Default")
+          : current.system ? `Yours for ${pads.short}` : "Yours for all systems";
+        const refresh = async () => {
+          const [here, all] = await Promise.all([api.controllerMappings(pads.system), api.controllerMappings(null)]);
+          input.setMappings(here);
+          pads.everywhere = all;
+        };
         const save = async (next: Mapping | null) => {
           try {
-            if (next) {
-              input.remember(id, next);
-              await api.saveControllerMapping(id, name, toBindings(next));
-            } else {
-              // Back to the defaults: the server's for this model if an admin set one, so fetch
-              // them rather than assume the built-in ones.
-              await api.resetControllerMapping(id);
-              input.setMappings(await api.controllerMappings());
-            }
+            const system = onSystem ? pads.system : null;
+            if (next) await api.saveControllerMapping(id, system, name, toBindings(next));
+            else await api.resetControllerMapping(id, system);
+            await refresh();
           } catch (e) {
             toast(`Not saved: ${(e as Error).message}`);
           }
         };
+        const buttons: [ButtonName, string][] =
+          onSystem && pads.controls ? pads.controls.buttons.map((b) => [b.button, b.label]) : PAD_BUTTONS;
+        const controllerPad = keyboard ? null : (pads.layouts.find((l) => l.id === family) ?? null);
         return {
           title: `Remap ${name}`,
+          diagrams: { system: onSystem ? pads.controls?.layout : null, controller: controllerPad },
           items: [
+            {
+              label: onSystem ? `For ${pads.short} only` : "For all systems",
+              icon: "controls",
+              detail: `In force: ${where} · choose to change`,
+              run: () => {
+                scopes.set(key, onSystem ? "all" : "system");
+                stack.replace(deviceMenu(key));
+              },
+            },
             {
               label: "Player",
               icon: "players",
@@ -314,27 +356,32 @@ function Player() {
                 stack.replace(deviceMenu(key));
               },
             },
-            ...PAD_BUTTONS.map(([button, label]) => ({
-              label,
-              icon: "button",
-              detail: boundTo(mapping, button, labels).join(", ") || "Not bound",
-              run: async () => {
-                capturing = true;
-                toast(`Press ${key === KEYBOARD ? "a key" : `a button on ${name}`} for ${label} · tap ${key === KEYBOARD ? "Escape" : "Back"} to cancel, hold it to bind it`);
-                const pressed = await captureInput(key);
-                // Let the press that bound the button finish before menus react again.
-                setTimeout(() => (capturing = false), 250);
-                if (pressed) await save(rebind(input.mapping(id), pressed, button));
-                stack.replace(deviceMenu(key));
-              },
-            })),
+            ...buttons.map(([button, label]) => {
+              const inputs = Object.entries(mapping).filter(([, b]) => b === button).map(([i]) => i);
+              return {
+                label,
+                icon: "button",
+                detail: inputs.map((i) => inputLabel(i, labels)).join(", ") || "Not bound",
+                highlight: { system: [button], controller: inputs },
+                run: async () => {
+                  capturing = true;
+                  toast(`Press ${keyboard ? "a key" : `a button on ${name}`} for ${label} · tap ${keyboard ? "Escape" : "Back"} to cancel, hold it to bind it`);
+                  const pressed = await captureInput(key);
+                  // Let the press that bound the button finish before menus react again.
+                  setTimeout(() => (capturing = false), 250);
+                  if (pressed) await save(rebind(mapping, pressed, button));
+                  stack.replace(deviceMenu(key));
+                },
+              };
+            }),
             {
-              label: "Reset to defaults",
+              label: onSystem ? `Reset ${pads.short}'s controls` : "Reset all systems' controls",
               icon: "reset",
+              disabled: current?.source !== "USER" || (onSystem && !current.system),
               run: async () => {
                 await save(null);
                 stack.replace(deviceMenu(key));
-                toast(`${name}: back to the default controls`);
+                toast(`${name}: ${onSystem ? `${pads.short} back to your controls for all systems, or the default` : "back to the default"}`);
               },
             },
           ],
@@ -499,6 +546,8 @@ function Player() {
 
   const stack = menus.current;
   const top = stack.current;
+  const diagrams = top?.menu.diagrams && (top.menu.diagrams.system || top.menu.diagrams.controller) ? top.menu.diagrams : null;
+  const lit = top?.menu.items[top.index]?.highlight;
   const color = loaded?.system?.color ?? "#4169e1";
   const submitCheat = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -550,13 +599,15 @@ function Player() {
         open={!!top && !cheatForm}
         title={top?.menu.title ?? ""}
         dim={playing}
+        className={diagrams ? "w-[56rem]" : undefined}
         contentProps={{
           onEscapeKeyDown: (e) => e.preventDefault(),
           onInteractOutside: (e) => e.preventDefault(),
           onOpenAutoFocus: (e) => e.preventDefault(),
         }}
       >
-        <ul className="grid max-h-[70vh] gap-1 overflow-y-auto" role="listbox" aria-label={top?.menu.title}>
+        <div className={cn(diagrams && "grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
+        <ul className="grid max-h-[70vh] content-start gap-1 overflow-y-auto" role="listbox" aria-label={top?.menu.title}>
           {top?.menu.items.map((item, i) => {
             const Icon = item.icon ? ICONS[item.icon] : null;
             const on = i === top.index;
@@ -585,6 +636,18 @@ function Player() {
             );
           })}
         </ul>
+        {/* The console's pad and the player's controller, the selected button lit on both. */}
+        {diagrams && (
+          <div className="hidden content-start gap-3 md:grid" aria-hidden>
+            {diagrams.system && (
+              <PadDiagram layout={diagrams.system} highlight={lit?.system} color={color} caption={`${loaded?.system?.short ?? ""} pad`} />
+            )}
+            {diagrams.controller && (
+              <PadDiagram layout={diagrams.controller} highlight={lit?.controller} color={color} caption="Your controller" />
+            )}
+          </div>
+        )}
+        </div>
       </Dialog>
 
       <Dialog open={!!cheatForm} onOpenChange={(open) => !open && setCheatForm(null)} title="Add a cheat" className="w-[28rem] p-5">

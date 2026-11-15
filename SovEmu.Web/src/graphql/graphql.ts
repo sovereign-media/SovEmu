@@ -219,13 +219,16 @@ export type SetCheatMutationVariables = Exact<{
 
 export type SetCheatMutation = { setCheatEnabled: Array<{ id: number, description: string, code: string, enabled: boolean }> };
 
-export type ControllerMappingsQueryVariables = Exact<{ [key: string]: never; }>;
+export type ControllerMappingsQueryVariables = Exact<{
+  system?: string | number | null | undefined;
+}>;
 
 
-export type ControllerMappingsQuery = { controllerMappings: Array<{ controller: string, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> };
+export type ControllerMappingsQuery = { controllerMappings: Array<{ controller: string, system: string | null, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> };
 
 export type SaveControllerMappingMutationVariables = Exact<{
   controller: string;
+  system?: string | number | null | undefined;
   name: string;
   bindings: Array<BindingInput> | BindingInput;
 }>;
@@ -233,13 +236,28 @@ export type SaveControllerMappingMutationVariables = Exact<{
 
 export type SaveControllerMappingMutation = { saveControllerMapping: { controller: string } };
 
+export type PadLayoutFieldsFragment = { id: string, name: string, width: number, height: number, body: Array<{ x: number, y: number, w: number, h: number, r: number, tone: number }>, keys: Array<{ key: string, label: string, x: number, y: number, w: number, h: number, r: number }> };
+
+export type SystemControlsQueryVariables = Exact<{
+  id: string | number;
+}>;
+
+
+export type SystemControlsQuery = { system: { id: string, controls: { buttons: Array<{ button: PadButton, label: string }>, layout: { id: string, name: string, width: number, height: number, body: Array<{ x: number, y: number, w: number, h: number, r: number, tone: number }>, keys: Array<{ key: string, label: string, x: number, y: number, w: number, h: number, r: number }> } } } | null, controllerLayouts: Array<{ id: string, name: string, width: number, height: number, body: Array<{ x: number, y: number, w: number, h: number, r: number, tone: number }>, keys: Array<{ key: string, label: string, x: number, y: number, w: number, h: number, r: number }> }> };
+
+export type ControllerLayoutsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ControllerLayoutsQuery = { controllerLayouts: Array<{ id: string, name: string, width: number, height: number, body: Array<{ x: number, y: number, w: number, h: number, r: number, tone: number }>, keys: Array<{ key: string, label: string, x: number, y: number, w: number, h: number, r: number }> }> };
+
 export type ControllerDefaultsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ControllerDefaultsQuery = { controllerDefaults: { environment: Array<string>, mappings: Array<{ controller: string, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> } };
+export type ControllerDefaultsQuery = { controllerDefaults: { environment: Array<string>, mappings: Array<{ controller: string, system: string | null, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> } };
 
 export type SaveControllerDefaultMutationVariables = Exact<{
   controller: string;
+  system?: string | number | null | undefined;
   name: string;
   bindings: Array<BindingInput> | BindingInput;
 }>;
@@ -249,6 +267,7 @@ export type SaveControllerDefaultMutation = { saveControllerDefault: { controlle
 
 export type ResetControllerDefaultMutationVariables = Exact<{
   controller: string;
+  system?: string | number | null | undefined;
 }>;
 
 
@@ -256,6 +275,7 @@ export type ResetControllerDefaultMutation = { resetControllerDefault: boolean }
 
 export type ResetControllerMappingMutationVariables = Exact<{
   controller: string;
+  system?: string | number | null | undefined;
 }>;
 
 
@@ -464,6 +484,31 @@ export const MetadataFieldsFragmentDoc = new TypedDocumentString(`
   notes
 }
     `, {"fragmentName":"MetadataFields"}) as unknown as TypedDocumentString<MetadataFieldsFragment, unknown>;
+export const PadLayoutFieldsFragmentDoc = new TypedDocumentString(`
+    fragment PadLayoutFields on PadLayout {
+  id
+  name
+  width
+  height
+  body {
+    x
+    y
+    w
+    h
+    r
+    tone
+  }
+  keys {
+    key
+    label
+    x
+    y
+    w
+    h
+    r
+  }
+}
+    `, {"fragmentName":"PadLayoutFields"}) as unknown as TypedDocumentString<PadLayoutFieldsFragment, unknown>;
 export const ViewerDocument = new TypedDocumentString(`
     query Viewer {
   viewer {
@@ -732,9 +777,10 @@ export const SetCheatDocument = new TypedDocumentString(`
 }
     `) as unknown as TypedDocumentString<SetCheatMutation, SetCheatMutationVariables>;
 export const ControllerMappingsDocument = new TypedDocumentString(`
-    query ControllerMappings {
-  controllerMappings {
+    query ControllerMappings($system: ID) {
+  controllerMappings(system: $system) {
     controller
+    system
     name
     source
     bindings {
@@ -745,17 +791,93 @@ export const ControllerMappingsDocument = new TypedDocumentString(`
 }
     `) as unknown as TypedDocumentString<ControllerMappingsQuery, ControllerMappingsQueryVariables>;
 export const SaveControllerMappingDocument = new TypedDocumentString(`
-    mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
-  saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
+    mutation SaveControllerMapping($controller: String!, $system: ID, $name: String!, $bindings: [BindingInput!]!) {
+  saveControllerMapping(
+    controller: $controller
+    system: $system
+    name: $name
+    bindings: $bindings
+  ) {
     controller
   }
 }
     `) as unknown as TypedDocumentString<SaveControllerMappingMutation, SaveControllerMappingMutationVariables>;
+export const SystemControlsDocument = new TypedDocumentString(`
+    query SystemControls($id: ID!) {
+  system(id: $id) {
+    id
+    controls {
+      buttons {
+        button
+        label
+      }
+      layout {
+        ...PadLayoutFields
+      }
+    }
+  }
+  controllerLayouts {
+    ...PadLayoutFields
+  }
+}
+    fragment PadLayoutFields on PadLayout {
+  id
+  name
+  width
+  height
+  body {
+    x
+    y
+    w
+    h
+    r
+    tone
+  }
+  keys {
+    key
+    label
+    x
+    y
+    w
+    h
+    r
+  }
+}`) as unknown as TypedDocumentString<SystemControlsQuery, SystemControlsQueryVariables>;
+export const ControllerLayoutsDocument = new TypedDocumentString(`
+    query ControllerLayouts {
+  controllerLayouts {
+    ...PadLayoutFields
+  }
+}
+    fragment PadLayoutFields on PadLayout {
+  id
+  name
+  width
+  height
+  body {
+    x
+    y
+    w
+    h
+    r
+    tone
+  }
+  keys {
+    key
+    label
+    x
+    y
+    w
+    h
+    r
+  }
+}`) as unknown as TypedDocumentString<ControllerLayoutsQuery, ControllerLayoutsQueryVariables>;
 export const ControllerDefaultsDocument = new TypedDocumentString(`
     query ControllerDefaults {
   controllerDefaults {
     mappings {
       controller
+      system
       name
       source
       bindings {
@@ -768,20 +890,25 @@ export const ControllerDefaultsDocument = new TypedDocumentString(`
 }
     `) as unknown as TypedDocumentString<ControllerDefaultsQuery, ControllerDefaultsQueryVariables>;
 export const SaveControllerDefaultDocument = new TypedDocumentString(`
-    mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
-  saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {
+    mutation SaveControllerDefault($controller: String!, $system: ID, $name: String!, $bindings: [BindingInput!]!) {
+  saveControllerDefault(
+    controller: $controller
+    system: $system
+    name: $name
+    bindings: $bindings
+  ) {
     controller
   }
 }
     `) as unknown as TypedDocumentString<SaveControllerDefaultMutation, SaveControllerDefaultMutationVariables>;
 export const ResetControllerDefaultDocument = new TypedDocumentString(`
-    mutation ResetControllerDefault($controller: String!) {
-  resetControllerDefault(controller: $controller)
+    mutation ResetControllerDefault($controller: String!, $system: ID) {
+  resetControllerDefault(controller: $controller, system: $system)
 }
     `) as unknown as TypedDocumentString<ResetControllerDefaultMutation, ResetControllerDefaultMutationVariables>;
 export const ResetControllerMappingDocument = new TypedDocumentString(`
-    mutation ResetControllerMapping($controller: String!) {
-  resetControllerMapping(controller: $controller)
+    mutation ResetControllerMapping($controller: String!, $system: ID) {
+  resetControllerMapping(controller: $controller, system: $system)
 }
     `) as unknown as TypedDocumentString<ResetControllerMappingMutation, ResetControllerMappingMutationVariables>;
 export const StartSessionDocument = new TypedDocumentString(`

@@ -1,5 +1,6 @@
 // A small stack of menus, driven by navigation actions: the player's splash, its in-game menu
 // and the save-slot pickers all use it. Rendering is the caller's; this keeps the state.
+import type { PadLayout } from "./api";
 import type { NavAction } from "./nav";
 
 export interface MenuItem {
@@ -11,6 +12,8 @@ export interface MenuItem {
   /** An image to show beside the label. */
   image?: string;
   disabled?: boolean;
+  /** Keys to light on the menu's diagrams while this item is selected. */
+  highlight?: { system?: string[]; controller?: string[] };
   run: () => void | Promise<void>;
 }
 
@@ -19,6 +22,8 @@ export interface Menu {
   items: MenuItem[];
   /** What Back does at this level; the default pops the menu. */
   onBack?: () => void;
+  /** Pads drawn beside the items: the console's and the player's controller's. */
+  diagrams?: { system?: PadLayout | null; controller?: PadLayout | null };
 }
 
 export class MenuStack {

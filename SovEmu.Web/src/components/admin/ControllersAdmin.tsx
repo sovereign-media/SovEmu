@@ -7,7 +7,7 @@
 // admin's can be copied out as environment lines.
 import { Check, Copy, Gamepad2, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type ControllerDefaults } from "../../lib/api";
+import { api, type ControllerDefaults, type PadLayout, type SystemControls, type SystemSummary } from "../../lib/api";
 import {
   defaultMapping,
   familyOf,
@@ -21,9 +21,11 @@ import {
   POSITIONS,
   rebind,
   toBindings,
+  toMapping,
 } from "../../lib/controllers";
 import { captureInput } from "../../lib/input";
 import type { ButtonName } from "../../lib/protocol";
+import { PadDiagram } from "../PadDiagram";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
@@ -66,6 +68,7 @@ function ButtonRow({
   controller,
   locked,
   onBind,
+  onFocus,
 }: {
   button: ButtonName;
   label: string;
@@ -73,6 +76,8 @@ function ButtonRow({
   controller: string;
   locked: boolean;
   onBind: (input: string | null) => void;
+  /** The row is being looked at: light its button on the diagrams. */
+  onFocus: () => void;
 }) {
   const keyboard = controller === KEYBOARD;
   const family = familyOf(controller);
@@ -85,7 +90,7 @@ function ButtonRow({
     if (key) onBind(key);
   };
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5">
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5" onMouseEnter={onFocus} onFocusCapture={onFocus}>
       <span className="font-medium">{label}</span>
       {keyboard ? (
         <span className="flex items-center gap-2">
@@ -123,6 +128,12 @@ function ButtonRow({
 function Controllers() {
   const [defaults, setDefaults] = useState<ControllerDefaults | null>(null);
   const [controller, setController] = useState(KEYBOARD);
+  /** The system the default is for, or "" for every system. */
+  const [system, setSystem] = useState("");
+  const [systems, setSystems] = useState<SystemSummary[]>([]);
+  const [controls, setControls] = useState<SystemControls | null>(null);
+  const [layouts, setLayouts] = useState<PadLayout[]>([]);
+  const [lit, setLit] = useState<ButtonName | null>(null);
   const [draft, setDraft] = useState<Mapping | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -136,11 +147,21 @@ function Controllers() {
     }
   }, []);
   useEffect(() => void load(), [load]);
+  useEffect(() => {
+    api.systems().then(setSystems).catch(() => {});
+    api.controllerLayouts().then(setLayouts).catch(() => {});
+  }, []);
+  useEffect(() => {
+    setControls(null);
+    if (system) api.systemControls(system).then((c) => setControls(c.controls)).catch(() => {});
+  }, [system]);
 
-  const current = defaults?.mappings.find((m) => m.controller === controller) ?? null;
-  const saved: Mapping = current
-    ? (Object.fromEntries(current.bindings.map((b) => [b.input, b.button])) as Mapping)
-    : defaultMapping(controller);
+  const scoped = (m: { controller: string; system?: string | null }, on: string) =>
+    m.controller === controller && (m.system ?? "") === on;
+  const current = defaults?.mappings.find((m) => scoped(m, system)) ?? null;
+  // A system without its own default starts from the every-system one, as players would.
+  const inherited = system ? (defaults?.mappings.find((m) => scoped(m, "")) ?? null) : null;
+  const saved: Mapping = current ? toMapping(current.bindings) : inherited ? toMapping(inherited.bindings) : defaultMapping(controller);
   const mapping = draft ?? saved;
   const locked = current?.source === "ENVIRONMENT";
   const name = choices.find((c) => c.value === controller)?.label.replace(/ \(connected\)$/, "") ?? controller;
@@ -150,13 +171,22 @@ function Controllers() {
     setDraft(null);
     setMessage(null);
   };
+  const chooseSystem = (id: string) => {
+    setSystem(id);
+    setDraft(null);
+    setMessage(null);
+  };
+  const systemName = systems.find((s) => s.id === system)?.short ?? system;
+  const buttons: [ButtonName, string][] = system && controls ? controls.buttons.map((b) => [b.button, b.label]) : PAD_BUTTONS;
+  const controllerPad = controller === KEYBOARD ? null : (layouts.find((l) => l.id === familyOf(controller)) ?? null);
+  const litInputs = lit ? Object.entries(mapping).filter(([, b]) => b === lit).map(([i]) => i) : [];
   const bind = (button: ButtonName, input: string | null) => {
     setDraft(input ? rebind(mapping, input, button) : Object.fromEntries(Object.entries(mapping).filter(([, b]) => b !== button)) as Mapping);
     setMessage(null);
   };
   const save = async () => {
     try {
-      await api.saveControllerDefault(controller, name, toBindings(mapping));
+      await api.saveControllerDefault(controller, system || null, name, toBindings(mapping));
       setDraft(null);
       await load();
       setMessage({ text: "Saved. Players without their own mapping get it in their next game." });
@@ -166,10 +196,10 @@ function Controllers() {
   };
   const reset = async () => {
     try {
-      await api.resetControllerDefault(controller);
+      await api.resetControllerDefault(controller, system || null);
       setDraft(null);
       await load();
-      setMessage({ text: "Back to the built-in default." });
+      setMessage({ text: system ? `${systemName} back to the default for every system.` : "Back to the built-in default." });
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
@@ -180,10 +210,14 @@ function Controllers() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const source = locked ? "Set in the environment" : current?.source === "ADMIN" ? "Your default" : "Built-in default";
+  const source =
+    locked ? "Set in the environment"
+    : current?.source === "ADMIN" ? (system ? `Your default for ${systemName}` : "Your default for every system")
+    : inherited ? "From the default for every system"
+    : "Built-in default";
 
   return (
-    <main className="mx-auto grid max-w-4xl grid-cols-1 gap-6 px-6 pt-16 pb-16">
+    <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 pt-16 pb-16">
       <section className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -195,7 +229,16 @@ function Controllers() {
               Controls menu, which wins over these.
             </p>
           </div>
-          <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
+          <div className="flex flex-wrap gap-2">
+            <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
+            <Select
+              label="System"
+              value={system}
+              options={[{ value: "", label: "Every system" }, ...systems.map((s) => ({ value: s.id, label: s.name }))]}
+              onChange={chooseSystem}
+              className="w-64"
+            />
+          </div>
         </div>
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-400">
           {locked && <Lock className="size-4 text-amber-300" />}
@@ -211,9 +254,13 @@ function Controllers() {
         {message && <p className={cn("mt-3 text-sm", message.error ? "text-red-300" : "text-emerald-300")}>{message.text}</p>}
       </section>
 
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className={panel}>
+        <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">
+          {system ? `${systemName} button` : "Console button"} · {controller === KEYBOARD ? "key" : "controller button"}
+        </p>
         <ul className="divide-y divide-white/5">
-          {PAD_BUTTONS.map(([button, label]) => (
+          {buttons.map(([button, label]) => (
             <ButtonRow
               key={button}
               button={button}
@@ -222,6 +269,7 @@ function Controllers() {
               controller={controller}
               locked={locked}
               onBind={(input) => bind(button, input)}
+              onFocus={() => setLit(button)}
             />
           ))}
         </ul>
@@ -238,12 +286,30 @@ function Controllers() {
             )}
             {current?.source === "ADMIN" && (
               <Button variant="outline" onClick={reset}>
-                <RotateCcw /> Back to the built-in default
+                <RotateCcw /> {system ? "Back to the default for every system" : "Back to the built-in default"}
               </Button>
             )}
           </div>
         )}
       </section>
+
+      {/* The console's pad and the controller, the button under the pointer lit on both. */}
+      <aside className="grid content-start gap-4 lg:sticky lg:top-6 lg:self-start" aria-hidden>
+        {system && controls && (
+          <div className={panel}>
+            <PadDiagram layout={controls.layout} highlight={lit ? [lit] : []} caption={`${systemName} pad`} />
+          </div>
+        )}
+        {controllerPad && (
+          <div className={panel}>
+            <PadDiagram layout={controllerPad} highlight={litInputs} caption={name} />
+          </div>
+        )}
+        {!controllerPad && !(system && controls) && (
+          <p className={cn(panel, "text-sm text-slate-400")}>Choose a system and a controller to see their pads.</p>
+        )}
+      </aside>
+      </div>
 
       {defaults && defaults.environment.length > 0 && (
         <section className={panel}>

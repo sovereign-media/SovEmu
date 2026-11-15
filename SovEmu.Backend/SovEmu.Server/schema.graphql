@@ -150,13 +150,17 @@ type ControllerDefaults {
 }
 
 """
-A mapping for one controller model.
+A mapping for one controller model, on one system or on every system.
 """
 type ControllerMapping {
 	"""
 	`keyboard`, a known model (`xbox`, `dualsense` …) or `pad:<vendor>:<product>`.
 	"""
 	controller: String!
+	"""
+	The system it is for, or null for every system.
+	"""
+	system: String
 	"""
 	What the controller called itself when the mapping was saved, for lists.
 	"""
@@ -550,24 +554,24 @@ type Mutation {
 	setCheatEnabled(gameId: Int!, cheatId: Int!, enabled: Boolean!): [Cheat!]!
 	deleteCheat(gameId: Int!, cheatId: Int!): Boolean!
 	"""
-	Saves this user's mapping for a controller model, replacing its defaults everywhere
-	they play.
+	Saves this user's mapping for a controller model on a system, or on every system without
+	one, replacing its defaults wherever they play.
 	"""
-	saveControllerMapping(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
+	saveControllerMapping(controller: String!, system: ID, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
 	"""
-	Admins: sets the default mapping for a controller model, for every user without their
-	own. A model whose default is in the environment cannot be changed here (CONFLICT).
+	Admins: sets the default mapping for a controller model on a system (or every system),
+	for every user without their own. A model whose default is in the environment cannot be changed here (CONFLICT).
 	"""
-	saveControllerDefault(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
+	saveControllerDefault(controller: String!, system: ID, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
 	"""
 	Admins: forgets the admin's default for a controller model. Returns whether it had one.
 	"""
-	resetControllerDefault(controller: String!): Boolean!
+	resetControllerDefault(controller: String!, system: ID): Boolean!
 	"""
 	Puts a controller model back on the defaults (an admin's, else the built-in ones).
 	Returns whether it had a mapping of the user's own.
 	"""
-	resetControllerMapping(controller: String!): Boolean!
+	resetControllerMapping(controller: String!, system: ID): Boolean!
 }
 
 input NewUserInput {
@@ -596,6 +600,40 @@ enum PadButton {
 	R2
 	L3
 	R3
+}
+
+"""
+A button on a diagram.
+"""
+type PadKey {
+	"""
+	A RetroPad button on a system's pad, an input name (`south` …) on a controller's.
+	"""
+	key: String!
+	"""
+	What the pad prints on it.
+	"""
+	label: String!
+	x: Float!
+	y: Float!
+	w: Float!
+	h: Float!
+	r: Float!
+}
+
+"""
+A pad, drawn from shapes on a `width`×`height` canvas.
+"""
+type PadLayout {
+	"""
+	A system id, or a controller family (`xbox`, `playstation`, `nintendo`, `generic`).
+	"""
+	id: String!
+	name: String!
+	width: Float!
+	height: Float!
+	body: [Shape!]!
+	keys: [PadKey!]!
 }
 
 type Query {
@@ -638,16 +676,22 @@ type Query {
 	"""
 	emulatorSettings(system: ID!): EmulatorSettings!
 	"""
+	Diagrams of the player's controllers, by family (`xbox`, `playstation`, `nintendo`,
+	`generic`), keyed by input (`south`, `l1` …).
+	"""
+	controllerLayouts: [PadLayout!]!
+	"""
 	Admins: the default controller mappings every user starts from, and the admin's as
 	environment lines.
 	"""
 	controllerDefaults: ControllerDefaults!
 	"""
-	The controller mappings in force for this user, one per controller model
-	(docs/CONTROLLERS.md): their own, else a default. A model missing here uses the
-	clients' built-in defaults.
+	The controller mappings in force for this user on a system (or, with none, on every
+	system), one per controller model (docs/CONTROLLERS.md): their own for the system, their
+	own for every system, the default for the system, the default for every system. A model
+	missing here uses the clients' built-in defaults.
 	"""
-	controllerMappings: [ControllerMapping!]!
+	controllerMappings(system: ID): [ControllerMapping!]!
 }
 
 """
@@ -723,6 +767,21 @@ enum SettingSource {
 }
 
 """
+A rounded rectangle; a circle when `r` is half its width and height.
+"""
+type Shape {
+	x: Float!
+	y: Float!
+	w: Float!
+	h: Float!
+	r: Float!
+	"""
+	0 the body, 1 a recess drawn darker (a screen, a stick's well).
+	"""
+	tone: Int!
+}
+
+"""
 What a game start is doing.
 """
 enum StartPhase {
@@ -772,6 +831,10 @@ type StartStatus {
 
 type System {
 	id: ID!
+	"""
+	What the system calls its buttons, and a diagram of its pad (docs/CONTROLLERS.md).
+	"""
+	controls: SystemControls!
 	name: String!
 	"""
 	A short label for tight spaces ("SNES").
@@ -817,6 +880,25 @@ type SystemBios {
 	"""
 	folder: String!
 	groups: [BiosGroup!]!
+}
+
+"""
+One of a system's buttons: the RetroPad button that drives it and what the console calls it.
+"""
+type SystemButton {
+	button: PadButton!
+	label: String!
+}
+
+"""
+A system's buttons and its pad's diagram.
+"""
+type SystemControls {
+	"""
+	The buttons the system's pad has, in the order to list them.
+	"""
+	buttons: [SystemButton!]!
+	layout: PadLayout!
 }
 
 """
