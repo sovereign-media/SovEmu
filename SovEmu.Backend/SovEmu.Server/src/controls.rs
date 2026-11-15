@@ -63,7 +63,18 @@ pub struct SystemControls {
     pub layout: PadLayout,
 }
 
-const DPAD: [(PadButton, &str); 4] = [(Up, "↑"), (Down, "↓"), (Left, "←"), (Right, "→")];
+const DPAD: [(PadButton, &str); 4] = [(Up, "Up"), (Down, "Down"), (Left, "Left"), (Right, "Right")];
+
+/// The D-pad's keys on a diagram are arrows: there is no room for words.
+fn arrow(key: &str) -> Option<&'static str> {
+    match key {
+        "UP" | "up" => Some("↑"),
+        "DOWN" | "down" => Some("↓"),
+        "LEFT" | "left" => Some("←"),
+        "RIGHT" | "right" => Some("→"),
+        _ => None,
+    }
+}
 
 /// The RetroPad buttons a system uses and what it calls them. Direction buttons come first.
 fn labels(system: &str) -> Vec<(PadButton, &'static str)> {
@@ -232,8 +243,10 @@ fn gamepad_body() -> Vec<Shape> {
 /// A system's pad. Keys are RetroPad buttons, labelled with the system's names.
 fn system_layout(id: &str, name: &str) -> PadLayout {
     let names = labels(id);
-    let label =
-        |key: &str| names.iter().find(|(b, _)| key_name(*b) == key).map(|(_, l)| (*l).to_owned());
+    let label = |key: &str| {
+        let name = names.iter().find(|(b, _)| key_name(*b) == key).map(|(_, l)| *l)?;
+        Some(arrow(key).unwrap_or(name).to_owned())
+    };
     let mut k = Keys { keys: Vec::new(), label: &label };
     let body = match id {
         "nes" => {

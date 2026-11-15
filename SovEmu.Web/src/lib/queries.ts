@@ -244,9 +244,10 @@ export const SetCheatMutation = graphql(`
 `);
 
 export const ControllerMappingsQuery = graphql(`
-  query ControllerMappings {
-    controllerMappings {
+  query ControllerMappings($system: ID) {
+    controllerMappings(system: $system) {
       controller
+      system
       name
       source
       bindings {
@@ -258,9 +259,63 @@ export const ControllerMappingsQuery = graphql(`
 `);
 
 export const SaveControllerMappingMutation = graphql(`
-  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
-    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
+  mutation SaveControllerMapping($controller: String!, $system: ID, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerMapping(controller: $controller, system: $system, name: $name, bindings: $bindings) {
       controller
+    }
+  }
+`);
+
+export const PadLayoutFields = graphql(`
+  fragment PadLayoutFields on PadLayout {
+    id
+    name
+    width
+    height
+    body {
+      x
+      y
+      w
+      h
+      r
+      tone
+    }
+    keys {
+      key
+      label
+      x
+      y
+      w
+      h
+      r
+    }
+  }
+`);
+
+export const SystemControlsQuery = graphql(`
+  query SystemControls($id: ID!) {
+    system(id: $id) {
+      id
+      controls {
+        buttons {
+          button
+          label
+        }
+        layout {
+          ...PadLayoutFields
+        }
+      }
+    }
+    controllerLayouts {
+      ...PadLayoutFields
+    }
+  }
+`);
+
+export const ControllerLayoutsQuery = graphql(`
+  query ControllerLayouts {
+    controllerLayouts {
+      ...PadLayoutFields
     }
   }
 `);
@@ -270,6 +325,7 @@ export const ControllerDefaultsQuery = graphql(`
     controllerDefaults {
       mappings {
         controller
+        system
         name
         source
         bindings {
@@ -283,22 +339,22 @@ export const ControllerDefaultsQuery = graphql(`
 `);
 
 export const SaveControllerDefaultMutation = graphql(`
-  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
-    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {
+  mutation SaveControllerDefault($controller: String!, $system: ID, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerDefault(controller: $controller, system: $system, name: $name, bindings: $bindings) {
       controller
     }
   }
 `);
 
 export const ResetControllerDefaultMutation = graphql(`
-  mutation ResetControllerDefault($controller: String!) {
-    resetControllerDefault(controller: $controller)
+  mutation ResetControllerDefault($controller: String!, $system: ID) {
+    resetControllerDefault(controller: $controller, system: $system)
   }
 `);
 
 export const ResetControllerMappingMutation = graphql(`
-  mutation ResetControllerMapping($controller: String!) {
-    resetControllerMapping(controller: $controller)
+  mutation ResetControllerMapping($controller: String!, $system: ID) {
+    resetControllerMapping(controller: $controller, system: $system)
   }
 `);
 

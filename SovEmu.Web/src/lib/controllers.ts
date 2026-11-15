@@ -163,6 +163,10 @@ export function rebind(mapping: Mapping, input: string, button: ButtonName): Map
   return { ...next, [input]: button };
 }
 
+/** The API's binding list as a mapping. */
+export const toMapping = (bindings: { input: string; button: string }[]): Mapping =>
+  Object.fromEntries(bindings.map((b) => [b.input, b.button])) as Mapping;
+
 /** A mapping as the API's binding list, in a stable order. */
 export const toBindings = (m: Mapping) =>
   Object.entries(m).sort(([a], [b]) => a.localeCompare(b)).map(([input, button]) => ({ input, button }));
