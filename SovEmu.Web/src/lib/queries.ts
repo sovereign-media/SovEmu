@@ -243,6 +243,33 @@ export const SetCheatMutation = graphql(`
   }
 `);
 
+export const ControllerMappingsQuery = graphql(`
+  query ControllerMappings {
+    controllerMappings {
+      controller
+      name
+      bindings {
+        input
+        button
+      }
+    }
+  }
+`);
+
+export const SaveControllerMappingMutation = graphql(`
+  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
+      controller
+    }
+  }
+`);
+
+export const ResetControllerMappingMutation = graphql(`
+  mutation ResetControllerMapping($controller: String!) {
+    resetControllerMapping(controller: $controller)
+  }
+`);
+
 export const StartSessionMutation = graphql(`
   mutation StartSession($gameId: Int!, $startId: String) {
     startSession(gameId: $gameId, startId: $startId) {

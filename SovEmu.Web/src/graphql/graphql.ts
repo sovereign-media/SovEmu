@@ -4,6 +4,13 @@ type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
 /** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 import type { DocumentTypeDecoration } from '@graphql-typed-document-node/core';
+/** One input driving one button. */
+export type BindingInput = {
+  button: PadButton;
+  /** A controller input (`south`, `l1`, `up` …) or a keyboard's `KeyboardEvent.code`. */
+  input: string;
+};
+
 /** How the library is read. */
 export type LibraryMode =
   /** From the library, keeping local copies of what is used. */
@@ -12,6 +19,25 @@ export type LibraryMode =
   | 'DIRECT'
   /** From a full local copy kept in sync. */
   | 'MIRROR';
+
+/** A RetroPad button (libretro's RETRO_DEVICE_ID_JOYPAD_*). */
+export type PadButton =
+  | 'A'
+  | 'B'
+  | 'DOWN'
+  | 'L'
+  | 'L2'
+  | 'L3'
+  | 'LEFT'
+  | 'R'
+  | 'R2'
+  | 'R3'
+  | 'RIGHT'
+  | 'SELECT'
+  | 'START'
+  | 'UP'
+  | 'X'
+  | 'Y';
 
 /** Where a 3D system renders on this server. */
 export type Rendering =
@@ -148,6 +174,27 @@ export type SetCheatMutationVariables = Exact<{
 
 
 export type SetCheatMutation = { setCheatEnabled: Array<{ id: number, description: string, code: string, enabled: boolean }> };
+
+export type ControllerMappingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ControllerMappingsQuery = { controllerMappings: Array<{ controller: string, name: string, bindings: Array<{ input: string, button: PadButton }> }> };
+
+export type SaveControllerMappingMutationVariables = Exact<{
+  controller: string;
+  name: string;
+  bindings: Array<BindingInput> | BindingInput;
+}>;
+
+
+export type SaveControllerMappingMutation = { saveControllerMapping: { controller: string } };
+
+export type ResetControllerMappingMutationVariables = Exact<{
+  controller: string;
+}>;
+
+
+export type ResetControllerMappingMutation = { resetControllerMapping: boolean };
 
 export type StartSessionMutationVariables = Exact<{
   gameId: number;
@@ -578,6 +625,30 @@ export const SetCheatDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SetCheatMutation, SetCheatMutationVariables>;
+export const ControllerMappingsDocument = new TypedDocumentString(`
+    query ControllerMappings {
+  controllerMappings {
+    controller
+    name
+    bindings {
+      input
+      button
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ControllerMappingsQuery, ControllerMappingsQueryVariables>;
+export const SaveControllerMappingDocument = new TypedDocumentString(`
+    mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+  saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
+    controller
+  }
+}
+    `) as unknown as TypedDocumentString<SaveControllerMappingMutation, SaveControllerMappingMutationVariables>;
+export const ResetControllerMappingDocument = new TypedDocumentString(`
+    mutation ResetControllerMapping($controller: String!) {
+  resetControllerMapping(controller: $controller)
+}
+    `) as unknown as TypedDocumentString<ResetControllerMappingMutation, ResetControllerMappingMutationVariables>;
 export const StartSessionDocument = new TypedDocumentString(`
     mutation StartSession($gameId: Int!, $startId: String) {
   startSession(gameId: $gameId, startId: $startId) {

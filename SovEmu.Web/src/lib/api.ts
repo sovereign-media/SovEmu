@@ -5,6 +5,7 @@ import type {
   CheatsQuery,
   EmulatorSettingsQuery,
   GameFieldsFragment,
+  PadButton,
   HomeQuery,
   SaveFieldsFragment,
   SessionFieldsFragment,
@@ -17,6 +18,7 @@ import {
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
   ChangeEmulatorSettingsMutation,
+  ControllerMappingsQuery,
   CheatsQuery as CheatsDocument,
   ClientConfigQuery,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
@@ -26,7 +28,9 @@ import {
   LoadStateMutation,
   LoginMutation,
   LogoutMutation,
+  ResetControllerMappingMutation,
   ResetSessionMutation,
+  SaveControllerMappingMutation,
   SaveStateMutation,
   SavesQuery,
   ScanLibraryMutation,
@@ -101,6 +105,11 @@ export const api = {
     (await request(AddCheatMutation, { gameId, code, description })).addCheat,
   setCheat: async (gameId: number, cheatId: number, enabled: boolean) =>
     (await request(SetCheatMutation, { gameId, cheatId, enabled })).setCheatEnabled,
+  /** This user's button mappings per controller model (docs/CONTROLLERS.md). */
+  controllerMappings: async () => (await request(ControllerMappingsQuery)).controllerMappings,
+  saveControllerMapping: (controller: string, name: string, bindings: { input: string; button: PadButton }[]) =>
+    request(SaveControllerMappingMutation, { controller, name, bindings }),
+  resetControllerMapping: (controller: string) => request(ResetControllerMappingMutation, { controller }),
   systemSettings: async (system: string) => (await request(EmulatorSettingsDocument, { system })).emulatorSettings,
   /** A value sets an option; null goes back to the default. */
   changeSettings: async (system: string, changes: Record<string, string | null>) =>

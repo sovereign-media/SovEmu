@@ -762,3 +762,41 @@ async fn admins_change_emulator_settings() {
     h.cookie = None;
     assert_eq!(h.err(get, json!({"s": "nes"})).await.0, "UNAUTHENTICATED");
 }
+
+#[tokio::test]
+async fn controller_mappings_are_kept_per_user_and_model() {
+    const LIST: &str = "{ controllerMappings { controller name bindings { input button } } }";
+    const SAVE: &str = "mutation($c: String!, $n: String!, $b: [BindingInput!]!) {
+        saveControllerMapping(controller: $c, name: $n, bindings: $b) { controller name } }";
+    const RESET: &str = "mutation($c: String!) { resetControllerMapping(controller: $c) }";
+    let mut h = Harness::new("controllers", false).await;
+    assert_eq!(h.err(LIST, json!({})).await.0, "UNAUTHENTICATED");
+    h.sign_up_admin().await;
+    assert_eq!(h.ok(LIST, json!({})).await["controllerMappings"], json!([]));
+
+    let swapped = json!([{"input": "south", "button": "A"}, {"input": "east", "button": "B"}]);
+    let saved =
+        h.ok(SAVE, json!({"c": "xbox", "n": " Xbox Wireless Controller ", "b": swapped})).await;
+    assert_eq!(saved["saveControllerMapping"]["name"], "Xbox Wireless Controller");
+    // Saving again replaces the mapping rather than adding to it.
+    let keys = json!([{"input": "KeyJ", "button": "B"}]);
+    h.ok(SAVE, json!({"c": "keyboard", "n": "", "b": keys})).await;
+    h.ok(SAVE, json!({"c": "keyboard", "n": "", "b": [{"input": "KeyK", "button": "B"}]})).await;
+    assert_eq!(
+        h.ok(LIST, json!({})).await["controllerMappings"],
+        json!([
+            {"controller": "keyboard", "name": "", "bindings": [{"input": "KeyK", "button": "B"}]},
+            {"controller": "xbox", "name": "Xbox Wireless Controller", "bindings": swapped},
+        ])
+    );
+
+    let bad = json!({"c": "xbox", "n": "", "b": [{"input": "KeyZ", "button": "B"}]});
+    let (code, message) = h.err(SAVE, bad).await;
+    assert_eq!(code, "BAD_REQUEST", "{message}");
+    let tab = json!({"c": "keyboard", "n": "", "b": [{"input": "Tab", "button": "B"}]});
+    assert_eq!(h.err(SAVE, tab).await.0, "BAD_REQUEST", "the fast-forward key");
+
+    assert_eq!(h.ok(RESET, json!({"c": "xbox"})).await["resetControllerMapping"], true);
+    assert_eq!(h.ok(RESET, json!({"c": "xbox"})).await["resetControllerMapping"], false);
+    assert_eq!(h.ok(LIST, json!({})).await["controllerMappings"].as_array().unwrap().len(), 1);
+}

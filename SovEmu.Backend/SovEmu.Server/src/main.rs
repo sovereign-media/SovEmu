@@ -9,6 +9,7 @@ mod api;
 mod auth;
 mod cache;
 mod cheats;
+mod controllers;
 mod db;
 mod error;
 mod gpu;

@@ -790,6 +790,16 @@ impl Query {
         admin(ctx).await?;
         crate::settings::get_settings(state(ctx), &system).await.api().map(Into::into)
     }
+
+    /// This user's controller mappings, one per controller model (docs/CONTROLLERS.md). A
+    /// controller without one uses the defaults.
+    async fn controller_mappings(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<crate::controllers::ControllerMapping>> {
+        let user = user(ctx).await?;
+        crate::controllers::list(state(ctx), &user).await.api()
+    }
 }
 
 // --- Mutations -------------------------------------------------------------------------------
@@ -961,6 +971,29 @@ impl Mutation {
         let user = user(ctx).await?;
         crate::cheats::remove(state(ctx), &user, game_id, cheat_id).await.api()?;
         Ok(true)
+    }
+
+    /// Saves this user's mapping for a controller model, replacing its defaults everywhere
+    /// they play.
+    async fn save_controller_mapping(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+        #[graphql(default)] name: String,
+        bindings: Vec<crate::controllers::Binding>,
+    ) -> Result<crate::controllers::ControllerMapping> {
+        let user = user(ctx).await?;
+        crate::controllers::save(state(ctx), &user, &controller, &name, bindings).await.api()
+    }
+
+    /// Puts a controller model back on the defaults. Returns whether it had a mapping.
+    async fn reset_controller_mapping(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+    ) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::controllers::reset(state(ctx), &user, &controller).await.api()
     }
 }
 
