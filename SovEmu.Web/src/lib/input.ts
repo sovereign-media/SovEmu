@@ -7,8 +7,10 @@
 // and Backspace to rewind; on a gamepad, hold SELECT with R (fast-forward) or L (rewind), read
 // after mapping, and those buttons are kept from the game while the combo is held.
 import {
+  Capture,
   type ControllerInfo,
   defaultMapping,
+  GUIDE,
   identify,
   KEYBOARD,
   type Mapping,
@@ -185,40 +187,53 @@ export class InputState {
   }
 }
 
+/** The input that goes back in this client's menus (src/lib/nav.ts): the bottom face button. */
+const MENU_BACK = "south";
+const ESCAPE = "Escape";
+
 /**
- * Resolves with the next input pressed on one device, for remapping: a `KeyboardEvent.code` on
- * the keyboard (not the hotkeys), else a positional input name on that gamepad. Escape cancels,
- * and so does waiting `timeoutMs`.
+ * Resolves with the next input on one device, for remapping (docs/CONTROLLERS.md,
+ * "Remapping"): a `KeyboardEvent.code` on the keyboard (not the hotkeys), else a positional
+ * input name on that gamepad; null when cancelled. Tapping Back (Escape on the keyboard)
+ * cancels and holding it binds it; guide and a long wait cancel. On a gamepad, Escape cancels.
  */
-export function captureInput(device: string, timeoutMs = 8000): Promise<string | null> {
+export function captureInput(device: string): Promise<string | null> {
   return new Promise((resolve) => {
     const index = device.startsWith("pad:") ? Number(device.slice(4)) : null;
-    const before = new Set<number>();
     const pad = () => (index === null ? null : navigator.getGamepads?.()[index] ?? null);
-    pad()?.buttons.forEach((b, i) => b.pressed && before.add(i));
+    const keys = new Set<string>();
+    const held = (): Set<string> => {
+      if (index === null) return new Set(keys);
+      const now = new Set<string>();
+      const p = pad();
+      p?.buttons.forEach((b, i) => {
+        if (!b.pressed) return;
+        if (i < PAD_INPUTS.length) now.add(PAD_INPUTS[i]);
+        else if (i === PAD_INPUTS.length) now.add(GUIDE);
+      });
+      return now;
+    };
+    const capture = new Capture(index === null ? ESCAPE : MENU_BACK, held(), performance.now());
     let raf = 0;
-    const timer = setTimeout(() => done(null), timeoutMs);
     const done = (result: string | null) => {
       cancelAnimationFrame(raf);
-      clearTimeout(timer);
       removeEventListener("keydown", onKey, true);
+      removeEventListener("keyup", onKey, true);
       resolve(result);
     };
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (e.code === "Escape") return done(null);
-      if (index === null && !RESERVED_KEYS.includes(e.code)) done(e.code);
+      if (e.type === "keydown" && e.code === ESCAPE && index !== null) return done(null);
+      if (index !== null || RESERVED_KEYS.includes(e.code)) return;
+      if (e.type === "keydown") keys.add(e.code);
+      else keys.delete(e.code);
     };
     addEventListener("keydown", onKey, true);
+    addEventListener("keyup", onKey, true);
     const poll = () => {
-      const p = pad();
-      if (p) {
-        for (let i = 0; i < Math.min(p.buttons.length, PAD_INPUTS.length); i++) {
-          if (p.buttons[i].pressed && !before.has(i)) return done(PAD_INPUTS[i]);
-          if (!p.buttons[i].pressed) before.delete(i);
-        }
-      }
+      const result = capture.update(held(), performance.now());
+      if (result !== undefined) return done(result);
       raf = requestAnimationFrame(poll);
     };
     raf = requestAnimationFrame(poll);

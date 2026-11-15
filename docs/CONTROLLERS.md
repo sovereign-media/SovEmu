@@ -90,6 +90,18 @@ The server stores one mapping per user and controller ID, and one default per co
 `controllerDefaults`, `saveControllerDefault`, `resetControllerDefault`). It checks the IDs and
 input names above, in the API and in the environment.
 
+## Remapping
+
+A client rebinds a button by waiting for the next input on that one device:
+
+- **Any other new input** binds at once.
+- **The client's menu Back button** (Escape on a keyboard): a quick tap cancels, and holding it for 1 second binds it. That way Back can be bound too.
+- **Home/guide** cancels.
+- **8 seconds** with no new input cancels.
+- **Inputs already held** when the wait starts are ignored until they are released.
+
+The prompt says so, for example: "Press a button for B · tap Back to cancel, hold it to bind it".
+
 ## In play
 
 - **Hotkeys** are read after mapping, from the RetroPad buttons: SELECT+R fast-forwards, SELECT+L rewinds, and SELECT+START opens the menu. Those buttons are kept from the game while a combo is held.

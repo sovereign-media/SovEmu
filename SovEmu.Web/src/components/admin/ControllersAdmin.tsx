@@ -90,7 +90,7 @@ function ButtonRow({
       {keyboard ? (
         <span className="flex items-center gap-2">
           <Button variant="outline" size="sm" disabled={locked} onClick={press} className="min-w-28">
-            <Keyboard /> {waiting ? "Press a key…" : inputs.map((i) => inputLabel(i, null)).join(", ") || "Not bound"}
+            <Keyboard /> {waiting ? "Press a key (tap Escape to cancel)…" : inputs.map((i) => inputLabel(i, null)).join(", ") || "Not bound"}
           </Button>
           {inputs.length > 0 && !locked && (
             <Tooltip content="Unbind">

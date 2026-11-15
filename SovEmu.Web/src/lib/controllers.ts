@@ -213,3 +213,45 @@ export class Players<K> {
     this.ports.set(key, Math.max(0, Math.min(MAX_PORTS - 1, port)));
   }
 }
+
+// --- Remapping --------------------------------------------------------------------------------
+
+export const HOLD_TO_BIND_MS = 1000;
+export const CAPTURE_TIMEOUT_MS = 8000;
+/** The standard gamepad's Home/guide button, which cancels a capture. */
+export const GUIDE = "guide";
+
+/**
+ * Waiting for the input to bind (docs/CONTROLLERS.md, "Remapping"): any new input binds at
+ * once, except the menu's Back input (`back`), which cancels on a tap and binds when held for a
+ * second; guide cancels, and so does a wait with no new input. Inputs held at the start are
+ * ignored until released. Fed the held inputs and the time; plain, so it can be tested.
+ */
+export class Capture {
+  private ignored: Set<string>;
+  private backSince: number | null = null;
+
+  constructor(
+    private readonly back: string,
+    held: Iterable<string>,
+    private readonly start: number,
+  ) {
+    this.ignored = new Set(held);
+  }
+
+  /** The input to bind, null to cancel, or undefined to keep waiting. */
+  update(held: Set<string>, now: number): string | null | undefined {
+    for (const input of [...this.ignored]) if (!held.has(input)) this.ignored.delete(input);
+    if (this.backSince !== null) {
+      if (!held.has(this.back)) return null;
+      if (now - this.backSince >= HOLD_TO_BIND_MS) return this.back;
+    }
+    for (const input of held) {
+      if (this.ignored.has(input) || input === this.back) continue;
+      return input === GUIDE ? null : input;
+    }
+    if (this.backSince === null && held.has(this.back) && !this.ignored.has(this.back)) this.backSince = now;
+    if (this.backSince === null && now - this.start >= CAPTURE_TIMEOUT_MS) return null;
+    return undefined;
+  }
+}

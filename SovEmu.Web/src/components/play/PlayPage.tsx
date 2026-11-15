@@ -320,7 +320,7 @@ function Player() {
               detail: boundTo(mapping, button, labels).join(", ") || "Not bound",
               run: async () => {
                 capturing = true;
-                toast(`Press ${key === KEYBOARD ? "a key" : `an input on ${name}`} for ${label} (Escape cancels)`);
+                toast(`Press ${key === KEYBOARD ? "a key" : `a button on ${name}`} for ${label} · tap ${key === KEYBOARD ? "Escape" : "Back"} to cancel, hold it to bind it`);
                 const pressed = await captureInput(key);
                 // Let the press that bound the button finish before menus react again.
                 setTimeout(() => (capturing = false), 250);

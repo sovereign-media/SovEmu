@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundTo, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, familyOf, identify, inputLabel, Players, readHotkeys, rebind, slug, toBindings } from "./controllers";
+import { boundTo, Capture, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, familyOf, identify, inputLabel, Players, readHotkeys, rebind, slug, toBindings } from "./controllers";
 import { bit } from "./protocol";
 
 describe("recognising a controller (docs/CONTROLLERS.md)", () => {
@@ -97,5 +97,37 @@ describe("players", () => {
     expect(p.join("f")).toBe(3); // a fifth shares the last player
     p.set("b", 9);
     expect(p.get("b")).toBe(3);
+  });
+});
+
+describe("remapping (tap Back to cancel, hold it to bind it)", () => {
+  const held = (...inputs: string[]) => new Set(inputs);
+
+  it("binds any other new input at once", () => {
+    const c = new Capture("south", [], 0);
+    expect(c.update(held(), 10)).toBeUndefined();
+    expect(c.update(held("east"), 20)).toBe("east");
+  });
+
+  it("cancels on a tap of Back, and binds Back when it is held for a second", () => {
+    const tap = new Capture("south", [], 0);
+    expect(tap.update(held("south"), 100)).toBeUndefined();
+    expect(tap.update(held(), 400)).toBeNull();
+    const hold = new Capture("south", [], 0);
+    expect(hold.update(held("south"), 100)).toBeUndefined();
+    expect(hold.update(held("south"), 900)).toBeUndefined();
+    expect(hold.update(held("south"), 1100)).toBe("south");
+  });
+
+  it("ignores what was already held, cancels on guide, and gives up after a while", () => {
+    const c = new Capture("Escape", ["Enter"], 0);
+    expect(c.update(held("Enter"), 50)).toBeUndefined();
+    expect(c.update(held(), 60)).toBeUndefined();
+    expect(c.update(held("Enter"), 70)).toBe("Enter");
+    expect(new Capture("south", [], 0).update(held("guide"), 10)).toBeNull();
+    // Back held from the start (the press that opened the menu) does not count as a tap.
+    const opened = new Capture("south", ["south"], 0);
+    expect(opened.update(held(), 10)).toBeUndefined();
+    expect(new Capture("south", [], 0).update(held(), 8000)).toBeNull();
   });
 });
