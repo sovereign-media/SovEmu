@@ -2,6 +2,7 @@
 // types codegen derived from the documents in queries.ts. Signed out, a call goes to sign-in.
 import type {
   AdminStatusQuery,
+  ControllerDefaultsQuery,
   CheatsQuery,
   EmulatorSettingsQuery,
   GameFieldsFragment,
@@ -18,6 +19,7 @@ import {
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
   ChangeEmulatorSettingsMutation,
+  ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerMappingsQuery,
   CheatsQuery as CheatsDocument,
   ClientConfigQuery,
@@ -28,8 +30,10 @@ import {
   LoadStateMutation,
   LoginMutation,
   LogoutMutation,
+  ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
+  SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
   SaveStateMutation,
   SavesQuery,
@@ -64,6 +68,8 @@ export type CoreSetting = SystemSettings["settings"][number];
 export type CoreCategory = SystemSettings["categories"][number];
 export type SettingSource = GqlSettingSource;
 export type LibraryStatus = AdminStatusQuery["libraryStatus"];
+export type ControllerDefaults = ControllerDefaultsQuery["controllerDefaults"];
+export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
 export type MetadataStatus = AdminStatusQuery["metadataStatus"];
 
 /** Slot 0 is the auto save, written whenever a session ends. */
@@ -110,6 +116,11 @@ export const api = {
   saveControllerMapping: (controller: string, name: string, bindings: { input: string; button: PadButton }[]) =>
     request(SaveControllerMappingMutation, { controller, name, bindings }),
   resetControllerMapping: (controller: string) => request(ResetControllerMappingMutation, { controller }),
+  /** Admins: the default mappings every user starts from, and the admin's as environment lines. */
+  controllerDefaults: async () => (await request(ControllerDefaultsDocument)).controllerDefaults,
+  saveControllerDefault: (controller: string, name: string, bindings: { input: string; button: PadButton }[]) =>
+    request(SaveControllerDefaultMutation, { controller, name, bindings }),
+  resetControllerDefault: (controller: string) => request(ResetControllerDefaultMutation, { controller }),
   systemSettings: async (system: string) => (await request(EmulatorSettingsDocument, { system })).emulatorSettings,
   /** A value sets an option; null goes back to the default. */
   changeSettings: async (system: string, changes: Record<string, string | null>) =>

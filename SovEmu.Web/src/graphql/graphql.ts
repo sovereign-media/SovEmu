@@ -20,6 +20,15 @@ export type LibraryMode =
   /** From a full local copy kept in sync. */
   | 'MIRROR';
 
+/** Where a mapping comes from. */
+export type MappingSource =
+  /** An admin's default, from the admin page. */
+  | 'ADMIN'
+  /** A default from `SOVEMU_CONTROLLERS__<n>__…`, which an admin cannot change (locked). */
+  | 'ENVIRONMENT'
+  /** The user's own. */
+  | 'USER';
+
 /** A RetroPad button (libretro's RETRO_DEVICE_ID_JOYPAD_*). */
 export type PadButton =
   | 'A'
@@ -178,7 +187,7 @@ export type SetCheatMutation = { setCheatEnabled: Array<{ id: number, descriptio
 export type ControllerMappingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ControllerMappingsQuery = { controllerMappings: Array<{ controller: string, name: string, bindings: Array<{ input: string, button: PadButton }> }> };
+export type ControllerMappingsQuery = { controllerMappings: Array<{ controller: string, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> };
 
 export type SaveControllerMappingMutationVariables = Exact<{
   controller: string;
@@ -188,6 +197,27 @@ export type SaveControllerMappingMutationVariables = Exact<{
 
 
 export type SaveControllerMappingMutation = { saveControllerMapping: { controller: string } };
+
+export type ControllerDefaultsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ControllerDefaultsQuery = { controllerDefaults: { environment: Array<string>, mappings: Array<{ controller: string, name: string, source: MappingSource, bindings: Array<{ input: string, button: PadButton }> }> } };
+
+export type SaveControllerDefaultMutationVariables = Exact<{
+  controller: string;
+  name: string;
+  bindings: Array<BindingInput> | BindingInput;
+}>;
+
+
+export type SaveControllerDefaultMutation = { saveControllerDefault: { controller: string } };
+
+export type ResetControllerDefaultMutationVariables = Exact<{
+  controller: string;
+}>;
+
+
+export type ResetControllerDefaultMutation = { resetControllerDefault: boolean };
 
 export type ResetControllerMappingMutationVariables = Exact<{
   controller: string;
@@ -630,6 +660,7 @@ export const ControllerMappingsDocument = new TypedDocumentString(`
   controllerMappings {
     controller
     name
+    source
     bindings {
       input
       button
@@ -644,6 +675,34 @@ export const SaveControllerMappingDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SaveControllerMappingMutation, SaveControllerMappingMutationVariables>;
+export const ControllerDefaultsDocument = new TypedDocumentString(`
+    query ControllerDefaults {
+  controllerDefaults {
+    mappings {
+      controller
+      name
+      source
+      bindings {
+        input
+        button
+      }
+    }
+    environment
+  }
+}
+    `) as unknown as TypedDocumentString<ControllerDefaultsQuery, ControllerDefaultsQueryVariables>;
+export const SaveControllerDefaultDocument = new TypedDocumentString(`
+    mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+  saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {
+    controller
+  }
+}
+    `) as unknown as TypedDocumentString<SaveControllerDefaultMutation, SaveControllerDefaultMutationVariables>;
+export const ResetControllerDefaultDocument = new TypedDocumentString(`
+    mutation ResetControllerDefault($controller: String!) {
+  resetControllerDefault(controller: $controller)
+}
+    `) as unknown as TypedDocumentString<ResetControllerDefaultMutation, ResetControllerDefaultMutationVariables>;
 export const ResetControllerMappingDocument = new TypedDocumentString(`
     mutation ResetControllerMapping($controller: String!) {
   resetControllerMapping(controller: $controller)

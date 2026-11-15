@@ -248,6 +248,7 @@ export const ControllerMappingsQuery = graphql(`
     controllerMappings {
       controller
       name
+      source
       bindings {
         input
         button
@@ -261,6 +262,37 @@ export const SaveControllerMappingMutation = graphql(`
     saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
       controller
     }
+  }
+`);
+
+export const ControllerDefaultsQuery = graphql(`
+  query ControllerDefaults {
+    controllerDefaults {
+      mappings {
+        controller
+        name
+        source
+        bindings {
+          input
+          button
+        }
+      }
+      environment
+    }
+  }
+`);
+
+export const SaveControllerDefaultMutation = graphql(`
+  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {
+      controller
+    }
+  }
+`);
+
+export const ResetControllerDefaultMutation = graphql(`
+  mutation ResetControllerDefault($controller: String!) {
+    resetControllerDefault(controller: $controller)
   }
 `);
 

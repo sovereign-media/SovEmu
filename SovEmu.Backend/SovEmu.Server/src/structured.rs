@@ -4,6 +4,8 @@
 //! - Users: `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ADMIN`.
 //! - Systems: `SOVEMU_SYSTEMS__<id>__CORE` (the core to use), `__ENABLED` (false hides it), and
 //!   `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
+//! - Controller defaults: `SOVEMU_CONTROLLERS__<n>__ID` (a controller ID from
+//!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`) and `__NAME` (optional).
 //!
 //! Keys after the prefix are case-insensitive except core option names and system ids, which are
 //! passed through as written (lower-cased ids, as option names are).
@@ -126,6 +128,50 @@ pub fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>
     Ok(out)
 }
 
+/// Default controller mappings from `SOVEMU_CONTROLLERS__<n>__…`, ordered by index. A list
+/// rather than a map by ID, since IDs such as `pad:2dc8:6101` cannot be part of a variable name.
+pub fn controllers(vars: &[(String, String)]) -> Result<Vec<crate::controllers::ControllerSpec>> {
+    let mut indexed: Vec<(u32, crate::controllers::ControllerSpec)> = Vec::new();
+    for (key, fields) in group(vars, "SOVEMU_CONTROLLERS__") {
+        let n: u32 = key
+            .parse()
+            .with_context(|| format!("SOVEMU_CONTROLLERS__{key}: the index must be a number"))?;
+        let var = |field: &str| format!("SOVEMU_CONTROLLERS__{n}__{field}");
+        let mut spec = crate::controllers::ControllerSpec {
+            controller: String::new(),
+            name: String::new(),
+            bindings: Vec::new(),
+        };
+        let mut has_bindings = false;
+        for (field, value) in fields {
+            match field.to_ascii_uppercase().as_str() {
+                "ID" => spec.controller = value.trim().to_owned(),
+                "NAME" => spec.name = value.trim().to_owned(),
+                "BINDINGS" => {
+                    spec.bindings = crate::controllers::parse_bindings(&value)
+                        .map_err(|e| anyhow::anyhow!("{}: {e}", var("BINDINGS")))?;
+                    has_bindings = true;
+                }
+                other => bail!("{}: unknown setting {other:?} (ID, NAME or BINDINGS)", var(other)),
+            }
+        }
+        if spec.controller.is_empty() || !has_bindings {
+            bail!("SOVEMU_CONTROLLERS__{n}: needs both __ID and __BINDINGS");
+        }
+        crate::controllers::check(&spec.controller, &spec.name, &spec.bindings)
+            .map_err(|e| anyhow::anyhow!("SOVEMU_CONTROLLERS__{n}: {e}"))?;
+        if let Some((m, _)) = indexed.iter().find(|(_, s)| s.controller == spec.controller) {
+            bail!(
+                "SOVEMU_CONTROLLERS__{n}: {} is already set by SOVEMU_CONTROLLERS__{m}",
+                spec.controller
+            );
+        }
+        indexed.push((n, spec));
+    }
+    indexed.sort_by_key(|(n, _)| *n);
+    Ok(indexed.into_iter().map(|(_, spec)| spec).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +242,41 @@ mod tests {
         assert!(
             systems(&vars(&[("SOVEMU_SYSTEMS__nes__COLOUR", "red")])).is_err(),
             "unknown setting"
+        );
+    }
+
+    #[test]
+    fn reads_controller_defaults() {
+        use crate::controllers::{Binding, PadButton};
+        let specs = controllers(&vars(&[
+            ("SOVEMU_CONTROLLERS__1__ID", "keyboard"),
+            ("SOVEMU_CONTROLLERS__1__BINDINGS", "KeyJ:B"),
+            ("SOVEMU_CONTROLLERS__0__ID", "pad:2dc8:6101"),
+            ("SOVEMU_CONTROLLERS__0__name", "8BitDo SN30 Pro"),
+            ("SOVEMU_CONTROLLERS__0__BINDINGS", "south:A, east:B"),
+        ]))
+        .unwrap();
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].controller, "pad:2dc8:6101");
+        assert_eq!(specs[0].name, "8BitDo SN30 Pro");
+        assert_eq!(specs[1].bindings, vec![Binding { input: "KeyJ".into(), button: PadButton::B }]);
+
+        let fails = |v: &[(&str, &str)]| format!("{:#}", controllers(&vars(v)).unwrap_err());
+        assert!(fails(&[("SOVEMU_CONTROLLERS__0__ID", "xbox")]).contains("__BINDINGS"));
+        let key_on_pad =
+            [("SOVEMU_CONTROLLERS__0__ID", "xbox"), ("SOVEMU_CONTROLLERS__0__BINDINGS", "KeyZ:B")];
+        assert!(fails(&key_on_pad).contains("KeyZ"));
+        let bad_button =
+            [("SOVEMU_CONTROLLERS__0__ID", "xbox"), ("SOVEMU_CONTROLLERS__0__BINDINGS", "south:Q")];
+        assert!(fails(&bad_button).contains("RetroPad"));
+        assert!(
+            fails(&[
+                ("SOVEMU_CONTROLLERS__0__ID", "xbox"),
+                ("SOVEMU_CONTROLLERS__0__BINDINGS", ""),
+                ("SOVEMU_CONTROLLERS__1__ID", "xbox"),
+                ("SOVEMU_CONTROLLERS__1__BINDINGS", ""),
+            ])
+            .contains("already set")
         );
     }
 }

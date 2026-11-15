@@ -48,6 +48,31 @@ const MODELS: { id: string; name: string; family: Family; ids: string[] }[] = [
 
 const VENDOR_FAMILY: Record<string, Family> = { "045e": "xbox", "054c": "playstation", "057e": "nintendo" };
 
+/** The keyboard and the popular models, for lists of controllers to set up. */
+export const KNOWN_CONTROLLERS: { id: string; name: string; family: Family }[] = [
+  { id: KEYBOARD, name: "Keyboard", family: "generic" },
+  ...MODELS.map(({ id, name, family }) => ({ id, name, family })),
+];
+
+/** A controller ID's family, for labels: its model's, else its vendor's, else generic. */
+export function familyOf(id: string): Family {
+  const model = MODELS.find((m) => m.id === id);
+  if (model) return model.family;
+  return VENDOR_FAMILY[/^pad:([0-9a-f]{4}):/.exec(id)?.[1] ?? ""] ?? "generic";
+}
+
+/** The console's buttons (libretro's RetroPad), in the order menus list them, with names. */
+export const PAD_BUTTONS: [ButtonName, string][] = [
+  ["UP", "Up"], ["DOWN", "Down"], ["LEFT", "Left"], ["RIGHT", "Right"],
+  ["A", "A"], ["B", "B"], ["X", "X"], ["Y", "Y"], ["L", "L"], ["R", "R"], ["L2", "L2"], ["R2", "R2"],
+  ["L3", "L3 (left stick)"], ["R3", "R3 (right stick)"], ["START", "Start"], ["SELECT", "Select"],
+];
+
+/** Where each face button sits, since labels differ between makers. */
+export const POSITIONS: Partial<Record<PadInput, string>> = {
+  south: "bottom", east: "right", west: "left", north: "top",
+};
+
 export interface ControllerInfo {
   /** The mapping key: `xbox`, `dualsense` …, `pad:<vendor>:<product>` or `pad:name:<slug>`. */
   id: string;

@@ -2,8 +2,8 @@
 // rest, labelled pills on hover or keyboard focus), on a phone a tab bar along the bottom. The
 // SovEmu wordmark sits in the corner above the dock. Entries: Home; Systems, a menu nested by
 // maker (Nintendo ▸ NES, SNES …); the account (sign out); and for admins the gear, a menu of
-// Library and Emulator settings ▸ each system. Menus are Radix DropdownMenus.
-import { ChevronRight, Gamepad2, House, Library, LogOut, Settings, SlidersHorizontal } from "lucide-react";
+// Library, Controllers and Emulator settings ▸ each system. Menus are Radix DropdownMenus.
+import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Settings, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type SystemSummary, type User } from "../lib/api";
@@ -222,6 +222,11 @@ function Entries({
           <DropdownMenu.Item asChild className={ROW}>
             <a href="/admin/">
               <Library /> Library
+            </a>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item asChild className={ROW}>
+            <a href="/admin/controllers/">
+              <Gamepad /> Controllers
             </a>
           </DropdownMenu.Item>
           {shape === "bar" ? (

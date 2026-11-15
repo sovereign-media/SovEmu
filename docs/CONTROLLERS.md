@@ -73,13 +73,22 @@ these names. `Tab` and `Backspace` are the fast-forward and rewind keys and cann
 
 ## Mappings
 
-A mapping is a list of `{input, button}` pairs. Each input drives one RetroPad button (`B Y SELECT START UP DOWN LEFT RIGHT A X L R L2 R2 L3 R3`), and a button may have several inputs. A saved mapping **replaces** the defaults for that controller. With none saved, a client uses the defaults:
+A mapping is a list of `{input, button}` pairs. Each input drives one RetroPad button (`B Y SELECT START UP DOWN LEFT RIGHT A X L R L2 R2 L3 R3`), and a button may have several inputs. A mapping **replaces** the built-in defaults for that controller. The mapping in force for a user is, in order:
+
+1. **their own**, saved from any client;
+2. **the environment's default** for that model: `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS` (`south:B,east:A,…`) and `__NAME`. The admin page shows these locked;
+3. **an admin's default**, set on the admin page (Admin ▸ Controllers), which offers its defaults as environment lines;
+4. **the built-in defaults** below.
+
+The server merges the first three: `controllerMappings` returns the mapping in force for each model that has one, with its `source` (`USER`, `ADMIN` or `ENVIRONMENT`). A model missing from the list uses the built-in defaults. After `resetControllerMapping`, a client fetches the list again, so that the user gets the server's default rather than the built-in one. The built-in defaults:
 
 - **Controllers**: by position, as libretro's SNES-shaped RetroPad expects: `south` B, `east` A, `west` Y, `north` X, `l1` L, `r1` R, `l2` L2, `r2` R2, `select` SELECT, `start` START, `l3` L3, `r3` R3, and the D-pad to the D-pad.
 - **Keyboard**: arrows to the D-pad, `KeyZ` B, `KeyX` A, `KeyA` Y, `KeyS` X, `KeyQ` L, `KeyW` R, `Enter` START, `ShiftLeft` and `ShiftRight` SELECT.
 
-The server stores one mapping per user and controller ID (GraphQL: `controllerMappings`,
-`saveControllerMapping`, `resetControllerMapping`) and checks the IDs and input names above.
+The server stores one mapping per user and controller ID, and one default per controller ID
+(GraphQL: `controllerMappings`, `saveControllerMapping`, `resetControllerMapping`; admins:
+`controllerDefaults`, `saveControllerDefault`, `resetControllerDefault`). It checks the IDs and
+input names above, in the API and in the environment.
 
 ## In play
 

@@ -38,7 +38,21 @@ type ClientConfig {
 }
 
 """
-A user's mapping for one controller model.
+The default controller mappings (admins).
+"""
+type ControllerDefaults {
+	"""
+	From the environment (locked) and from the admin page.
+	"""
+	mappings: [ControllerMapping!]!
+	"""
+	The admin page's defaults as `SOVEMU_CONTROLLERS__<n>__…` lines.
+	"""
+	environment: [String!]!
+}
+
+"""
+A mapping for one controller model.
 """
 type ControllerMapping {
 	"""
@@ -50,6 +64,7 @@ type ControllerMapping {
 	"""
 	name: String!
 	bindings: [Binding!]!
+	source: MappingSource!
 }
 
 """
@@ -279,6 +294,24 @@ type LibraryStatus {
 }
 
 """
+Where a mapping comes from.
+"""
+enum MappingSource {
+	"""
+	The user's own.
+	"""
+	USER
+	"""
+	An admin's default, from the admin page.
+	"""
+	ADMIN
+	"""
+	A default from `SOVEMU_CONTROLLERS__<n>__…`, which an admin cannot change (locked).
+	"""
+	ENVIRONMENT
+}
+
+"""
 Artwork and video kinds a game can have.
 """
 enum MediaKind {
@@ -424,7 +457,17 @@ type Mutation {
 	"""
 	saveControllerMapping(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
 	"""
-	Puts a controller model back on the defaults. Returns whether it had a mapping.
+	Admins: sets the default mapping for a controller model, for every user without their
+	own. A model whose default is in the environment cannot be changed here (CONFLICT).
+	"""
+	saveControllerDefault(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
+	"""
+	Admins: forgets the admin's default for a controller model. Returns whether it had one.
+	"""
+	resetControllerDefault(controller: String!): Boolean!
+	"""
+	Puts a controller model back on the defaults (an admin's, else the built-in ones).
+	Returns whether it had a mapping of the user's own.
 	"""
 	resetControllerMapping(controller: String!): Boolean!
 }
@@ -497,8 +540,14 @@ type Query {
 	"""
 	emulatorSettings(system: ID!): EmulatorSettings!
 	"""
-	This user's controller mappings, one per controller model (docs/CONTROLLERS.md). A
-	controller without one uses the defaults.
+	Admins: the default controller mappings every user starts from, and the admin's as
+	environment lines.
+	"""
+	controllerDefaults: ControllerDefaults!
+	"""
+	The controller mappings in force for this user, one per controller model
+	(docs/CONTROLLERS.md): their own, else a default. A model missing here uses the
+	clients' built-in defaults.
 	"""
 	controllerMappings: [ControllerMapping!]!
 }

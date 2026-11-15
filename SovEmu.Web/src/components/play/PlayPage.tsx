@@ -27,12 +27,12 @@ import {
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
 import { AUTO_SLOT, api, type Game, type SaveSlot, type SessionInfo, type SystemSummary } from "../../lib/api";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
-import { boundTo, KEYBOARD, type Mapping, rebind, toBindings } from "../../lib/controllers";
+import { boundTo, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings } from "../../lib/controllers";
 import { captureInput, InputState } from "../../lib/input";
 import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
 import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
-import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
+import { MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { StatsSampler, type StatItem } from "../../lib/stats";
 import Shell from "../Shell";
@@ -64,12 +64,6 @@ const ICONS: Record<string, LucideIcon> = {
 
 const SLOTS = [1, 2, 3, 4];
 const FILTER_KEY = "sovemu.filter";
-/** The console's buttons (libretro's RetroPad), in the order the controls menu lists them. */
-const REMAPPABLE: [ButtonName, string][] = [
-  ["UP", "Up"], ["DOWN", "Down"], ["LEFT", "Left"], ["RIGHT", "Right"],
-  ["A", "A"], ["B", "B"], ["X", "X"], ["Y", "Y"], ["L", "L"], ["R", "R"], ["L2", "L2"], ["R2", "R2"],
-  ["L3", "L3 (left stick)"], ["R3", "R3 (right stick)"], ["START", "Start"], ["SELECT", "Select"],
-];
 const player = (port: number) => `Player ${port + 1}`;
 
 const ago = (unix: number) => {
@@ -294,10 +288,16 @@ function Player() {
         const labels = key === KEYBOARD ? null : family;
         const mapping = input.mapping(id);
         const save = async (next: Mapping | null) => {
-          input.remember(id, next);
           try {
-            if (next) await api.saveControllerMapping(id, name, toBindings(next));
-            else await api.resetControllerMapping(id);
+            if (next) {
+              input.remember(id, next);
+              await api.saveControllerMapping(id, name, toBindings(next));
+            } else {
+              // Back to the defaults: the server's for this model if an admin set one, so fetch
+              // them rather than assume the built-in ones.
+              await api.resetControllerMapping(id);
+              input.setMappings(await api.controllerMappings());
+            }
           } catch (e) {
             toast(`Not saved: ${(e as Error).message}`);
           }
@@ -314,7 +314,7 @@ function Player() {
                 stack.replace(deviceMenu(key));
               },
             },
-            ...REMAPPABLE.map(([button, label]) => ({
+            ...PAD_BUTTONS.map(([button, label]) => ({
               label,
               icon: "button",
               detail: boundTo(mapping, button, labels).join(", ") || "Not bound",

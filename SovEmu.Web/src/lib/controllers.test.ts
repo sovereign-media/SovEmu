@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundTo, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, identify, inputLabel, Players, readHotkeys, rebind, slug, toBindings } from "./controllers";
+import { boundTo, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, familyOf, identify, inputLabel, Players, readHotkeys, rebind, slug, toBindings } from "./controllers";
 import { bit } from "./protocol";
 
 describe("recognising a controller (docs/CONTROLLERS.md)", () => {
@@ -28,6 +28,13 @@ describe("recognising a controller (docs/CONTROLLERS.md)", () => {
     expect(identify("Generic   USB Joystick!")).toMatchObject({ id: "pad:name:generic-usb-joystick", family: "generic" });
     expect(slug("--Ünïcode Pad--")).toBe("n-code-pad");
     expect(slug("x".repeat(60))).toHaveLength(48);
+  });
+
+  it("tells a stored ID's family, for labels when no controller is connected", () => {
+    expect(familyOf("dualsense")).toBe("playstation");
+    expect(familyOf("pad:057e:2017")).toBe("nintendo");
+    expect(familyOf("pad:2dc8:6006")).toBe("generic");
+    expect(familyOf("pad:name:arcade-stick")).toBe("generic");
   });
 });
 
