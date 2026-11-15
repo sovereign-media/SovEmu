@@ -213,6 +213,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_WORKER_START_TIMEOUT", default_value_t = 120)]
     pub worker_start_timeout: u64,
 
+    /// How long a worker may take to write its saves and exit when its session ends, seconds,
+    /// before it is killed. A 3D core (PCSX2) can take several seconds to tear down.
+    #[arg(long, env = "SOVEMU_WORKER_STOP_TIMEOUT", default_value_t = 15)]
+    pub worker_stop_timeout: u64,
+
     /// Rewind history per session, seconds (0 turns rewind off).
     #[arg(long, env = "SOVEMU_REWIND_SECONDS", default_value_t = 60)]
     pub rewind_seconds: u32,
@@ -437,9 +442,10 @@ impl Config {
                 }
             ),
             format!(
-                "worker_start_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
+                "worker_start_timeout={}s worker_stop_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
                  keyframe_interval={}",
                 self.worker_start_timeout,
+                self.worker_stop_timeout,
                 self.rewind_seconds,
                 self.rewind_max_mb,
                 self.fast_forward,
@@ -589,6 +595,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         video_kbps: config.video_kbps,
         audio_kbps: config.audio_kbps,
         start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
+        stop_timeout: std::time::Duration::from_secs(config.worker_stop_timeout),
         rewind_seconds: config.rewind_seconds,
         rewind_max_mb: config.rewind_max_mb,
         fast_forward: config.fast_forward,

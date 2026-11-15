@@ -37,6 +37,8 @@ services:
     # it die with a bus error.
     shm_size: 1gb
     restart: unless-stopped
+    # Sessions write their saves on SIGTERM; give them SOVEMU_WORKER_STOP_TIMEOUT and more.
+    stop_grace_period: 30s
     # Whether the server answers /health. The slim image has no wget or curl, so bash makes the
     # request itself.
     healthcheck:

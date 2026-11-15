@@ -3,7 +3,13 @@
 //! Every session gets its own UDP port from a fixed range (publish that range from the
 //! container) and its own worker, so a crashing core takes down only its session. The server
 //! talks to a worker in JSON lines ([`sovemu_protocol::ipc`]), matching replies to requests by
-//! id. A user has at most one session: starting a game ends the previous one.
+//! id. A user has at most one session: starting a game ends the previous one, and a user's
+//! starts run one at a time, so two quick starts never load two games side by side.
+//!
+//! Each worker has a reaper task that owns its process: it waits for the exit, returns the
+//! port to the pool and runs the session's `after_exit`. Nothing else waits on the process, so
+//! a worker that will not die (blocked in the kernel on a network share, where even SIGKILL
+//! waits) is left to the reaper instead of blocking the next start.
 
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
@@ -20,12 +26,15 @@ use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 use sovemu_protocol::ipc::{Reply, Request};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 use crate::starts::{Phase, Starts};
 
 /// How long a request to a worker may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a killed worker gets to go before it is reported stuck and left to its reaper.
+const KILL_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
@@ -41,6 +50,8 @@ pub struct WorkerConfig {
     /// How long a worker may take to load its core and game. Generous by default: a disc image
     /// on a remote share takes tens of seconds to open.
     pub start_timeout: Duration,
+    /// How long a worker may take to write its saves and exit before it is killed.
+    pub stop_timeout: Duration,
     pub rewind_seconds: u32,
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
@@ -118,7 +129,7 @@ pub struct Session {
     port: u16,
     info: SessionInfo,
     stdin: tokio::sync::Mutex<ChildStdin>,
-    child: tokio::sync::Mutex<Child>,
+    process: Process,
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     next_id: AtomicU64,
     connected: AtomicBool,
@@ -142,6 +153,59 @@ impl std::fmt::Debug for Session {
     }
 }
 
+/// A handle on a worker process, whose reaper task owns the [`Child`].
+struct Process {
+    pid: Option<u32>,
+    /// Tells the reaper to kill the worker. Dropping it does not: a worker whose start was
+    /// abandoned finishes loading, sees its stdin closed and exits cleanly.
+    kill: Mutex<Option<oneshot::Sender<()>>>,
+    /// True once the worker has exited.
+    exited: watch::Receiver<bool>,
+}
+
+impl Process {
+    /// Starts the reaper for `child`, which returns `port` and runs `after_exit` once it exits.
+    fn reap(
+        mut child: Child,
+        id: String,
+        port: u16,
+        workers: Arc<Workers>,
+        after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
+    ) -> Self {
+        let pid = child.id();
+        let (kill, mut killed) = oneshot::channel::<()>();
+        let (exit_tx, exited) = watch::channel(false);
+        tokio::spawn(async move {
+            let status = tokio::select! {
+                status = child.wait() => status,
+                Ok(()) = &mut killed => {
+                    let _ = child.start_kill();
+                    child.wait().await
+                }
+            };
+            tracing::info!("session {id} ended ({status:?})");
+            let _ = exit_tx.send(true);
+            workers.forget(&id, port);
+            if let Some(after) = after_exit {
+                after();
+            }
+        });
+        Self { pid, kill: Mutex::new(Some(kill)), exited }
+    }
+
+    fn kill(&self) {
+        if let Some(kill) = self.kill.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = kill.send(());
+        }
+    }
+
+    /// Waits until the worker has exited, or `deadline`; true if it exited.
+    async fn exited_by(&self, deadline: tokio::time::Instant) -> bool {
+        let mut exited = self.exited.clone();
+        matches!(tokio::time::timeout_at(deadline, exited.wait_for(|e| *e)).await, Ok(Ok(_)))
+    }
+}
+
 impl Session {
     pub fn info(&self) -> SessionInfo {
         SessionInfo { connected: self.connected.load(Ordering::Relaxed), ..self.info.clone() }
@@ -149,23 +213,39 @@ impl Session {
 
     /// Sends a request and waits for its reply.
     pub async fn request(&self, make: impl FnOnce(u64) -> Request) -> Result<Reply> {
+        self.request_within(REQUEST_TIMEOUT, make).await
+    }
+
+    /// Sends a request and waits up to `limit` for its reply.
+    async fn request_within(
+        &self,
+        limit: Duration,
+        make: impl FnOnce(u64) -> Request,
+    ) -> Result<Reply> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let request = make(id);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
         let mut line = serde_json::to_string(&request)?;
         line.push('\n');
-        {
-            let mut stdin = self.stdin.lock().await;
-            stdin.write_all(line.as_bytes()).await.context("worker stdin closed")?;
-            stdin.flush().await?;
+        let result = async {
+            {
+                let mut stdin = self.stdin.lock().await;
+                stdin.write_all(line.as_bytes()).await.context("worker stdin closed")?;
+                stdin.flush().await?;
+            }
+            match tokio::time::timeout(limit, rx).await {
+                Ok(Ok(Reply::Error { message, .. })) => bail!("{message}"),
+                Ok(Ok(reply)) => Ok(reply),
+                Ok(Err(_)) => bail!("the session ended"),
+                Err(_) => bail!("the session did not answer in time"),
+            }
         }
-        match tokio::time::timeout(REQUEST_TIMEOUT, rx).await {
-            Ok(Ok(Reply::Error { message, .. })) => bail!("{message}"),
-            Ok(Ok(reply)) => Ok(reply),
-            Ok(Err(_)) => bail!("the session ended"),
-            Err(_) => bail!("the session did not answer in time"),
+        .await;
+        if result.is_err() {
+            self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         }
+        result
     }
 
     pub async fn offer(&self, offer: SessionDescription) -> Result<SessionDescription> {
@@ -180,6 +260,8 @@ impl Session {
 struct Inner {
     sessions: HashMap<String, Arc<Session>>,
     free_ports: BTreeSet<u16>,
+    /// One lock per user, held for the whole of a start (stopping the old session included).
+    starting: HashMap<i64, Arc<tokio::sync::Mutex<()>>>,
 }
 
 #[derive(Debug)]
@@ -195,7 +277,7 @@ impl Workers {
         let free_ports = (config.ports.0..=config.ports.1).collect();
         Arc::new(Self {
             config,
-            inner: Mutex::new(Inner { sessions: HashMap::new(), free_ports }),
+            inner: Mutex::new(Inner { free_ports, ..Inner::default() }),
             starts: Starts::default(),
         })
     }
@@ -221,8 +303,11 @@ impl Workers {
         self.lock().sessions.len()
     }
 
-    /// Starts a session, ending the user's current one first.
+    /// Starts a session, ending the user's current one first. A user's starts take turns: a
+    /// second one waits for the first to finish loading, then ends its session.
     pub async fn start(self: &Arc<Self>, mut launch: Launch) -> Result<Arc<Session>> {
+        let turn = self.lock().starting.entry(launch.user_id).or_default().clone();
+        let _turn = turn.lock().await;
         let phase = |phase| {
             if let Some(id) = &launch.start_id {
                 self.starts.update(id, phase, None, None, Instant::now());
@@ -239,16 +324,10 @@ impl Workers {
             .pop_first()
             .ok_or_else(|| anyhow!("all {} session ports are in use", self.port_count()))?;
         let after_exit = launch.after_exit.take();
-        match self.spawn(&launch, port, after_exit).await {
-            Ok(session) => {
-                self.lock().sessions.insert(session.id.clone(), session.clone());
-                Ok(session)
-            }
-            Err(e) => {
-                self.lock().free_ports.insert(port);
-                Err(e)
-            }
-        }
+        // From here the port goes back to the pool when the worker exits (`Process::reap`).
+        let session = self.spawn(&launch, port, after_exit).await?;
+        self.lock().sessions.insert(session.id.clone(), session.clone());
+        Ok(session)
     }
 
     fn port_count(&self) -> usize {
@@ -312,15 +391,23 @@ impl Workers {
         if let Some(ip) = self.config.advertise_ip {
             command.arg("--advertise-ip").arg(ip.to_string());
         }
-        let mut child = command
+        let spawned = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .kill_on_drop(true)
             .spawn()
-            .with_context(|| format!("starting {}", self.config.worker_bin.display()))?;
+            .with_context(|| format!("starting {}", self.config.worker_bin.display()));
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(e) => {
+                self.lock().free_ports.insert(port);
+                return Err(e);
+            }
+        };
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
+        let id = random_id();
+        let process = Process::reap(child, id.clone(), port, self.clone(), after_exit);
 
         let mut declared = None;
         let ready = tokio::time::timeout(self.config.start_timeout, async {
@@ -343,11 +430,17 @@ impl Workers {
             }
             bail!("the worker exited while loading the game")
         })
-        .await
-        .map_err(|_| anyhow!("the worker took too long to load the game"))??;
+        .await;
+        let ready = match ready {
+            Ok(Ok(ready)) => ready,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => {
+                process.kill();
+                bail!("the worker took too long to load the game");
+            }
+        };
 
         let (core, width, height, fps) = ready;
-        let id = random_id();
         let session = Arc::new(Session {
             id: id.clone(),
             user_id: launch.user_id,
@@ -364,7 +457,7 @@ impl Workers {
                 connected: false,
             },
             stdin: tokio::sync::Mutex::new(stdin),
-            child: tokio::sync::Mutex::new(child),
+            process,
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             connected: AtomicBool::new(false),
@@ -372,7 +465,6 @@ impl Workers {
         });
         tracing::info!("session {id}: {} ({}) on UDP {port}", launch.title, launch.system);
 
-        let workers = self.clone();
         let reader = session.clone();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines.next_line().await {
@@ -390,49 +482,52 @@ impl Workers {
                     Reply::Ready { .. } | Reply::Progress { .. } | Reply::Options { .. } => {}
                 }
             }
-            // The worker exited: idle timeout, shutdown, or a crash.
-            let status = reader.child.lock().await.wait().await;
-            tracing::info!("session {} ended ({status:?})", reader.id);
-            workers.forget(&reader.id, reader.port);
-            if let Some(after) = after_exit {
-                after();
-            }
+            // The worker is going (idle timeout, shutdown, a crash): nothing more will answer.
+            reader.pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
         });
         Ok(session)
     }
 
+    /// The worker of session `id` has exited: its port is free again.
     fn forget(&self, id: &str, port: u16) {
         let mut inner = self.lock();
-        if inner.sessions.remove(id).is_some() || !inner.free_ports.contains(&port) {
-            inner.free_ports.insert(port);
-        }
+        inner.sessions.remove(id);
+        inner.free_ports.insert(port);
     }
 
-    /// Ends a session: asks the worker to flush and exit, then kills it if it does not.
+    /// Ends a session: asks the worker to write its saves and exit, and kills it only if it has
+    /// not gone within the stop timeout. Returns once it has exited or is known to be stuck (a
+    /// stuck worker keeps its port until it finally exits).
     pub async fn stop(&self, id: &str) {
         let Some(session) = self.lock().sessions.remove(id) else { return };
-        let asked = tokio::time::timeout(
-            Duration::from_secs(3),
-            session.request(|id| Request::Shutdown { id }),
-        )
-        .await;
-        if !matches!(asked, Ok(Ok(_))) {
-            tracing::warn!("session {id} did not shut down cleanly; killing it");
+        let limit = self.config.stop_timeout;
+        let deadline = tokio::time::Instant::now() + limit;
+        if let Err(e) = session.request_within(limit, |id| Request::Shutdown { id }).await {
+            tracing::warn!("session {id} did not acknowledge shutdown: {e:#}");
         }
-        let mut child = session.child.lock().await;
-        if tokio::time::timeout(Duration::from_secs(2), child.wait()).await.is_err() {
-            let _ = child.kill().await;
+        if session.process.exited_by(deadline).await {
+            return;
         }
-        drop(child);
-        self.lock().free_ports.insert(session.port);
+        tracing::warn!("session {id} is still running {limit:?} after shutdown; killing it");
+        session.process.kill();
+        if !session.process.exited_by(tokio::time::Instant::now() + KILL_WAIT).await {
+            tracing::error!(
+                "session {id} (pid {:?}) did not die when killed: it is blocked in the kernel, \
+                 most likely on the network share; leaving it",
+                session.process.pid
+            );
+        }
     }
 
-    /// Ends every session (server shutdown).
-    pub async fn stop_all(&self) {
+    /// Ends every session at once (server shutdown).
+    pub async fn stop_all(self: &Arc<Self>) {
         let ids: Vec<String> = self.lock().sessions.keys().cloned().collect();
+        let mut stops = tokio::task::JoinSet::new();
         for id in ids {
-            self.stop(&id).await;
+            let workers = self.clone();
+            stops.spawn(async move { workers.stop(&id).await });
         }
+        stops.join_all().await;
     }
 }
 
@@ -440,4 +535,146 @@ fn random_id() -> String {
     let mut bytes = [0u8; 12];
     getrandom::fill(&mut bytes).expect("the OS random source works");
     hex::encode(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    use super::*;
+
+    /// A stand-in worker: says it is ready, then answers every request with `done`. After a
+    /// shutdown it runs `then` (`exit 0`, or a sleep for a worker slow to go).
+    const WORKER: &str = r#"#!/bin/sh
+echo '{"type":"ready","udp_port":1,"core":"fake","width":320,"height":240,"fps":60.0}'
+while read -r line; do
+  id=$(echo "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+  echo "{\"type\":\"done\",\"id\":$id}"
+  case "$line" in *shutdown*) THEN ;; esac
+done
+"#;
+
+    fn dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("sovemu-workers-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn workers(dir: &Path, then: &str, stop_timeout: Duration) -> Arc<Workers> {
+        let bin = dir.join("worker.sh");
+        std::fs::write(&bin, WORKER.replace("THEN", then)).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Workers::new(WorkerConfig {
+            worker_bin: bin,
+            ports: (40000, 40001),
+            bind_ip: "127.0.0.1".parse().unwrap(),
+            advertise_ip: None,
+            bios_dir: dir.join("bios"),
+            idle_timeout_secs: 0,
+            video_kbps: 1000,
+            audio_kbps: 64,
+            start_timeout: Duration::from_secs(10),
+            stop_timeout,
+            rewind_seconds: 0,
+            rewind_max_mb: 0,
+            fast_forward: 1,
+            keyframe_interval: 60,
+            gpu: "off".into(),
+        })
+    }
+
+    fn launch(dir: &Path, user_id: i64, game_id: i64) -> Launch {
+        Launch {
+            user_id,
+            game_id,
+            system: "nes".into(),
+            title: format!("game {game_id}"),
+            core: dir.join("core.so"),
+            rom: dir.join("game.nes"),
+            save_dir: dir.join("saves"),
+            state_dir: dir.join("states"),
+            variables: Vec::new(),
+            after_exit: None,
+            start_id: None,
+        }
+    }
+
+    fn free_ports(workers: &Workers) -> usize {
+        workers.lock().free_ports.len()
+    }
+
+    /// The reaper returns a port just after the exit; give it a moment.
+    async fn settle(workers: &Workers, ports: usize) {
+        for _ in 0..100 {
+            if free_ports(workers) == ports {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(free_ports(workers), ports, "ports back in the pool");
+    }
+
+    #[tokio::test]
+    async fn a_new_start_ends_the_previous_session_and_reuses_its_port() {
+        let dir = dir("restart");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        for game in 1..=5 {
+            let session = workers.start(launch(&dir, 1, game)).await.unwrap();
+            assert_eq!(session.info().game_id, game);
+            assert_eq!(workers.count(), 1, "one session per user");
+        }
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+        assert_eq!(workers.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_worker_slow_to_exit_is_killed_after_the_stop_timeout() {
+        let dir = dir("slow");
+        let workers = workers(&dir, "exec sleep 600", Duration::from_millis(500));
+        let first = workers.start(launch(&dir, 1, 1)).await.unwrap();
+        let began = Instant::now();
+        let second = workers.start(launch(&dir, 1, 2)).await.unwrap();
+        let took = began.elapsed();
+        assert!(took >= Duration::from_millis(500), "it had its stop timeout: {took:?}");
+        assert!(took < Duration::from_secs(5), "then was killed: {took:?}");
+        assert!(*first.process.exited.borrow(), "the first worker is gone");
+        assert_eq!(workers.get(&second.id).unwrap().info().game_id, 2);
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_users_starts_take_turns() {
+        let dir = dir("turns");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let (a, b) =
+            tokio::join!(workers.start(launch(&dir, 1, 1)), workers.start(launch(&dir, 1, 2)));
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(workers.count(), 1, "the second start ended the first: never two at once");
+        let live = workers.for_user(1).unwrap();
+        assert!(live.id == a.id || live.id == b.id);
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_start_does_not_leak_its_port() {
+        let dir = dir("abandoned");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        // Cancel a start while it waits for the worker (as when the browser leaves the page).
+        let slow = dir.join("slow.sh");
+        std::fs::write(&slow, "#!/bin/sh\nsleep 0.3\nexec \"$0.real\" \"$@\"\n").unwrap();
+        std::fs::set_permissions(&slow, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::rename(dir.join("worker.sh"), dir.join("slow.sh.real")).unwrap();
+        let workers = Workers::new(WorkerConfig { worker_bin: slow, ..workers.config.clone() });
+        let start = workers.start(launch(&dir, 1, 1));
+        assert!(tokio::time::timeout(Duration::from_millis(50), start).await.is_err());
+        assert_eq!(free_ports(&workers), 1, "the abandoned worker still has its port");
+        // It finishes loading, finds its stdin closed, and exits on its own.
+        settle(&workers, 2).await;
+    }
 }
