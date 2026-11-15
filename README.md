@@ -201,6 +201,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
 | `SOVEMU_COPY_THREADS` | `4` | Files copied at once (mirror sync, artwork cache) |
 | `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, core options (see below) |
+| `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
 | `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD` | unset | ScreenScraper developer credentials |

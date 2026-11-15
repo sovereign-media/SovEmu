@@ -1,42 +1,34 @@
-// Keyboard and gamepad state as a RetroPad bitmask for port 0, plus the emulator hotkeys.
+// Keyboard and gamepads as RetroPad state per player, plus the emulator hotkeys.
 //
-// Bindings are remappable and kept per browser (localStorage). Hotkeys follow console frontends:
-// on a keyboard, hold Tab to fast-forward and Backspace to rewind; on a gamepad, hold Select with
-// R (fast-forward) or L (rewind), and those buttons are kept from the game while the combo is held.
-import { type Analog, bit, type ButtonName, CENTRED, type Hotkeys } from "./protocol";
+// Each controller is recognised by model (src/lib/controllers.ts, docs/CONTROLLERS.md) and
+// drives its own player in the order controllers connect; the keyboard is player 1. Mappings
+// are the user's, per model, saved on the server and shared with the apps; a model without one
+// uses the defaults. Hotkeys follow console frontends: on a keyboard, hold Tab to fast-forward
+// and Backspace to rewind; on a gamepad, hold SELECT with R (fast-forward) or L (rewind), read
+// after mapping, and those buttons are kept from the game while the combo is held.
+import {
+  Capture,
+  type ControllerInfo,
+  defaultMapping,
+  GUIDE,
+  identify,
+  KEYBOARD,
+  type Mapping,
+  PAD_INPUTS,
+  Players,
+  readHotkeys,
+  RESERVED_KEYS,
+} from "./controllers";
+import { type Analog, bit, CENTRED, type Hotkeys, MAX_PORTS } from "./protocol";
 
-export interface Bindings {
-  /** KeyboardEvent.code → RetroPad button. */
-  keys: Record<string, ButtonName>;
-  /** W3C standard gamepad button index → RetroPad button. */
-  pad: Record<number, ButtonName>;
-}
-
-export const DEFAULT_BINDINGS: Bindings = {
-  keys: {
-    ArrowUp: "UP", ArrowDown: "DOWN", ArrowLeft: "LEFT", ArrowRight: "RIGHT",
-    KeyZ: "B", KeyX: "A", KeyA: "Y", KeyS: "X", KeyQ: "L", KeyW: "R",
-    Enter: "START", ShiftLeft: "SELECT", ShiftRight: "SELECT",
-  },
-  // By position: bottom face = B, right face = A, left face = Y, top face = X (the SNES layout
-  // libretro's RetroPad is modelled on).
-  pad: {
-    0: "B", 1: "A", 2: "Y", 3: "X", 4: "L", 5: "R", 6: "L2", 7: "R2",
-    8: "SELECT", 9: "START", 10: "L3", 11: "R3", 12: "UP", 13: "DOWN", 14: "LEFT", 15: "RIGHT",
-  },
-};
-
-const STORAGE_KEY = "sovemu.bindings";
 const STICK_THRESHOLD = 0.5;
 const FAST_FORWARD_KEY = "Tab";
 const REWIND_KEY = "Backspace";
-const PAD_SELECT = 8;
-const PAD_L = 4;
-const PAD_R = 5;
-const PAD_L2 = 6;
-const PAD_R2 = 7;
 /** Stick travel ignored around the centre: worn sticks rest a little off it. */
 const DEADZONE = 0.15;
+/** Standard gamepad trigger buttons, whose `value` is the analog trigger. */
+const PAD_L2 = 6;
+const PAD_R2 = 7;
 
 /** A gamepad axis (−1..1) as a libretro stick value, with the dead zone taken out. */
 export function axisToStick(v: number): number {
@@ -49,139 +41,199 @@ export function axisToStick(v: number): number {
 /** A trigger (0..1) as a libretro analog button value. */
 export const triggerValue = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 32767);
 
-export function loadBindings(storage: Pick<Storage, "getItem"> = localStorage): Bindings {
-  try {
-    const saved = JSON.parse(storage.getItem(STORAGE_KEY) ?? "null");
-    if (saved?.keys && saved?.pad) return saved as Bindings;
-  } catch { /* corrupt: use defaults */ }
-  return structuredClone(DEFAULT_BINDINGS);
-}
-
-export function saveBindings(b: Bindings, storage: Pick<Storage, "setItem"> = localStorage) {
-  storage.setItem(STORAGE_KEY, JSON.stringify(b));
-}
-
-/** Binds `input` to `button`, removing any other binding of that input. */
-export function bind(b: Bindings, input: { key: string } | { pad: number }, button: ButtonName): Bindings {
-  const next = structuredClone(b);
-  if ("key" in input) next.keys[input.key] = button;
-  else next.pad[input.pad] = button;
-  return next;
-}
-
-/** What is bound to `button`, for display. */
-export function describeBinding(b: Bindings, button: ButtonName): string {
-  const keys = Object.entries(b.keys).filter(([, v]) => v === button).map(([k]) => k.replace(/^Key/, "").replace(/^Arrow/, "→ "));
-  const pads = Object.entries(b.pad).filter(([, v]) => v === button).map(([i]) => `pad ${i}`);
-  return [...keys, ...pads].join(", ") || "unbound";
-}
-
 export interface InputReading {
-  buttons: number;
+  /** RetroPad state per port, from port 0 to the highest port in use. */
+  ports: number[];
   hotkeys: Hotkeys;
-  /** The first gamepad's sticks and triggers. */
-  analog: Analog;
+  /** Sticks and triggers per port, as long as `ports`. */
+  analog: Analog[];
+}
+
+/** A connected input device, for the controls menu. */
+export interface Device {
+  /** `keyboard`, or `pad:<Gamepad.index>`: this connection, not the model. */
+  key: string;
+  info: ControllerInfo;
+  port: number;
+}
+
+/** A gamepad's state through its mapping: the RetroPad bits it holds. */
+export function padState(pressed: (i: number) => boolean, mapping: Mapping): number {
+  let state = 0;
+  PAD_INPUTS.forEach((input, i) => {
+    const button = mapping[input];
+    if (button && pressed(i)) state |= bit(button);
+  });
+  return state;
 }
 
 export class InputState {
-  bindings: Bindings = loadBindings();
   /**
    * The game reads analog sticks (a 3D system): the left stick moves the stick, not the D-pad.
    * Otherwise the left stick doubles as a D-pad, as it does in 2D frontends.
    */
   analogSticks = false;
+  /** The user's saved mappings by controller ID; anything missing uses the defaults. */
+  private saved = new Map<string, Mapping>();
+  /** Gamepads' players; the keyboard does not take a slot, so the first pad is player 1 too. */
+  private players = new Players<string>();
+  private keyboardPort = 0;
+  private known = new Map<string, ControllerInfo>();
   private held = new Set<string>();
 
   constructor(target: Window = window) {
     target.addEventListener("keydown", (e) => this.onKey(e, true));
     target.addEventListener("keyup", (e) => this.onKey(e, false));
     target.addEventListener("blur", () => this.held.clear());
+    target.addEventListener("gamepadconnected", (e) => this.players.join(`pad:${e.gamepad.index}`));
+    target.addEventListener("gamepaddisconnected", (e) => this.players.leave(`pad:${e.gamepad.index}`));
+    // Pads already connected (a reload) join in slot order.
+    for (const pad of this.pads()) this.players.join(`pad:${pad.index}`);
+  }
+
+  setMappings(mappings: { controller: string; bindings: { input: string; button: string }[] }[]) {
+    this.saved = new Map(
+      mappings.map((m) => [m.controller, Object.fromEntries(m.bindings.map((b) => [b.input, b.button])) as Mapping]),
+    );
+  }
+
+  /** The mapping in force for a controller model: the user's, else the defaults. */
+  mapping(controller: string): Mapping {
+    return this.saved.get(controller) ?? defaultMapping(controller);
+  }
+
+  /** Records a saved (or, with null, reset) mapping. */
+  remember(controller: string, mapping: Mapping | null) {
+    if (mapping) this.saved.set(controller, mapping);
+    else this.saved.delete(controller);
+  }
+
+  /** A gamepad's model, from its `Gamepad.id` (cached: read() runs every frame). */
+  private identify(gamepadId: string): ControllerInfo {
+    let info = this.known.get(gamepadId);
+    if (!info) this.known.set(gamepadId, (info = identify(gamepadId)));
+    return info;
+  }
+
+  private pads(): Gamepad[] {
+    return (navigator.getGamepads ? [...navigator.getGamepads()] : []).filter((p): p is Gamepad => !!p);
+  }
+
+  /** The keyboard and every connected gamepad, with their players. */
+  devices(): Device[] {
+    const pads = this.pads().map((pad) => {
+      const key = `pad:${pad.index}`;
+      return { key, info: this.identify(pad.id), port: this.players.join(key) };
+    });
+    const keyboard = { id: KEYBOARD, name: "Keyboard", family: "generic" as const };
+    return [{ key: KEYBOARD, info: keyboard, port: this.keyboardPort }, ...pads];
+  }
+
+  setPort(device: string, port: number) {
+    if (device === KEYBOARD) this.keyboardPort = Math.max(0, Math.min(MAX_PORTS - 1, port));
+    else this.players.set(device, port);
   }
 
   private onKey(e: KeyboardEvent, down: boolean) {
-    const relevant = e.code in this.bindings.keys || e.code === FAST_FORWARD_KEY || e.code === REWIND_KEY;
+    const relevant = e.code in this.mapping(KEYBOARD) || e.code === FAST_FORWARD_KEY || e.code === REWIND_KEY;
     if (!relevant) return;
     if (down) this.held.add(e.code);
     else this.held.delete(e.code);
     e.preventDefault();
   }
 
-  /** The current state: keyboard and every connected gamepad, combined. */
+  /** The current state of every player. */
   read(): InputReading {
-    let buttons = 0;
-    for (const code of this.held) {
-      const name = this.bindings.keys[code];
-      if (name) buttons |= bit(name);
-    }
+    const ports = new Array<number>(MAX_PORTS).fill(0);
+    const analog: Analog[] = Array.from({ length: MAX_PORTS }, () => ({ ...CENTRED }));
     const hotkeys: Hotkeys = { fastForward: this.held.has(FAST_FORWARD_KEY), rewind: this.held.has(REWIND_KEY) };
+    let used = 0;
 
-    let analog: Analog = { ...CENTRED };
-    let analogTaken = false;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const pad of pads) {
-      if (!pad) continue;
-      if (!analogTaken) {
-        analogTaken = true;
+    const keys = this.mapping(KEYBOARD);
+    const keyboardPort = this.keyboardPort;
+    for (const code of this.held) {
+      const name = keys[code];
+      if (name) ports[keyboardPort] |= bit(name);
+    }
+    used = Math.max(used, keyboardPort);
+
+    const analogSet = new Set<number>();
+    for (const pad of this.pads()) {
+      const port = this.players.join(`pad:${pad.index}`);
+      const pressed = (i: number) => !!pad.buttons[i]?.pressed;
+      const read = readHotkeys(padState(pressed, this.mapping(this.identify(pad.id).id)));
+      hotkeys.fastForward ||= read.fastForward;
+      hotkeys.rewind ||= read.rewind;
+      let state = read.state;
+      if (!analogSet.has(port)) {
+        analogSet.add(port);
         const [lx = 0, ly = 0, rx = 0, ry = 0] = pad.axes;
-        analog = {
+        analog[port] = {
           lx: axisToStick(lx), ly: axisToStick(ly), rx: axisToStick(rx), ry: axisToStick(ry),
           l2: triggerValue(pad.buttons[PAD_L2]?.value ?? 0), r2: triggerValue(pad.buttons[PAD_R2]?.value ?? 0),
         };
       }
-      const pressed = (i: number) => !!pad.buttons[i]?.pressed;
-      const comboFF = pressed(PAD_SELECT) && pressed(PAD_R);
-      const comboRewind = pressed(PAD_SELECT) && pressed(PAD_L);
-      hotkeys.fastForward ||= comboFF;
-      hotkeys.rewind ||= comboRewind;
-      const masked = comboFF || comboRewind ? new Set([PAD_SELECT, PAD_L, PAD_R]) : new Set<number>();
-      pad.buttons.forEach((b, i) => {
-        const name = this.bindings.pad[i];
-        if (b.pressed && name && !masked.has(i)) buttons |= bit(name);
-      });
-      if (this.analogSticks) continue;
-      const [x = 0, y = 0] = pad.axes;
-      if (x < -STICK_THRESHOLD) buttons |= bit("LEFT");
-      if (x > STICK_THRESHOLD) buttons |= bit("RIGHT");
-      if (y < -STICK_THRESHOLD) buttons |= bit("UP");
-      if (y > STICK_THRESHOLD) buttons |= bit("DOWN");
+      if (!this.analogSticks) {
+        const [x = 0, y = 0] = pad.axes;
+        if (x < -STICK_THRESHOLD) state |= bit("LEFT");
+        if (x > STICK_THRESHOLD) state |= bit("RIGHT");
+        if (y < -STICK_THRESHOLD) state |= bit("UP");
+        if (y > STICK_THRESHOLD) state |= bit("DOWN");
+      }
+      ports[port] |= state;
+      used = Math.max(used, port);
     }
-    return { buttons, hotkeys, analog };
-  }
-
-  setBindings(b: Bindings) {
-    this.bindings = b;
-    saveBindings(b);
+    return { ports: ports.slice(0, used + 1), hotkeys, analog: analog.slice(0, used + 1) };
   }
 }
 
-/** Resolves with the next key or gamepad button pressed (for remapping). Escape cancels. */
-export function captureNextInput(): Promise<{ key: string } | { pad: number } | null> {
+/** The input that goes back in this client's menus (src/lib/nav.ts): the bottom face button. */
+const MENU_BACK = "south";
+const ESCAPE = "Escape";
+
+/**
+ * Resolves with the next input on one device, for remapping (docs/CONTROLLERS.md,
+ * "Remapping"): a `KeyboardEvent.code` on the keyboard (not the hotkeys), else a positional
+ * input name on that gamepad; null when cancelled. Tapping Back (Escape on the keyboard)
+ * cancels and holding it binds it; guide and a long wait cancel. On a gamepad, Escape cancels.
+ */
+export function captureInput(device: string): Promise<string | null> {
   return new Promise((resolve) => {
-    const before = new Set<string>();
-    for (const pad of navigator.getGamepads?.() ?? []) {
-      pad?.buttons.forEach((b, i) => b.pressed && before.add(`${pad.index}:${i}`));
-    }
+    const index = device.startsWith("pad:") ? Number(device.slice(4)) : null;
+    const pad = () => (index === null ? null : navigator.getGamepads?.()[index] ?? null);
+    const keys = new Set<string>();
+    const held = (): Set<string> => {
+      if (index === null) return new Set(keys);
+      const now = new Set<string>();
+      const p = pad();
+      p?.buttons.forEach((b, i) => {
+        if (!b.pressed) return;
+        if (i < PAD_INPUTS.length) now.add(PAD_INPUTS[i]);
+        else if (i === PAD_INPUTS.length) now.add(GUIDE);
+      });
+      return now;
+    };
+    const capture = new Capture(index === null ? ESCAPE : MENU_BACK, held(), performance.now());
     let raf = 0;
-    const done = (result: { key: string } | { pad: number } | null) => {
+    const done = (result: string | null) => {
       cancelAnimationFrame(raf);
       removeEventListener("keydown", onKey, true);
+      removeEventListener("keyup", onKey, true);
       resolve(result);
     };
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopImmediatePropagation();
-      done(e.code === "Escape" ? null : { key: e.code });
+      if (e.type === "keydown" && e.code === ESCAPE && index !== null) return done(null);
+      if (index !== null || RESERVED_KEYS.includes(e.code)) return;
+      if (e.type === "keydown") keys.add(e.code);
+      else keys.delete(e.code);
     };
     addEventListener("keydown", onKey, true);
+    addEventListener("keyup", onKey, true);
     const poll = () => {
-      for (const pad of navigator.getGamepads?.() ?? []) {
-        if (!pad) continue;
-        for (let i = 0; i < pad.buttons.length; i++) {
-          const id = `${pad.index}:${i}`;
-          if (pad.buttons[i].pressed && !before.has(id)) return done({ pad: i });
-          if (!pad.buttons[i].pressed) before.delete(id);
-        }
-      }
+      const result = capture.update(held(), performance.now());
+      if (result !== undefined) return done(result);
       raf = requestAnimationFrame(poll);
     };
     raf = requestAnimationFrame(poll);

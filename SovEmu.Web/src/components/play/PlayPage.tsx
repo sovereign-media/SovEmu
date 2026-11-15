@@ -20,17 +20,19 @@ import {
   ToggleLeft,
   ToggleRight,
   Undo2,
+  Users,
   Wand2,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
 import { AUTO_SLOT, api, type Game, type SaveSlot, type SessionInfo, type SystemSummary } from "../../lib/api";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
-import { DEFAULT_BINDINGS, InputState, bind, captureNextInput, describeBinding } from "../../lib/input";
+import { boundTo, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings } from "../../lib/controllers";
+import { captureInput, InputState } from "../../lib/input";
 import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
 import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
-import type { ButtonName } from "../../lib/protocol";
+import { MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { StatsSampler, type StatItem } from "../../lib/stats";
 import Shell from "../Shell";
@@ -56,11 +58,13 @@ const ICONS: Record<string, LucideIcon> = {
   on: ToggleRight,
   off: ToggleLeft,
   button: Gamepad2,
+  keyboard: Keyboard,
+  players: Users,
 };
 
 const SLOTS = [1, 2, 3, 4];
 const FILTER_KEY = "sovemu.filter";
-const REMAPPABLE: ButtonName[] = ["UP", "DOWN", "LEFT", "RIGHT", "A", "B", "X", "Y", "L", "R", "L2", "R2", "START", "SELECT"];
+const player = (port: number) => `Player ${port + 1}`;
 
 const ago = (unix: number) => {
   const s = Math.max(0, Math.round(Date.now() / 1000 - unix));
@@ -113,16 +117,18 @@ function Player() {
     let cleanup = () => {};
 
     void (async () => {
-      const [game, systems, initialSlots, iceServers] = await Promise.all([
+      const [game, systems, initialSlots, iceServers, mappings] = await Promise.all([
         api.game(gameId),
         api.systems(),
         api.saves(gameId),
         api.iceServers(),
+        api.controllerMappings().catch(() => []),
       ]);
       const system = systems.find((s) => s.id === game.system);
       document.title = `${game.title} · SovEmu`;
       setLoaded({ game, system });
       input.analogSticks = !!system?.needsGpu;
+      input.setMappings(mappings);
       if (filter.supported) {
         setFiltered(true);
         filter.setMode(filterMode);
@@ -261,34 +267,79 @@ function Player() {
           })),
         });
 
+      // Controls: every connected device with its player; choosing one remaps it. Mappings are
+      // the user's, per controller model, saved on the server (docs/CONTROLLERS.md).
       const controlsMenu = (): Menu => ({
-        title: "Controls: choose a button, then press a key or pad button",
-        items: [
-          ...REMAPPABLE.map((button) => ({
-            label: button,
-            icon: "button",
-            detail: describeBinding(input.bindings, button),
-            run: async () => {
-              capturing = true;
-              toast(`Press a key or button for ${button} (Escape cancels)`);
-              const pressed = await captureNextInput();
-              // Let the press that bound the button finish before menus react again.
-              setTimeout(() => (capturing = false), 250);
-              if (pressed) input.setBindings(bind(input.bindings, pressed, button));
-              stack.replace(controlsMenu());
-            },
-          })),
-          {
-            label: "Reset to defaults",
-            icon: "reset",
-            run: () => {
-              input.setBindings(structuredClone(DEFAULT_BINDINGS));
-              stack.replace(controlsMenu());
-              toast("Controls reset");
-            },
-          },
-        ],
+        title: "Controls: choose a controller",
+        items: input.devices().map((d) => ({
+          label: d.info.name,
+          icon: d.key === KEYBOARD ? "keyboard" : "button",
+          detail: player(d.port),
+          run: () => stack.push(deviceMenu(d.key)),
+        })),
       });
+
+      const deviceMenu = (key: string): Menu => {
+        const device = input.devices().find((d) => d.key === key);
+        if (!device) {
+          return { title: "That controller is no longer connected", items: [{ label: "Back", icon: "back", run: () => stack.pop() }] };
+        }
+        const { id, name, family } = device.info;
+        const labels = key === KEYBOARD ? null : family;
+        const mapping = input.mapping(id);
+        const save = async (next: Mapping | null) => {
+          try {
+            if (next) {
+              input.remember(id, next);
+              await api.saveControllerMapping(id, name, toBindings(next));
+            } else {
+              // Back to the defaults: the server's for this model if an admin set one, so fetch
+              // them rather than assume the built-in ones.
+              await api.resetControllerMapping(id);
+              input.setMappings(await api.controllerMappings());
+            }
+          } catch (e) {
+            toast(`Not saved: ${(e as Error).message}`);
+          }
+        };
+        return {
+          title: `Remap ${name}`,
+          items: [
+            {
+              label: "Player",
+              icon: "players",
+              detail: `${player(device.port)}: choose to change`,
+              run: () => {
+                input.setPort(key, (device.port + 1) % MAX_PORTS);
+                stack.replace(deviceMenu(key));
+              },
+            },
+            ...PAD_BUTTONS.map(([button, label]) => ({
+              label,
+              icon: "button",
+              detail: boundTo(mapping, button, labels).join(", ") || "Not bound",
+              run: async () => {
+                capturing = true;
+                toast(`Press ${key === KEYBOARD ? "a key" : `a button on ${name}`} for ${label} · tap ${key === KEYBOARD ? "Escape" : "Back"} to cancel, hold it to bind it`);
+                const pressed = await captureInput(key);
+                // Let the press that bound the button finish before menus react again.
+                setTimeout(() => (capturing = false), 250);
+                if (pressed) await save(rebind(input.mapping(id), pressed, button));
+                stack.replace(deviceMenu(key));
+              },
+            })),
+            {
+              label: "Reset to defaults",
+              icon: "reset",
+              run: async () => {
+                await save(null);
+                stack.replace(deviceMenu(key));
+                toast(`${name}: back to the default controls`);
+              },
+            },
+          ],
+        };
+      };
 
       async function cheatsMenu(replace = false) {
         const cheats = await api.cheats(gameId);

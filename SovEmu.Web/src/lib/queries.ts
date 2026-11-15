@@ -243,6 +243,65 @@ export const SetCheatMutation = graphql(`
   }
 `);
 
+export const ControllerMappingsQuery = graphql(`
+  query ControllerMappings {
+    controllerMappings {
+      controller
+      name
+      source
+      bindings {
+        input
+        button
+      }
+    }
+  }
+`);
+
+export const SaveControllerMappingMutation = graphql(`
+  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {
+      controller
+    }
+  }
+`);
+
+export const ControllerDefaultsQuery = graphql(`
+  query ControllerDefaults {
+    controllerDefaults {
+      mappings {
+        controller
+        name
+        source
+        bindings {
+          input
+          button
+        }
+      }
+      environment
+    }
+  }
+`);
+
+export const SaveControllerDefaultMutation = graphql(`
+  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {
+    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {
+      controller
+    }
+  }
+`);
+
+export const ResetControllerDefaultMutation = graphql(`
+  mutation ResetControllerDefault($controller: String!) {
+    resetControllerDefault(controller: $controller)
+  }
+`);
+
+export const ResetControllerMappingMutation = graphql(`
+  mutation ResetControllerMapping($controller: String!) {
+    resetControllerMapping(controller: $controller)
+  }
+`);
+
 export const StartSessionMutation = graphql(`
   mutation StartSession($gameId: Int!, $startId: String) {
     startSession(gameId: $gameId, startId: $startId) {

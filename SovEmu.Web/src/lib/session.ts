@@ -25,11 +25,12 @@ export class Session {
   readonly inputRtts: number[] = [];
   private channel: RTCDataChannel;
   private seq = 0;
-  private sent = -1;
+  /** The last sent buttons, every player's, as a comparable key. */
+  private sent = "";
   private sentHotkeys = 0;
   private lastSend = 0;
   private analogSeq = 0;
-  private sentAnalog: Analog = { ...CENTRED };
+  private sentAnalog: Analog[] = [];
   private lastAnalogSend = 0;
   private raf = 0;
 
@@ -91,14 +92,15 @@ export class Session {
   private pump = () => {
     if (this.channel.readyState === "open") {
       const reading = this.suspended ? null : this.input.read();
-      const state = reading?.buttons ?? 0;
+      const ports = reading?.ports ?? [0];
+      const state = ports.join(",");
       const hotkeys = reading?.hotkeys ?? { fastForward: false, rewind: false };
       const hotkeyBits = (hotkeys.fastForward ? 1 : 0) | (hotkeys.rewind ? 2 : 0);
       const now = performance.now();
       const heartbeat = now - this.lastSend > HEARTBEAT_MS;
       if (state !== this.sent || hotkeyBits !== this.sentHotkeys || heartbeat) {
         this.seq = (this.seq + 1) >>> 0;
-        this.channel.send(encodeInput({ seq: this.seq, clientTimeMs: now32(), ports: [state] }));
+        this.channel.send(encodeInput({ seq: this.seq, clientTimeMs: now32(), ports }));
         // Held hotkeys are refreshed with every heartbeat; the worker drops stale ones.
         if (hotkeyBits !== this.sentHotkeys || hotkeyBits !== 0) this.channel.send(encodeHotkeys(hotkeys));
         this.sent = state;
@@ -107,11 +109,13 @@ export class Session {
       }
       // Sticks: on change, and as a heartbeat while off-centre (a lost packet must not leave a
       // stick held). Clients without sticks never send this message.
-      const analog = reading?.analog ?? CENTRED;
-      const offCentre = !analogEqual(analog, CENTRED);
-      if (!analogEqual(analog, this.sentAnalog) || (offCentre && now - this.lastAnalogSend > HEARTBEAT_MS)) {
+      const analog = reading?.analog ?? [CENTRED];
+      const offCentre = analog.some((a) => !analogEqual(a, CENTRED));
+      const changed =
+        analog.length !== this.sentAnalog.length || analog.some((a, i) => !analogEqual(a, this.sentAnalog[i]));
+      if (changed || (offCentre && now - this.lastAnalogSend > HEARTBEAT_MS)) {
         this.analogSeq = (this.analogSeq + 1) >>> 0;
-        this.channel.send(encodeAnalog({ seq: this.analogSeq, ports: [analog] }));
+        this.channel.send(encodeAnalog({ seq: this.analogSeq, ports: analog }));
         this.sentAnalog = analog;
         this.lastAnalogSend = now;
       }

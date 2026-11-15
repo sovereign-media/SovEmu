@@ -663,6 +663,15 @@ struct NewUserInput {
 
 // --- Queries ---------------------------------------------------------------------------------
 
+/// The default controller mappings (admins).
+#[derive(SimpleObject)]
+struct ControllerDefaults {
+    /// From the environment (locked) and from the admin page.
+    mappings: Vec<crate::controllers::ControllerMapping>,
+    /// The admin page's defaults as `SOVEMU_CONTROLLERS__<n>__…` lines.
+    environment: Vec<String>,
+}
+
 #[derive(Debug)]
 pub struct Query;
 
@@ -789,6 +798,28 @@ impl Query {
     async fn emulator_settings(&self, ctx: &Context<'_>, system: ID) -> Result<EmulatorSettings> {
         admin(ctx).await?;
         crate::settings::get_settings(state(ctx), &system).await.api().map(Into::into)
+    }
+
+    /// Admins: the default controller mappings every user starts from, and the admin's as
+    /// environment lines.
+    async fn controller_defaults(&self, ctx: &Context<'_>) -> Result<ControllerDefaults> {
+        admin(ctx).await?;
+        let state = state(ctx);
+        Ok(ControllerDefaults {
+            mappings: crate::controllers::defaults(state).await.api()?,
+            environment: crate::controllers::environment_lines(state).await.api()?,
+        })
+    }
+
+    /// The controller mappings in force for this user, one per controller model
+    /// (docs/CONTROLLERS.md): their own, else a default. A model missing here uses the
+    /// clients' built-in defaults.
+    async fn controller_mappings(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<crate::controllers::ControllerMapping>> {
+        let user = user(ctx).await?;
+        crate::controllers::list(state(ctx), &user).await.api()
     }
 }
 
@@ -961,6 +992,53 @@ impl Mutation {
         let user = user(ctx).await?;
         crate::cheats::remove(state(ctx), &user, game_id, cheat_id).await.api()?;
         Ok(true)
+    }
+
+    /// Saves this user's mapping for a controller model, replacing its defaults everywhere
+    /// they play.
+    async fn save_controller_mapping(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+        #[graphql(default)] name: String,
+        bindings: Vec<crate::controllers::Binding>,
+    ) -> Result<crate::controllers::ControllerMapping> {
+        let user = user(ctx).await?;
+        crate::controllers::save(state(ctx), &user, &controller, &name, bindings).await.api()
+    }
+
+    /// Admins: sets the default mapping for a controller model, for every user without their
+    /// own. A model whose default is in the environment cannot be changed here (CONFLICT).
+    async fn save_controller_default(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+        #[graphql(default)] name: String,
+        bindings: Vec<crate::controllers::Binding>,
+    ) -> Result<crate::controllers::ControllerMapping> {
+        admin(ctx).await?;
+        crate::controllers::save_default(state(ctx), &controller, &name, bindings).await.api()
+    }
+
+    /// Admins: forgets the admin's default for a controller model. Returns whether it had one.
+    async fn reset_controller_default(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+    ) -> Result<bool> {
+        admin(ctx).await?;
+        crate::controllers::reset_default(state(ctx), &controller).await.api()
+    }
+
+    /// Puts a controller model back on the defaults (an admin's, else the built-in ones).
+    /// Returns whether it had a mapping of the user's own.
+    async fn reset_controller_mapping(
+        &self,
+        ctx: &Context<'_>,
+        controller: String,
+    ) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::controllers::reset(state(ctx), &user, &controller).await.api()
     }
 }
 

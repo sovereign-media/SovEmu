@@ -34,6 +34,12 @@ type Documents = {
     "\n  query Cheats($id: Int!) {\n    game(id: $id) {\n      id\n      cheats {\n        id\n        description\n        code\n        enabled\n      }\n    }\n  }\n": typeof types.CheatsDocument,
     "\n  mutation AddCheat($gameId: Int!, $code: String!, $description: String!) {\n    addCheat(gameId: $gameId, code: $code, description: $description) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": typeof types.AddCheatDocument,
     "\n  mutation SetCheat($gameId: Int!, $cheatId: Int!, $enabled: Boolean!) {\n    setCheatEnabled(gameId: $gameId, cheatId: $cheatId, enabled: $enabled) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": typeof types.SetCheatDocument,
+    "\n  query ControllerMappings {\n    controllerMappings {\n      controller\n      name\n      source\n      bindings {\n        input\n        button\n      }\n    }\n  }\n": typeof types.ControllerMappingsDocument,
+    "\n  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n": typeof types.SaveControllerMappingDocument,
+    "\n  query ControllerDefaults {\n    controllerDefaults {\n      mappings {\n        controller\n        name\n        source\n        bindings {\n          input\n          button\n        }\n      }\n      environment\n    }\n  }\n": typeof types.ControllerDefaultsDocument,
+    "\n  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n": typeof types.SaveControllerDefaultDocument,
+    "\n  mutation ResetControllerDefault($controller: String!) {\n    resetControllerDefault(controller: $controller)\n  }\n": typeof types.ResetControllerDefaultDocument,
+    "\n  mutation ResetControllerMapping($controller: String!) {\n    resetControllerMapping(controller: $controller)\n  }\n": typeof types.ResetControllerMappingDocument,
     "\n  mutation StartSession($gameId: Int!, $startId: String) {\n    startSession(gameId: $gameId, startId: $startId) {\n      ...SessionFields\n    }\n  }\n": typeof types.StartSessionDocument,
     "\n  query StartProgress($startId: String!) {\n    startProgress(startId: $startId) {\n      phase\n      read\n      total\n      elapsedMs\n      phaseMs\n      error\n    }\n  }\n": typeof types.StartProgressDocument,
     "\n  mutation SessionOffer($id: ID!, $sdp: String!) {\n    sessionOffer(id: $id, sdp: $sdp)\n  }\n": typeof types.SessionOfferDocument,
@@ -68,6 +74,12 @@ const documents: Documents = {
     "\n  query Cheats($id: Int!) {\n    game(id: $id) {\n      id\n      cheats {\n        id\n        description\n        code\n        enabled\n      }\n    }\n  }\n": types.CheatsDocument,
     "\n  mutation AddCheat($gameId: Int!, $code: String!, $description: String!) {\n    addCheat(gameId: $gameId, code: $code, description: $description) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": types.AddCheatDocument,
     "\n  mutation SetCheat($gameId: Int!, $cheatId: Int!, $enabled: Boolean!) {\n    setCheatEnabled(gameId: $gameId, cheatId: $cheatId, enabled: $enabled) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": types.SetCheatDocument,
+    "\n  query ControllerMappings {\n    controllerMappings {\n      controller\n      name\n      source\n      bindings {\n        input\n        button\n      }\n    }\n  }\n": types.ControllerMappingsDocument,
+    "\n  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n": types.SaveControllerMappingDocument,
+    "\n  query ControllerDefaults {\n    controllerDefaults {\n      mappings {\n        controller\n        name\n        source\n        bindings {\n          input\n          button\n        }\n      }\n      environment\n    }\n  }\n": types.ControllerDefaultsDocument,
+    "\n  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n": types.SaveControllerDefaultDocument,
+    "\n  mutation ResetControllerDefault($controller: String!) {\n    resetControllerDefault(controller: $controller)\n  }\n": types.ResetControllerDefaultDocument,
+    "\n  mutation ResetControllerMapping($controller: String!) {\n    resetControllerMapping(controller: $controller)\n  }\n": types.ResetControllerMappingDocument,
     "\n  mutation StartSession($gameId: Int!, $startId: String) {\n    startSession(gameId: $gameId, startId: $startId) {\n      ...SessionFields\n    }\n  }\n": types.StartSessionDocument,
     "\n  query StartProgress($startId: String!) {\n    startProgress(startId: $startId) {\n      phase\n      read\n      total\n      elapsedMs\n      phaseMs\n      error\n    }\n  }\n": types.StartProgressDocument,
     "\n  mutation SessionOffer($id: ID!, $sdp: String!) {\n    sessionOffer(id: $id, sdp: $sdp)\n  }\n": types.SessionOfferDocument,
@@ -159,6 +171,30 @@ export function graphql(source: "\n  mutation AddCheat($gameId: Int!, $code: Str
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation SetCheat($gameId: Int!, $cheatId: Int!, $enabled: Boolean!) {\n    setCheatEnabled(gameId: $gameId, cheatId: $cheatId, enabled: $enabled) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n"): typeof import('./graphql').SetCheatDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query ControllerMappings {\n    controllerMappings {\n      controller\n      name\n      source\n      bindings {\n        input\n        button\n      }\n    }\n  }\n"): typeof import('./graphql').ControllerMappingsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SaveControllerMapping($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerMapping(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n"): typeof import('./graphql').SaveControllerMappingDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query ControllerDefaults {\n    controllerDefaults {\n      mappings {\n        controller\n        name\n        source\n        bindings {\n          input\n          button\n        }\n      }\n      environment\n    }\n  }\n"): typeof import('./graphql').ControllerDefaultsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SaveControllerDefault($controller: String!, $name: String!, $bindings: [BindingInput!]!) {\n    saveControllerDefault(controller: $controller, name: $name, bindings: $bindings) {\n      controller\n    }\n  }\n"): typeof import('./graphql').SaveControllerDefaultDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation ResetControllerDefault($controller: String!) {\n    resetControllerDefault(controller: $controller)\n  }\n"): typeof import('./graphql').ResetControllerDefaultDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation ResetControllerMapping($controller: String!) {\n    resetControllerMapping(controller: $controller)\n  }\n"): typeof import('./graphql').ResetControllerMappingDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

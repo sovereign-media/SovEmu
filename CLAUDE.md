@@ -68,6 +68,12 @@ instead (as Sovereign's server takes its SPA).
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),
   each tested against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
+- **Controllers are described once, in [docs/CONTROLLERS.md](docs/CONTROLLERS.md)**: their IDs
+  (known models such as `xbox` and `dualsense`, else `pad:<vendor>:<product>`), the positional
+  input names, labels, defaults, hotkeys and players. The web client
+  (`SovEmu.Web/src/lib/controllers.ts`), Android and iOS each implement it, and the server
+  (`controllers.rs`) stores each user's mappings per controller ID and checks them against it.
+  Change the document and all three clients together.
 - **Every setting is an environment variable; nothing needs click-ops.** A new setting gets a
   `SOVEMU_*` env var on `Config` (and a row in the README's table and a line in
   `.env.example`). Secrets join `SECRETS` in `main.rs` (so `<VAR>_FILE` works and the startup

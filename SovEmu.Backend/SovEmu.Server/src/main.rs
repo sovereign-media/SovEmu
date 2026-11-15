@@ -9,6 +9,7 @@ mod api;
 mod auth;
 mod cache;
 mod cheats;
+mod controllers;
 mod db;
 mod error;
 mod gpu;
@@ -261,6 +262,11 @@ pub struct Config {
     #[arg(skip)]
     pub systems: std::collections::BTreeMap<String, structured::SystemSpec>,
 
+    /// Default controller mappings declared as `SOVEMU_CONTROLLERS__<n>__ID` / `__BINDINGS` /
+    /// `__NAME`, which win over the admin page's.
+    #[arg(skip)]
+    pub controllers: Vec<controllers::ControllerSpec>,
+
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
@@ -378,6 +384,18 @@ impl Config {
                         .join(",")
                 },
                 self.users_prune
+            ),
+            format!(
+                "controller_defaults={}",
+                if self.controllers.is_empty() {
+                    "(none declared)".into()
+                } else {
+                    self.controllers
+                        .iter()
+                        .map(|c| c.controller.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                }
             ),
             format!(
                 "worker_start_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
@@ -742,6 +760,7 @@ async fn run() -> Result<()> {
             .with_context(|| format!("reading {path}"))
     })?;
     config.systems = structured::systems(&vars)?;
+    config.controllers = structured::controllers(&vars)?;
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!("configuration:\n{}", state.config.summary());

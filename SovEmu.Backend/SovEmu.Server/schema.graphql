@@ -1,4 +1,26 @@
 """
+One input driving one button.
+"""
+type Binding {
+	"""
+	A controller input (`south`, `l1`, `up` …) or a keyboard's `KeyboardEvent.code`.
+	"""
+	input: String!
+	button: PadButton!
+}
+
+"""
+One input driving one button.
+"""
+input BindingInput {
+	"""
+	A controller input (`south`, `l1`, `up` …) or a keyboard's `KeyboardEvent.code`.
+	"""
+	input: String!
+	button: PadButton!
+}
+
+"""
 A cheat code for a game, this user's.
 """
 type Cheat {
@@ -13,6 +35,36 @@ type ClientConfig {
 	`RTCIceServer` objects (STUN/TURN) for WebRTC, from `SOVEMU_ICE_SERVERS`.
 	"""
 	iceServers: JSON!
+}
+
+"""
+The default controller mappings (admins).
+"""
+type ControllerDefaults {
+	"""
+	From the environment (locked) and from the admin page.
+	"""
+	mappings: [ControllerMapping!]!
+	"""
+	The admin page's defaults as `SOVEMU_CONTROLLERS__<n>__…` lines.
+	"""
+	environment: [String!]!
+}
+
+"""
+A mapping for one controller model.
+"""
+type ControllerMapping {
+	"""
+	`keyboard`, a known model (`xbox`, `dualsense` …) or `pad:<vendor>:<product>`.
+	"""
+	controller: String!
+	"""
+	What the controller called itself when the mapping was saved, for lists.
+	"""
+	name: String!
+	bindings: [Binding!]!
+	source: MappingSource!
 }
 
 """
@@ -242,6 +294,24 @@ type LibraryStatus {
 }
 
 """
+Where a mapping comes from.
+"""
+enum MappingSource {
+	"""
+	The user's own.
+	"""
+	USER
+	"""
+	An admin's default, from the admin page.
+	"""
+	ADMIN
+	"""
+	A default from `SOVEMU_CONTROLLERS__<n>__…`, which an admin cannot change (locked).
+	"""
+	ENVIRONMENT
+}
+
+"""
 Artwork and video kinds a game can have.
 """
 enum MediaKind {
@@ -381,12 +451,53 @@ type Mutation {
 	"""
 	setCheatEnabled(gameId: Int!, cheatId: Int!, enabled: Boolean!): [Cheat!]!
 	deleteCheat(gameId: Int!, cheatId: Int!): Boolean!
+	"""
+	Saves this user's mapping for a controller model, replacing its defaults everywhere
+	they play.
+	"""
+	saveControllerMapping(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
+	"""
+	Admins: sets the default mapping for a controller model, for every user without their
+	own. A model whose default is in the environment cannot be changed here (CONFLICT).
+	"""
+	saveControllerDefault(controller: String!, name: String! = "", bindings: [BindingInput!]!): ControllerMapping!
+	"""
+	Admins: forgets the admin's default for a controller model. Returns whether it had one.
+	"""
+	resetControllerDefault(controller: String!): Boolean!
+	"""
+	Puts a controller model back on the defaults (an admin's, else the built-in ones).
+	Returns whether it had a mapping of the user's own.
+	"""
+	resetControllerMapping(controller: String!): Boolean!
 }
 
 input NewUserInput {
 	username: String!
 	password: String!
 	isAdmin: Boolean! = false
+}
+
+"""
+A RetroPad button (libretro's RETRO_DEVICE_ID_JOYPAD_*).
+"""
+enum PadButton {
+	B
+	Y
+	SELECT
+	START
+	UP
+	DOWN
+	LEFT
+	RIGHT
+	A
+	X
+	L
+	R
+	L2
+	R2
+	L3
+	R3
 }
 
 type Query {
@@ -428,6 +539,17 @@ type Query {
 	Admins: a system's emulator settings.
 	"""
 	emulatorSettings(system: ID!): EmulatorSettings!
+	"""
+	Admins: the default controller mappings every user starts from, and the admin's as
+	environment lines.
+	"""
+	controllerDefaults: ControllerDefaults!
+	"""
+	The controller mappings in force for this user, one per controller model
+	(docs/CONTROLLERS.md): their own, else a default. A model missing here uses the
+	clients' built-in defaults.
+	"""
+	controllerMappings: [ControllerMapping!]!
 }
 
 """

@@ -762,3 +762,115 @@ async fn admins_change_emulator_settings() {
     h.cookie = None;
     assert_eq!(h.err(get, json!({"s": "nes"})).await.0, "UNAUTHENTICATED");
 }
+
+#[tokio::test]
+async fn controller_mappings_are_kept_per_user_and_model() {
+    const LIST: &str = "{ controllerMappings { controller name bindings { input button } } }";
+    const SAVE: &str = "mutation($c: String!, $n: String!, $b: [BindingInput!]!) {
+        saveControllerMapping(controller: $c, name: $n, bindings: $b) { controller name } }";
+    const RESET: &str = "mutation($c: String!) { resetControllerMapping(controller: $c) }";
+    let mut h = Harness::new("controllers", false).await;
+    assert_eq!(h.err(LIST, json!({})).await.0, "UNAUTHENTICATED");
+    h.sign_up_admin().await;
+    assert_eq!(h.ok(LIST, json!({})).await["controllerMappings"], json!([]));
+
+    let swapped = json!([{"input": "south", "button": "A"}, {"input": "east", "button": "B"}]);
+    let saved =
+        h.ok(SAVE, json!({"c": "xbox", "n": " Xbox Wireless Controller ", "b": swapped})).await;
+    assert_eq!(saved["saveControllerMapping"]["name"], "Xbox Wireless Controller");
+    // Saving again replaces the mapping rather than adding to it.
+    let keys = json!([{"input": "KeyJ", "button": "B"}]);
+    h.ok(SAVE, json!({"c": "keyboard", "n": "", "b": keys})).await;
+    h.ok(SAVE, json!({"c": "keyboard", "n": "", "b": [{"input": "KeyK", "button": "B"}]})).await;
+    assert_eq!(
+        h.ok(LIST, json!({})).await["controllerMappings"],
+        json!([
+            {"controller": "keyboard", "name": "", "bindings": [{"input": "KeyK", "button": "B"}]},
+            {"controller": "xbox", "name": "Xbox Wireless Controller", "bindings": swapped},
+        ])
+    );
+
+    let bad = json!({"c": "xbox", "n": "", "b": [{"input": "KeyZ", "button": "B"}]});
+    let (code, message) = h.err(SAVE, bad).await;
+    assert_eq!(code, "BAD_REQUEST", "{message}");
+    let tab = json!({"c": "keyboard", "n": "", "b": [{"input": "Tab", "button": "B"}]});
+    assert_eq!(h.err(SAVE, tab).await.0, "BAD_REQUEST", "the fast-forward key");
+
+    assert_eq!(h.ok(RESET, json!({"c": "xbox"})).await["resetControllerMapping"], true);
+    assert_eq!(h.ok(RESET, json!({"c": "xbox"})).await["resetControllerMapping"], false);
+    assert_eq!(h.ok(LIST, json!({})).await["controllerMappings"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn controller_defaults_come_from_the_environment_then_the_admin() {
+    const LIST: &str = "{ controllerMappings { controller source bindings { input button } } }";
+    const DEFAULTS: &str = "{ controllerDefaults { mappings { controller source } environment } }";
+    const SET_DEFAULT: &str = "mutation($c: String!, $n: String!, $b: [BindingInput!]!) {
+        saveControllerDefault(controller: $c, name: $n, bindings: $b) { source } }";
+    const RESET_DEFAULT: &str = "mutation($c: String!) { resetControllerDefault(controller: $c) }";
+    const SAVE: &str = "mutation($c: String!, $b: [BindingInput!]!) {
+        saveControllerMapping(controller: $c, bindings: $b) { source } }";
+    const RESET: &str = "mutation($c: String!) { resetControllerMapping(controller: $c) }";
+    let mut h = Harness::new_with("controller-defaults", false, Vec::new()).await;
+    h.sign_up_admin().await;
+    let mut config = (*h.state.config).clone();
+    config.controllers = crate::structured::controllers(&[
+        ("SOVEMU_CONTROLLERS__0__ID".to_owned(), "dualsense".to_owned()),
+        ("SOVEMU_CONTROLLERS__0__BINDINGS".to_owned(), "south:A,east:B".to_owned()),
+    ])
+    .unwrap();
+    h.state.config = std::sync::Arc::new(config);
+
+    // The admin sets a default; the environment's cannot be changed.
+    let swapped = json!([{"input": "south", "button": "A"}]);
+    let set = h.ok(SET_DEFAULT, json!({"c": "xbox", "n": "Xbox", "b": swapped})).await;
+    assert_eq!(set["saveControllerDefault"]["source"], "ADMIN");
+    let locked = json!({"c": "dualsense", "n": "", "b": swapped});
+    assert_eq!(h.err(SET_DEFAULT, locked).await.0, "CONFLICT");
+    let defaults = h.ok(DEFAULTS, json!({})).await["controllerDefaults"].clone();
+    assert_eq!(
+        defaults["mappings"],
+        json!([
+            {"controller": "dualsense", "source": "ENVIRONMENT"},
+            {"controller": "xbox", "source": "ADMIN"},
+        ])
+    );
+    assert_eq!(
+        defaults["environment"],
+        json!([
+            "SOVEMU_CONTROLLERS__1__ID=xbox",
+            "SOVEMU_CONTROLLERS__1__NAME=Xbox",
+            "SOVEMU_CONTROLLERS__1__BINDINGS=south:A",
+        ]),
+        "numbered after the environment's own"
+    );
+
+    // A player gets the defaults until they save their own, and gets them back on reset.
+    let add = "mutation { addUser(input: {username: \"kid\", password: \"password123\"}) { id } }";
+    h.ok(add, json!({})).await;
+    h.ok("mutation { logout }", json!({})).await;
+    h.login("kid", "password123").await.unwrap();
+    assert_eq!(h.err(DEFAULTS, json!({})).await.0, "FORBIDDEN");
+    assert_eq!(h.err(SET_DEFAULT, json!({"c": "xbox", "n": "", "b": []})).await.0, "FORBIDDEN");
+    let sources = |list: &Value| {
+        list["controllerMappings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                format!("{}={}", m["controller"].as_str().unwrap(), m["source"].as_str().unwrap())
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sources(&h.ok(LIST, json!({})).await), ["dualsense=ENVIRONMENT", "xbox=ADMIN"]);
+    h.ok(SAVE, json!({"c": "xbox", "b": [{"input": "east", "button": "A"}]})).await;
+    assert_eq!(sources(&h.ok(LIST, json!({})).await), ["dualsense=ENVIRONMENT", "xbox=USER"]);
+    h.ok(RESET, json!({"c": "xbox"})).await;
+    assert_eq!(sources(&h.ok(LIST, json!({})).await), ["dualsense=ENVIRONMENT", "xbox=ADMIN"]);
+
+    // The admin forgets their default: the model is back on the built-in one (no mapping).
+    h.ok("mutation { logout }", json!({})).await;
+    h.login("admin", "password123").await.unwrap();
+    assert_eq!(h.ok(RESET_DEFAULT, json!({"c": "xbox"})).await["resetControllerDefault"], true);
+    assert_eq!(sources(&h.ok(LIST, json!({})).await), ["dualsense=ENVIRONMENT"]);
+}
