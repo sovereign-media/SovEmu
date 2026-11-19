@@ -1,17 +1,16 @@
-//! Operational routes and safeguards: health, Prometheus metrics, client configuration (ICE
-//! servers), sign-in throttling and security headers.
+//! Operational routes and safeguards: health, client configuration (ICE servers), sign-in
+//! throttling and security headers. Metrics are OpenTelemetry's (`telemetry.rs`).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
 use crate::AppState;
-use crate::error::{ApiError, ApiResult};
 
 /// Default failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
 pub const MAX_FAILURES: u32 = 5;
@@ -85,44 +84,6 @@ pub async fn health(State(state): State<AppState>) -> Response {
     }
 }
 
-/// Prometheus metrics. Off unless `SOVEMU_METRICS_TOKEN` is set; then a bearer token.
-pub async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    let Some(token) = &state.config.metrics_token else { return Err(ApiError::not_found("route")) };
-    let presented = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !constant_time_eq(presented.as_bytes(), token.as_bytes()) {
-        return Err(ApiError::unauthorized());
-    }
-    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db).await?;
-    let games: Vec<(String, i64)> =
-        sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system ORDER BY system")
-            .fetch_all(&state.db)
-            .await?;
-    let (first, last) = state.config.udp_ports;
-    let mut out = String::new();
-    out.push_str("# HELP sovemu_sessions Game sessions running.\n# TYPE sovemu_sessions gauge\n");
-    out.push_str(&format!("sovemu_sessions {}\n", state.workers.count()));
-    out.push_str("# HELP sovemu_session_capacity Concurrent sessions the UDP port range allows.\n");
-    out.push_str("# TYPE sovemu_session_capacity gauge\n");
-    out.push_str(&format!("sovemu_session_capacity {}\n", u32::from(last - first) + 1));
-    out.push_str("# HELP sovemu_users Accounts.\n# TYPE sovemu_users gauge\n");
-    out.push_str(&format!("sovemu_users {users}\n"));
-    out.push_str(
-        "# HELP sovemu_games Games in the library, by system.\n# TYPE sovemu_games gauge\n",
-    );
-    for (system, count) in games {
-        out.push_str(&format!("sovemu_games{{system=\"{system}\"}} {count}\n"));
-    }
-    Ok(([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], out).into_response())
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
 /// Headers every response carries.
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
@@ -172,12 +133,5 @@ mod tests {
             off.failed("a", now);
         }
         assert!(off.check("a", now).is_ok(), "0 turns it off");
-    }
-
-    #[test]
-    fn compares_tokens_in_constant_time() {
-        assert!(constant_time_eq(b"secret", b"secret"));
-        assert!(!constant_time_eq(b"secret", b"secreT"));
-        assert!(!constant_time_eq(b"secret", b"secrets"));
     }
 }

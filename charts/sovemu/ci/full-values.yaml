@@ -6,8 +6,9 @@ settings:
   SCAN_INTERVAL_MINUTES: 30
   METADATA_AUTO: true
   SOVEMU_VIDEO_KBPS: 3000
+  LOG_FORMAT: json
+  OTEL_ENDPOINT: http://otel-collector.monitoring:4318
 secrets:
-  METRICS_TOKEN: metrics-token
   SCREENSCRAPER_DEVPASSWORD: dev-password
 existingSecret: sovemu-extra
 admin:

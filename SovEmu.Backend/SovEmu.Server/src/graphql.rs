@@ -1,6 +1,6 @@
 //! The API: GraphQL at `POST /graphql` (GraphiQL at `GET /graphql`), the only API the clients
 //! use. Binary files (artwork, videos, save screenshots) are plain HTTP under `/media/`, whose
-//! URLs the API hands out; `/health` and `/metrics` stay plain HTTP for probes and Prometheus.
+//! URLs the API hands out; `/health` stays plain HTTP for probes.
 //!
 //! Resolvers call the same functions the rest of the server does (`crate::api`, `crate::auth`,
 //! …). Sign-in is the `sovemu_session` cookie, as before: `login` and `setup` set it, `logout`
@@ -52,7 +52,12 @@ pub async fn handler(
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     let auth = Auth { token: auth::cookie_token(&headers), user: OnceCell::new() };
-    let request = request.into_inner().data(state.clone()).data(auth);
+    let request = request.into_inner();
+    // The request span (telemetry::trace_request) names the operation, for logs and traces.
+    if let Some(name) = &request.operation_name {
+        tracing::Span::current().record("graphql.operation.name", name.as_str());
+    }
+    let request = request.data(state.clone()).data(auth);
     state.schema.execute(request).await.into()
 }
 

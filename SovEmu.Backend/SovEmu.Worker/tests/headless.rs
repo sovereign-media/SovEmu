@@ -122,3 +122,26 @@ fn a_bad_core_path_fails_cleanly() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("loading core"));
     std::fs::remove_dir_all(&out).ok();
 }
+
+#[test]
+fn json_logs_carry_the_session_id() {
+    let out = std::env::temp_dir().join(format!("sovemu-headless-json-{}", std::process::id()));
+    let output = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
+        .args(["headless", "--core", "/nonexistent/core.so", "--frames", "1"])
+        .args(["--log-format", "json", "--session-id", "abc123"])
+        .arg("--out")
+        .arg(&out)
+        .arg("--system-dir")
+        .arg(out.join("system"))
+        .output()
+        .expect("run sovemu-worker");
+    std::fs::remove_dir_all(&out).ok();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let line = stderr.lines().last().expect("a log line");
+    let event: serde_json::Value = serde_json::from_str(line).expect(line);
+    assert_eq!(event["level"], "ERROR");
+    assert_eq!(event["message"], "worker failed");
+    assert!(event["error"].as_str().unwrap().contains("loading core"), "{line}");
+    assert_eq!(event["span"]["session.id"], "abc123", "{line}");
+}

@@ -273,7 +273,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
-| `SOVEMU_METRICS_TOKEN` | unset | Enables `GET /metrics` (Prometheus) for this bearer token |
+| `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
+| `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
 | `SOVEMU_WEB_DIR`, `SOVEMU_WORKER` | set in the image | The built web client; the worker binary |
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |

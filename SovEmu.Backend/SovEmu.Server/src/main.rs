@@ -29,6 +29,7 @@ mod settings;
 mod starts;
 mod structured;
 mod systems;
+mod telemetry;
 mod workers;
 
 use std::net::{IpAddr, SocketAddr};
@@ -46,7 +47,6 @@ use axum::routing::get;
 use clap::Parser;
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
-use tracing_subscriber::EnvFilter;
 
 use crate::workers::{WorkerConfig, Workers};
 
@@ -163,9 +163,17 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ICE_SERVERS", default_value = "[]", value_parser = parse_ice_servers)]
     pub ice_servers: serde_json::Value,
 
-    /// Bearer token that enables `GET /metrics` (Prometheus). Unset: metrics are off.
-    #[arg(long, env = "SOVEMU_METRICS_TOKEN")]
-    pub metrics_token: Option<String>,
+    /// How log lines are written to stderr: `text` for a person, `json` (one object per line,
+    /// with the request's or session's fields) for a log collector. Workers log the same way.
+    #[arg(long, env = "SOVEMU_LOG_FORMAT", value_enum, default_value_t = telemetry::LogFormat::Text)]
+    pub log_format: telemetry::LogFormat,
+
+    /// An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces
+    /// go to `/v1/traces` and metrics to `/v1/metrics`. Unset: nothing is exported. The
+    /// standard `OTEL_*` variables (service name, resource attributes, headers, export
+    /// interval) apply on top.
+    #[arg(long, env = "SOVEMU_OTEL_ENDPOINT")]
+    pub otel_endpoint: Option<String>,
 
     /// The admin account, created at startup if missing; its password is kept in step with
     /// this setting. With it set there is no first-run setup page.
@@ -316,7 +324,6 @@ pub enum LibraryMode {
 /// and Kubernetes secrets), and is redacted in the startup log.
 const SECRETS: &[&str] = &[
     "SOVEMU_ADMIN_PASSWORD",
-    "SOVEMU_METRICS_TOKEN",
     "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
     "SOVEMU_SCREENSCRAPER_PASSWORD",
     "SOVEMU_THEGAMESDB_KEY",
@@ -335,7 +342,6 @@ impl Config {
     fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
-            "SOVEMU_METRICS_TOKEN" => &mut self.metrics_token,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
             "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
@@ -417,7 +423,11 @@ impl Config {
                 self.launchbox_images_url,
                 self.launchbox_refresh_hours
             ),
-            format!("metrics_token={}", secret(&self.metrics_token)),
+            format!(
+                "log_format={} otel_endpoint={}",
+                self.log_format.as_arg(),
+                opt(&self.otel_endpoint)
+            ),
             format!(
                 "session_days={} login_max_failures={} login_lockout_minutes={}",
                 self.session_days, self.login_max_failures, self.login_lockout_minutes
@@ -538,13 +548,14 @@ impl std::fmt::Debug for AppState {
 
 pub fn router(state: AppState) -> Router {
     // The API is GraphQL. Files (artwork, videos, save screenshots) are plain HTTP, at URLs
-    // the API hands out; so are the probe and Prometheus routes.
+    // the API hands out; so is the health probe. Every route runs in a traced `request` span
+    // (the web client's static files, the fallback, do not).
     let mut app = Router::new()
         .route("/graphql", get(graphql::graphiql).post(graphql::handler))
         .route("/media/games/{id}/{kind}", get(api::game_media))
         .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
         .route("/health", get(ops::health))
-        .route("/metrics", get(ops::metrics))
+        .route_layer(middleware::from_fn(telemetry::trace_request))
         .with_state(state.clone());
     if let Some(dir) = &state.config.web_dir {
         app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
@@ -609,6 +620,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         fast_forward: config.fast_forward,
         keyframe_interval: config.keyframe_interval,
         gpu: gpu.worker_arg.clone(),
+        log_format: config.log_format,
     });
     let cache_dir = config.data_dir.join("cache");
     let cache_bytes = match config.library_mode {
@@ -808,16 +820,16 @@ async fn shutdown_signal() {
 
 fn main() -> Result<()> {
     unset_empty_settings();
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+    let config = Config::parse();
+    let telemetry = telemetry::init(config.log_format, config.otel_endpoint.as_deref())?;
+    let result =
+        tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(config));
+    // Outside the runtime: the exporters' HTTP client blocks while it flushes.
+    telemetry.shutdown();
+    result
 }
 
-async fn run() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-    let mut config = Config::parse();
+async fn run(mut config: Config) -> Result<()> {
     config.resolve_secrets(|var| std::env::var(var).ok())?;
     let vars: Vec<(String, String)> = std::env::vars().collect();
     config.users = structured::users(&vars, |path| {
@@ -830,6 +842,7 @@ async fn run() -> Result<()> {
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!("configuration:\n{}", state.config.summary());
+    let _gauges = telemetry::observe(&state);
     spawn_initial_scan(&state);
     let workers = state.workers.clone();
     if state.config.web_dir.is_none() {
@@ -880,10 +893,27 @@ mod tests {
         assert!(summary.contains("admin_password=(set)"));
         assert!(!summary.contains("s3cret"));
         let missing = Config::parse_from(["sovemu-server"]).resolve_secrets(|v| {
-            (v == "SOVEMU_METRICS_TOKEN_FILE").then(|| "/nonexistent/token".to_owned())
+            (v == "SOVEMU_THEGAMESDB_KEY_FILE").then(|| "/nonexistent/key".to_owned())
         });
         assert!(missing.is_err(), "a named secret file that cannot be read is an error");
         std::fs::remove_file(file).ok();
+    }
+
+    #[test]
+    fn logs_and_telemetry_settings() {
+        let config = Config::parse_from(["sovemu-server"]);
+        assert_eq!(config.log_format, telemetry::LogFormat::Text);
+        assert_eq!(config.otel_endpoint, None, "nothing is exported unless asked");
+        let config = Config::parse_from([
+            "sovemu-server",
+            "--log-format",
+            "json",
+            "--otel-endpoint",
+            "http://collector:4318",
+        ]);
+        assert_eq!(config.log_format, telemetry::LogFormat::Json);
+        assert!(config.summary().contains("log_format=json otel_endpoint=http://collector:4318"));
+        assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
     }
 
     #[test]
