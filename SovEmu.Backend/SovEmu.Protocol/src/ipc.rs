@@ -20,6 +20,8 @@ pub enum Request {
     LoadState { id: u64, slot: u32 },
     /// Press the console's reset button.
     Reset { id: u64 },
+    /// Change a multi-disc game's disc to `disc` (0-based): open the tray, swap, close it.
+    SetDisc { id: u64, disc: u32 },
     /// Replace the active cheats with these codes (format depends on the core: Game Genie,
     /// Pro Action Replay, …). Empty clears them.
     SetCheats { id: u64, codes: Vec<String> },
@@ -34,6 +36,7 @@ impl Request {
             | Self::SaveState { id, .. }
             | Self::LoadState { id, .. }
             | Self::Reset { id }
+            | Self::SetDisc { id, .. }
             | Self::SetCheats { id, .. }
             | Self::Shutdown { id } => *id,
         }
@@ -108,6 +111,9 @@ pub enum Reply {
         width: u32,
         height: u32,
         fps: f64,
+        /// A multi-disc game's disc count (absent for one disc, or a core without disk control).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        discs: Option<u32>,
     },
     /// The answer to [`Request::Offer`].
     Answer {
@@ -146,6 +152,9 @@ mod tests {
         let save: Request =
             serde_json::from_str(r#"{"type":"save_state","id":2,"slot":1}"#).unwrap();
         assert_eq!(save, Request::SaveState { id: 2, slot: 1 });
+        let disc: Request = serde_json::from_str(r#"{"type":"set_disc","id":3,"disc":1}"#).unwrap();
+        assert_eq!(disc, Request::SetDisc { id: 3, disc: 1 });
+        assert_eq!(disc.id(), 3);
         assert_eq!(
             serde_json::to_string(&Reply::ClientConnected).unwrap(),
             r#"{"type":"client_connected"}"#

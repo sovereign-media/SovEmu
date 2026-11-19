@@ -60,6 +60,8 @@ graphql(`
     height
     fps
     connected
+    discs
+    disc
   }
 `);
 
@@ -429,6 +431,12 @@ export const StopSessionMutation = graphql(`
 export const ResetSessionMutation = graphql(`
   mutation ResetSession($id: ID!) {
     resetSession(id: $id)
+  }
+`);
+
+export const SetDiscMutation = graphql(`
+  mutation SetDisc($sessionId: ID!, $disc: Int!) {
+    setDisc(sessionId: $sessionId, disc: $disc)
   }
 `);
 

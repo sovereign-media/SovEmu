@@ -31,6 +31,13 @@ pub struct CoreOptions {
     pub gpu: Option<GpuChoice>,
 }
 
+/// A multi-disc game's discs: how many, and which (0-based) is in the tray.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Discs {
+    pub count: u32,
+    pub current: u32,
+}
+
 /// What a core says about itself, before any content is loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemInfo {
@@ -539,6 +546,47 @@ impl Core {
                 *port = *a;
             }
         });
+    }
+
+    /// A multi-disc game's discs (from an `.m3u`), if the core declared disk control and the
+    /// game has more than one.
+    pub fn discs(&mut self) -> Option<Discs> {
+        self.content.as_ref()?;
+        // Copied out first: the core is never called with the callback lock held.
+        let disk = callbacks::with(|s| s.disk).flatten()?;
+        let (count_fn, index_fn) = (disk.get_num_images?, disk.get_image_index?);
+        self.make_current();
+        // SAFETY: a game is loaded and these are the core's own disk-control functions.
+        let (count, current) = unsafe { (count_fn(), index_fn()) };
+        (count > 1).then_some(Discs { count, current })
+    }
+
+    /// Changes to disc `index` (0-based): opens the tray, swaps the disc and closes it, as a
+    /// player does when a game asks for the next disc.
+    pub fn set_disc(&mut self, index: u32) -> Result<(), Error> {
+        if self.content.is_none() {
+            return Err(Error::NoGameLoaded);
+        }
+        let disk = callbacks::with(|s| s.disk)
+            .flatten()
+            .ok_or_else(|| Error::Disc("the game has one disc".into()))?;
+        let (Some(eject), Some(set_index), Some(count_fn)) =
+            (disk.set_eject_state, disk.set_image_index, disk.get_num_images)
+        else {
+            return Err(Error::Disc("the core cannot change discs".into()));
+        };
+        self.make_current();
+        // SAFETY: a game is loaded and these are the core's own disk-control functions.
+        let count = unsafe { count_fn() };
+        if index >= count {
+            return Err(Error::Disc(format!(
+                "there is no disc {} (the game has {count})",
+                index + 1
+            )));
+        }
+        // SAFETY: as above; the order (eject, swap, close) is the one libretro requires.
+        let ok = unsafe { eject(true) && set_index(index) && eject(false) };
+        if ok { Ok(()) } else { Err(Error::Disc("the core refused the change".into())) }
     }
 
     /// Resets the running game, as the console's reset button would.

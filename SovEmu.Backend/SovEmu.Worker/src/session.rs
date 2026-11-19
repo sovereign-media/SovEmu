@@ -41,7 +41,7 @@ pub fn run(args: SessionArgs) -> Result<()> {
     let report = move |phase, read, total| {
         report_out.send(&Reply::Progress { phase, read, total });
     };
-    let session = Session::open(
+    let mut session = Session::open(
         &SessionConfig {
             core: args.core.clone(),
             rom: args.rom.clone(),
@@ -61,6 +61,7 @@ pub fn run(args: SessionArgs) -> Result<()> {
         &report,
     )?;
     let (core, av) = session.describe();
+    let discs = session.discs();
     let (options, categories) = session.options();
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
@@ -75,6 +76,7 @@ pub fn run(args: SessionArgs) -> Result<()> {
         width: av.base_width,
         height: av.base_height,
         fps: av.fps,
+        discs,
     });
 
     let (commands_tx, commands_rx) = mpsc::channel();

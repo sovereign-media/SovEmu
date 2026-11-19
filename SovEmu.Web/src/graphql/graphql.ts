@@ -121,7 +121,7 @@ export type SystemFieldsFragment = { id: string, name: string, short: string, ma
 
 export type SaveFieldsFragment = { slot: number, savedAt: number, screenshotUrl: string | null };
 
-export type SessionFieldsFragment = { id: string, gameId: number, system: string, title: string, core: string, width: number, height: number, fps: number, connected: boolean };
+export type SessionFieldsFragment = { id: string, gameId: number, system: string, title: string, core: string, width: number, height: number, fps: number, connected: boolean, discs: number, disc: number };
 
 export type SettingsFieldsFragment = { system: string, core: string, needsGame: boolean, environment: Array<string>, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> };
 
@@ -287,7 +287,7 @@ export type StartSessionMutationVariables = Exact<{
 }>;
 
 
-export type StartSessionMutation = { startSession: { id: string, gameId: number, system: string, title: string, core: string, width: number, height: number, fps: number, connected: boolean } };
+export type StartSessionMutation = { startSession: { id: string, gameId: number, system: string, title: string, core: string, width: number, height: number, fps: number, connected: boolean, discs: number, disc: number } };
 
 export type StartProgressQueryVariables = Exact<{
   startId: string;
@@ -317,6 +317,14 @@ export type ResetSessionMutationVariables = Exact<{
 
 
 export type ResetSessionMutation = { resetSession: boolean };
+
+export type SetDiscMutationVariables = Exact<{
+  sessionId: string | number;
+  disc: number;
+}>;
+
+
+export type SetDiscMutation = { setDisc: boolean };
 
 export type SaveStateMutationVariables = Exact<{
   sessionId: string | number;
@@ -446,6 +454,8 @@ export const SessionFieldsFragmentDoc = new TypedDocumentString(`
   height
   fps
   connected
+  discs
+  disc
 }
     `, {"fragmentName":"SessionFields"}) as unknown as TypedDocumentString<SessionFieldsFragment, unknown>;
 export const SettingsFieldsFragmentDoc = new TypedDocumentString(`
@@ -934,6 +944,8 @@ export const StartSessionDocument = new TypedDocumentString(`
   height
   fps
   connected
+  discs
+  disc
 }`) as unknown as TypedDocumentString<StartSessionMutation, StartSessionMutationVariables>;
 export const StartProgressDocument = new TypedDocumentString(`
     query StartProgress($startId: String!) {
@@ -962,6 +974,11 @@ export const ResetSessionDocument = new TypedDocumentString(`
   resetSession(id: $id)
 }
     `) as unknown as TypedDocumentString<ResetSessionMutation, ResetSessionMutationVariables>;
+export const SetDiscDocument = new TypedDocumentString(`
+    mutation SetDisc($sessionId: ID!, $disc: Int!) {
+  setDisc(sessionId: $sessionId, disc: $disc)
+}
+    `) as unknown as TypedDocumentString<SetDiscMutation, SetDiscMutationVariables>;
 export const SaveStateDocument = new TypedDocumentString(`
     mutation SaveState($sessionId: ID!, $slot: Int!) {
   saveState(sessionId: $sessionId, slot: $slot)

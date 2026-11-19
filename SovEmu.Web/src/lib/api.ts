@@ -41,6 +41,7 @@ import {
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
   SaveStateMutation,
+  SetDiscMutation,
   SavesQuery,
   ScanLibraryMutation,
   SessionOfferMutation,
@@ -121,6 +122,8 @@ export const api = {
   stopSessionOnUnload: (id: string) => onUnload(StopSessionMutation, { id }),
   resetSession: (id: string) => request(ResetSessionMutation, { id }),
   saveState: (sessionId: string, slot: number) => request(SaveStateMutation, { sessionId, slot }),
+  /** Changes a multi-disc game's disc (from 1). */
+  setDisc: (sessionId: string, disc: number) => request(SetDiscMutation, { sessionId, disc }),
   loadState: (sessionId: string, slot: number) => request(LoadStateMutation, { sessionId, slot }),
   cheats: async (gameId: number) => (await request(CheatsDocument, { id: gameId })).game.cheats,
   addCheat: async (gameId: number, code: string, description: string) =>

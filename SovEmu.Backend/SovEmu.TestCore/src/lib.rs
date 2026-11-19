@@ -16,6 +16,9 @@
 //! - **Input:** read once per frame through `RETRO_DEVICE_ID_JOYPAD_MASK`.
 //! - **Save states:** 16 bytes, the frame counter and the sine phase.
 //! - **Content:** optional (`SET_SUPPORT_NO_GAME`). Loaded content's size is logged.
+//! - **Discs:** content that is an `.m3u` playlist is a multi-disc game, one disc per line: the
+//!   core declares disk control (`SET_DISK_CONTROL_EXT_INTERFACE`), and like a real core only
+//!   changes disc while the tray is open.
 //! - **GPU rendering:** with the core option `sovemu_test_render=gl` the core asks for an OpenGL
 //!   context (`SET_HW_RENDER`) when the game loads, refusing to load without one, and each frame
 //!   clears the frontend's framebuffer to [`SOLID_COLOUR`] with its top half [`GL_TOP_COLOUR`]
@@ -590,8 +593,66 @@ pub unsafe extern "C" fn retro_load_game(game: *const ffi::retro_game_info) -> b
         }
         let msg = format!("loaded {} bytes of content\0", game.size);
         log(CStr::from_bytes_with_nul(msg.as_bytes()).unwrap());
+        // SAFETY: a non-null path is a C string, per the libretro API.
+        let path = (!game.path.is_null()).then(|| unsafe { CStr::from_ptr(game.path) });
+        if path.is_some_and(|p| p.to_bytes().ends_with(b".m3u")) {
+            // SAFETY: `data` holds `size` bytes, per the libretro API.
+            let text = unsafe { std::slice::from_raw_parts(game.data.cast::<u8>(), game.size) };
+            let discs = text.split(|&b| b == b'\n').filter(|l| !l.trim_ascii().is_empty()).count();
+            declare_discs(discs as c_uint);
+        }
     }
     true
+}
+
+/// A multi-disc game's tray: how many discs, which is in, and whether the tray is open.
+struct Tray {
+    count: c_uint,
+    index: c_uint,
+    open: bool,
+}
+
+static TRAY: Mutex<Tray> = Mutex::new(Tray { count: 0, index: 0, open: false });
+
+extern "C" fn set_eject_state(open: bool) -> bool {
+    TRAY.lock().unwrap().open = open;
+    true
+}
+
+extern "C" fn get_eject_state() -> bool {
+    TRAY.lock().unwrap().open
+}
+
+extern "C" fn get_image_index() -> c_uint {
+    TRAY.lock().unwrap().index
+}
+
+/// Only with the tray open, and only to a disc that exists, as real cores insist.
+extern "C" fn set_image_index(index: c_uint) -> bool {
+    let mut tray = TRAY.lock().unwrap();
+    if !tray.open || index >= tray.count {
+        return false;
+    }
+    tray.index = index;
+    true
+}
+
+extern "C" fn get_num_images() -> c_uint {
+    TRAY.lock().unwrap().count
+}
+
+/// Declares disk control for an `.m3u` of `discs` lines.
+fn declare_discs(discs: c_uint) {
+    *TRAY.lock().unwrap() = Tray { count: discs, index: 0, open: false };
+    let mut cb = ffi::retro_disk_control_ext_callback {
+        set_eject_state: Some(set_eject_state),
+        get_eject_state: Some(get_eject_state),
+        get_image_index: Some(get_image_index),
+        set_image_index: Some(set_image_index),
+        get_num_images: Some(get_num_images),
+        ..Default::default()
+    };
+    env(ffi::RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (&raw mut cb).cast());
 }
 
 #[unsafe(no_mangle)]

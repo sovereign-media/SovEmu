@@ -85,7 +85,9 @@ held 59.93 fps over 300 frames with no resyncs.
       server, matched by name and alternate names per platform, with community ratings
 - [ ] Live-test the ScreenScraper and TheGamesDB clients once credentials exist (tested against
       mock services built from ES-DE's parsing code)
-- [ ] Group multi-disc games (`(Disc N)`) into one entry
+- [x] Group multi-disc games (`(Disc N)`) into one entry: the scanner folds them (`game_discs`),
+      the worker plays an `.m3u` of the discs and changes disc through libretro's disk control
+      (`setDisc`), and the in-game menus offer Change disc
 
 ## Phase 3: persistence
 

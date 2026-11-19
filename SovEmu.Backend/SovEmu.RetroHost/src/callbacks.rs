@@ -69,6 +69,20 @@ pub(crate) struct HostState {
     pub hw: Option<HwRequest>,
     /// The size of the frame the core rendered into the framebuffer this frame.
     pub hw_frame: Option<(u32, u32)>,
+    /// The core's disk control (`SET_DISK_CONTROL_[EXT_]INTERFACE`): a multi-disc game's
+    /// tray and disc index.
+    pub disk: Option<DiskControl>,
+}
+
+/// A core's disk-control functions: the part of `retro_disk_control_[ext_]callback` SovEmu
+/// uses. Copied out of [`HostState`] before any is called (never call into the core under the
+/// callback lock).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DiskControl {
+    pub set_eject_state: ffi::retro_set_eject_state_t,
+    pub get_image_index: ffi::retro_get_image_index_t,
+    pub set_image_index: ffi::retro_set_image_index_t,
+    pub get_num_images: ffi::retro_get_num_images_t,
 }
 
 /// A core's `SET_HW_RENDER` request, kept to set up and tear down its context.
@@ -309,6 +323,34 @@ impl HostState {
                 }
                 ffi::RETRO_ENVIRONMENT_GET_LANGUAGE => {
                     write(data, ffi::retro_language::RETRO_LANGUAGE_ENGLISH as c_uint)
+                }
+                // Disk control, for multi-disc games: version 1 is the extended interface.
+                ffi::RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION => {
+                    write(data, 1 as c_uint)
+                }
+                ffi::RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE => {
+                    let Some(cb) = read::<ffi::retro_disk_control_callback>(data) else {
+                        return false;
+                    };
+                    self.disk = Some(DiskControl {
+                        set_eject_state: cb.set_eject_state,
+                        get_image_index: cb.get_image_index,
+                        set_image_index: cb.set_image_index,
+                        get_num_images: cb.get_num_images,
+                    });
+                    true
+                }
+                ffi::RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE => {
+                    let Some(cb) = read::<ffi::retro_disk_control_ext_callback>(data) else {
+                        return false;
+                    };
+                    self.disk = Some(DiskControl {
+                        set_eject_state: cb.set_eject_state,
+                        get_image_index: cb.get_image_index,
+                        set_image_index: cb.set_image_index,
+                        get_num_images: cb.get_num_images,
+                    });
+                    true
                 }
                 ffi::RETRO_ENVIRONMENT_SET_HW_RENDER => {
                     self.set_hw_render(data.cast::<ffi::retro_hw_render_callback>())

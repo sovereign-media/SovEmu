@@ -18,7 +18,7 @@ type Documents = {
     "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": typeof types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": typeof types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": typeof types.SaveFieldsFragmentDoc,
-    "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": typeof types.SessionFieldsFragmentDoc,
+    "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": typeof types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": typeof types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": typeof types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": typeof types.ViewerDocument,
@@ -49,6 +49,7 @@ type Documents = {
     "\n  mutation SessionOffer($id: ID!, $sdp: String!) {\n    sessionOffer(id: $id, sdp: $sdp)\n  }\n": typeof types.SessionOfferDocument,
     "\n  mutation StopSession($id: ID!) {\n    stopSession(id: $id)\n  }\n": typeof types.StopSessionDocument,
     "\n  mutation ResetSession($id: ID!) {\n    resetSession(id: $id)\n  }\n": typeof types.ResetSessionDocument,
+    "\n  mutation SetDisc($sessionId: ID!, $disc: Int!) {\n    setDisc(sessionId: $sessionId, disc: $disc)\n  }\n": typeof types.SetDiscDocument,
     "\n  mutation SaveState($sessionId: ID!, $slot: Int!) {\n    saveState(sessionId: $sessionId, slot: $slot)\n  }\n": typeof types.SaveStateDocument,
     "\n  mutation LoadState($sessionId: ID!, $slot: Int!) {\n    loadState(sessionId: $sessionId, slot: $slot)\n  }\n": typeof types.LoadStateDocument,
     "\n  mutation ScanLibrary {\n    scanLibrary {\n      found\n      added\n      removed\n    }\n  }\n": typeof types.ScanLibraryDocument,
@@ -62,7 +63,7 @@ const documents: Documents = {
     "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": types.SaveFieldsFragmentDoc,
-    "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n": types.SessionFieldsFragmentDoc,
+    "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": types.ViewerDocument,
@@ -93,6 +94,7 @@ const documents: Documents = {
     "\n  mutation SessionOffer($id: ID!, $sdp: String!) {\n    sessionOffer(id: $id, sdp: $sdp)\n  }\n": types.SessionOfferDocument,
     "\n  mutation StopSession($id: ID!) {\n    stopSession(id: $id)\n  }\n": types.StopSessionDocument,
     "\n  mutation ResetSession($id: ID!) {\n    resetSession(id: $id)\n  }\n": types.ResetSessionDocument,
+    "\n  mutation SetDisc($sessionId: ID!, $disc: Int!) {\n    setDisc(sessionId: $sessionId, disc: $disc)\n  }\n": types.SetDiscDocument,
     "\n  mutation SaveState($sessionId: ID!, $slot: Int!) {\n    saveState(sessionId: $sessionId, slot: $slot)\n  }\n": types.SaveStateDocument,
     "\n  mutation LoadState($sessionId: ID!, $slot: Int!) {\n    loadState(sessionId: $sessionId, slot: $slot)\n  }\n": types.LoadStateDocument,
     "\n  mutation ScanLibrary {\n    scanLibrary {\n      found\n      added\n      removed\n    }\n  }\n": types.ScanLibraryDocument,
@@ -118,7 +120,7 @@ export function graphql(source: "\n  fragment SaveFields on SaveSlot {\n    slot
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n  }\n"): typeof import('./graphql').SessionFieldsFragmentDoc;
+export function graphql(source: "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n"): typeof import('./graphql').SessionFieldsFragmentDoc;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -239,6 +241,10 @@ export function graphql(source: "\n  mutation StopSession($id: ID!) {\n    stopS
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation ResetSession($id: ID!) {\n    resetSession(id: $id)\n  }\n"): typeof import('./graphql').ResetSessionDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SetDisc($sessionId: ID!, $disc: Int!) {\n    setDisc(sessionId: $sessionId, disc: $disc)\n  }\n"): typeof import('./graphql').SetDiscDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

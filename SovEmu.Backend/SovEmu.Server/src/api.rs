@@ -53,6 +53,8 @@ pub struct Game {
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
+    /// How many discs (1 for most games).
+    pub(crate) discs: i64,
 }
 
 impl Game {
@@ -126,7 +128,8 @@ pub(crate) const GAME_COLUMNS: &str =
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art";
+     m.box_art,
+     MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
 pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResult<Vec<Game>> {
     system_by_id(state, system)?;
@@ -238,18 +241,31 @@ async fn launch(
         ));
     }
     let (save_dir, state_dir) = save_dirs(&state, user.id, &game);
+    // A multi-disc game plays from an .m3u of its discs, which the core reads and swaps
+    // between. Its files are read where they are, as a .cue's tracks are (never cached).
+    let discs: Vec<String> = if game.discs > 1 {
+        sqlx::query_scalar("SELECT path FROM game_discs WHERE game_id = ? ORDER BY disc")
+            .bind(game.id)
+            .fetch_all(&state.db)
+            .await?
+    } else {
+        Vec::new()
+    };
     // A local copy when the library is on a slow share and the game has been played before.
     // Otherwise the original: small games are copied for next time straight away, large ones
     // (disc images) only once this session ends, so the copy never competes with the game.
-    let cached = state.cache.cached("roms", &game.path, &original);
+    let cached =
+        if discs.is_empty() { state.cache.cached("roms", &game.path, &original) } else { None };
     let large = game.size.max(0).unsigned_abs() > state.config.cache_large_game_mb << 20;
     let rom = match &cached {
+        _ if !discs.is_empty() => write_playlist(&state, game.id, &discs)
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?,
         Some(copy) => copy.clone(),
         None if large => original.clone(),
         None => state.cache.local_or_fetch("roms", &game.path, &original),
     };
     let after_exit: Option<Box<dyn FnOnce() + Send + Sync>> =
-        (cached.is_none() && large).then(|| {
+        (discs.is_empty() && cached.is_none() && large).then(|| {
             let (cache, path, original) =
                 (state.cache.clone(), game.path.clone(), original.clone());
             Box::new(move || {
@@ -294,6 +310,43 @@ async fn launch(
     .execute(&state.db)
     .await?;
     Ok(session.info())
+}
+
+/// Writes `<data>/cache/discs/<game>.m3u`, listing a multi-disc game's files (absolute paths,
+/// as every disc core reads them), and returns its path.
+fn write_playlist(
+    state: &AppState,
+    game_id: i64,
+    discs: &[String],
+) -> anyhow::Result<std::path::PathBuf> {
+    let dir = state.config.data_dir.join("cache").join("discs");
+    std::fs::create_dir_all(&dir)?;
+    let mut text = String::new();
+    for disc in discs {
+        text.push_str(&state.config.roms_dir.join(disc).to_string_lossy());
+        text.push('\n');
+    }
+    let path = dir.join(format!("{game_id}.m3u"));
+    let temp = dir.join(format!("{game_id}.m3u.tmp"));
+    std::fs::write(&temp, text)?;
+    std::fs::rename(&temp, &path)?;
+    Ok(path)
+}
+
+/// Changes a multi-disc game's disc (1-based), as a player swaps discs when the game asks.
+pub async fn set_disc(state: &AppState, user: &User, id: &str, disc: u32) -> ApiResult<()> {
+    let session = owned_session(state, user.id, id)?;
+    let count = session.info().discs;
+    if disc == 0 || disc > count {
+        return Err(ApiError::bad_request(format!("disc: 1 to {count}")));
+    }
+    session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::SetDisc {
+        id: rid,
+        disc: disc - 1,
+    })
+    .await?;
+    session.set_current_disc(disc);
+    Ok(())
 }
 
 pub fn current_session(state: &AppState, user: &User) -> Option<SessionInfo> {

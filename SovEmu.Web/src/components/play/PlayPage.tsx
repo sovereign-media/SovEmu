@@ -6,6 +6,7 @@
 // src/lib/; this component sets them up once and renders their state.
 import {
   Activity,
+  Disc3,
   ArrowLeft,
   CircleAlert,
   FolderOpen,
@@ -61,6 +62,7 @@ const ICONS: Record<string, LucideIcon> = {
   button: Gamepad2,
   keyboard: Keyboard,
   players: Users,
+  disc: Disc3,
 };
 
 const SLOTS = [1, 2, 3, 4];
@@ -424,12 +426,36 @@ function Player() {
         else stack.push(menu);
       }
 
+      // A multi-disc game: the discs, the one in the tray marked; picking another swaps it.
+      const discMenu = (): Menu => ({
+        title: "Change disc",
+        items: Array.from({ length: info?.discs ?? 1 }, (_, i) => i + 1).map((n) => ({
+          label: `Disc ${n}`,
+          icon: "disc",
+          detail: info?.disc === n ? "In the console" : "",
+          run: async () => {
+            if (!info) return;
+            try {
+              await api.setDisc(info.id, n);
+              info = { ...info, disc: n };
+              stack.close();
+              toast(`Disc ${n} is in`);
+            } catch (e) {
+              toast(`Could not change disc: ${(e as Error).message}`);
+            }
+          },
+        })),
+      });
+
       const gameMenu = (): Menu => ({
         title: game.title,
         items: [
           { label: "Resume", icon: "resume", run: () => stack.close() },
           { label: "Save state", icon: "save", run: saveMenu },
           { label: "Load state", icon: "load", run: loadMenu },
+          ...((info?.discs ?? 1) > 1
+            ? [{ label: "Change disc", icon: "disc", detail: `Disc ${info?.disc} of ${info?.discs}`, run: () => stack.push(discMenu()) }]
+            : []),
           { label: "Cheats", icon: "cheats", run: () => cheatsMenu() },
           { label: "Controls", icon: "controls", run: () => stack.push(controlsMenu()) },
           { label: "Display filter", icon: "display", detail: FILTERS.find((f) => f.mode === filterMode)?.label, run: filterMenu },
