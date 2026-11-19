@@ -21,7 +21,7 @@ mod stdio;
 mod video;
 
 pub use crate::core::{
-    AvInfo, Core, CoreCategory, CoreOptions, CoreVariable, FrameOutput, SystemInfo,
+    AvInfo, Core, CoreCategory, CoreOptions, CoreVariable, Discs, FrameOutput, SystemInfo,
 };
 pub use crate::error::Error;
 pub use crate::gl::GpuChoice;

@@ -238,12 +238,25 @@ impl Session {
         (self.core.system_info().library_name.clone(), av)
     }
 
+    /// A multi-disc game's disc count; `None` for one disc or a core without disk control.
+    pub fn discs(&mut self) -> Option<u32> {
+        self.core.discs().map(|d| d.count)
+    }
+
     /// Handles a control request. Returns `Ok(true)` if the loop should stop.
     fn control(&mut self, request: &Request) -> Result<bool, String> {
         match request {
             Request::Reset { .. } => {
                 self.core.reset();
                 self.rewind.clear();
+                Ok(false)
+            }
+            Request::SetDisc { disc, .. } => {
+                self.core.set_disc(*disc).map_err(|e| e.to_string())?;
+                // The game reads the new disc from here on: rewinding across the swap would
+                // restore states from the old one.
+                self.rewind.clear();
+                tracing::info!("changed to disc {}", disc + 1);
                 Ok(false)
             }
             Request::SetCheats { codes, .. } => {

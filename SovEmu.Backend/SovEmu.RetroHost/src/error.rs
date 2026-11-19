@@ -31,6 +31,9 @@ pub enum Error {
     UnserializeFailed,
     /// The core renders with the GPU and no GL context could be made for it.
     Gpu(String),
+    /// The game has no discs to change (the core declared no disk control), or the core
+    /// refused the change.
+    Disc(String),
 }
 
 impl fmt::Display for Error {
@@ -59,6 +62,7 @@ impl fmt::Display for Error {
             Self::SerializeFailed => f.write_str("the core could not write a save state"),
             Self::UnserializeFailed => f.write_str("the core rejected the save state"),
             Self::Gpu(e) => write!(f, "no GPU context for this core: {e}"),
+            Self::Disc(e) => write!(f, "cannot change disc: {e}"),
         }
     }
 }

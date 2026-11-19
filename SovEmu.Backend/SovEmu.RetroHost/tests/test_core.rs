@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use sovemu_retro_host::{Core, CoreOptions, Error, GpuChoice, JoypadButtons, PixelFormat};
+use sovemu_retro_host::{Core, CoreOptions, Discs, Error, GpuChoice, JoypadButtons, PixelFormat};
 
 const WIDTH: u32 = 256;
 const HEIGHT: u32 = 224;
@@ -202,6 +202,30 @@ fn loads_content_from_a_file() {
     assert_eq!(result.unwrap(), 60.0);
     assert!(matches!(core.load_game(None), Err(Error::GameAlreadyLoaded)));
     assert!(core.run_frame(&[]).is_ok());
+}
+
+#[test]
+fn changes_discs_of_a_multi_disc_game() {
+    let _guard = lock();
+    let playlist = std::env::temp_dir().join(format!("sovemu-test-{}.m3u", std::process::id()));
+    std::fs::write(&playlist, "Game (Disc 1).chd\nGame (Disc 2).chd\nGame (Disc 3).chd\n").unwrap();
+    let mut core = Core::load(test_core(), options()).unwrap();
+    let loaded = core.load_game(Some(&playlist)).map(|_| ());
+    std::fs::remove_file(&playlist).ok();
+    loaded.unwrap();
+    assert_eq!(core.discs(), Some(Discs { count: 3, current: 0 }));
+    core.set_disc(2).unwrap();
+    assert_eq!(core.discs(), Some(Discs { count: 3, current: 2 }));
+    assert!(matches!(core.set_disc(3), Err(Error::Disc(_))));
+    assert!(core.run_frame(&[]).is_ok());
+}
+
+#[test]
+fn a_single_disc_game_has_no_discs_to_change() {
+    let _guard = lock();
+    let mut core = load_running(options());
+    assert_eq!(core.discs(), None);
+    assert!(matches!(core.set_disc(1), Err(Error::Disc(_))));
 }
 
 #[test]

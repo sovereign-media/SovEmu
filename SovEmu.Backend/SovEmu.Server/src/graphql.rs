@@ -423,6 +423,10 @@ impl GameNode {
     async fn play_count(&self) -> i64 {
         self.0.play_count.unwrap_or(0)
     }
+    /// How many discs (1 for most games): a multi-disc game is one entry, its discs changed in play.
+    async fn discs(&self) -> i32 {
+        self.0.discs as i32
+    }
     /// The artwork and video it has.
     async fn media(&self) -> Vec<MediaKind> {
         self.0.media.split(',').filter_map(MediaKind::parse).collect()
@@ -553,6 +557,14 @@ impl SessionNode {
     /// A client is streaming it.
     async fn connected(&self) -> bool {
         self.0.connected
+    }
+    /// How many discs the game has (1 for most games).
+    async fn discs(&self) -> i32 {
+        self.0.discs as i32
+    }
+    /// The disc in the tray, from 1.
+    async fn disc(&self) -> i32 {
+        self.0.disc as i32
     }
 }
 
@@ -1127,6 +1139,12 @@ impl Mutation {
     }
 
     /// Saves the session's game to a slot (1–9), with a screenshot.
+    /// Changes a multi-disc game's disc (from 1), as when the game asks for the next one.
+    async fn set_disc(&self, ctx: &Context<'_>, session_id: ID, disc: u32) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::api::set_disc(state(ctx), &user, &session_id, disc).await.api()?;
+        Ok(true)
+    }
     async fn save_state(&self, ctx: &Context<'_>, session_id: ID, slot: u32) -> Result<bool> {
         let user = user(ctx).await?;
         crate::api::save_state(state(ctx), &user, &session_id, slot).await.api()?;

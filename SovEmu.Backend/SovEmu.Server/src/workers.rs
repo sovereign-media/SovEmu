@@ -93,6 +93,9 @@ pub struct SessionInfo {
     pub height: u32,
     pub fps: f64,
     pub connected: bool,
+    /// How many discs the game has (1 for most), and which is in the tray (1-based).
+    pub discs: u32,
+    pub disc: u32,
 }
 
 /// What to start.
@@ -133,6 +136,8 @@ pub struct Session {
     pending: Mutex<HashMap<u64, oneshot::Sender<Reply>>>,
     next_id: AtomicU64,
     connected: AtomicBool,
+    /// The disc in the tray (1-based), after any change.
+    disc: std::sync::atomic::AtomicU32,
     /// The options the core declared with its game loaded (the worker's `options` reply).
     declared: Mutex<Option<Declared>>,
 }
@@ -208,7 +213,16 @@ impl Process {
 
 impl Session {
     pub fn info(&self) -> SessionInfo {
-        SessionInfo { connected: self.connected.load(Ordering::Relaxed), ..self.info.clone() }
+        SessionInfo {
+            connected: self.connected.load(Ordering::Relaxed),
+            disc: self.disc.load(Ordering::Relaxed),
+            ..self.info.clone()
+        }
+    }
+
+    /// Records a disc change the worker made.
+    pub fn set_current_disc(&self, disc: u32) {
+        self.disc.store(disc, Ordering::Relaxed);
     }
 
     /// Sends a request and waits for its reply.
@@ -413,8 +427,8 @@ impl Workers {
         let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
-                    Ok(Reply::Ready { core, width, height, fps, .. }) => {
-                        return Ok((core, width, height, fps));
+                    Ok(Reply::Ready { core, width, height, fps, discs, .. }) => {
+                        return Ok((core, width, height, fps, discs));
                     }
                     Ok(Reply::Options { options, categories }) => {
                         declared = Some((options, categories));
@@ -440,7 +454,7 @@ impl Workers {
             }
         };
 
-        let (core, width, height, fps) = ready;
+        let (core, width, height, fps, discs) = ready;
         let session = Arc::new(Session {
             id: id.clone(),
             user_id: launch.user_id,
@@ -455,12 +469,15 @@ impl Workers {
                 height,
                 fps,
                 connected: false,
+                discs: discs.unwrap_or(1),
+                disc: 1,
             },
             stdin: tokio::sync::Mutex::new(stdin),
             process,
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             connected: AtomicBool::new(false),
+            disc: std::sync::atomic::AtomicU32::new(1),
             declared: Mutex::new(declared),
         });
         tracing::info!("session {id}: {} ({}) on UDP {port}", launch.title, launch.system);
