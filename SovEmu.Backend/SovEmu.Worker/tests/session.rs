@@ -14,6 +14,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use sovemu_media::{OpusDecoder, Vp8Decoder};
@@ -26,6 +27,14 @@ use str0m::{Candidate, Event, Input, Output, RtcConfig};
 
 /// Builds the test core and returns the path of its shared library (see the RetroHost tests).
 fn test_core() -> PathBuf {
+    // Built once per test binary, before any test starts a worker with it: tests run in
+    // parallel, and a second `cargo build` (the workspace's build has other features) could
+    // rewrite the library under a worker that has it loaded.
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(build_test_core).clone()
+}
+
+fn build_test_core() -> PathBuf {
     if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
         return PathBuf::from(path);
     }
