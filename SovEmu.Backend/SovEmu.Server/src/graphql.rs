@@ -423,6 +423,15 @@ impl GameNode {
     async fn play_count(&self) -> i64 {
         self.0.play_count.unwrap_or(0)
     }
+    /// One of this user's favourites.
+    async fn favourite(&self) -> bool {
+        self.0.favourite
+    }
+    /// The ids of this user's collections that hold it.
+    async fn collection_ids(&self, ctx: &Context<'_>) -> Result<Vec<i64>> {
+        let user = user(ctx).await?;
+        crate::collections::of_game(state(ctx), user.id, self.0.id).await.api()
+    }
     /// How many discs (1 for most games): a multi-disc game is one entry, its discs changed in play.
     async fn discs(&self) -> i32 {
         self.0.discs as i32
@@ -522,6 +531,34 @@ struct Home {
     recent: Vec<GameNode>,
     /// The library's newest games.
     added: Vec<GameNode>,
+    /// This user's favourites, by title.
+    favourites: Vec<GameNode>,
+}
+
+/// A named list of this user's games.
+struct CollectionNode(crate::collections::Collection);
+
+#[Object(name = "Collection")]
+impl CollectionNode {
+    async fn id(&self) -> i64 {
+        self.0.id
+    }
+    async fn name(&self) -> &str {
+        &self.0.name
+    }
+    async fn game_count(&self) -> i64 {
+        self.0.game_count
+    }
+    /// Its games, most recently added first.
+    async fn games(&self, ctx: &Context<'_>) -> Result<Vec<GameNode>> {
+        let user = user(ctx).await?;
+        Ok(crate::collections::games(state(ctx), &user, self.0.id)
+            .await
+            .api()?
+            .into_iter()
+            .map(GameNode)
+            .collect())
+    }
 }
 
 /// A running game: one worker streaming over WebRTC.
@@ -886,7 +923,19 @@ impl Query {
             featured: home.featured.into_iter().map(GameNode).collect(),
             recent: home.recent.into_iter().map(GameNode).collect(),
             added: home.added.into_iter().map(GameNode).collect(),
+            favourites: home.favourites.into_iter().map(GameNode).collect(),
         })
+    }
+
+    /// This user's collections, by name.
+    async fn collections(&self, ctx: &Context<'_>) -> Result<Vec<CollectionNode>> {
+        let user = user(ctx).await?;
+        Ok(crate::collections::list(state(ctx), &user)
+            .await
+            .api()?
+            .into_iter()
+            .map(CollectionNode)
+            .collect())
     }
 
     /// Every system SovEmu offers (hidden ones left out), in SovEmu's order.
@@ -1139,6 +1188,46 @@ impl Mutation {
     }
 
     /// Saves the session's game to a slot (1–9), with a screenshot.
+    /// Adds a game to this user's favourites, or takes it out.
+    async fn set_favourite(
+        &self,
+        ctx: &Context<'_>,
+        game_id: i64,
+        favourite: bool,
+    ) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::collections::set_favourite(state(ctx), &user, game_id, favourite).await.api()?;
+        Ok(favourite)
+    }
+    /// Creates a collection (CONFLICT if this user already has one by that name).
+    async fn create_collection(&self, ctx: &Context<'_>, name: String) -> Result<CollectionNode> {
+        let user = user(ctx).await?;
+        crate::collections::create(state(ctx), &user, &name).await.api().map(CollectionNode)
+    }
+    async fn rename_collection(&self, ctx: &Context<'_>, id: i64, name: String) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::collections::rename(state(ctx), &user, id, &name).await.api()?;
+        Ok(true)
+    }
+    async fn delete_collection(&self, ctx: &Context<'_>, id: i64) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::collections::delete(state(ctx), &user, id).await.api()?;
+        Ok(true)
+    }
+    /// Puts a game in one of this user's collections, or takes it out.
+    async fn set_in_collection(
+        &self,
+        ctx: &Context<'_>,
+        collection_id: i64,
+        game_id: i64,
+        member: bool,
+    ) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::collections::set_member(state(ctx), &user, collection_id, game_id, member)
+            .await
+            .api()?;
+        Ok(member)
+    }
     /// Changes a multi-disc game's disc (from 1), as when the game asks for the next one.
     async fn set_disc(&self, ctx: &Context<'_>, session_id: ID, disc: u32) -> Result<bool> {
         let user = user(ctx).await?;

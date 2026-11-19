@@ -104,6 +104,9 @@ export function FilterDrawer({
               <Toggle on={filters.played === "unplayed"} onClick={() => onFilters({ ...filters, played: filters.played === "unplayed" ? undefined : "unplayed" })}>
                 Not played yet
               </Toggle>
+              <Toggle on={!!filters.favourites} onClick={() => onFilters({ ...filters, favourites: !filters.favourites || undefined })}>
+                Favourites
+              </Toggle>
             </Section>
             {players && (
               <Section title="Players">

@@ -10,6 +10,7 @@ import { maxPlayers } from "../../lib/games";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/primitives";
+import { GameCollections } from "./GameCollections";
 
 function Art({ game, color, short }: { game: Game; color: string; short: string }) {
   const [video, setVideo] = useState(false);
@@ -80,12 +81,15 @@ export function GamePanel({
   slots,
   onClose,
   onPlay,
+  onFavourite,
 }: {
   game: Game | null;
   system: SystemSummary;
   slots: SaveSlot[];
   onClose: () => void;
   onPlay: (start: "continue" | "new") => void;
+  /** The game was added to favourites (true) or taken out. */
+  onFavourite: (favourite: boolean) => void;
 }) {
   // The last game stays drawn while the panel slides out after closing.
   const [shown, setShown] = useState(game);
@@ -159,6 +163,7 @@ export function GamePanel({
                       <Play className="fill-current" /> Play
                     </Button>
                   )}
+                  <GameCollections game={shown} onFavourite={onFavourite} />
                 </div>
                 {shown.description && <p className="text-sm leading-relaxed text-slate-300">{shown.description}</p>}
                 {slots.length > 0 && (

@@ -15,7 +15,7 @@ import * as types from './graphql';
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": typeof types.GameFieldsFragmentDoc,
+    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    discs\n  }\n": typeof types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": typeof types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": typeof types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": typeof types.SessionFieldsFragmentDoc,
@@ -26,7 +26,13 @@ type Documents = {
     "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.LoginDocument,
     "\n  mutation Logout {\n    logout\n  }\n": typeof types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": typeof types.ClientConfigDocument,
-    "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
+    "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
+    "\n  query Collections {\n    collections {\n      id\n      name\n      gameCount\n      games {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.CollectionsDocument,
+    "\n  query CollectionIds($id: Int!) {\n    game(id: $id) {\n      id\n      collectionIds\n    }\n  }\n": typeof types.CollectionIdsDocument,
+    "\n  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {\n    setFavourite(gameId: $gameId, favourite: $favourite)\n  }\n": typeof types.SetFavouriteDocument,
+    "\n  mutation CreateCollection($name: String!) {\n    createCollection(name: $name) {\n      id\n      name\n      gameCount\n    }\n  }\n": typeof types.CreateCollectionDocument,
+    "\n  mutation DeleteCollection($id: Int!) {\n    deleteCollection(id: $id)\n  }\n": typeof types.DeleteCollectionDocument,
+    "\n  mutation SetInCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {\n    setInCollection(collectionId: $collectionId, gameId: $gameId, member: $member)\n  }\n": typeof types.SetInCollectionDocument,
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": typeof types.SystemsDocument,
     "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": typeof types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.SystemGamesDocument,
@@ -60,7 +66,7 @@ type Documents = {
     "\n  mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {\n    changeEmulatorSettings(system: $system, changes: $changes) {\n      ...SettingsFields\n    }\n  }\n": typeof types.ChangeEmulatorSettingsDocument,
 };
 const documents: Documents = {
-    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n": types.GameFieldsFragmentDoc,
+    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    discs\n  }\n": types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": types.SessionFieldsFragmentDoc,
@@ -71,7 +77,13 @@ const documents: Documents = {
     "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.LoginDocument,
     "\n  mutation Logout {\n    logout\n  }\n": types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": types.ClientConfigDocument,
-    "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
+    "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
+    "\n  query Collections {\n    collections {\n      id\n      name\n      gameCount\n      games {\n        ...GameFields\n      }\n    }\n  }\n": types.CollectionsDocument,
+    "\n  query CollectionIds($id: Int!) {\n    game(id: $id) {\n      id\n      collectionIds\n    }\n  }\n": types.CollectionIdsDocument,
+    "\n  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {\n    setFavourite(gameId: $gameId, favourite: $favourite)\n  }\n": types.SetFavouriteDocument,
+    "\n  mutation CreateCollection($name: String!) {\n    createCollection(name: $name) {\n      id\n      name\n      gameCount\n    }\n  }\n": types.CreateCollectionDocument,
+    "\n  mutation DeleteCollection($id: Int!) {\n    deleteCollection(id: $id)\n  }\n": types.DeleteCollectionDocument,
+    "\n  mutation SetInCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {\n    setInCollection(collectionId: $collectionId, gameId: $gameId, member: $member)\n  }\n": types.SetInCollectionDocument,
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": types.SystemsDocument,
     "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": types.SystemGamesDocument,
@@ -108,7 +120,7 @@ const documents: Documents = {
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n  }\n"): typeof import('./graphql').GameFieldsFragmentDoc;
+export function graphql(source: "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    discs\n  }\n"): typeof import('./graphql').GameFieldsFragmentDoc;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -152,7 +164,31 @@ export function graphql(source: "\n  query ClientConfig {\n    clientConfig {\n 
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n    }\n  }\n"): typeof import('./graphql').HomeDocument;
+export function graphql(source: "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n"): typeof import('./graphql').HomeDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query Collections {\n    collections {\n      id\n      name\n      gameCount\n      games {\n        ...GameFields\n      }\n    }\n  }\n"): typeof import('./graphql').CollectionsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query CollectionIds($id: Int!) {\n    game(id: $id) {\n      id\n      collectionIds\n    }\n  }\n"): typeof import('./graphql').CollectionIdsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {\n    setFavourite(gameId: $gameId, favourite: $favourite)\n  }\n"): typeof import('./graphql').SetFavouriteDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation CreateCollection($name: String!) {\n    createCollection(name: $name) {\n      id\n      name\n      gameCount\n    }\n  }\n"): typeof import('./graphql').CreateCollectionDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation DeleteCollection($id: Int!) {\n    deleteCollection(id: $id)\n  }\n"): typeof import('./graphql').DeleteCollectionDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation SetInCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {\n    setInCollection(collectionId: $collectionId, gameId: $gameId, member: $member)\n  }\n"): typeof import('./graphql').SetInCollectionDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

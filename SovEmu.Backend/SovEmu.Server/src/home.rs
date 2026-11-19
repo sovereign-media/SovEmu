@@ -19,6 +19,8 @@ pub struct Home {
     pub(crate) recent: Vec<Game>,
     /// The library's newest games.
     pub(crate) added: Vec<Game>,
+    /// This player's favourites, by title.
+    pub(crate) favourites: Vec<Game>,
 }
 
 /// `AND g.system NOT IN (…)` for the systems the configuration hides, and the ids to bind.
@@ -45,6 +47,7 @@ async fn query(
     state: &AppState,
     user_id: i64,
     filter: &str,
+    filter_binds: &[i64],
     order: &str,
     limit: u32,
     seed: Option<i64>,
@@ -60,27 +63,40 @@ async fn query(
          WHERE ({filter}){hidden} ORDER BY {order} LIMIT ?"
     );
     let mut q = sqlx::query_as::<_, Game>(&sql).bind(user_id);
-    // Placeholders in the order they appear: the join, the filter's hidden systems, the order.
+    // Placeholders in the order they appear: the join, the filter, its hidden systems, the order.
+    for value in filter_binds {
+        q = q.bind(*value);
+    }
     for id in &hidden_ids {
         q = q.bind(id);
     }
     if let Some(seed) = seed {
         q = q.bind(seed);
     }
-    Ok(q.bind(limit).fetch_all(&state.db).await?.into_iter().map(Game::with_box_art).collect())
+    let mut games = q.bind(limit).fetch_all(&state.db).await?;
+    crate::collections::mark_favourites(state, user_id, &mut games).await?;
+    Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 
 pub async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
     let row = state.config.home_row;
-    let recent =
-        query(state, user.id, "h.last_played_at IS NOT NULL", "h.last_played_at DESC", row, None)
-            .await?;
+    let recent = query(
+        state,
+        user.id,
+        "h.last_played_at IS NOT NULL",
+        &[],
+        "h.last_played_at DESC",
+        row,
+        None,
+    )
+    .await?;
     // Games with something to show first (artwork and a description), then a shuffle that
     // changes daily: a multiplicative hash of the id, offset by the day.
     let featured = query(
         state,
         user.id,
         "g.media != '' OR m.box_art IS NOT NULL",
+        &[],
         "(m.description IS NOT NULL AND g.media LIKE '%image%') DESC,
          m.description IS NOT NULL DESC,
          ((g.id + ?) * 2654435761) % 4294967291",
@@ -88,6 +104,16 @@ pub async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
         Some(day()),
     )
     .await?;
-    let added = query(state, user.id, "1", "g.added_at DESC, g.id DESC", row, None).await?;
-    Ok(Home { featured, recent, added })
+    let added = query(state, user.id, "1", &[], "g.added_at DESC, g.id DESC", row, None).await?;
+    let favourites = query(
+        state,
+        user.id,
+        "g.id IN (SELECT game_id FROM favourites WHERE user_id = ?)",
+        &[user.id],
+        "COALESCE(m.title, g.title) COLLATE NOCASE, g.id",
+        row,
+        None,
+    )
+    .await?;
+    Ok(Home { featured, recent, added, favourites })
 }

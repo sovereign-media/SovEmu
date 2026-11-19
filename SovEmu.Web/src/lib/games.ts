@@ -13,6 +13,8 @@ export const SORTS: { value: GameSort; label: string }[] = [
 
 export interface GameFilters {
   played?: "played" | "unplayed";
+  /** Only this user's favourites. */
+  favourites?: boolean;
   /** Only games for at least two players. */
   multiplayer?: boolean;
   /** Only games in any of these genres ("Platform", "Shooter" …). */
@@ -39,6 +41,7 @@ export function filterGames(games: Game[], query: string, filters: GameFilters):
   return games.filter((g) => {
     if (filters.played === "played" && !g.playCount) return false;
     if (filters.played === "unplayed" && g.playCount) return false;
+    if (filters.favourites && !g.favourite) return false;
     if (filters.multiplayer && (maxPlayers(g.players) ?? 1) < 2) return false;
     if (filters.genres?.length) {
       const genres = genresOf(g);
@@ -97,7 +100,8 @@ export function genreCounts(games: Game[]): { genre: string; count: number }[] {
 export const knowsPlayers = (games: Game[]) => games.some((g) => maxPlayers(g.players) !== null);
 
 /** How many filters are on, for the filter button's badge. */
-export const activeFilters = (f: GameFilters) => (f.played ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.genres?.length ?? 0);
+export const activeFilters = (f: GameFilters) =>
+  (f.played ? 1 : 0) + (f.favourites ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.genres?.length ?? 0);
 
 // --- The grid ---------------------------------------------------------------------------------
 

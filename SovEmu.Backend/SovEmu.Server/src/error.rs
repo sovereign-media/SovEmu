@@ -25,6 +25,9 @@ impl ApiError {
     pub fn forbidden() -> Self {
         Self::new(StatusCode::FORBIDDEN, "admins only")
     }
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, message)
+    }
     pub fn not_found(what: &str) -> Self {
         Self::new(StatusCode::NOT_FOUND, format!("{what} not found"))
     }

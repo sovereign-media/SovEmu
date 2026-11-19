@@ -55,6 +55,9 @@ pub struct Game {
     pub(crate) box_art: Option<String>,
     /// How many discs (1 for most games).
     pub(crate) discs: i64,
+    /// One of this user's favourites (filled in by `collections::mark_favourites`).
+    #[sqlx(skip)]
+    pub(crate) favourite: bool,
 }
 
 impl Game {
@@ -143,6 +146,8 @@ pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResul
     .bind(system)
     .fetch_all(&state.db)
     .await?;
+    let mut games = games;
+    crate::collections::mark_favourites(state, user.id, &mut games).await?;
     prefetch_art(state, system, &games);
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
@@ -163,7 +168,10 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
 }
 
 pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
-    fetch_game(state, user.id, id).await
+    let mut game = [fetch_game(state, user.id, id).await?];
+    crate::collections::mark_favourites(state, user.id, &mut game).await?;
+    let [game] = game;
+    Ok(game)
 }
 
 pub async fn scan(state: &AppState) -> ApiResult<ScanReport> {

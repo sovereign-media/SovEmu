@@ -6,7 +6,7 @@ let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
   id: nextId++, system: "nes", title, tags: [], path: `${title}.nes`, size: 1, lastPlayedAt: null, playCount: 0,
   image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
-  publisher: null, genre: null, players: null, rating: null, ...over,
+  publisher: null, genre: null, players: null, rating: null, favourite: false, discs: 1, ...over,
 });
 
 const metroid = game("Metroid", { releaseDate: "1986-08-06", genre: "Action", players: "1", playCount: 3, lastPlayedAt: "2026-11-13 10:00:00", tags: ["USA"] });
@@ -126,5 +126,14 @@ describe("the panel's URL", () => {
     expect(urlWithGame("http://x/system/?id=nes", 42)).toBe("/system/?id=nes&game=42");
     expect(urlWithGame("http://x/system/?id=nes&game=42", null)).toBe("/system/?id=nes");
     expect(urlWithGame("http://x/system/?id=nes&game=1", 7)).toBe("/system/?id=nes&game=7");
+  });
+});
+
+describe("favourites", () => {
+  it("filters to them and counts the filter", () => {
+    const fav = game("Liked", { favourite: true });
+    const other = game("Other");
+    expect(filterGames([fav, other], "", { favourites: true })).toEqual([fav]);
+    expect(activeFilters({ favourites: true })).toBe(1);
   });
 });

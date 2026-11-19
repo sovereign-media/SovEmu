@@ -364,7 +364,14 @@ function Games() {
         )}
       </main>
 
-      <GamePanel game={open} system={system} slots={slots} onClose={closePanel} onPlay={(start) => play(open, start)} />
+      <GamePanel
+        game={open}
+        system={system}
+        slots={slots}
+        onClose={closePanel}
+        onPlay={(start) => play(open, start)}
+        onFavourite={(favourite) => open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, favourite } : g)))}
+      />
       <FilterDrawer
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
