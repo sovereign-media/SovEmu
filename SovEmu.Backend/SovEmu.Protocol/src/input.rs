@@ -21,7 +21,7 @@
 //! |---|---|---|
 //! | 0 | 1 | message type, `0x02` |
 //! | 1 | 1 | version |
-//! | 2 | 1 | flags: bit 0 fast-forward, bit 1 rewind (held while set) |
+//! | 2 | 1 | flags: bit 0 fast-forward, bit 1 rewind, bit 2 pause (held while set) |
 //!
 //! Sent whenever the flags change, and with every input heartbeat while any is set; the worker
 //! clears them if none arrives for half a second, so a lost release cannot leave a game spinning.
@@ -142,16 +142,26 @@ impl InputPacket {
 pub struct Hotkeys {
     pub fast_forward: bool,
     pub rewind: bool,
+    /// The game is paused (the client's in-game menu is open): no frames run. A worker that
+    /// predates it ignores the bit, so it needs no new [`INPUT_VERSION`].
+    pub pause: bool,
 }
 
 impl Hotkeys {
     pub fn encode(&self) -> [u8; 3] {
-        [TYPE_HOTKEYS, INPUT_VERSION, u8::from(self.fast_forward) | (u8::from(self.rewind) << 1)]
+        let flags = u8::from(self.fast_forward)
+            | (u8::from(self.rewind) << 1)
+            | (u8::from(self.pause) << 2);
+        [TYPE_HOTKEYS, INPUT_VERSION, flags]
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
         check_header(bytes, TYPE_HOTKEYS, 3)?;
-        Ok(Self { fast_forward: bytes[2] & 1 != 0, rewind: bytes[2] & 2 != 0 })
+        Ok(Self {
+            fast_forward: bytes[2] & 1 != 0,
+            rewind: bytes[2] & 2 != 0,
+            pause: bytes[2] & 4 != 0,
+        })
     }
 }
 
@@ -305,13 +315,17 @@ mod tests {
 
     #[test]
     fn hotkeys_round_trip_and_dispatch() {
-        let both = Hotkeys { fast_forward: true, rewind: true };
+        let both = Hotkeys { fast_forward: true, rewind: true, pause: false };
         assert_eq!(both.encode(), [0x02, 1, 0b11]);
-        assert_eq!(Hotkeys { fast_forward: true, rewind: false }.encode(), [0x02, 1, 0b01]);
+        let ff = Hotkeys { fast_forward: true, ..Hotkeys::default() };
+        assert_eq!(ff.encode(), [0x02, 1, 0b01]);
         assert_eq!(
             Hotkeys::decode(&[0x02, 1, 0b10]),
-            Ok(Hotkeys { fast_forward: false, rewind: true })
+            Ok(Hotkeys { fast_forward: false, rewind: true, pause: false })
         );
+        let pause = Hotkeys { pause: true, ..Hotkeys::default() };
+        assert_eq!(pause.encode(), [0x02, 1, 0b100]);
+        assert_eq!(Hotkeys::decode(&[0x02, 1, 0b100]), Ok(pause));
         assert_eq!(ClientMessage::decode(&both.encode()), Ok(ClientMessage::Hotkeys(both)));
         let input = InputPacket { seq: 1, client_time_ms: 2, ports: vec![3] };
         assert_eq!(ClientMessage::decode(&input.encode()), Ok(ClientMessage::Input(input)));

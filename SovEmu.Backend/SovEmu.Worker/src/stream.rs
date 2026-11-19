@@ -587,6 +587,11 @@ impl Session {
         } else {
             Hotkeys::default()
         };
+        // The client's menu is open: hold the game where it is. The last frame stays on the
+        // client's screen and its audio goes quiet; a lapsed flag (client gone) lets go.
+        if hotkeys.pause {
+            return Ok(());
+        }
         if hotkeys.rewind {
             let core = &mut self.core;
             self.rewind.step_back(|state| core.unserialize(state));

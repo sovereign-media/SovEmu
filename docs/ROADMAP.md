@@ -118,6 +118,8 @@ held 59.93 fps over 300 frames with no resyncs.
       buttons are kept from the game meanwhile). A `0x02` hotkeys message on the input channel,
       refreshed while held and dropped by the worker after 500 ms without a refresh. RTP timestamps
       follow wall-clock ticks, not emulated frames
+- [x] The in-game menu pauses the game: a pause bit in the `0x02` hotkeys message, held while the
+      menu is open and refreshed like the others, stops the worker running frames (web and Android)
 - [x] Cheats per user and game (stored in SQLite, applied by the worker at start and on every change)
 - [x] Controller remapping, keyboard and gamepad, per browser
 - [x] Display filters on a WebGL canvas: sharp pixels, smooth, CRT (scanlines + aperture mask)

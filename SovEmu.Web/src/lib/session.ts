@@ -2,7 +2,7 @@
 // no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
 // the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
 import { InputState } from "./input";
-import { type Analog, CENTRED, INPUT_CHANNEL, analogEqual, decodeAck, encodeAnalog, encodeHotkeys, encodeInput } from "./protocol";
+import { type Analog, CENTRED, INPUT_CHANNEL, analogEqual, decodeAck, encodeAnalog, encodeHotkeys, encodeInput, hotkeyBits } from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
 const HEARTBEAT_MS = 100;
@@ -94,17 +94,18 @@ export class Session {
       const reading = this.suspended ? null : this.input.read();
       const ports = reading?.ports ?? [0];
       const state = ports.join(",");
-      const hotkeys = reading?.hotkeys ?? { fastForward: false, rewind: false };
-      const hotkeyBits = (hotkeys.fastForward ? 1 : 0) | (hotkeys.rewind ? 2 : 0);
+      // While suspended (the menu is open) the game is paused, not just left without input.
+      const hotkeys = { ...(reading?.hotkeys ?? { fastForward: false, rewind: false }), pause: this.suspended };
+      const bits = hotkeyBits(hotkeys);
       const now = performance.now();
       const heartbeat = now - this.lastSend > HEARTBEAT_MS;
-      if (state !== this.sent || hotkeyBits !== this.sentHotkeys || heartbeat) {
+      if (state !== this.sent || bits !== this.sentHotkeys || heartbeat) {
         this.seq = (this.seq + 1) >>> 0;
         this.channel.send(encodeInput({ seq: this.seq, clientTimeMs: now32(), ports }));
         // Held hotkeys are refreshed with every heartbeat; the worker drops stale ones.
-        if (hotkeyBits !== this.sentHotkeys || hotkeyBits !== 0) this.channel.send(encodeHotkeys(hotkeys));
+        if (bits !== this.sentHotkeys || bits !== 0) this.channel.send(encodeHotkeys(hotkeys));
         this.sent = state;
-        this.sentHotkeys = hotkeyBits;
+        this.sentHotkeys = bits;
         this.lastSend = now;
       }
       // Sticks: on change, and as a heartbeat while off-centre (a lost packet must not leave a
