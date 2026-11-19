@@ -49,10 +49,15 @@ export function encodeInput(packet: InputPacket): ArrayBuffer {
 export interface Hotkeys {
   fastForward: boolean;
   rewind: boolean;
+  /** The game is paused (the in-game menu is open): the worker runs no frames. */
+  pause?: boolean;
 }
 
+/** The hotkeys flags byte: bit 0 fast-forward, bit 1 rewind, bit 2 pause. */
+export const hotkeyBits = (h: Hotkeys): number => (h.fastForward ? 1 : 0) | (h.rewind ? 2 : 0) | (h.pause ? 4 : 0);
+
 export function encodeHotkeys(h: Hotkeys): ArrayBuffer {
-  return new Uint8Array([TYPE_HOTKEYS, INPUT_VERSION, (h.fastForward ? 1 : 0) | (h.rewind ? 2 : 0)]).buffer;
+  return new Uint8Array([TYPE_HOTKEYS, INPUT_VERSION, hotkeyBits(h)]).buffer;
 }
 
 /** One port's analog controls: sticks −32768..32767 (x right, y down), triggers 0..32767. */

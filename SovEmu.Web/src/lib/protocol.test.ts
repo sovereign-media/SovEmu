@@ -12,6 +12,7 @@ describe("input protocol", () => {
     expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: true }))]).toEqual([0x02, 1, 0b11]);
     expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: false }))]).toEqual([0x02, 1, 0b01]);
     expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: true }))]).toEqual([0x02, 1, 0b10]);
+    expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: false, pause: true }))]).toEqual([0x02, 1, 0b100]);
   });
 
   it("encodes analog state exactly like the Rust reference", () => {
