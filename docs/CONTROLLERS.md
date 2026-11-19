@@ -65,6 +65,11 @@ client maps its platform's own names onto these:
 - **Android**: `BUTTON_A` south, `BUTTON_B` east, `BUTTON_X` west, `BUTTON_Y` north, `L1`, `R1`, `L2`, `R2` (and the trigger axes), `SELECT`, `START`, `THUMBL`, `THUMBR`, `DPAD_*` (and the hat axes).
 - **iOS**: `GCExtendedGamepad` `buttonA` south, `buttonB` east, `buttonX` west, `buttonY` north, the shoulders, triggers, `buttonOptions` select, `buttonMenu` start, the thumbstick buttons and the D-pad.
 
+A controller's **stick directions** are inputs too: `ls_up ls_down ls_left ls_right` (the left
+stick) and `rs_up rs_down rs_left rs_right` (the right), each pressed while that stick is pushed past
+half-way that way. They are bound like buttons; none is bound by default, and a diagram lights the
+stick (`l3`, `r3`) for them. Families label them `LS ↑` … `RS →`.
+
 The guide/home button is the system's and is never bound.
 
 A keyboard's inputs are W3C `KeyboardEvent.code` values: `KeyZ`, `ArrowUp`, `Enter`,
@@ -124,5 +129,7 @@ The prompt says so, for example: "Press a button for B · tap Back to cancel, ho
 ## In play
 
 - **Hotkeys** are read after mapping, from the RetroPad buttons: SELECT+R fast-forwards, SELECT+L rewinds, and SELECT+START opens the menu. Those buttons are kept from the game while a combo is held.
-- **Sticks**: the left stick also drives the D-pad, unless the system reads analog sticks.
+- **Sticks**: the left stick also drives the D-pad, unless the system reads analog sticks or the
+  mapping binds any of the left stick's directions (`ls_*`): then it does what they are bound to.
+  Bound stick directions apply on every system, alongside the analog values.
 - **Players**: each controller is its own player, in the order controllers connect. A new one takes the lowest free player (1 to 4), and a disconnected one frees its player. The keyboard and the touch controls are player 1. A client lets the player reassign them during a session; the assignment is not saved.

@@ -231,13 +231,30 @@ fn key_name(b: PadButton) -> &'static str {
     }
 }
 
-/// A controller-shaped body with grips: the modern pads, and the systems drawn after them.
+/// A controller-shaped body: the modern pads, and the systems drawn after them. Overlapping
+/// pieces make one silhouette: a top under the shoulder buttons, the front, and grips that flare
+/// outward as they go down.
 fn gamepad_body() -> Vec<Shape> {
     vec![
-        rect(12.0, 30.0, 136.0, 42.0, 20.0),
-        rect(14.0, 50.0, 34.0, 44.0, 17.0),
-        rect(112.0, 50.0, 34.0, 44.0, 17.0),
+        rect(22.0, 27.0, 116.0, 16.0, 8.0),
+        rect(12.0, 32.0, 136.0, 38.0, 19.0),
+        rect(14.0, 48.0, 38.0, 38.0, 19.0),
+        rect(10.0, 62.0, 34.0, 34.0, 17.0),
+        rect(108.0, 48.0, 38.0, 38.0, 19.0),
+        rect(116.0, 62.0, 34.0, 34.0, 17.0),
     ]
+}
+
+/// A stick's well, around a stick of diameter `d` at (cx, cy).
+fn stick_well(cx: f64, cy: f64, d: f64) -> Shape {
+    let w = d + 5.0;
+    recess(cx - w / 2.0, cy - w / 2.0, w, w, w / 2.0)
+}
+
+/// The D-pad's well, around a cross `s` across at (cx, cy).
+fn dpad_well(cx: f64, cy: f64, s: f64) -> Shape {
+    let w = s + 4.0;
+    recess(cx - w / 2.0, cy - w / 2.0, w, w, w / 2.0)
 }
 
 /// A system's pad. Keys are RetroPad buttons, labelled with the system's names.
@@ -482,23 +499,34 @@ pub fn controller_layouts() -> Vec<PadLayout> {
         k.diamond(["north", "south", "west", "east"], 126.0, 46.0, 10.0, 9.0);
         k.add("select", 64.0, 44.0, 9.0, 5.0, 2.5);
         k.add("start", 87.0, 44.0, 9.0, 5.0, 2.5);
+        let mut body = gamepad_body();
         if family == "playstation" {
             // The PlayStation's D-pad sits up top, its sticks low in the middle.
             k.dpad(INPUT_DPAD, 34.0, 46.0, 22.0);
             k.circle("l3", 62.0, 66.0, 14.0);
             k.circle("r3", 98.0, 66.0, 14.0);
+            body.extend([
+                dpad_well(34.0, 46.0, 22.0),
+                stick_well(62.0, 66.0, 14.0),
+                stick_well(98.0, 66.0, 14.0),
+            ]);
         } else {
             // Offset sticks: the left one up top, the D-pad below it.
             k.circle("l3", 34.0, 46.0, 15.0);
             k.dpad(INPUT_DPAD, 58.0, 66.0, 18.0);
             k.circle("r3", 100.0, 66.0, 14.0);
+            body.extend([
+                stick_well(34.0, 46.0, 15.0),
+                dpad_well(58.0, 66.0, 18.0),
+                stick_well(100.0, 66.0, 14.0),
+            ]);
         }
         PadLayout {
             id: family.to_owned(),
             name: name.to_owned(),
             width: 160.0,
             height: 100.0,
-            body: gamepad_body(),
+            body,
             keys: k.keys,
         }
     })

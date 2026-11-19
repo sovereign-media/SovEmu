@@ -11,6 +11,31 @@ export const PAD_INPUTS = [
 ] as const;
 export type PadInput = (typeof PAD_INPUTS)[number];
 
+/** A controller's stick directions: a stick pushed past half-way, bindable like buttons. */
+export const STICK_INPUTS = ["ls_up", "ls_down", "ls_left", "ls_right", "rs_up", "rs_down", "rs_left", "rs_right"] as const;
+export type StickInput = (typeof STICK_INPUTS)[number];
+const ARROWS = { up: "↑", down: "↓", left: "←", right: "→" } as const;
+
+/** The left stick drives the D-pad unless the mapping binds any of its directions. */
+export const leftStickBound = (mapping: Mapping): boolean => Object.keys(mapping).some((i) => i.startsWith("ls_"));
+
+/** The stick directions (`ls_left` …) held at axis values -1..1, past half-way. */
+export function stickInputs(lx: number, ly: number, rx: number, ry: number, threshold = 0.5): StickInput[] {
+  const out: StickInput[] = [];
+  const add = (side: "ls" | "rs", x: number, y: number) => {
+    if (x < -threshold) out.push(`${side}_left`);
+    if (x > threshold) out.push(`${side}_right`);
+    if (y < -threshold) out.push(`${side}_up`);
+    if (y > threshold) out.push(`${side}_down`);
+  };
+  add("ls", lx, ly);
+  add("rs", rx, ry);
+  return out;
+}
+
+/** The diagram key an input lights: a stick direction lights its stick. */
+export const diagramKey = (input: string): string => (input.startsWith("ls_") ? "l3" : input.startsWith("rs_") ? "r3" : input);
+
 export type Family = "xbox" | "playstation" | "nintendo" | "generic";
 
 /** Input → RetroPad button. An input drives one button; a button may have several inputs. */
@@ -142,6 +167,8 @@ const LABELS: Record<Family, Record<PadInput, string>> = {
 /** An input as its controller labels it ("✕", "LB"), or a key as a person would name it. */
 export function inputLabel(input: string, family: Family | null): string {
   if (family && input in LABELS[family]) return LABELS[family][input as PadInput];
+  const stick = /^(ls|rs)_(up|down|left|right)$/.exec(input);
+  if (stick) return `${stick[1].toUpperCase()} ${ARROWS[stick[2] as keyof typeof ARROWS]}`;
   return input
     .replace(/^Key/, "")
     .replace(/^Digit/, "")

@@ -27,7 +27,7 @@ import {
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
 import { AUTO_SLOT, api, type ControllerMappingList, type Game, type PadLayout, type SaveSlot, type SessionInfo, type SystemControls, type SystemSummary } from "../../lib/api";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
-import { defaultMapping, inputLabel, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings, toMapping } from "../../lib/controllers";
+import { defaultMapping, diagramKey, inputLabel, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings, toMapping } from "../../lib/controllers";
 import { captureInput, InputState } from "../../lib/input";
 import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
 import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
@@ -362,7 +362,7 @@ function Player() {
                 label,
                 icon: "button",
                 detail: inputs.map((i) => inputLabel(i, labels)).join(", ") || "Not bound",
-                highlight: { system: [button], controller: inputs },
+                highlight: { system: [button], controller: inputs.map(diagramKey) },
                 run: async () => {
                   capturing = true;
                   toast(`Press ${keyboard ? "a key" : `a button on ${name}`} for ${label} · tap ${keyboard ? "Escape" : "Back"} to cancel, hold it to bind it`);

@@ -18,6 +18,8 @@ import {
   type Mapping,
   PAD_BUTTONS,
   PAD_INPUTS,
+  STICK_INPUTS,
+  diagramKey,
   POSITIONS,
   rebind,
   toBindings,
@@ -117,6 +119,7 @@ function ButtonRow({
               value: i,
               label: POSITIONS[i] ? `${inputLabel(i, family)} (${POSITIONS[i]})` : inputLabel(i, family),
             })),
+            ...STICK_INPUTS.map((i) => ({ value: i, label: inputLabel(i, family) })),
           ]}
           onChange={(v) => onBind(v === NOT_BOUND ? null : v)}
         />
@@ -179,7 +182,7 @@ function Controllers() {
   const systemName = systems.find((s) => s.id === system)?.short ?? system;
   const buttons: [ButtonName, string][] = system && controls ? controls.buttons.map((b) => [b.button, b.label]) : PAD_BUTTONS;
   const controllerPad = controller === KEYBOARD ? null : (layouts.find((l) => l.id === familyOf(controller)) ?? null);
-  const litInputs = lit ? Object.entries(mapping).filter(([, b]) => b === lit).map(([i]) => i) : [];
+  const litInputs = lit ? Object.entries(mapping).filter(([, b]) => b === lit).map(([i]) => diagramKey(i)) : [];
   const bind = (button: ButtonName, input: string | null) => {
     setDraft(input ? rebind(mapping, input, button) : Object.fromEntries(Object.entries(mapping).filter(([, b]) => b !== button)) as Mapping);
     setMessage(null);

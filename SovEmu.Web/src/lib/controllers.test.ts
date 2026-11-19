@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundTo, Capture, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, familyOf, identify, inputLabel, Players, readHotkeys, rebind, slug, toBindings } from "./controllers";
+import { boundTo, Capture, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, diagramKey, familyOf, identify, inputLabel, leftStickBound, Players, readHotkeys, rebind, slug, stickInputs, toBindings } from "./controllers";
 import { bit } from "./protocol";
 
 describe("recognising a controller (docs/CONTROLLERS.md)", () => {
@@ -129,5 +129,23 @@ describe("remapping (tap Back to cancel, hold it to bind it)", () => {
     const opened = new Capture("south", ["south"], 0);
     expect(opened.update(held(), 10)).toBeUndefined();
     expect(new Capture("south", [], 0).update(held(), 8000)).toBeNull();
+  });
+});
+
+describe("stick directions", () => {
+  it("reads directions past half-way, on both sticks", () => {
+    expect(stickInputs(-0.9, 0.1, 0, 0.8)).toEqual(["ls_left", "rs_down"]);
+    expect(stickInputs(0.4, -0.4, 0, 0)).toEqual([]);
+  });
+  it("labels them and lights their stick", () => {
+    expect(inputLabel("ls_left", "xbox")).toBe("LS ←");
+    expect(inputLabel("rs_up", "playstation")).toBe("RS ↑");
+    expect(diagramKey("rs_up")).toBe("r3");
+    expect(diagramKey("south")).toBe("south");
+  });
+  it("knows when the left stick is bound (and so stops driving the D-pad)", () => {
+    expect(leftStickBound({ ...DEFAULT_PAD })).toBe(false);
+    expect(leftStickBound({ ...DEFAULT_PAD, ls_left: "L" })).toBe(true);
+    expect(leftStickBound({ rs_up: "X" })).toBe(false);
   });
 });

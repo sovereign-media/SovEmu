@@ -15,6 +15,8 @@ import {
   KEYBOARD,
   type Mapping,
   PAD_INPUTS,
+  leftStickBound,
+  stickInputs,
   Players,
   readHotkeys,
   RESERVED_KEYS,
@@ -182,7 +184,13 @@ export class InputState {
           l2: triggerValue(pad.buttons[PAD_L2]?.value ?? 0), r2: triggerValue(pad.buttons[PAD_R2]?.value ?? 0),
         };
       }
-      if (!this.analogSticks) {
+      const mapping = this.mapping(this.identify(pad.id).id);
+      const [ax = 0, ay = 0, bx = 0, by = 0] = pad.axes;
+      for (const input of stickInputs(ax, ay, bx, by, STICK_THRESHOLD)) {
+        const button = mapping[input];
+        if (button) state |= bit(button);
+      }
+      if (!this.analogSticks && !leftStickBound(mapping)) {
         const [x = 0, y = 0] = pad.axes;
         if (x < -STICK_THRESHOLD) state |= bit("LEFT");
         if (x > STICK_THRESHOLD) state |= bit("RIGHT");
@@ -220,6 +228,10 @@ export function captureInput(device: string): Promise<string | null> {
         if (i < PAD_INPUTS.length) now.add(PAD_INPUTS[i]);
         else if (i === PAD_INPUTS.length) now.add(GUIDE);
       });
+      if (p) {
+        const [lx = 0, ly = 0, rx = 0, ry = 0] = p.axes;
+        for (const input of stickInputs(lx, ly, rx, ry)) now.add(input);
+      }
       return now;
     };
     const capture = new Capture(index === null ? ESCAPE : MENU_BACK, held(), performance.now());
