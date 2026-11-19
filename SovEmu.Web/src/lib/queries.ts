@@ -181,6 +181,14 @@ export const HomeQuery = graphql(`
   }
 `);
 
+export const SearchQuery = graphql(`
+  query Search($text: String!) {
+    search(text: $text) {
+      ...GameFields
+    }
+  }
+`);
+
 export const CollectionsQuery = graphql(`
   query Collections {
     collections {

@@ -1144,3 +1144,21 @@ async fn favourites_and_collections() {
         h.err("mutation($c: Int!) { deleteCollection(id: $c) }", json!({"c": cid})).await;
     assert_eq!(code, "NOT_FOUND");
 }
+
+#[tokio::test]
+async fn search_spans_every_system() {
+    let mut h = Harness::new("search", false).await;
+    h.sign_up_admin().await;
+    h.games("nes").await;
+
+    let q = r#"query($t: String!) { search(text: $t) { title system favourite } }"#;
+    let found = h.ok(q, json!({"t": "  TEST  game "})).await;
+    assert_eq!(
+        found["search"],
+        json!([{"title": "Test Game", "system": "nes", "favourite": false}])
+    );
+    let found = h.ok(q, json!({"t": "other"})).await;
+    assert_eq!(found["search"][0]["system"], "gba", "another system's games too");
+    assert_eq!(h.ok(q, json!({"t": "test zelda"})).await["search"], json!([]), "every word");
+    assert_eq!(h.ok(q, json!({"t": "   "})).await["search"], json!([]), "blank");
+}

@@ -163,6 +163,13 @@ export type HomeQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type HomeQuery = { home: { featured: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }>, recent: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null, autoSave: { slot: number, savedAt: number, screenshotUrl: string | null } | null }>, added: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }>, favourites: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> } };
 
+export type SearchQueryVariables = Exact<{
+  text: string;
+}>;
+
+
+export type SearchQuery = { search: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> };
+
 export type CollectionsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -661,6 +668,35 @@ fragment SaveFields on SaveSlot {
   savedAt
   screenshotUrl
 }`) as unknown as TypedDocumentString<HomeQuery, HomeQueryVariables>;
+export const SearchDocument = new TypedDocumentString(`
+    query Search($text: String!) {
+  search(text: $text) {
+    ...GameFields
+  }
+}
+    fragment GameFields on Game {
+  id
+  system
+  title
+  fileTitle
+  tags
+  path
+  size
+  lastPlayedAt
+  playCount
+  image: mediaUrl(kind: IMAGE)
+  thumb: mediaUrl(kind: THUMB)
+  video: mediaUrl(kind: VIDEO)
+  description
+  releaseDate
+  developer
+  publisher
+  genre
+  players
+  rating
+  favourite
+  discs
+}`) as unknown as TypedDocumentString<SearchQuery, SearchQueryVariables>;
 export const CollectionsDocument = new TypedDocumentString(`
     query Collections {
   collections {

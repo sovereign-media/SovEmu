@@ -4,19 +4,20 @@
 // fire once per press. Gamepads are polled every animation frame (the Gamepad API has no
 // events for buttons), keyboards via events.
 
-export type NavAction = "up" | "down" | "left" | "right" | "accept" | "back" | "menu" | "pageUp" | "pageDown";
+export type NavAction = "up" | "down" | "left" | "right" | "accept" | "back" | "menu" | "pageUp" | "pageDown" | "search";
 
 const KEY_ACTIONS: Record<string, NavAction> = {
   ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
   Enter: "accept", KeyX: "accept", " ": "accept", Space: "accept",
   Escape: "back", Backspace: "back", KeyZ: "back",
-  Tab: "menu", PageUp: "pageUp", PageDown: "pageDown",
+  Tab: "menu", PageUp: "pageUp", PageDown: "pageDown", Slash: "search",
 };
 
 // W3C standard gamepad: 0 = bottom face (RetroPad B), 1 = right face (RetroPad A).
-// Console menus confirm with the right face button and go back with the bottom one.
+// Console menus confirm with the right face button and go back with the bottom one; the top one
+// (RetroPad X) searches.
 const PAD_ACTIONS: Record<number, NavAction> = {
-  1: "accept", 0: "back", 9: "menu", 4: "pageUp", 5: "pageDown",
+  1: "accept", 0: "back", 3: "search", 9: "menu", 4: "pageUp", 5: "pageDown",
   12: "up", 13: "down", 14: "left", 15: "right",
 };
 

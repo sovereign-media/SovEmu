@@ -58,6 +58,7 @@ import {
   ViewerQuery as ViewerDocument,
   CollectionsQuery as CollectionsDocument,
   CollectionIdsQuery,
+  SearchQuery,
   SetFavouriteMutation,
   CreateCollectionMutation,
   DeleteCollectionMutation,
@@ -114,6 +115,8 @@ export const api = {
   saves: async (gameId: number) => (await request(SavesQuery, { id: gameId })).game.saves,
   /** This user's collections, each with its games. */
   collections: async () => (await request(CollectionsDocument)).collections,
+  /** Games from every system matching every word of `text`, best first. */
+  search: async (text: string) => (await request(SearchQuery, { text })).search,
   /** The ids of this user's collections that hold the game. */
   collectionIds: async (gameId: number) => (await request(CollectionIdsQuery, { id: gameId })).game.collectionIds,
   setFavourite: (gameId: number, favourite: boolean) => request(SetFavouriteMutation, { gameId, favourite }),

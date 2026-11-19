@@ -24,7 +24,7 @@ pub struct Home {
 }
 
 /// `AND g.system NOT IN (…)` for the systems the configuration hides, and the ids to bind.
-fn hidden_systems(state: &AppState) -> (String, Vec<String>) {
+pub(crate) fn hidden_systems(state: &AppState) -> (String, Vec<String>) {
     let hidden: Vec<String> = state
         .config
         .systems
@@ -43,7 +43,7 @@ fn day() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| (d.as_secs() / 86_400) as i64)
 }
 
-async fn query(
+pub(crate) async fn query(
     state: &AppState,
     user_id: i64,
     filter: &str,

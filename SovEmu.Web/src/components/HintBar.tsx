@@ -3,12 +3,13 @@
 import { Menu, Move, SquareMinus } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type HintButton = "dpad" | "a" | "b" | "start" | "select";
+export type HintButton = "dpad" | "a" | "b" | "x" | "start" | "select";
 
 const GLYPHS: Record<HintButton, ReactNode> = {
   dpad: <Move className="size-3.5" />,
   a: "A",
   b: "B",
+  x: "X",
   start: <Menu className="size-3.5" />,
   select: <SquareMinus className="size-3.5" />,
 };

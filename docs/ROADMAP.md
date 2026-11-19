@@ -90,6 +90,8 @@ held 59.93 fps over 300 frames with no resyncs.
       (`setDisc`), and the in-game menus offer Change disc
 - [x] Favourites and per-user collections: a heart and a collections menu on the game panel, a
       Favourites filter, and Home rows for favourites and each collection
+- [x] Search across every system (`Query.search`: every word, case and accents folded, titles
+      starting with the query first), from a Search entry in the navigation and X on Home
 
 ## Phase 3: persistence
 

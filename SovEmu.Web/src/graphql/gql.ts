@@ -27,6 +27,7 @@ type Documents = {
     "\n  mutation Logout {\n    logout\n  }\n": typeof types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": typeof types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
+    "\n  query Search($text: String!) {\n    search(text: $text) {\n      ...GameFields\n    }\n  }\n": typeof types.SearchDocument,
     "\n  query Collections {\n    collections {\n      id\n      name\n      gameCount\n      games {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.CollectionsDocument,
     "\n  query CollectionIds($id: Int!) {\n    game(id: $id) {\n      id\n      collectionIds\n    }\n  }\n": typeof types.CollectionIdsDocument,
     "\n  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {\n    setFavourite(gameId: $gameId, favourite: $favourite)\n  }\n": typeof types.SetFavouriteDocument,
@@ -78,6 +79,7 @@ const documents: Documents = {
     "\n  mutation Logout {\n    logout\n  }\n": types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
+    "\n  query Search($text: String!) {\n    search(text: $text) {\n      ...GameFields\n    }\n  }\n": types.SearchDocument,
     "\n  query Collections {\n    collections {\n      id\n      name\n      gameCount\n      games {\n        ...GameFields\n      }\n    }\n  }\n": types.CollectionsDocument,
     "\n  query CollectionIds($id: Int!) {\n    game(id: $id) {\n      id\n      collectionIds\n    }\n  }\n": types.CollectionIdsDocument,
     "\n  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {\n    setFavourite(gameId: $gameId, favourite: $favourite)\n  }\n": types.SetFavouriteDocument,
@@ -165,6 +167,10 @@ export function graphql(source: "\n  query ClientConfig {\n    clientConfig {\n 
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n"): typeof import('./graphql').HomeDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query Search($text: String!) {\n    search(text: $text) {\n      ...GameFields\n    }\n  }\n"): typeof import('./graphql').SearchDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
