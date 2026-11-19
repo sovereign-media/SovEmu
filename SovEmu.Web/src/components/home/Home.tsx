@@ -1,6 +1,6 @@
 // Home: a hero of featured games over rows (continue playing, systems, recently added), laid out
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
-// (left/right); A plays or opens; Start rescans.
+// (left/right); A plays or opens; X (or /) searches every system; Start rescans.
 import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
@@ -92,6 +92,7 @@ function HomeScreen() {
     const nav = listenNav(async (action) => {
       const { focus, rows, accept } = latest.current;
       if (action === "accept") return accept(focus);
+      if (action === "search") return void (location.href = "/search/");
       if (action === "menu") {
         toast("Rescanning the library…");
         try {
@@ -212,7 +213,14 @@ function HomeScreen() {
           </Row>
         ))}
       </div>
-      <HintBar hints={[{ button: "dpad", label: "Choose" }, { button: "a", label: "Open" }, { button: "start", label: "Rescan" }]} />
+      <HintBar
+        hints={[
+          { button: "dpad", label: "Choose" },
+          { button: "a", label: "Open" },
+          { button: "x", label: "Search" },
+          { button: "start", label: "Rescan" },
+        ]}
+      />
     </main>
   );
 }

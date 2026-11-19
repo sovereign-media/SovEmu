@@ -4,7 +4,7 @@
 // maker (Nintendo ▸ NES, SNES …), then the BIOS check; the account (sign out); and for admins
 // the gear, a menu of Library, Controllers and Emulator settings ▸ each system. Menus are Radix
 // DropdownMenus.
-import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Microchip, Settings, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Microchip, Search, Settings, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type SystemSummary, type User } from "../lib/api";
@@ -12,7 +12,7 @@ import { groupByMaker, initials, systemBadge } from "../lib/systems";
 import { cn } from "./ui/cn";
 
 /** Which section the page belongs to, lit in the dock. */
-export type Section = "home" | "systems" | "admin" | "none";
+export type Section = "home" | "search" | "systems" | "admin" | "none";
 
 const PANE = "z-50 min-w-52 overflow-hidden rounded-xl border border-edge bg-panel py-1 shadow-2xl outline-none";
 const ROW =
@@ -174,25 +174,24 @@ function Entries({
     await api.logout();
     location.href = "/login/";
   };
-  const home =
+  const link = (href: string, label: string, icon: ReactNode, current: boolean) =>
     shape === "dock" ? (
-      <a href="/" aria-label="Home" title="Home" className={cn(ENTRY, section === "home" ? CURRENT : IDLE)}>
-        <span className={GLYPH}>
-          <House />
-        </span>
+      <a href={href} aria-label={label} title={label} className={cn(ENTRY, current ? CURRENT : IDLE)}>
+        <span className={GLYPH}>{icon}</span>
         <span aria-hidden className={LABEL}>
-          Home
+          {label}
         </span>
       </a>
     ) : (
-      <a href="/" className={cn(BAR_ITEM, section === "home" && "text-white")}>
-        <House />
-        <span className="text-[10px] font-medium">Home</span>
+      <a href={href} className={cn(BAR_ITEM, current && "text-white")}>
+        {icon}
+        <span className="text-[10px] font-medium">{label}</span>
       </a>
     );
   return (
     <>
-      {home}
+      {link("/", "Home", <House />, section === "home")}
+      {link("/search/", "Search", <Search />, section === "search")}
       <MenuEntry icon={<Gamepad2 />} label="Systems" heading="Systems" current={section === "systems"} shape={shape} onOpenChange={onMenu}>
         {withGames.length ? (
           <SystemsByMaker systems={withGames} flat={shape === "bar"} href={(s) => `/system/?id=${encodeURIComponent(s.id)}`} />

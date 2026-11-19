@@ -927,6 +927,25 @@ impl Query {
         })
     }
 
+    /// Games from every system matching every word of `text` (title, file title, developer,
+    /// publisher or genre; case and accents ignored), best first: titles starting with it,
+    /// then titles holding every word, then the rest. At most `limit` (default 48, up to 200).
+    async fn search(
+        &self,
+        ctx: &Context<'_>,
+        text: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<GameNode>> {
+        let user = user(ctx).await?;
+        let limit = limit.map_or(crate::search::DEFAULT_LIMIT, |n| n.max(1) as u32);
+        Ok(crate::search::search(state(ctx), &user, &text, limit)
+            .await
+            .api()?
+            .into_iter()
+            .map(GameNode)
+            .collect())
+    }
+
     /// This user's collections, by name.
     async fn collections(&self, ctx: &Context<'_>) -> Result<Vec<CollectionNode>> {
         let user = user(ctx).await?;
