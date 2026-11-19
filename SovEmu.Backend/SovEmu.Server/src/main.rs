@@ -10,6 +10,7 @@ mod auth;
 mod bios;
 mod cache;
 mod cheats;
+mod collections;
 mod controllers;
 mod controls;
 mod db;

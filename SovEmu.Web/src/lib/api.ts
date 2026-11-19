@@ -5,6 +5,7 @@ import type {
   BiosQuery as BiosQueryResult,
   ControllerDefaultsQuery,
   CheatsQuery,
+  CollectionsQuery,
   EmulatorSettingsQuery,
   GameFieldsFragment,
   PadButton,
@@ -55,6 +56,12 @@ import {
   SystemGamesQuery,
   SystemsQuery,
   ViewerQuery as ViewerDocument,
+  CollectionsQuery as CollectionsDocument,
+  CollectionIdsQuery,
+  SetFavouriteMutation,
+  CreateCollectionMutation,
+  DeleteCollectionMutation,
+  SetInCollectionMutation,
 } from "./queries";
 import { onUnload, request } from "./graphql";
 
@@ -66,6 +73,7 @@ export type SystemSummary = SystemFieldsFragment;
 export type Game = GameFieldsFragment;
 export type SaveSlot = SaveFieldsFragment;
 export type HomeFeed = HomeQuery["home"];
+export type Collection = CollectionsQuery["collections"][number];
 export type RecentGame = HomeFeed["recent"][number];
 export type SessionInfo = SessionFieldsFragment;
 export type StartStatus = StartProgressQuery["startProgress"];
@@ -104,6 +112,15 @@ export const api = {
   system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
   game: async (id: number) => (await request(GameQuery, { id })).game,
   saves: async (gameId: number) => (await request(SavesQuery, { id: gameId })).game.saves,
+  /** This user's collections, each with its games. */
+  collections: async () => (await request(CollectionsDocument)).collections,
+  /** The ids of this user's collections that hold the game. */
+  collectionIds: async (gameId: number) => (await request(CollectionIdsQuery, { id: gameId })).game.collectionIds,
+  setFavourite: (gameId: number, favourite: boolean) => request(SetFavouriteMutation, { gameId, favourite }),
+  createCollection: async (name: string) => (await request(CreateCollectionMutation, { name })).createCollection,
+  deleteCollection: (id: number) => request(DeleteCollectionMutation, { id }),
+  setInCollection: (collectionId: number, gameId: number, member: boolean) =>
+    request(SetInCollectionMutation, { collectionId, gameId, member }),
   scan: async () => (await request(ScanLibraryMutation)).scanLibrary,
   /** Admin: library and game-information status together. */
   adminStatus: () => request(AdminStatusDocument),

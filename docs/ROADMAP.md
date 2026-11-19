@@ -88,6 +88,8 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Group multi-disc games (`(Disc N)`) into one entry: the scanner folds them (`game_discs`),
       the worker plays an `.m3u` of the discs and changes disc through libretro's disk control
       (`setDisc`), and the in-game menus offer Change disc
+- [x] Favourites and per-user collections: a heart and a collections menu on the game panel, a
+      Favourites filter, and Home rows for favourites and each collection
 
 ## Phase 3: persistence
 

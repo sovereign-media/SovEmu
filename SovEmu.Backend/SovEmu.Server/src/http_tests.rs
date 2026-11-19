@@ -1085,3 +1085,62 @@ async fn systems_describe_their_buttons_and_pads() {
         .collect();
     assert_eq!(families, ["xbox", "playstation", "nintendo", "generic"]);
 }
+
+#[tokio::test]
+async fn favourites_and_collections() {
+    let mut h = Harness::new("collections", false).await;
+    h.sign_up_admin().await;
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+
+    // A favourite: on the game, and as Home's row.
+    h.ok("mutation($id: Int!) { setFavourite(gameId: $id, favourite: true) }", json!({"id": id}))
+        .await;
+    let game = h.ok("query($id: Int!) { game(id: $id) { favourite } }", json!({"id": id})).await;
+    assert_eq!(game["game"]["favourite"], true);
+    let home = h.ok("{ home { favourites { id favourite } } }", json!({})).await;
+    assert_eq!(home["home"]["favourites"][0]["id"], id);
+    h.ok("mutation($id: Int!) { setFavourite(gameId: $id, favourite: false) }", json!({"id": id}))
+        .await;
+    let home = h.ok("{ home { favourites { id } } }", json!({})).await;
+    assert_eq!(home["home"]["favourites"], json!([]));
+
+    // A collection: created, named once, filled, renamed, emptied, deleted.
+    let made = h
+        .ok(
+            r#"mutation { createCollection(name: "  Co-op   night ") { id name gameCount } }"#,
+            json!({}),
+        )
+        .await;
+    assert_eq!(made["createCollection"]["name"], "Co-op night", "spaces tidied");
+    let cid = made["createCollection"]["id"].as_i64().unwrap();
+    let (code, _) =
+        h.err(r#"mutation { createCollection(name: "Co-op night") { id } }"#, json!({})).await;
+    assert_eq!(code, "CONFLICT");
+    let (code, _) = h.err(r#"mutation { createCollection(name: "   ") { id } }"#, json!({})).await;
+    assert_eq!(code, "BAD_REQUEST");
+    h.ok(
+        "mutation($c: Int!, $g: Int!) { setInCollection(collectionId: $c, gameId: $g, member: true) }",
+        json!({"c": cid, "g": id}),
+    )
+    .await;
+    let list = h.ok("{ collections { id name gameCount games { id } } }", json!({})).await;
+    assert_eq!(list["collections"][0]["gameCount"], 1);
+    assert_eq!(list["collections"][0]["games"][0]["id"], id);
+    let game =
+        h.ok("query($id: Int!) { game(id: $id) { collectionIds } }", json!({"id": id})).await;
+    assert_eq!(game["game"]["collectionIds"], json!([cid]));
+    h.ok(r#"mutation($c: Int!) { renameCollection(id: $c, name: "Weekend") }"#, json!({"c": cid}))
+        .await;
+    h.ok(
+        "mutation($c: Int!, $g: Int!) { setInCollection(collectionId: $c, gameId: $g, member: false) }",
+        json!({"c": cid, "g": id}),
+    )
+    .await;
+    let list = h.ok("{ collections { name gameCount } }", json!({})).await;
+    assert_eq!(list["collections"], json!([{"name": "Weekend", "gameCount": 0}]));
+    h.ok("mutation($c: Int!) { deleteCollection(id: $c) }", json!({"c": cid})).await;
+    assert_eq!(h.ok("{ collections { id } }", json!({})).await["collections"], json!([]));
+    let (code, _) =
+        h.err("mutation($c: Int!) { deleteCollection(id: $c) }", json!({"c": cid})).await;
+    assert_eq!(code, "NOT_FOUND");
+}

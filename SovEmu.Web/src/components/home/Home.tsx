@@ -1,9 +1,9 @@
 // Home: a hero of featured games over rows (continue playing, systems, recently added), laid out
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
 // (left/right); A plays or opens; Start rescans.
-import { Gamepad2, History, Sparkles } from "lucide-react";
+import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
+import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
 import { moveFocus, startFocus, type Focus, type RowShape } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
 import HintBar from "../HintBar";
@@ -15,8 +15,11 @@ import { GameCard, Row, SystemCard } from "./Row";
 
 const HERO = 0;
 const RECENT = 1;
-const SYSTEMS = 2;
-const ADDED = 3;
+const FAVOURITES = 2;
+const SYSTEMS = 3;
+const ADDED = 4;
+/** Each collection's row follows, in name order. */
+const COLLECTIONS = 5;
 
 const play = (g: Game) => (location.href = `/play/?game=${g.id}`);
 /** Opens the game's system with its side panel open (its own URL). */
@@ -29,16 +32,18 @@ function HomeScreen() {
   const toast = useToast();
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [systems, setSystems] = useState<SystemSummary[]>([]);
-  const [focus, setFocus] = useState<Focus>({ row: 0, cols: [0, 0, 0, 0] });
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [focus, setFocus] = useState<Focus>({ row: 0, cols: [0, 0, 0, 0, 0] });
   // Focus rings show once a pad or the keyboard is used, not for the mouse.
   const [navigating, setNavigating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [home, all] = await Promise.all([api.home(), api.systems()]);
+      const [home, all, lists] = await Promise.all([api.home(), api.systems(), api.collections().catch(() => [])]);
       setFeed(home);
       setSystems(all.filter((s) => s.gameCount > 0));
+      setCollections(lists.filter((c) => c.games.length > 0));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -50,10 +55,12 @@ function HomeScreen() {
       { length: feed?.featured.length ?? 0, wraps: true },
       // Every row loops, like the hero: right on the last card comes back to the first.
       { length: feed?.recent.length ?? 0, wraps: true },
+      { length: feed?.favourites.length ?? 0, wraps: true },
       { length: systems.length, wraps: true },
       { length: feed?.added.length ?? 0, wraps: true },
+      ...collections.map((c) => ({ length: c.games.length, wraps: true })),
     ],
-    [feed, systems],
+    [feed, systems, collections],
   );
   // Start on the first row with something in it once the feed arrives.
   useEffect(() => {
@@ -71,8 +78,11 @@ function HomeScreen() {
       if (f.row === RECENT && feed.recent[col]) play(feed.recent[col]);
       if (f.row === SYSTEMS && systems[col]) openSystem(systems[col]);
       if (f.row === ADDED && feed.added[col]) browse(feed.added[col]);
+      if (f.row === FAVOURITES && feed.favourites[col]) browse(feed.favourites[col]);
+      const list = collections[f.row - COLLECTIONS];
+      if (list?.games[col]) browse(list.games[col]);
     },
-    [feed, systems],
+    [feed, systems, collections],
   );
 
   // Pad and keyboard. The handler reads the latest state through a ref.
@@ -146,6 +156,22 @@ function HomeScreen() {
             ))}
           </Row>
         )}
+        {feed.favourites.length > 0 && (
+          <Row title="Favourites" icon={<Heart />}>
+            {feed.favourites.map((g, i) => (
+              <GameCard
+                key={g.id}
+                game={g}
+                row={FAVOURITES}
+                col={i}
+                focused={focused(FAVOURITES, i)}
+                color={colorOf(g.system)}
+                short={shortOf(g.system)}
+                onOpen={() => browse(g)}
+              />
+            ))}
+          </Row>
+        )}
         {systems.length > 0 && (
           <Row title="Systems" icon={<Gamepad2 />}>
             {systems.map((s, i) => (
@@ -169,6 +195,22 @@ function HomeScreen() {
             ))}
           </Row>
         )}
+        {collections.map((c, n) => (
+          <Row key={c.id} title={c.name} icon={<FolderHeart />}>
+            {c.games.map((g, i) => (
+              <GameCard
+                key={g.id}
+                game={g}
+                row={COLLECTIONS + n}
+                col={i}
+                focused={focused(COLLECTIONS + n, i)}
+                color={colorOf(g.system)}
+                short={shortOf(g.system)}
+                onOpen={() => browse(g)}
+              />
+            ))}
+          </Row>
+        ))}
       </div>
       <HintBar hints={[{ button: "dpad", label: "Choose" }, { button: "a", label: "Open" }, { button: "start", label: "Rescan" }]} />
     </main>

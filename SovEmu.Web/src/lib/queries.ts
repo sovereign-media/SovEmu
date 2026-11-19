@@ -22,6 +22,8 @@ graphql(`
     genre
     players
     rating
+    favourite
+    discs
   }
 `);
 
@@ -172,7 +174,60 @@ export const HomeQuery = graphql(`
       added {
         ...GameFields
       }
+      favourites {
+        ...GameFields
+      }
     }
+  }
+`);
+
+export const CollectionsQuery = graphql(`
+  query Collections {
+    collections {
+      id
+      name
+      gameCount
+      games {
+        ...GameFields
+      }
+    }
+  }
+`);
+
+export const CollectionIdsQuery = graphql(`
+  query CollectionIds($id: Int!) {
+    game(id: $id) {
+      id
+      collectionIds
+    }
+  }
+`);
+
+export const SetFavouriteMutation = graphql(`
+  mutation SetFavourite($gameId: Int!, $favourite: Boolean!) {
+    setFavourite(gameId: $gameId, favourite: $favourite)
+  }
+`);
+
+export const CreateCollectionMutation = graphql(`
+  mutation CreateCollection($name: String!) {
+    createCollection(name: $name) {
+      id
+      name
+      gameCount
+    }
+  }
+`);
+
+export const DeleteCollectionMutation = graphql(`
+  mutation DeleteCollection($id: Int!) {
+    deleteCollection(id: $id)
+  }
+`);
+
+export const SetInCollectionMutation = graphql(`
+  mutation SetInCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {
+    setInCollection(collectionId: $collectionId, gameId: $gameId, member: $member)
   }
 `);
 
