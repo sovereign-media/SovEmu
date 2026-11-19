@@ -22,6 +22,9 @@ pub const PAD_INPUTS: [&str; 16] = [
     "south", "east", "west", "north", "l1", "r1", "l2", "r2", "select", "start", "l3", "r3", "up",
     "down", "left", "right",
 ];
+/// A controller's stick directions (a stick pushed past half-way), bindable like buttons.
+pub const STICK_INPUTS: [&str; 8] =
+    ["ls_up", "ls_down", "ls_left", "ls_right", "rs_up", "rs_down", "rs_left", "rs_right"];
 /// The keyboard's fast-forward and rewind keys, which cannot be bound.
 const RESERVED_KEYS: [&str; 2] = ["Tab", "Backspace"];
 const MAX_ID: usize = 64;
@@ -218,7 +221,7 @@ pub fn check(controller: &str, name: &str, bindings: &[Binding]) -> Result<(), S
                 && b.input.bytes().all(|c| c.is_ascii_alphanumeric())
                 && !RESERVED_KEYS.contains(&b.input.as_str())
         } else {
-            PAD_INPUTS.contains(&b.input.as_str())
+            PAD_INPUTS.contains(&b.input.as_str()) || STICK_INPUTS.contains(&b.input.as_str())
         };
         if !ok {
             return Err(format!(
@@ -459,6 +462,8 @@ mod tests {
     #[test]
     fn checks_ids_and_inputs() {
         assert!(check("xbox", "Xbox Wireless Controller", &[b("south", PadButton::A)]).is_ok());
+        assert!(check("xbox", "", &[b("ls_left", PadButton::L), b("rs_up", PadButton::X)]).is_ok());
+        assert!(check("xbox", "", &[b("ls_diagonal", PadButton::L)]).is_err());
         assert!(check("pad:2dc8:6101", "", &[b("start", PadButton::Start)]).is_ok());
         assert!(
             check("keyboard", "", &[b("KeyZ", PadButton::B), b("ArrowUp", PadButton::Up)]).is_ok()
