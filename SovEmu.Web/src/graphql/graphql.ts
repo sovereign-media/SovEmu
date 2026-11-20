@@ -152,6 +152,11 @@ export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type ViewerQuery = { viewer: { setupRequired: boolean, user: { id: number, username: string, role: Role, isAdmin: boolean } | null } };
 
+export type UsersQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type UsersQuery = { users: Array<{ id: number, username: string, role: Role }> };
+
 export type SetupMutationVariables = Exact<{
   username: string;
   password: string;
@@ -616,6 +621,15 @@ export const ViewerDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<ViewerQuery, ViewerQueryVariables>;
+export const UsersDocument = new TypedDocumentString(`
+    query Users {
+  users {
+    id
+    username
+    role
+  }
+}
+    `) as unknown as TypedDocumentString<UsersQuery, UsersQueryVariables>;
 export const SetupDocument = new TypedDocumentString(`
     mutation Setup($username: String!, $password: String!) {
   setup(username: $username, password: $password) {

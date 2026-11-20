@@ -129,6 +129,16 @@ export const ViewerQuery = graphql(`
   }
 `);
 
+export const UsersQuery = graphql(`
+  query Users {
+    users {
+      id
+      username
+      role
+    }
+  }
+`);
+
 export const SetupMutation = graphql(`
   mutation Setup($username: String!, $password: String!) {
     setup(username: $username, password: $password) {
