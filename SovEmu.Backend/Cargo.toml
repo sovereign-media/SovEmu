@@ -34,3 +34,10 @@ undocumented_unsafe_blocks = "warn"
 lto = "thin"
 codegen-units = 1
 debug = "line-tables-only"
+
+# The server waits on the network and SQLite, not the CPU: one codegen unit made its release
+# build ~2.5x slower (CI: 3m 25s of a 3m 45s build) for no difference anyone sees. The worker,
+# whose frame loop it is, keeps one; splitting it saved ~1.5 s. Dependencies keep one too (they
+# come from the cache).
+[profile.release.package.sovemu-server]
+codegen-units = 16
