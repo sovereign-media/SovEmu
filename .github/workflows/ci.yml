@@ -24,7 +24,52 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Which parts of the repository this push or pull request touched; each job below runs only
+  # when one of its inputs did (and always when run by hand). A skipped job counts as passed,
+  # so it can still be a required check. Every filter includes this file: a change to CI runs
+  # everything it changes.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      image: ${{ steps.filter.outputs.image }}
+      chart: ${{ steps.filter.outputs.chart }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - .github/workflows/ci.yml
+              - SovEmu.Backend/**
+            web:
+              - .github/workflows/ci.yml
+              - SovEmu.Web/**
+              # The web client's typed documents are generated from it (codegen:check).
+              - SovEmu.Backend/SovEmu.Server/schema.graphql
+            # What the image is built from: the Dockerfile's COPY lines, and what reaches the
+            # build context (.dockerignore).
+            image:
+              - .github/workflows/ci.yml
+              - .dockerignore
+              - SovEmu.Backend/**
+              - SovEmu.Web/**
+              - scripts/cores.list
+              - scripts/install-cores.sh
+            chart:
+              - .github/workflows/ci.yml
+              - charts/**
+
   backend:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
     name: Backend (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -64,6 +109,8 @@ jobs:
         run: cargo test --workspace
 
   web:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
     name: Web client (Astro)
     runs-on: ubuntu-latest
     defaults:
@@ -93,6 +140,8 @@ jobs:
     # The shipped artefact: Debian, cores from the pinned libretro release. The `test` target
     # runs the whole suite in the image; the runtime build fails if any shipped core cannot be
     # loaded. Both build in one bake (SovEmu.Backend/docker-bake.hcl), side by side.
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.image == 'true'
     name: Container image
     runs-on: ubuntu-latest
     steps:
@@ -171,6 +220,8 @@ jobs:
   chart:
     # charts/sovemu: lint and render every value set in ci/, and validate what it renders
     # against the Kubernetes schemas.
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.chart == 'true'
     name: Helm chart
     runs-on: ubuntu-latest
     defaults:
