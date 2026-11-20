@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
 import { AUTO_SLOT, api, type ControllerMappingList, type Game, type PadLayout, type SaveSlot, type SessionInfo, type SystemControls, type SystemSummary } from "../../lib/api";
+import { parseAspect, shouldFrame, windowInsets, type Decoration } from "../../lib/decoration";
 import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
 import { defaultMapping, diagramKey, inputLabel, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings, toMapping } from "../../lib/controllers";
 import { captureInput, InputState } from "../../lib/input";
@@ -80,6 +81,19 @@ const ago = (unix: number) => {
 interface Loaded {
   game: Game;
   system: SystemSummary | undefined;
+  /** The artwork to frame the picture with, if its system has any. */
+  decoration: Decoration | null;
+}
+
+/** The window's shape, kept up to date: framing depends on it. */
+function useScreen(): { width: number; height: number } {
+  const [screen, setScreen] = useState({ width: innerWidth, height: innerHeight });
+  useEffect(() => {
+    const resize = () => setScreen({ width: innerWidth, height: innerHeight });
+    addEventListener("resize", resize);
+    return () => removeEventListener("resize", resize);
+  }, []);
+  return screen;
 }
 
 function Player() {
@@ -97,6 +111,7 @@ function Player() {
   const [splash, setSplash] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [aspect, setAspect] = useState("4 / 3");
+  const screen = useScreen();
   const [filtered, setFiltered] = useState(false);
   const [stats, setStats] = useState<StatItem[] | null>(null);
   // Adding a cheat: a form, while which menus ignore the pad.
@@ -144,7 +159,7 @@ function Player() {
       pads = { system: game.system, short: systems.find((s) => s.id === game.system)?.short ?? game.system, controls: controls?.controls ?? null, layouts: controls?.layouts ?? [], everywhere };
       const system = systems.find((s) => s.id === game.system);
       document.title = `${game.title} · SovEmu`;
-      setLoaded({ game, system });
+      setLoaded({ game, system, decoration: game.decoration ?? null });
       input.analogSticks = !!system?.needsGpu;
       input.setMappings(mappings);
       if (filter.supported) {
@@ -575,6 +590,7 @@ function Player() {
   const diagrams = top?.menu.diagrams && (top.menu.diagrams.system || top.menu.diagrams.controller) ? top.menu.diagrams : null;
   const lit = top?.menu.items[top.index]?.highlight;
   const color = loaded?.system?.color ?? "#4169e1";
+  const frame = loaded?.decoration && shouldFrame(screen.width, screen.height, parseAspect(aspect)) ? loaded.decoration : null;
   const submitCheat = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
@@ -584,10 +600,25 @@ function Player() {
 
   return (
     <main className="fixed inset-0 grid place-items-center bg-black">
-      <div className="relative h-full max-h-dvh w-auto max-w-full" style={{ aspectRatio: aspect }}>
-        <video ref={video} autoPlay playsInline className={cn("pixelated absolute inset-0 size-full object-fill", filtered && "opacity-0")} />
-        <canvas ref={canvas} className={cn("absolute inset-0 size-full", !filtered && "hidden")} />
-      </div>
+      {frame ? (
+        // The decoration fitted to the screen, the picture (its shape kept) in its window, the
+        // artwork drawn over the picture's edges.
+        <div
+          className="relative"
+          style={{ aspectRatio: `${frame.width} / ${frame.height}`, width: `min(100vw, calc(100dvh * ${frame.width} / ${frame.height}))` }}
+        >
+          <div className="absolute" style={windowInsets(frame)}>
+            <video ref={video} autoPlay playsInline className={cn("pixelated absolute inset-0 size-full object-contain", filtered && "opacity-0")} />
+            <canvas ref={canvas} className={cn("absolute inset-0 size-full object-contain", !filtered && "hidden")} />
+          </div>
+          <img src={frame.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 size-full select-none" />
+        </div>
+      ) : (
+        <div className="relative h-full max-h-dvh w-auto max-w-full" style={{ aspectRatio: aspect }}>
+          <video ref={video} autoPlay playsInline className={cn("pixelated absolute inset-0 size-full object-fill", filtered && "opacity-0")} />
+          <canvas ref={canvas} className={cn("absolute inset-0 size-full", !filtered && "hidden")} />
+        </div>
+      )}
 
       {splash && (
         <section

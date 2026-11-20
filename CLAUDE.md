@@ -161,6 +161,8 @@ workspace on `rust:<ver>-trixie` against Debian's libvpx and libopus; `test` run
 `/opt/sovemu/web`, runs as uid 1000,
 keeps data in `/data`, exposes 8080/tcp (web + API) and 50000/udp (all WebRTC media), and runs
 `sovemu-worker probe` over every core at build time (writing `/opt/sovemu/cores/manifest.json`),
+draws the built-in decoration set into `/opt/sovemu/decorations` (`sovemu-server
+--write-decorations`; never ship third-party bezel art),
 so a core that cannot load fails the build. `compose.yaml` builds it, mounts `./data` and runs
 `serve`.
 

@@ -3357,6 +3357,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "png",
  "quick-xml",
  "reqwest",
  "roxmltree",

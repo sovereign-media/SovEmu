@@ -448,6 +448,18 @@ impl GameNode {
             .map(PatchNode)
             .collect())
     }
+    /// The decoration (bezel) to draw around its picture: the set chosen for its system
+    /// (`SOVEMU_DECORATION`, `SOVEMU_SYSTEMS__<id>__DECORATION`), its own image there, else its
+    /// system's, else the set's default. Null when the set is `none` or has nothing for it.
+    async fn decoration(&self, ctx: &Context<'_>) -> Option<DecorationNode> {
+        let state = state(ctx);
+        let set = state.config.decoration_for(&self.0.system);
+        if set == crate::decorations::NONE {
+            return None;
+        }
+        let stem = std::path::Path::new(&self.0.path).file_stem()?.to_string_lossy().into_owned();
+        state.decorations().for_game(set, &self.0.system, &stem).map(DecorationNode)
+    }
     /// One of this user's favourites.
     async fn favourite(&self) -> bool {
         self.0.favourite
@@ -578,6 +590,43 @@ impl PatchNode {
     /// Applied unless the player chose otherwise (it is beside the game, with its name).
     async fn is_default(&self) -> bool {
         self.0.is_default
+    }
+}
+
+/// Artwork drawn around a game's picture, in Batocera's decoration format: an image with a
+/// transparent window, and where that window is in its pixels. Scale the image to the screen
+/// and fit the picture, keeping its shape, in the scaled window.
+struct DecorationNode(crate::decorations::Decoration);
+
+#[Object(name = "Decoration")]
+impl DecorationNode {
+    /// The image (PNG), under `/media/decorations/`.
+    async fn url(&self) -> String {
+        self.0.url()
+    }
+    /// Its size in pixels.
+    async fn width(&self) -> u32 {
+        self.0.window.width
+    }
+    async fn height(&self) -> u32 {
+        self.0.window.height
+    }
+    /// The window's margins from the image's edges, in the image's pixels.
+    async fn top(&self) -> u32 {
+        self.0.window.top
+    }
+    async fn left(&self) -> u32 {
+        self.0.window.left
+    }
+    async fn bottom(&self) -> u32 {
+        self.0.window.bottom
+    }
+    async fn right(&self) -> u32 {
+        self.0.window.right
+    }
+    /// The set it comes from (`sovemu` is the built-in one).
+    async fn set(&self) -> &str {
+        &self.0.set
     }
 }
 

@@ -111,6 +111,7 @@ COPY --from=web /web/dist/ /opt/sovemu/web/
 
 ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
     SOVEMU_WEB_DIR=/opt/sovemu/web \
+    SOVEMU_DECORATIONS_BUILTIN=/opt/sovemu/decorations \
     SOVEMU_WORKER=/usr/local/bin/sovemu-worker \
     SOVEMU_DATA_DIR=/data \
     SOVEMU_UDP_PORTS=50000-50009 \
@@ -120,6 +121,9 @@ ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
 
 # Every shipped core must load with the libraries installed above.
 RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
+# The built-in decoration set (`sovemu`), drawn by the server's own code: SovEmu ships no
+# third-party artwork. Other sets go in /data/decorations or SOVEMU_DECORATIONS_DIRS.
+RUN sovemu-server --write-decorations /opt/sovemu/decorations
 
 USER sovemu
 WORKDIR /data

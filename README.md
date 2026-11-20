@@ -195,6 +195,31 @@ effect another game. UPS and BPS patches carry checksums, so one made for anothe
 game is refused with a message rather than applied wrongly; IPS has none. Disc images are not
 patched.
 
+### Decorations (bezels)
+
+Games are framed with artwork that fills the bars a 4:3 picture leaves on a 16:9 screen. The
+server picks the frame and the clients draw it around the stream. Sets use
+[Batocera's layout](https://wiki.batocera.org/en:customize_decorations_bezels), so its decoration
+packs work as they are:
+
+```
+decorations/<set>/systems/snes.png    + snes.info     a system's games
+decorations/<set>/games/snes/<rom>.png + <rom>.info   one game (its file name, no extension)
+decorations/<set>/default.png         + default.info  everything else
+```
+
+Each `.info` gives the image's size and the margins of its transparent window
+(`{"width":1920,"height":1080,"top":0,"left":240,"bottom":0,"right":240}`); without one, the window
+is the largest centred 4:3 area. Sets are read from `SOVEMU_DECORATIONS_DIRS`, then
+`data/decorations`, then the built-in folder. A set found in several of them is merged, with
+the earlier folder winning for the same file. Folders are listed again with every library scan.
+
+SovEmu's own set, `sovemu`, is a frame per system in its colour, shaped to its screen (4:3, or
+10:9 and 3:2 for handhelds), drawn by the server's own code. SovEmu ships no third-party artwork
+and has no downloader: packs such as the Bezel Project carry no license, so add them yourself.
+Choose the set with `SOVEMU_DECORATION`, per system with `SOVEMU_SYSTEMS__<id>__DECORATION`,
+and `none` turns frames off.
+
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
@@ -256,7 +281,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
 | `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
 | `SOVEMU_COPY_THREADS` | `4` | Files copied at once (mirror sync, artwork cache) |
-| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, core options (see below) |
+| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__DECORATION`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, decoration set, core options (see below) |
 | `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
@@ -293,7 +318,9 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
 | `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
 | `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
-| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER` | set in the image | The built web client; the worker binary |
+| `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
+| `SOVEMU_DECORATIONS_DIRS` | `/nas/decorations` with `compose.nas.yaml` | More decoration folders (Batocera layout), comma-separated, before `data/decorations` and the built-in one |
+| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_DECORATIONS_BUILTIN` | set in the image | The built web client; the worker binary; the built-in decorations |
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |
 | `SOVEMU_NAS_HOST`, `SOVEMU_NAS_PATH`, `SOVEMU_NAS_USER`, `SOVEMU_NAS_PASSWORD` | | The SMB share to mount read-only |
@@ -319,6 +346,7 @@ SOVEMU_USERS_PRUNE=true                             # nobody else keeps an accou
 SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core option
 SOVEMU_SYSTEMS__nes__CORE=nestopia                  # use this core (if installed)
 SOVEMU_SYSTEMS__gamegear__ENABLED=false             # hide a system
+SOVEMU_SYSTEMS__gba__DECORATION=none                # no frame around GBA games
 ```
 
 Declared accounts are created at startup and kept in step: a changed password signs that user

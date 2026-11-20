@@ -9,6 +9,8 @@ use crate::mirror::{self, SyncStatus};
 use crate::{AppState, LibraryMode, library};
 
 pub async fn scan_and_log(state: &AppState) {
+    // Decoration sets may have been added beside the library: list them again too.
+    state.reload_decorations();
     let started = std::time::Instant::now();
     match library::scan(&state.db, &state.config.roms_dir).await {
         Ok(r) => tracing::info!(

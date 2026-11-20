@@ -39,7 +39,7 @@ type Documents = {
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": typeof types.SystemsDocument,
     "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": typeof types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.SystemGamesDocument,
-    "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": typeof types.GameDocument,
+    "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n      decoration {\n        url\n        width\n        height\n        top\n        left\n        bottom\n        right\n      }\n    }\n  }\n": typeof types.GameDocument,
     "\n  query Saves($id: Int!) {\n    game(id: $id) {\n      id\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": typeof types.SavesDocument,
     "\n  query Cheats($id: Int!) {\n    game(id: $id) {\n      id\n      cheats {\n        id\n        description\n        code\n        enabled\n      }\n    }\n  }\n": typeof types.CheatsDocument,
     "\n  mutation AddCheat($gameId: Int!, $code: String!, $description: String!) {\n    addCheat(gameId: $gameId, code: $code, description: $description) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": typeof types.AddCheatDocument,
@@ -93,7 +93,7 @@ const documents: Documents = {
     "\n  query Systems {\n    systems {\n      ...SystemFields\n    }\n  }\n": types.SystemsDocument,
     "\n  query Bios {\n    systems {\n      ...SystemFields\n      bios {\n        state\n        folder\n        groups {\n          label\n          importance\n          help\n          anyOne\n          satisfied\n          files {\n            name\n            label\n            state\n            foundAt\n            md5\n            size\n          }\n        }\n      }\n    }\n  }\n": types.BiosDocument,
     "\n  query SystemGames($id: ID!) {\n    system(id: $id) {\n      ...SystemFields\n      games {\n        ...GameFields\n      }\n    }\n  }\n": types.SystemGamesDocument,
-    "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": types.GameDocument,
+    "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n      decoration {\n        url\n        width\n        height\n        top\n        left\n        bottom\n        right\n      }\n    }\n  }\n": types.GameDocument,
     "\n  query Saves($id: Int!) {\n    game(id: $id) {\n      id\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n": types.SavesDocument,
     "\n  query Cheats($id: Int!) {\n    game(id: $id) {\n      id\n      cheats {\n        id\n        description\n        code\n        enabled\n      }\n    }\n  }\n": types.CheatsDocument,
     "\n  mutation AddCheat($gameId: Int!, $code: String!, $description: String!) {\n    addCheat(gameId: $gameId, code: $code, description: $description) {\n      id\n      description\n      code\n      enabled\n    }\n  }\n": types.AddCheatDocument,
@@ -222,7 +222,7 @@ export function graphql(source: "\n  query SystemGames($id: ID!) {\n    system(i
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n    }\n  }\n"): typeof import('./graphql').GameDocument;
+export function graphql(source: "\n  query Game($id: Int!) {\n    game(id: $id) {\n      ...GameFields\n      saves {\n        ...SaveFields\n      }\n      decoration {\n        url\n        width\n        height\n        top\n        left\n        bottom\n        right\n      }\n    }\n  }\n"): typeof import('./graphql').GameDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
