@@ -15,7 +15,6 @@ mod controllers;
 mod controls;
 mod db;
 mod error;
-mod gpu;
 mod graphql;
 mod home;
 #[cfg(test)]
@@ -30,10 +29,8 @@ mod query_plans;
 mod releases;
 mod search;
 mod settings;
-mod starts;
 mod structured;
 mod telemetry;
-mod workers;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -49,10 +46,11 @@ use axum::response::Response;
 use axum::routing::get;
 use clap::Parser;
 use sovemu_library::{bios, cache, decorations, mirror};
+use sovemu_sessions::{gpu, workers};
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
 
-use crate::workers::{WorkerConfig, Workers};
+use sovemu_sessions::workers::{WorkerConfig, Workers};
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "sovemu-server", version, about = "SovEmu: console emulation over WebRTC")]
@@ -754,7 +752,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         fast_forward: config.fast_forward,
         keyframe_interval: config.keyframe_interval,
         gpu: gpu.worker_arg.clone(),
-        log_format: config.log_format,
+        log_format: config.log_format.as_arg(),
+        observer: Arc::new(telemetry::SessionMetrics),
     });
     let cache_dir = config.data_dir.join("cache");
     let cache_bytes = match config.library_mode {

@@ -15,7 +15,8 @@ paths:
   asks services, and never depends on `sqlx` or the server. Work that needs the database stays in
   the server, calling the library's plain functions. Only what the server uses is `pub`;
   everything else is `pub(crate)` or private, so its internals can change freely.
-- **Server.** `SovEmu.Server` depends on `Library`, `Assets` and `Protocol` only. Database access is plain
+- **Server.** `SovEmu.Server` depends on `Library`, `Assets`, `Sessions` and `Protocol` only; neither it nor
+  `Sessions` ever links `RetroHost` or `Media`. Database access is plain
   `sqlx::query` / `query_as` with bound parameters (never format values into SQL); schema changes are new
   files in `migrations/`. The API is GraphQL (`graphql.rs`): resolvers check access with
   `user(ctx)` / `admin(ctx)` and call plain functions (`&AppState`, `&User`, arguments) in the

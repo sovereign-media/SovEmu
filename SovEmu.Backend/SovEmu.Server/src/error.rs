@@ -49,6 +49,12 @@ impl From<sqlx::Error> for ApiError {
     }
 }
 
+impl From<sovemu_sessions::Error> for ApiError {
+    fn from(err: sovemu_sessions::Error) -> Self {
+        Self::internal(err.to_string())
+    }
+}
+
 impl From<anyhow::Error> for ApiError {
     fn from(err: anyhow::Error) -> Self {
         Self::internal(format!("{err:#}"))

@@ -13,8 +13,8 @@ use crate::assets::SignedUser;
 use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
 use crate::library::{self, ScanReport};
-use crate::workers::{Launch, SessionInfo};
 use sovemu_library::systems::{self, System};
+use sovemu_sessions::workers::{Launch, SessionInfo};
 
 #[derive(Debug, Serialize)]
 pub struct SystemSummary {
@@ -25,7 +25,7 @@ pub struct SystemSummary {
     pub(crate) playable: bool,
     /// For a 3D system: `gpu`, `software` (slow) or `off` (unplayable here).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rendering: Option<crate::gpu::Mode>,
+    pub(crate) rendering: Option<sovemu_sessions::gpu::Mode>,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -127,7 +127,7 @@ pub async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
             system: *s,
             game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
             playable: find_core(state, s).is_some()
-                && (!s.needs_gpu || state.gpu.mode != crate::gpu::Mode::Off),
+                && (!s.needs_gpu || state.gpu.mode != sovemu_sessions::gpu::Mode::Off),
             rendering: s.needs_gpu.then_some(state.gpu.mode),
         })
         .collect();
@@ -214,7 +214,7 @@ pub async fn start_session(
     start_id: Option<&str>,
 ) -> ApiResult<SessionInfo> {
     let start_id = match start_id {
-        Some(id) if !crate::starts::valid_id(id) => {
+        Some(id) if !sovemu_sessions::starts::valid_id(id) => {
             return Err(ApiError::bad_request("start_id: 8 to 64 letters, digits, - or _"));
         }
         id => id.map(str::to_owned),
@@ -230,12 +230,12 @@ pub async fn start_session(
     result
 }
 
-/// How far the start `start_id` has got (see [`crate::starts`]).
+/// How far the start `start_id` has got (see [`sovemu_sessions::starts`]).
 pub fn start_progress(
     state: &AppState,
     user: &User,
     start_id: &str,
-) -> ApiResult<crate::starts::StartStatus> {
+) -> ApiResult<sovemu_sessions::starts::StartStatus> {
     state
         .workers
         .starts
@@ -252,7 +252,7 @@ async fn launch(
     let state = state.clone();
     let game = fetch_game(&state, user.id, game_id).await?;
     let system = system_by_id(&state, &game.system)?;
-    if system.needs_gpu && state.gpu.mode == crate::gpu::Mode::Off {
+    if system.needs_gpu && state.gpu.mode == sovemu_sessions::gpu::Mode::Off {
         return Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             format!(
@@ -395,7 +395,7 @@ fn owned_session(
     state: &AppState,
     user_id: i64,
     id: &str,
-) -> ApiResult<std::sync::Arc<crate::workers::Session>> {
+) -> ApiResult<std::sync::Arc<sovemu_sessions::workers::Session>> {
     state
         .workers
         .get(id)

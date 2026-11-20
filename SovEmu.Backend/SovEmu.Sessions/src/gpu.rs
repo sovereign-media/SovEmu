@@ -117,7 +117,7 @@ fn renderer_of(devices: &[Device], node: Option<&str>) -> Option<String> {
 }
 
 /// Turns `SOVEMU_GPU` and a probe into a decision.
-pub fn decide(setting: &str, probe: Probe) -> GpuStatus {
+pub(crate) fn decide(setting: &str, probe: Probe) -> GpuStatus {
     let setting = setting.trim();
     if let Some(error) = probe.error {
         return GpuStatus::off(setting, Some(error));

@@ -44,7 +44,7 @@ instead (as Sovereign's server takes its SPA).
   new release also moves `FBNEO_COMMIT` (`SovEmu.Library/src/info/fbneo.rs`).
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
-  `RetroHost` or `Media` into `SovEmu.Server`.
+  `RetroHost` or `Media` into `SovEmu.Server` or `SovEmu.Sessions`.
 - **Never lose a player's progress.** Battery saves and states are written atomically (temp file
   + rename) by the worker, which also writes them on every exit path (`Session::finish`, called
   from `Drop`). Never write a save in place, and never kill a worker without first asking it to
@@ -96,7 +96,7 @@ instead (as Sovereign's server takes its SPA).
   if it drew a frame and read it back, and `SOVEMU_GPU` falls back to software (llvmpipe), then
   to no 3D systems. A GPU with no DRM node (NVIDIA without `nvidia-drm`) is reported as
   `auto`, which workers resolve hardware-first. Vulkan cores are not supported yet.
-- **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
+- **Workers get no secrets.** `Workers::spawn` (`SovEmu.Sessions`) clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** Telemetry is pushed, never served: traces
   and metrics go out over OpenTelemetry (OTLP/HTTP, `telemetry.rs`) only when
@@ -132,7 +132,8 @@ cargo test --workspace
 | `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SOVEMU_ASSET_KEY`, else generated into `data/server.json`). No HTTP, no database: the server's `/media/…` middleware calls it. |
 | `SovEmu.Library` | `sovemu-library` | The ROM library without the database: the systems table (Recalbox folder names + aliases, extension fallback), walking a library into games (parts folded together, soft patches found, artwork file names), release labels, BIOS files, the game-information clients (FBNeo, LaunchBox, ScreenScraper, TheGamesDB), the local cache and mirror, decorations. Reads files and asks services; never opens the database. Only what the server uses is `pub`. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
-| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the library's tables, kept in step with what `SovEmu.Library` finds; one `sovemu-worker session` per game session with a UDP port from a pool. |
+| `SovEmu.Sessions` | `sovemu-sessions` | Game sessions: `Workers` starts one `sovemu-worker session` per game with a UDP port from a pool and the allow-listed environment, drives it over JSON lines (`SovEmu.Protocol::ipc`), and stops it so saves are written; `starts` (loading progress) and `gpu` (what `sovemu-worker gpu` reports). Reports sessions to an `Observer` (the server's metrics). Never links a core or a codec. |
+| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the library's tables, kept in step with what `SovEmu.Library` finds; game sessions through `SovEmu.Sessions`. |
 | `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
 
 ```
@@ -141,7 +142,8 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
     └── RetroHost
             └── Worker ──► Media, Protocol
 Library   (no workspace references)                  Assets    (no workspace references)
-Server ──► Library, Assets, Protocol   (never links a core or a codec: it runs workers)
+Sessions ──► Library, Protocol   (starts workers; never links a core or a codec)
+Server ──► Library, Assets, Sessions, Protocol   (never links a core or a codec)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
 persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the
