@@ -48,6 +48,7 @@ import {
   SessionOfferMutation,
   SetCheatMutation,
   SetupMutation,
+  UsersQuery,
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
   StopSessionMutation,
@@ -104,6 +105,8 @@ export const AUTO_SLOT = 0;
 
 export const api = {
   viewer: async () => (await request(ViewerDocument)).viewer,
+  /** Admins: every account, by name. */
+  users: async () => (await request(UsersQuery)).users,
   setup: async (username: string, password: string) => (await request(SetupMutation, { username, password })).setup,
   iceServers: async () => (await request(ClientConfigQuery)).clientConfig.iceServers as RTCIceServer[],
   home: async () => (await request(HomeDocument)).home,

@@ -2,12 +2,13 @@
 // rest, labelled pills on hover or keyboard focus), on a phone a tab bar along the bottom. The
 // SovEmu wordmark sits in the corner above the dock. Entries: Home; Systems, a menu nested by
 // maker (Nintendo ▸ NES, SNES …), then the BIOS check; the account (sign out); and for admins
-// the gear, a menu of Library, Controllers and Emulator settings ▸ each system. Menus are Radix
-// DropdownMenus.
-import { ChevronRight, Gamepad, Gamepad2, House, Library, LogOut, Microchip, Search, Settings, SlidersHorizontal } from "lucide-react";
+// the gear, the admin menu: groups cascading into their pages, as Sovereign's (`lib/adminNav.ts`).
+// Menus are Radix DropdownMenus.
+import { ChevronRight, Gamepad2, House, LogOut, Microchip, Search, Settings } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type SystemSummary, type User } from "../lib/api";
+import { ADMIN_NAV_GROUPS, findAdminNavGroup, findAdminNavItem, type AdminNavItem } from "../lib/adminNav";
 import { signOut as endSignIn } from "../lib/auth";
 import { groupByMaker, initials, systemBadge } from "../lib/systems";
 import { cn } from "./ui/cn";
@@ -170,7 +171,6 @@ function Entries({
 }) {
   const withGames = systems.filter((s) => s.gameCount > 0);
   const biosMissing = systems.filter((s) => s.biosMissing).length;
-  const configurable = systems.filter((s) => s.playable || s.needsGpu);
   const signOut = () => void endSignIn();
   const link = (href: string, label: string, icon: ReactNode, current: boolean) =>
     shape === "dock" ? (
@@ -226,40 +226,56 @@ function Entries({
       )}
       {user?.isAdmin && (
         <MenuEntry icon={<Settings />} label="Admin" heading="Admin" current={section === "admin"} shape={shape} onOpenChange={onMenu}>
-          <DropdownMenu.Item asChild className={ROW}>
-            <a href="/admin/">
-              <Library /> Library
-            </a>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className={ROW}>
-            <a href="/admin/controllers/">
-              <Gamepad /> Controllers
-            </a>
-          </DropdownMenu.Item>
-          {shape === "bar" ? (
-            <DropdownMenu.Item asChild className={ROW}>
-              <a href="/admin/settings/">
-                <SlidersHorizontal /> Emulator settings
-              </a>
-            </DropdownMenu.Item>
-          ) : (
-            <DropdownMenu.Sub>
-              <DropdownMenu.SubTrigger className={ROW}>
-                <SlidersHorizontal />
-                <span className="flex-1">Emulator settings</span>
-                <ChevronRight className="text-slate-500" />
-              </DropdownMenu.SubTrigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.SubContent sideOffset={4} collisionPadding={8} className={cn(PANE, "max-h-[70dvh] overflow-y-auto")}>
-                  <SystemsByMaker systems={configurable} href={(s) => `/admin/settings/?id=${encodeURIComponent(s.id)}`} />
-                </DropdownMenu.SubContent>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Sub>
-          )}
+          <AdminMenu shape={shape} />
         </MenuEntry>
       )}
     </>
   );
+}
+
+/** The admin menu, as Sovereign's: on the dock a cascade of groups, each a submenu of its pages
+ *  (`ADMIN_NAV_GROUPS`, the one list); on the phone's bar, the pages under their group's label. */
+function AdminMenu({ shape }: { shape: "dock" | "bar" }) {
+  const here = typeof location === "undefined" ? "" : location.pathname;
+  const current = findAdminNavGroup(here)?.id;
+  const page = (item: AdminNavItem) => {
+    const Icon = item.icon;
+    const active = findAdminNavItem(here)?.href === item.href;
+    return (
+      <DropdownMenu.Item key={item.href} asChild className={cn(ROW, active && "text-white")}>
+        <a href={item.href} title={item.title} aria-current={active ? "page" : undefined}>
+          <Icon /> {item.label}
+        </a>
+      </DropdownMenu.Item>
+    );
+  };
+  if (shape === "bar") {
+    return ADMIN_NAV_GROUPS.map((group) => (
+      <DropdownMenu.Group key={group.id}>
+        <DropdownMenu.Label className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+          {group.label}
+        </DropdownMenu.Label>
+        {group.items.map(page)}
+      </DropdownMenu.Group>
+    ));
+  }
+  return ADMIN_NAV_GROUPS.map((group) => {
+    const Icon = group.icon;
+    return (
+      <DropdownMenu.Sub key={group.id}>
+        <DropdownMenu.SubTrigger className={cn(ROW, group.id === current && "text-white")} data-current={group.id === current}>
+          <Icon />
+          <span className="flex-1">{group.label}</span>
+          <ChevronRight className="text-slate-500" />
+        </DropdownMenu.SubTrigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.SubContent sideOffset={4} collisionPadding={8} className={PANE}>
+            {group.items.map(page)}
+          </DropdownMenu.SubContent>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Sub>
+    );
+  });
 }
 
 /** How long the pointer rests on the dock before it opens, so crossing it does not flash it. */

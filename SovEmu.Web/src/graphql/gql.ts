@@ -22,6 +22,7 @@ type Documents = {
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": typeof types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": typeof types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n": typeof types.ViewerDocument,
+    "\n  query Users {\n    users {\n      id\n      username\n      role\n    }\n  }\n": typeof types.UsersDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.SetupDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": typeof types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
@@ -74,6 +75,7 @@ const documents: Documents = {
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": types.MetadataFieldsFragmentDoc,
     "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n": types.ViewerDocument,
+    "\n  query Users {\n    users {\n      id\n      username\n      role\n    }\n  }\n": types.UsersDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.SetupDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
@@ -147,6 +149,10 @@ export function graphql(source: "\n  fragment MetadataFields on MetadataStatus {
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n"): typeof import('./graphql').ViewerDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query Users {\n    users {\n      id\n      username\n      role\n    }\n  }\n"): typeof import('./graphql').UsersDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
