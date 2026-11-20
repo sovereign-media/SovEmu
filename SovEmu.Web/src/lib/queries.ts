@@ -26,6 +26,7 @@ graphql(`
     release
     patch
     discs
+    partKind
   }
 `);
 

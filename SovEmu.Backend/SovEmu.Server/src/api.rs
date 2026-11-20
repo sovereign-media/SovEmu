@@ -61,6 +61,8 @@ pub struct Game {
     pub(crate) favourite: bool,
     /// What tells it apart from games of the same title on its system (`releases::refresh`).
     pub(crate) release: Option<String>,
+    /// What a multi-part game's files are (`disc`, `disk`, `tape`, `side`, `part`).
+    pub(crate) parts: Option<String>,
     /// The soft patch this user plays it with, by name (filled in by `patches::mark`).
     #[sqlx(skip)]
     pub(crate) patch: Option<String>,
@@ -137,7 +139,7 @@ pub(crate) const GAME_COLUMNS: &str =
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art, g.release,
+     m.box_art, g.release, g.parts,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
 /// What a list of games carries for this user beyond its rows: which are favourites, and the

@@ -28,6 +28,8 @@ pub struct Found {
     pub discs: Vec<String>,
     /// Soft patches found with it (see [`PATCH_EXTENSIONS`]).
     pub patches: Vec<FoundPatch>,
+    /// What a multi-part game's [`Found::discs`] are (discs, disks, tapes…); none for one file.
+    pub parts: Option<PartKind>,
 }
 
 /// A soft patch for a game: beside it with its name (`Game.bps`, applied by default, as
@@ -100,24 +102,114 @@ fn attach_patches(candidates: &mut [Candidate], patches: &[PathBuf]) {
     }
 }
 
-/// The disc number in a tag such as `Disc 2` (or `Disc 2 of 3`).
-fn disc_number(tag: &str) -> Option<u32> {
-    let rest = tag.strip_prefix("Disc ")?;
-    rest.split_whitespace().next()?.parse().ok()
+/// What a multi-part game's files are: the media it came on, one file each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum PartKind {
+    /// Optical discs: `(Disc 2)`, `(CD2)`, `[Disc 2]`, `- Disc 2`.
+    Disc,
+    /// Floppy disks: `(Disk 1 of 2)`, `(Disk B)`.
+    Disk,
+    /// Cassettes: `(Tape 2 of 2 Side B)`.
+    Tape,
+    /// The sides of one disk or tape, alone: `(Side A)`.
+    Side,
+    /// Anything else split into numbered files: `(Part 1 of 3)`, `(File 2 of 2)`.
+    Part,
 }
 
-/// What makes files one game: system, folder, title and the tags before the disc's.
-type DiscGroup = (String, String, String, String);
+impl PartKind {
+    /// Stored in `games.parts`, and the API's name for it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disc => "disc",
+            Self::Disk => "disk",
+            Self::Tape => "tape",
+            Self::Side => "side",
+            Self::Part => "part",
+        }
+    }
+}
 
-/// Folds a multi-disc game's files into one entry: files in the same folder of the same system
-/// whose names agree up to a `(Disc N)` tag. Tags after the disc's name that disc
-/// (`Command & Conquer (USA) (Disc 1) (GDI)`, `(Disc 2) (NOD)`), so they are not part of the
-/// game's. A file with no disc tag joins discs 2, 3… of the same name as their disc 1 (`Final
-/// Fantasy VII (T).chd` beside `(T) (Disc 2)`), as some sets name the first disc.
+/// A file's place in a multi-part set, from one of its tags, in the forms No-Intro, Redump and
+/// TOSEC use and the frontends accept: `Disc 2`, `CD2`, `CD 2`, `Disk 1 of 2`, `Disk 06 of 13`,
+/// `Disk B` (a letter counts from A), `Tape 2 of 2 Side B`, `Side A`, `Part 1 of 3`,
+/// `File 2 of 2`. Part and File only with "of", which a title never uses. The order key sorts
+/// by number, then side.
+fn media_part(tag: &str) -> Option<(PartKind, u32)> {
+    let lower = tag.trim().to_ascii_lowercase();
+    // "cd2" is "cd 2".
+    let spaced = match lower.strip_prefix("cd") {
+        Some(rest) if rest.starts_with(|c: char| c.is_ascii_digit()) => format!("cd {rest}"),
+        _ => lower,
+    };
+    let words: Vec<&str> = spaced.split_whitespace().collect();
+    let (kind, rest) = match words.split_first()? {
+        (&("disc" | "cd"), rest) => (PartKind::Disc, rest),
+        (&"disk", rest) => (PartKind::Disk, rest),
+        (&("tape" | "cassette"), rest) => (PartKind::Tape, rest),
+        (&"side", rest) => (PartKind::Side, rest),
+        (&("part" | "file"), rest) if rest.get(1) == Some(&"of") => (PartKind::Part, rest),
+        _ => return None,
+    };
+    let (number, mut rest) = rest.split_first()?;
+    let number = ordinal(number)?;
+    if let [of, _total, tail @ ..] = rest
+        && *of == "of"
+    {
+        rest = tail;
+    }
+    let side = match rest {
+        [] => 0,
+        [side, letter] if *side == "side" && kind != PartKind::Side => ordinal(letter)?,
+        _ => return None,
+    };
+    Some((kind, number * 4 + side))
+}
+
+/// "2", "02" or a letter ("b" is 2).
+fn ordinal(word: &str) -> Option<u32> {
+    if let Ok(n) = word.parse::<u32>() {
+        return (n < 1000).then_some(n);
+    }
+    let mut chars = word.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c @ 'a'..='z'), None) => Some(c as u32 - 'a' as u32 + 1),
+        _ => None,
+    }
+}
+
+/// A file's place in its set, its tags and title without the part's: from a tag (and a side tag
+/// right after it), else from the title's end (`Game - Disc 2`).
+fn split_part(title: &str, tags: &[&str]) -> Option<(PartKind, u32, String, String)> {
+    if let Some(at) = tags.iter().position(|t| media_part(t).is_some()) {
+        let (kind, mut order) = media_part(tags[at])?;
+        // TOSEC writes "(Disk 1 of 2)(Side A)": the side is part of the same place.
+        if kind != PartKind::Side
+            && order % 4 == 0
+            && let Some((PartKind::Side, side)) = tags.get(at + 1).and_then(|t| media_part(t))
+        {
+            order += side / 4;
+        }
+        return Some((kind, order, title.to_owned(), tags[..at].join(", ")));
+    }
+    let (name, part) = title.rsplit_once(" - ")?;
+    let (kind, order) = media_part(part)?;
+    Some((kind, order, name.trim().to_owned(), tags.join(", ")))
+}
+
+/// What makes files one game: system, folder, title, the tags before the part's, and its kind.
+type DiscGroup = (String, String, String, String, PartKind);
+
+/// Folds a multi-part game's files into one entry: files in the same folder of the same system
+/// whose names agree up to a part tag ([`media_part`]: discs, disks, tapes, sides, parts). Tags
+/// after the part's name that part (`Command & Conquer (USA) (Disc 1) (GDI)`, `(Disc 2)
+/// (NOD)`), so they are not part of the game's. A file with no part tag joins parts 2, 3… of
+/// the same name as their first (`Final Fantasy VII (T).chd` beside `(T) (Disc 2)`), as some sets
+/// name the first disc.
 ///
-/// The entry is disc 1's (its path, so its artwork and play history; with the disc tags dropped
-/// from its tags), sized as all of them, listing every disc in order. A lone `(Disc 1)` stays as
-/// it is.
+/// The entry is the first part's (its path, so its artwork and play history; with the part tags
+/// dropped from its tags and title), sized as all of them, listing every part in order, with its
+/// kind. A lone first part stays as it is.
 pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
     use std::collections::BTreeMap;
     let folder = |p: &str| p.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
@@ -125,36 +217,49 @@ pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
     let mut untagged = Vec::new();
     for f in found {
         let tags: Vec<&str> = f.tags.split(", ").filter(|t| !t.is_empty()).collect();
-        let Some(at) = tags.iter().position(|t| disc_number(t).is_some()) else {
+        let Some((kind, order, title, rest)) = split_part(&f.title, &tags) else {
             untagged.push(f);
             continue;
         };
-        let disc = disc_number(tags[at]).unwrap_or(1);
-        let rest = tags[..at].join(", ");
         groups
-            .entry((f.system.to_owned(), folder(&f.path), f.title.clone(), rest))
+            .entry((f.system.to_owned(), folder(&f.path), title, rest, kind))
             .or_default()
-            .push((disc, f));
+            .push((order, f));
     }
     let mut out = Vec::new();
     for f in untagged {
-        let key = (f.system.to_owned(), folder(&f.path), f.title.clone(), f.tags.clone());
-        match groups.get_mut(&key) {
-            Some(discs) if discs.iter().all(|(n, _)| *n >= 2) => discs.push((1, f)),
-            _ => out.push(f),
+        // The first part, untagged, of a set whose tagged parts start at the second.
+        let joined = groups.iter_mut().find(|((system, dir, title, tags, _), parts)| {
+            system == f.system
+                && *dir == folder(&f.path)
+                && *title == f.title
+                && *tags == f.tags
+                && parts.iter().all(|(order, _)| order / 4 >= 2)
+        });
+        match joined {
+            Some((_, parts)) => parts.push((4, f)),
+            None => out.push(f),
         }
     }
-    for ((_, _, _, rest), mut discs) in groups {
-        discs.sort_by_key(|(n, f)| (*n, f.path.clone()));
-        if discs.len() == 1 {
-            out.push(discs.remove(0).1);
+    for ((_, _, title, rest, kind), mut parts) in groups {
+        parts.sort_by_key(|(n, f)| (*n, f.path.clone()));
+        if parts.len() == 1 {
+            out.push(parts.remove(0).1);
             continue;
         }
-        let size = discs.iter().map(|(_, f)| f.size).sum();
-        let modified = discs.iter().map(|(_, f)| f.modified).max().unwrap_or(0);
-        let paths = discs.iter().map(|(_, f)| f.path.clone()).collect();
-        let (_, first) = discs.remove(0);
-        out.push(Found { tags: rest, size, modified, discs: paths, ..first });
+        let size = parts.iter().map(|(_, f)| f.size).sum();
+        let modified = parts.iter().map(|(_, f)| f.modified).max().unwrap_or(0);
+        let paths = parts.iter().map(|(_, f)| f.path.clone()).collect();
+        let (_, first) = parts.remove(0);
+        out.push(Found {
+            title,
+            tags: rest,
+            size,
+            modified,
+            discs: paths,
+            parts: Some(kind),
+            ..first
+        });
     }
     out.sort_by(|a, b| (a.system, &a.title, &a.path).cmp(&(b.system, &b.title, &b.path)));
     out
@@ -368,6 +473,7 @@ fn to_found(root: &Path, c: &Candidate) -> Option<Found> {
         media: c.media.clone(),
         discs: Vec::new(),
         patches,
+        parts: None,
     })
 }
 
@@ -389,11 +495,11 @@ pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Er
     sqlx::query("DELETE FROM seen_patches").execute(&mut *tx).await?;
     for f in &found {
         sqlx::query(
-            "INSERT INTO games (system, path, title, tags, size, modified, media)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO games (system, path, title, tags, size, modified, media, parts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(path) DO UPDATE SET system = excluded.system, title = excluded.title,
                tags = excluded.tags, size = excluded.size, modified = excluded.modified,
-               media = excluded.media",
+               media = excluded.media, parts = excluded.parts",
         )
         .bind(f.system)
         .bind(&f.path)
@@ -402,6 +508,7 @@ pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Er
         .bind(f.size)
         .bind(f.modified)
         .bind(&f.media)
+        .bind(f.parts.map(PartKind::as_str))
         .execute(&mut *tx)
         .await?;
         sqlx::query("INSERT OR IGNORE INTO seen (path) VALUES (?)")
@@ -558,6 +665,94 @@ mod tests {
     }
 
     #[test]
+    fn reads_every_common_way_of_numbering_parts() {
+        use PartKind::*;
+        let order = |n: u32, side: u32| n * 4 + side;
+        for (tag, want) in [
+            // Redump and No-Intro.
+            ("Disc 1", Some((Disc, order(1, 0)))),
+            ("Disc 2", Some((Disc, order(2, 0)))),
+            ("Disk 2", Some((Disk, order(2, 0)))),
+            ("Disk A", Some((Disk, order(1, 0)))),
+            ("Disk B", Some((Disk, order(2, 0)))),
+            // TOSEC.
+            ("Disk 1 of 2", Some((Disk, order(1, 0)))),
+            ("Disk 06 of 13", Some((Disk, order(6, 0)))),
+            ("Disc 1 of 6", Some((Disc, order(1, 0)))),
+            ("Tape 2 of 2 Side B", Some((Tape, order(2, 2)))),
+            ("Disk 1 Side A", Some((Disk, order(1, 1)))),
+            ("Side A", Some((Side, order(1, 0)))),
+            ("Side B", Some((Side, order(2, 0)))),
+            ("Part 1 of 3", Some((Part, order(1, 0)))),
+            ("File 2 of 2", Some((Part, order(2, 0)))),
+            // Elsewhere.
+            ("CD1", Some((Disc, order(1, 0)))),
+            ("CD 2", Some((Disc, order(2, 0)))),
+            ("disc 3", Some((Disc, order(3, 0)))),
+            ("Cassette 1", Some((Tape, order(1, 0)))),
+            // Not parts.
+            ("Disco", None),
+            ("Part 2", None),
+            ("Disc Jockey", None),
+            ("USA", None),
+            ("Rev 1", None),
+            ("Disk 1 Bonus", None),
+        ] {
+            assert_eq!(media_part(tag), want, "{tag}");
+        }
+    }
+
+    #[test]
+    fn groups_disks_tapes_and_titled_discs_too() {
+        let found = |path: &str| {
+            let stem = Path::new(path).file_stem().unwrap().to_string_lossy().into_owned();
+            let (title, tags) = systems::parse_title(&stem);
+            Found {
+                system: "nes",
+                path: path.into(),
+                title,
+                tags,
+                size: 1,
+                modified: 0,
+                media: String::new(),
+                discs: Vec::new(),
+                patches: Vec::new(),
+                parts: None,
+            }
+        };
+        let games = group_discs(vec![
+            // TOSEC, sides as their own tag.
+            found("nes/Saga (1990)(Maker)(Disk 1 of 2)(Side B).fds"),
+            found("nes/Saga (1990)(Maker)(Disk 1 of 2)(Side A).fds"),
+            found("nes/Saga (1990)(Maker)(Disk 2 of 2)(Side A).fds"),
+            // A disc number at the end of the title, and brackets.
+            found("nes/Quest - Disc 2.chd"),
+            found("nes/Quest - Disc 1.chd"),
+            found("nes/Epic [Disc 2].chd"),
+            found("nes/Epic [Disc 1].chd"),
+        ]);
+        let summary: Vec<_> = games
+            .iter()
+            .map(|g| (g.title.as_str(), g.parts.map(PartKind::as_str), g.discs.len()))
+            .collect();
+        assert_eq!(
+            summary,
+            [("Epic", Some("disc"), 2), ("Quest", Some("disc"), 2), ("Saga", Some("disk"), 3)]
+        );
+        let saga = games.iter().find(|g| g.title == "Saga").unwrap();
+        assert_eq!(
+            saga.discs,
+            [
+                "nes/Saga (1990)(Maker)(Disk 1 of 2)(Side A).fds",
+                "nes/Saga (1990)(Maker)(Disk 1 of 2)(Side B).fds",
+                "nes/Saga (1990)(Maker)(Disk 2 of 2)(Side A).fds",
+            ],
+            "by disk, then side"
+        );
+        assert_eq!(saga.tags, "1990, Maker");
+    }
+
+    #[test]
     fn folds_a_multi_disc_game_into_one() {
         let root = library();
         let psx: Vec<_> =
@@ -597,8 +792,8 @@ mod tests {
             ["psx/Saga (T).chd", "psx/Saga (T) (Disc 2).chd", "psx/Saga (T) (Disc 3).chd"]
         );
         assert_eq!(saga.tags, "T");
-        assert_eq!(disc_number("Disc 2 of 3"), Some(2));
-        assert_eq!(disc_number("Disco"), None);
+        assert_eq!(media_part("Disc 2 of 3"), Some((PartKind::Disc, 8)));
+        assert_eq!(media_part("Disco"), None);
     }
 
     #[test]

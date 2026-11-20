@@ -433,6 +433,18 @@ impl GameNode {
     async fn release(&self) -> Option<&str> {
         self.0.release.as_deref()
     }
+    /// What its several files are (discs, disks, tapes, sides or parts), shown with its count
+    /// (`discs`). Null for a game in one file.
+    async fn part_kind(&self) -> Option<PartKind> {
+        match self.0.parts.as_deref()? {
+            "disc" => Some(PartKind::Disc),
+            "disk" => Some(PartKind::Disk),
+            "tape" => Some(PartKind::Tape),
+            "side" => Some(PartKind::Side),
+            "part" => Some(PartKind::Part),
+            _ => None,
+        }
+    }
     /// The soft patch this user plays it with (a translation, a fix, a hack), by name: their
     /// choice, else the patch beside it with its name. Null: the original.
     async fn patch(&self) -> Option<&str> {
@@ -581,6 +593,21 @@ struct Home {
 
 /// A named list of this user's games.
 struct CollectionNode(crate::collections::Collection);
+
+/// What a multi-part game's files are.
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+enum PartKind {
+    /// Optical discs (CDs, DVDs, GD-ROMs).
+    Disc,
+    /// Floppy disks (the Famicom Disk System's included).
+    Disk,
+    /// Cassette tapes.
+    Tape,
+    /// The sides of one disk or tape.
+    Side,
+    /// Numbered files of any other kind.
+    Part,
+}
 
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);

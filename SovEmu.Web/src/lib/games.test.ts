@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { activeFilters, filterGames, gameFromUrl, genreCounts, gridMove, jumpStops, jumpTo, knowsPlayers, letterOf, maxPlayers, sortGames, stepStop, stripWindow, urlWithGame } from "./games";
+import { activeFilters, filterGames, gameFromUrl, genreCounts, gridMove, jumpStops, jumpTo, knowsPlayers, letterOf, maxPlayers, partsLabel, sortGames, stepStop, stripWindow, urlWithGame } from "./games";
 
 let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
   id: nextId++, system: "nes", title, tags: [], path: `${title}.nes`, size: 1, lastPlayedAt: null, playCount: 0,
   image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
-  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, patch: null, discs: 1, ...over,
+  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, patch: null, discs: 1, partKind: null, ...over,
 });
 
 const metroid = game("Metroid", { releaseDate: "1986-08-06", genre: "Action", players: "1", playCount: 3, lastPlayedAt: "2026-11-13 10:00:00", tags: ["USA"] });
@@ -135,5 +135,14 @@ describe("favourites", () => {
     const other = game("Other");
     expect(filterGames([fav, other], "", { favourites: true })).toEqual([fav]);
     expect(activeFilters({ favourites: true })).toBe(1);
+  });
+});
+
+describe("partsLabel", () => {
+  it("names the parts by kind", () => {
+    expect(partsLabel(3, "DISC")).toBe("3 discs");
+    expect(partsLabel(2, "DISK")).toBe("2 disks");
+    expect(partsLabel(2, "SIDE")).toBe("2 sides");
+    expect(partsLabel(2, null)).toBe("2 discs");
   });
 });
