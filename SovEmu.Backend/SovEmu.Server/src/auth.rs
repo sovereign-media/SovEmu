@@ -5,9 +5,7 @@
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header::COOKIE;
-use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -210,25 +208,6 @@ pub(crate) const SESSION_USER: &str = "SELECT u.id, u.username, u.is_admin FROM 
 pub async fn user_for_token(db: &SqlitePool, token: Option<&str>) -> ApiResult<Option<User>> {
     let Some(token) = token else { return Ok(None) };
     Ok(sqlx::query_as::<_, User>(SESSION_USER).bind(token_hash(token)).fetch_optional(db).await?)
-}
-
-/// The signed-in user (for the file routes). Rejects with 401 if there is none.
-#[derive(Debug, Clone)]
-pub struct CurrentUser(pub User);
-
-impl<S> FromRequestParts<S> for CurrentUser
-where
-    S: Send + Sync,
-    AppState: FromRef<S>,
-{
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let state = AppState::from_ref(state);
-        let token = cookie_token(&parts.headers);
-        let user = user_for_token(&state.db, token.as_deref()).await?;
-        Ok(Self(user.ok_or_else(ApiError::unauthorized)?))
-    }
 }
 
 /// First-run setup: creates the admin account and signs it in. Only works while there are no

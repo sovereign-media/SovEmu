@@ -162,6 +162,10 @@ held 59.93 fps over 300 frames with no resyncs.
       request spans, session spans, request durations, sessions started and their length,
       sessions running, capacity, accounts and games per system. This replaced the Prometheus
       `/metrics` route
+- [x] Signed file URLs, as Sovereign's: every `/media/…` URL the API hands out carries an
+      HMAC-SHA256 signature over the user, path and an hour-rounded expiry (`SOVEMU_ASSET_KEY`,
+      else generated into `data/server.json`; `SOVEMU_ASSET_URL_HOURS`); `/media/` serves only
+      signed URLs, as the signed user, with no cookie
 - [x] Security headers (nosniff, frame denial, referrer and permissions policies); compose healthcheck
 - [x] Configuration reference in the README
 - [x] Configuration entirely through environment variables: the admin account

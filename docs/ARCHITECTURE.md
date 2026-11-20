@@ -84,7 +84,10 @@ The API is GraphQL (async-graphql), chosen to match Sovereign's and so that the 
 iOS clients share one typed contract: `SovEmu.Server/schema.graphql`, checked in and kept current
 by a test, from which the web client's TypeScript is generated. There is no REST API. Plain HTTP
 remains only where GraphQL does not fit: files (`/media/…`, artwork and save screenshots, whose
-URLs the API returns), and `/health` for probes. Long operations
+URLs the API returns), and `/health` for probes. File URLs are signed as Sovereign signs its own:
+an HMAC-SHA256 over the user, the path and an hour-rounded expiry, in `Sov-UserId`, `Sov-Expiry`
+and `Sov-Signature`. Any client loads them without a cookie, a leaked one is good for one user's
+files for a day, and they stay cacheable within the hour. Long operations
 (starting a game, metadata lookups, mirror syncs) are followed by polling a query, not by
 subscriptions.
 

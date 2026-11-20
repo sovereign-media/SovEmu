@@ -170,6 +170,11 @@ impl Harness {
         self.ok(SYSTEMS, json!({})).await["systems"].clone()
     }
 
+    /// A file URL signed for `user_id`, as the API would hand it out.
+    fn signed(&self, user_id: i64, path: &str) -> String {
+        self.state.assets.sign(user_id, path)
+    }
+
     async fn games(&mut self, system: &str) -> Value {
         self.ok(GAMES, json!({"id": system})).await["system"]["games"].clone()
     }
@@ -300,16 +305,32 @@ async fn browses_the_library() {
     assert_eq!(games[0]["playCount"], 0);
     assert_eq!(games[0]["media"], json!(["THUMB"]));
     let id = games[0]["id"].as_i64().unwrap();
-    assert_eq!(games[0]["mediaUrl"], format!("/media/games/{id}/thumb"));
-    assert_eq!(h.call("GET", &format!("/media/games/{id}/thumb"), None).await.0, StatusCode::OK);
+    // Files are at signed URLs (assets.rs): for this user, for a while, no cookie needed.
+    let url = games[0]["mediaUrl"].as_str().unwrap().to_owned();
+    assert!(url.starts_with(&format!("/media/games/{id}/thumb?Sov-UserId=1&Sov-Expiry=")), "{url}");
+    let cookie = h.cookie.take();
+    assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK, "no cookie needed");
     assert_eq!(
-        h.call("GET", &format!("/media/games/{id}/video"), None).await.0,
-        StatusCode::NOT_FOUND
+        h.call("GET", &format!("/media/games/{id}/thumb"), None).await.0,
+        StatusCode::UNAUTHORIZED,
+        "unsigned"
     );
     assert_eq!(
-        h.call("GET", &format!("/media/games/{id}/..%2F..%2Fetc"), None).await.0,
-        StatusCode::NOT_FOUND
+        h.call("GET", &url.replace("/thumb?", "/image?"), None).await.0,
+        StatusCode::FORBIDDEN,
+        "signed for another file"
     );
+    let forged = crate::assets::AssetSigner::new(b"other key".to_vec(), 24)
+        .sign(1, &format!("/media/games/{id}/thumb"));
+    assert_eq!(h.call("GET", &forged, None).await.0, StatusCode::FORBIDDEN, "another key");
+    h.cookie = cookie;
+    let video = h.signed(1, &format!("/media/games/{id}/video"));
+    assert_eq!(h.call("GET", &video, None).await.0, StatusCode::NOT_FOUND);
+    let escape = h.signed(1, &format!("/media/games/{id}/..%2F..%2Fetc"));
+    assert_eq!(h.call("GET", &escape, None).await.0, StatusCode::NOT_FOUND);
+    // A user who no longer exists: their URLs stop working.
+    let ghost = h.signed(999, &format!("/media/games/{id}/thumb"));
+    assert_eq!(h.call("GET", &ghost, None).await.0, StatusCode::FORBIDDEN);
     let game = "query($id: Int!) { game(id: $id) { system } }";
     assert_eq!(h.ok(game, json!({"id": id})).await["game"]["system"], "nes");
     assert_eq!(h.err(game, json!({"id": 9999})).await.0, "NOT_FOUND");
@@ -386,10 +407,8 @@ async fn runs_a_game_session_in_a_worker() {
     let (code, message) = h.err(load, json!({"s": sid, "slot": 5})).await;
     assert_eq!(code, "BAD_REQUEST");
     assert!(message.contains("empty"), "{message}");
-    assert_eq!(
-        h.call("GET", &format!("/media/games/{id}/saves/2"), None).await.0,
-        StatusCode::NOT_FOUND
-    );
+    let screenshot = h.signed(1, &format!("/media/games/{id}/saves/2"));
+    assert_eq!(h.call("GET", &screenshot, None).await.0, StatusCode::NOT_FOUND);
     assert!(h.dir.join("saves/1/nes/states/Test Game (USA)/slot2.state").is_file());
     h.ok(delete, json!({"g": id, "slot": 2})).await;
     assert_eq!(h.ok(saves, json!({"id": id})).await["game"]["saves"], json!([]));
@@ -605,8 +624,8 @@ async fn fetches_metadata_from_both_services() {
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
     assert_eq!(gba[0]["media"], json!(["THUMB"]));
-    let id = gba[0]["id"].as_i64().unwrap();
-    assert_eq!(h.call("GET", &format!("/media/games/{id}/thumb"), None).await.0, StatusCode::OK);
+    let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
+    assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK);
 
     // Looked-up games are not asked for again.
     h.ok(FETCH, json!({})).await;
@@ -1270,9 +1289,12 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     let q = "query($id: Int!) { game(id: $id) { decoration { url set width height left right top bottom } } }";
     let id = h.games("nes").await[0]["id"].as_i64().unwrap();
     let decoration = h.ok(q, json!({"id": id})).await["game"]["decoration"].clone();
-    assert_eq!(
-        decoration["url"],
-        "/media/decorations/arcade/games/nes/Test%20Game%20%28USA%29.png"
+    let url = decoration["url"].as_str().unwrap();
+    assert!(
+        url.starts_with(
+            "/media/decorations/arcade/games/nes/Test%20Game%20%28USA%29.png?Sov-UserId=1&"
+        ),
+        "signed: {url}"
     );
     assert_eq!(decoration["set"], "arcade");
     // No .info of its own: the image's largest centred 4:3 window.
@@ -1281,10 +1303,12 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     let system = h.state.decorations().for_game("arcade", "nes", "Other").unwrap();
     assert_eq!(system.path, "systems/nes.png", "an unreadable image is passed over");
     assert_eq!(system.window.left, 300, "from its .info");
+    let escape = h.signed(1, "/media/decorations/arcade/..%2F..%2Fsovemu.db");
+    assert_eq!(h.call("GET", &escape, None).await.0, StatusCode::NOT_FOUND, "only listed files");
     assert_eq!(
-        h.call("GET", "/media/decorations/arcade/..%2F..%2Fsovemu.db", None).await.0,
-        StatusCode::NOT_FOUND,
-        "only listed files"
+        h.call("GET", "/media/decorations/arcade/systems/nes.png", None).await.0,
+        StatusCode::UNAUTHORIZED,
+        "unsigned"
     );
     // `none` turns them off for a system.
     let mut h =

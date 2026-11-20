@@ -6,6 +6,7 @@
 
 mod admin;
 mod api;
+mod assets;
 mod auth;
 mod bios;
 mod cache;
@@ -207,6 +208,17 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ADMIN_PASSWORD")]
     pub admin_password: Option<String>,
 
+    /// The key that signs the file URLs the API hands out (artwork, videos, screenshots). Unset:
+    /// one is generated on first run and kept in `<data>/server.json`. Changing it invalidates
+    /// every URL handed out until clients ask again.
+    #[arg(long, env = "SOVEMU_ASSET_KEY")]
+    pub asset_key: Option<String>,
+
+    /// How long a signed file URL stays valid, in hours (rounded to the hour, so URLs are
+    /// cacheable).
+    #[arg(long, env = "SOVEMU_ASSET_URL_HOURS", default_value_t = 24)]
+    pub asset_url_hours: u64,
+
     /// Rescan the library every this many minutes (0: only at startup).
     #[arg(long, env = "SOVEMU_SCAN_INTERVAL_MINUTES", default_value_t = 60)]
     pub scan_interval_minutes: u64,
@@ -349,6 +361,7 @@ pub enum LibraryMode {
 /// and Kubernetes secrets), and is redacted in the startup log.
 const SECRETS: &[&str] = &[
     "SOVEMU_ADMIN_PASSWORD",
+    "SOVEMU_ASSET_KEY",
     "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
     "SOVEMU_SCREENSCRAPER_PASSWORD",
     "SOVEMU_THEGAMESDB_KEY",
@@ -388,6 +401,7 @@ impl Config {
     fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
+            "SOVEMU_ASSET_KEY" => &mut self.asset_key,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
             "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
@@ -474,6 +488,11 @@ impl Config {
                 self.decoration,
                 self.decorations_dirs,
                 self.builtin_decorations().display()
+            ),
+            format!(
+                "asset_key={} asset_url_hours={}",
+                secret(&self.asset_key),
+                self.asset_url_hours
             ),
             format!(
                 "log_format={} otel_endpoint={}",
@@ -590,6 +609,8 @@ pub struct AppState {
     pub core_info: Arc<settings::CoreInfoCache>,
     /// The GraphQL schema (cheap to clone: shared).
     pub schema: graphql::ApiSchema,
+    /// Signs the file URLs the API hands out, and checks them on `/media/…`.
+    pub assets: Arc<assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
 }
@@ -619,9 +640,18 @@ pub fn router(state: AppState) -> Router {
     // (the web client's static files, the fallback, do not).
     let mut app = Router::new()
         .route("/graphql", get(graphql::graphiql).post(graphql::handler))
-        .route("/media/games/{id}/{kind}", get(api::game_media))
-        .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
-        .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
+        // Files, at the signed URLs the API hands out (assets.rs): no cookie, the signature says
+        // whose they are.
+        .merge(
+            Router::new()
+                .route("/media/games/{id}/{kind}", get(api::game_media))
+                .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
+                .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
+                .route_layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    assets::require_signature,
+                )),
+        )
         .route("/health", get(ops::health))
         .route_layer(middleware::from_fn(telemetry::trace_request))
         .with_state(state.clone());
@@ -763,6 +793,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         tracing::warn!(error = %e, "drawing the built-in decorations");
     }
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
+    let asset_key = assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
+    let assets = Arc::new(assets::AssetSigner::new(asset_key, config.asset_url_hours));
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -776,6 +808,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         core_info: Arc::default(),
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
+        assets,
     })
 }
 

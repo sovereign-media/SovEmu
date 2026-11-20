@@ -477,13 +477,16 @@ impl GameNode {
     async fn media(&self) -> Vec<MediaKind> {
         self.0.media.split(',').filter_map(MediaKind::parse).collect()
     }
-    /// Where to load a kind of artwork from, if the game has it.
-    async fn media_url(&self, kind: MediaKind) -> Option<String> {
-        self.0
-            .media
-            .split(',')
-            .any(|k| k == kind.name())
-            .then(|| format!("/media/games/{}/{}", self.0.id, kind.name()))
+    /// Where to load a kind of artwork from, if the game has it: a URL signed for this user
+    /// (valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one).
+    async fn media_url(&self, ctx: &Context<'_>, kind: MediaKind) -> Result<Option<String>> {
+        if !self.0.media.split(',').any(|k| k == kind.name()) {
+            return Ok(None);
+        }
+        let user = user(ctx).await?;
+        Ok(Some(
+            state(ctx).assets.sign(user.id, &format!("/media/games/{}/{}", self.0.id, kind.name())),
+        ))
     }
     async fn description(&self) -> Option<&str> {
         self.0.description.as_deref()
@@ -548,14 +551,18 @@ impl SaveSlotNode {
     async fn saved_at(&self) -> f64 {
         self.slot.saved_at as f64
     }
-    /// The screen when it was saved, if there is one (the URL changes with each save).
-    async fn screenshot_url(&self) -> Option<String> {
-        self.slot.screenshot.then(|| {
-            format!(
-                "/media/games/{}/saves/{}?t={}",
-                self.game_id, self.slot.slot, self.slot.saved_at
-            )
-        })
+    /// The screen when it was saved, if there is one: a URL signed for this user that changes
+    /// with each save.
+    async fn screenshot_url(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        if !self.slot.screenshot {
+            return Ok(None);
+        }
+        let user = user(ctx).await?;
+        let url = format!(
+            "/media/games/{}/saves/{}?t={}",
+            self.game_id, self.slot.slot, self.slot.saved_at
+        );
+        Ok(Some(state(ctx).assets.sign(user.id, &url)))
     }
 }
 
@@ -600,9 +607,10 @@ struct DecorationNode(crate::decorations::Decoration);
 
 #[Object(name = "Decoration")]
 impl DecorationNode {
-    /// The image (PNG), under `/media/decorations/`.
-    async fn url(&self) -> String {
-        self.0.url()
+    /// The image (PNG), under `/media/decorations/`: a URL signed for this user.
+    async fn url(&self, ctx: &Context<'_>) -> Result<String> {
+        let user = user(ctx).await?;
+        Ok(state(ctx).assets.sign(user.id, &self.0.url()))
     }
     /// Its size in pixels.
     async fn width(&self) -> u32 {
