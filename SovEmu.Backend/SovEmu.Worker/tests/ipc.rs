@@ -43,11 +43,14 @@ struct Worker {
     child: Child,
     stdin: ChildStdin,
     replies: mpsc::Receiver<Reply>,
+    /// The worker's stderr, kept so a test that loses it can say why.
+    log: std::path::PathBuf,
 }
 
 impl Worker {
     fn start(dir: &std::path::Path) -> (Self, Reply) {
         let rom = dir.join("Game (USA).sovtest");
+        let log = dir.join("worker.log");
         std::fs::write(&rom, [0u8; 32]).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
             .arg("session")
@@ -64,7 +67,7 @@ impl Worker {
             .arg(dir.join("states"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(std::fs::File::create(&log).unwrap())
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();
@@ -84,7 +87,10 @@ impl Worker {
         let mut phases = Vec::new();
         let mut options = None;
         let ready = loop {
-            match replies.recv_timeout(Duration::from_secs(10)).expect("ready") {
+            match replies
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap_or_else(|e| panic!("no ready ({e}); the worker said:\n{}", read_log(&log)))
+            {
                 Reply::Progress { phase, .. } => phases.push(phase),
                 Reply::Options { options: o, categories } => options = Some((o, categories)),
                 other => break other,
@@ -97,13 +103,23 @@ impl Worker {
         assert_eq!(keys, ["sovemu_test_pattern", "sovemu_test_render"]);
         assert_eq!(options[0].labels, ["Gradient", "Solid colour"]);
         assert_eq!(categories[0].description, "Video");
-        (Self { child, stdin, replies }, ready)
+        (Self { child, stdin, replies, log }, ready)
     }
 
     fn send(&mut self, request: Request) -> Reply {
         writeln!(self.stdin, "{}", serde_json::to_string(&request).unwrap()).unwrap();
-        self.replies.recv_timeout(Duration::from_secs(10)).expect("a reply")
+        self.replies.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|e| {
+            let status = self.child.try_wait().ok().flatten();
+            panic!(
+                "no reply ({e}; worker exit: {status:?}); the worker said:\n{}",
+                read_log(&self.log)
+            )
+        })
     }
+}
+
+fn read_log(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| format!("(no log: {e})"))
 }
 
 #[test]

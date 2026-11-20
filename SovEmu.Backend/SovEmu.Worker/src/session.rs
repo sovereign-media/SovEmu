@@ -97,6 +97,8 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
 
     let (commands_tx, commands_rx) = mpsc::channel();
     let reader_out = out.clone();
+    let replies = Replies::default();
+    let reader_replies = replies.clone();
     // The session's span (its id, from the server) carries over to this thread's log lines.
     let span = tracing::Span::current();
     thread::Builder::new().name("stdin".into()).spawn(move || {
@@ -107,7 +109,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
                 continue;
             }
             match serde_json::from_str::<Request>(&line) {
-                Ok(request) => dispatch(request, &commands_tx, &reader_out),
+                Ok(request) => dispatch(request, &commands_tx, &reader_out, &reader_replies),
                 Err(e) => tracing::warn!("ignoring bad request {line:?}: {e}"),
             }
         }
@@ -116,7 +118,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
 
     let event_out = out.clone();
     let idle = (args.idle_timeout > 0).then(|| Duration::from_secs(args.idle_timeout));
-    stream::run(
+    let result = stream::run(
         session,
         socket,
         advertised,
@@ -128,11 +130,35 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             })
         },
         idle,
-    )
+    );
+    // Every reply the stream loop gave before it stopped, `shutdown`'s above all, is written
+    // before the process exits: the server waits for it, and would otherwise wait out its stop
+    // timeout. Each reply thread has its answer, or sees the loop gone, so this is quick.
+    replies.finish();
+    result
+}
+
+/// The threads writing replies, kept so none is lost when the worker exits.
+#[derive(Clone, Default)]
+struct Replies(Arc<Mutex<Vec<thread::JoinHandle<()>>>>);
+
+impl Replies {
+    fn spawn(&self, write: impl FnOnce() + Send + 'static) {
+        let mut threads = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        threads.retain(|t| !t.is_finished());
+        threads.push(thread::spawn(write));
+    }
+
+    fn finish(&self) {
+        let threads = std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()));
+        for t in threads {
+            let _ = t.join();
+        }
+    }
 }
 
 /// Hands a request to the stream loop and writes its reply when it comes back.
-fn dispatch(request: Request, commands: &mpsc::Sender<Command>, out: &Out) {
+fn dispatch(request: Request, commands: &mpsc::Sender<Command>, out: &Out, replies: &Replies) {
     let id = request.id();
     let out = out.clone();
     match request {
@@ -141,7 +167,7 @@ fn dispatch(request: Request, commands: &mpsc::Sender<Command>, out: &Out) {
             if commands.send(Command::Offer { offer, reply }).is_err() {
                 return;
             }
-            thread::spawn(move || match answer.recv() {
+            replies.spawn(move || match answer.recv() {
                 Ok(Ok(answer)) => out.send(&Reply::Answer { id, answer }),
                 Ok(Err(message)) => out.send(&Reply::Error { id, message }),
                 Err(_) => {}
@@ -152,7 +178,7 @@ fn dispatch(request: Request, commands: &mpsc::Sender<Command>, out: &Out) {
             if commands.send(Command::Control { request, reply }).is_err() {
                 return;
             }
-            thread::spawn(move || match done.recv() {
+            replies.spawn(move || match done.recv() {
                 Ok(Ok(())) => out.send(&Reply::Done { id }),
                 Ok(Err(message)) => out.send(&Reply::Error { id, message }),
                 Err(_) => {}

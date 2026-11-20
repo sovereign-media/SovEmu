@@ -248,6 +248,8 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut ff_rate = 0.0f64;
     // Then pause (the client's menu) and see the frames stop.
     let mut pause_start: Option<(Instant, usize)> = None;
+    // The current 300 ms window while paused: when it began, and the frames seen by then.
+    let mut pause_window: Option<(Instant, usize)> = None;
     let mut paused_frames = usize::MAX;
     while started.elapsed() < Duration::from_secs(15) {
         if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
@@ -265,12 +267,36 @@ fn streams_video_and_audio_and_acknowledges_input() {
             ff_rate = (last - frame) as f64 / at.elapsed().as_secs_f64();
             pause_start = Some((Instant::now(), video_frames));
         }
-        // Paused (the client's menu): frames stop, once the ones in flight have arrived.
-        if let Some((at, frames)) = pause_start
-            && at.elapsed() >= Duration::from_millis(700)
-        {
-            paused_frames = video_frames - frames;
-            break;
+        // Paused (the client's menu): frames stop. Frames sent before the pause can still be
+        // arriving for a while when this test falls behind (a loaded CI machine), so it waits for
+        // quiet: any 300 ms with at most one frame, within 5 s. A paused game goes quiet once that
+        // backlog has drained; a running one (18 frames per 300 ms) never does.
+        if let Some((at, _)) = pause_start {
+            let (since, frames) = *pause_window.get_or_insert((at, video_frames));
+            if since.elapsed() >= Duration::from_millis(300) {
+                paused_frames = video_frames - frames;
+                if paused_frames <= 1 || at.elapsed() >= Duration::from_secs(5) {
+                    break;
+                }
+                pause_window = Some((Instant::now(), video_frames));
+            }
+        }
+        // Input and hotkeys go out every 50 ms whatever is queued, as a client's timer sends them:
+        // checked here, before the events, so a backlog of frames cannot hold them back (the
+        // worker rightly lets a pause lapse after 500 ms without one).
+        if channel_open && last_input.elapsed() > Duration::from_millis(50) {
+            seq += 1;
+            let packet = InputPacket { seq, client_time_ms: seq * 10, ports: vec![1 << 8] };
+            let mut channel = rtc.channel(input).unwrap();
+            channel.write(true, &packet.encode()).unwrap();
+            if pause_start.is_some() {
+                let pause = Hotkeys { pause: true, ..Hotkeys::default() };
+                channel.write(true, &pause.encode()).unwrap();
+            } else if ff_start.is_some() {
+                let ff = Hotkeys { fast_forward: true, ..Hotkeys::default() };
+                channel.write(true, &ff.encode()).unwrap();
+            }
+            last_input = Instant::now();
         }
         let timeout = match rtc.poll_output().unwrap() {
             Output::Transmit(t) => {
@@ -300,22 +326,6 @@ fn streams_video_and_audio_and_acknowledges_input() {
             }
             Output::Timeout(t) => t,
         };
-
-        if channel_open && last_input.elapsed() > Duration::from_millis(50) {
-            seq += 1;
-            let packet = InputPacket { seq, client_time_ms: seq * 10, ports: vec![1 << 8] };
-            let mut channel = rtc.channel(input).unwrap();
-            channel.write(true, &packet.encode()).unwrap();
-            if pause_start.is_some() {
-                let pause = Hotkeys { pause: true, ..Hotkeys::default() };
-                channel.write(true, &pause.encode()).unwrap();
-            } else if ff_start.is_some() {
-                let ff = Hotkeys { fast_forward: true, ..Hotkeys::default() };
-                channel.write(true, &ff.encode()).unwrap();
-            }
-            last_input = Instant::now();
-            continue;
-        }
 
         let wait = timeout
             .saturating_duration_since(Instant::now())
@@ -356,6 +366,8 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert!(acks.windows(2).all(|w| w[0].frame < w[1].frame), "acks follow the frames");
     eprintln!("emulated {normal_rate:.0} frames/s normally, {ff_rate:.0} fast-forwarding");
     assert!(ff_rate > normal_rate * 2.5, "fast-forward: {ff_rate:.0} vs {normal_rate:.0} frames/s");
-    // 700 ms at 60 fps is 42 frames: a paused game sends at most the few already in flight.
-    assert!(paused_frames <= 6, "{paused_frames} video frames while paused");
+    assert!(
+        paused_frames <= 1,
+        "still {paused_frames} video frames per 300 ms, 5 s after pausing: the game kept running"
+    );
 }

@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Checks what a push changes before it leaves the machine, so CI never sees a commit that fails
+# formatting, clippy or the tests on the developer's own platform:
+#
+#   SovEmu.Backend/  cargo fmt --check, clippy -D warnings, cargo test --workspace
+#   SovEmu.Web/      npm run codegen:check, npm test, npm run build
+#                    (also when the server's schema.graphql changes)
+#
+# Anything else (docs, CI, charts) runs nothing. The checks run on the commit being pushed: in
+# this checkout when that is HEAD with nothing uncommitted under the folder checked, else in a
+# worktree of its own, kept in .git/sovemu-pre-push with its own cargo target (one fixed place:
+# test binaries remember where their sources are, so a worktree that moved or shared this
+# checkout's target would break them). It is slow the first time, then stays warm.
+#
+# Turn it on once per clone:  git config core.hooksPath .githooks
+# Skip it for one push:       git push --no-verify
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+zero=0000000000000000000000000000000000000000
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# What the push changes: every file between the remote's commit (or, for a new branch, where it
+# left origin/main) and each commit being pushed.
+changed=$(
+  while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue # a deletion
+    if [ "$remote_sha" = "$zero" ] || ! git cat-file -e "$remote_sha" 2>/dev/null; then
+      base=$(git merge-base "$local_sha" origin/main 2>/dev/null || true)
+    else
+      base=$remote_sha
+    fi
+    if [ -n "$base" ]; then
+      git diff --name-only "$base" "$local_sha"
+    else
+      git ls-tree -r --name-only "$local_sha"
+    fi
+    echo "commit:$local_sha"
+  done
+)
+commits=$(printf '%s\n' "$changed" | sed -n 's/^commit://p' | sort -u)
+files=$(printf '%s\n' "$changed" | grep -v '^commit:' || true)
+
+backend=false
+web=false
+grep -q '^SovEmu.Backend/' <<<"$files" && backend=true
+grep -qE '^SovEmu.Web/|^SovEmu.Backend/SovEmu.Server/schema.graphql$' <<<"$files" && web=true
+if ! $backend && ! $web; then
+  exit 0
+fi
+
+# Where to run: this checkout if it is the pushed commit, unchanged, else the hook's worktree.
+worktree="$(cd "$(git rev-parse --git-common-dir)" && pwd)/sovemu-pre-push"
+checkout_for() { # <commit> <folder>
+  if [ "$(git rev-parse HEAD)" = "$1" ] && [ -z "$(git status --porcelain -- "$2")" ]; then
+    echo "$root"
+  else
+    if git -C "$worktree" rev-parse --git-dir >/dev/null 2>&1; then
+      git -C "$worktree" checkout -q --force --detach "$1"
+      git -C "$worktree" clean -q -fd -e SovEmu.Backend/target -e SovEmu.Web/node_modules
+    else
+      git worktree prune
+      git worktree add -q --force --detach "$worktree" "$1"
+    fi
+    echo "$worktree"
+  fi
+}
+
+# Runs one named check in a folder; on failure, says which, where and how to rerun it, and stops
+# the push. The tool's own output (the failing test, the clippy lint, the diff) is shown above.
+step() { # <commit> <folder> <name> <command...>
+  local commit=$1 dir=$2 name=$3
+  shift 3
+  echo "pre-push: [${commit:0:7}] $name" >&2
+  if ! (cd "$dir" && "$@") >&2; then
+    {
+      echo
+      echo "pre-push: FAILED: $name, on commit ${commit:0:7}"
+      echo "  rerun:  (cd $dir && $*)"
+      [ "$dir" != "$root" ] && [ "${dir#"$worktree"}" != "$dir" ] &&
+        echo "  (in the hook's worktree, checked out at ${commit:0:7}: the commit, not your working tree)"
+      echo "  The push was stopped. Fix it and push again, or skip the checks: git push --no-verify"
+    } >&2
+    exit 1
+  fi
+}
+
+for commit in $commits; do
+  if $backend; then
+    dir=$(checkout_for "$commit" SovEmu.Backend)
+    b="$dir/SovEmu.Backend"
+    step "$commit" "$b" "cargo fmt" cargo fmt --all --check
+    step "$commit" "$b" "clippy" cargo clippy --workspace --all-targets --quiet -- -D warnings
+    step "$commit" "$b" "cargo test" cargo test --workspace --quiet
+  fi
+  if $web; then
+    dir=$(checkout_for "$commit" SovEmu.Web)
+    if [ "$dir" != "$root" ]; then
+      # This checkout's dependencies when the lock file is the same; else its own, installed.
+      modules="$dir/SovEmu.Web/node_modules"
+      if cmp -s "$root/SovEmu.Web/package-lock.json" "$dir/SovEmu.Web/package-lock.json" \
+        && [ -d "$root/SovEmu.Web/node_modules" ]; then
+        [ -L "$modules" ] || { rm -rf "$modules"; ln -s "$root/SovEmu.Web/node_modules" "$modules"; }
+      else
+        [ -L "$modules" ] && rm "$modules"
+        step "$commit" "$dir/SovEmu.Web" "npm ci" npm ci --no-audit --no-fund --silent
+      fi
+    fi
+    w="$dir/SovEmu.Web"
+    step "$commit" "$w" "GraphQL codegen matches the schema" npm run --silent codegen:check
+    step "$commit" "$w" "npm test" npm test --silent
+    step "$commit" "$w" "npm run build" npm run --silent build
+  fi
+done
+echo "pre-push: all checks passed" >&2

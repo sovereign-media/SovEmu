@@ -46,4 +46,6 @@ paths:
   that loads a core takes the test file's `CORE_LOCK` first. Never make a test depend on a
   downloaded core or ROM.
 - Before a PR: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`, all from `SovEmu.Backend/`.
+  `cargo test --workspace`, all from `SovEmu.Backend/`. The pre-push hook (`.githooks/pre-push`,
+  on with `git config core.hooksPath .githooks`) runs them for any push that touches the backend;
+  never skip it with `--no-verify` to get a failing change up.
