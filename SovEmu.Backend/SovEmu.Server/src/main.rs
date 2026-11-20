@@ -11,6 +11,7 @@ mod auth;
 mod bios;
 mod cache;
 mod cheats;
+mod client_ip;
 mod collections;
 mod controllers;
 mod controls;
@@ -22,6 +23,7 @@ mod graphql;
 mod home;
 #[cfg(test)]
 mod http_tests;
+mod jobs;
 mod library;
 mod metadata;
 mod mirror;
@@ -250,6 +252,22 @@ pub struct Config {
     /// How long a locked-out username waits, and the window failures are counted in.
     #[arg(long, env = "SOVEMU_LOGIN_LOCKOUT_MINUTES", default_value_t = 5)]
     pub login_lockout_minutes: u64,
+
+    /// Failed sign-ins from one address, across usernames, before it is locked out (0: never).
+    /// Behind a reverse proxy, list it in `SOVEMU_TRUSTED_PROXIES`, or every client is the proxy.
+    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES_PER_IP", default_value_t = ops::MAX_FAILURES_PER_IP)]
+    pub login_max_failures_per_ip: u32,
+
+    /// Reverse proxies whose `X-Forwarded-For` is believed (addresses or ranges,
+    /// comma-separated, e.g. `10.0.0.0/8,172.16.0.0/12`). Default: none, so the client is the
+    /// connection's address.
+    #[arg(long, env = "SOVEMU_TRUSTED_PROXIES", value_delimiter = ',')]
+    pub trusted_proxies: Vec<client_ip::Network>,
+
+    /// Database upkeep every this many minutes: expired sign-ins deleted, the query planner's
+    /// statistics refreshed and the write-ahead log folded back into the database (0: never).
+    #[arg(long, env = "SOVEMU_MAINTENANCE_INTERVAL_MINUTES", default_value_t = 60)]
+    pub maintenance_interval_minutes: u64,
 
     /// Delete accounts not declared in `SOVEMU_USERS__*` (or `SOVEMU_ADMIN_USERNAME`) at
     /// startup, so the environment is the whole list of users.
@@ -500,8 +518,25 @@ impl Config {
                 opt(&self.otel_endpoint)
             ),
             format!(
-                "session_days={} login_max_failures={} login_lockout_minutes={}",
-                self.session_days, self.login_max_failures, self.login_lockout_minutes
+                "session_days={} login_max_failures={} login_max_failures_per_ip={} \
+                 login_lockout_minutes={}",
+                self.session_days,
+                self.login_max_failures,
+                self.login_max_failures_per_ip,
+                self.login_lockout_minutes
+            ),
+            format!(
+                "trusted_proxies={} maintenance_interval_minutes={}",
+                if self.trusted_proxies.is_empty() {
+                    "(none)".into()
+                } else {
+                    self.trusted_proxies
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                },
+                self.maintenance_interval_minutes
             ),
             format!(
                 "users={} users_prune={}",
@@ -600,6 +635,8 @@ pub struct AppState {
     /// Verified against when a username does not exist, so failures take the same time.
     pub dummy_hash: String,
     pub login_throttle: Arc<ops::LoginThrottle>,
+    /// The same, per client address (across usernames).
+    pub login_ip_throttle: Arc<ops::LoginThrottle>,
     pub cache: Arc<cache::Cache>,
     pub metadata: Arc<metadata::Metadata>,
     pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
@@ -654,11 +691,14 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/health", get(ops::health))
         .route_layer(middleware::from_fn(telemetry::trace_request))
+        .route_layer(middleware::from_fn_with_state(state.clone(), client_ip::remember))
         .with_state(state.clone());
     if let Some(dir) = &state.config.web_dir {
         app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
     }
-    app.layer(middleware::from_fn(cache_headers)).layer(middleware::from_fn(ops::security_headers))
+    app.layer(middleware::from_fn(cache_headers))
+        .layer(middleware::from_fn(ops::security_headers))
+        .layer(ops::compression())
 }
 
 /// Astro fingerprints everything under `/_astro/`, so those are immutable; pages and the API
@@ -781,10 +821,9 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         std::time::Duration::from_millis(config.screenscraper_delay_ms),
         config.artwork_downloads,
     );
-    let login_throttle = ops::LoginThrottle::new(
-        config.login_max_failures,
-        std::time::Duration::from_secs(config.login_lockout_minutes * 60),
-    );
+    let lockout = std::time::Duration::from_secs(config.login_lockout_minutes * 60);
+    let login_throttle = ops::LoginThrottle::new(config.login_max_failures, lockout);
+    let login_ip_throttle = ops::LoginThrottle::new(config.login_max_failures_per_ip, lockout);
     let copy_threads = config.copy_threads;
     // The built-in set: drawn here unless the image already holds it (it does, once per version).
     if config.decorations_builtin.is_none()
@@ -801,6 +840,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         workers,
         dummy_hash: auth::hash_password("x")?,
         login_throttle: Arc::new(login_throttle),
+        login_ip_throttle: Arc::new(login_ip_throttle),
         cache: cache::Cache::new(cache_dir, cache_bytes, copy_threads),
         metadata,
         mirror: Arc::default(),
@@ -839,7 +879,7 @@ async fn reconcile_users(db: &SqlitePool, config: &Config) -> Result<()> {
 /// scan's games are already in the database meanwhile. In `mirror` mode, syncs first (scanning
 /// what is already mirrored while it runs), then scans again.
 fn spawn_initial_scan(state: &AppState) {
-    spawn_periodic(state);
+    jobs::spawn(state);
     let state = state.clone();
     tokio::spawn(async move {
         admin::scan_and_log(&state).await;
@@ -848,38 +888,6 @@ fn spawn_initial_scan(state: &AppState) {
         }
         admin::after_scan(&state).await;
     });
-}
-
-/// Rescans (and in `mirror` mode syncs) on the configured intervals, so the library keeps up
-/// with the share on its own.
-fn spawn_periodic(state: &AppState) {
-    let every = |minutes: u64| (minutes > 0).then(|| std::time::Duration::from_secs(minutes * 60));
-    if let Some(period) = every(state.config.scan_interval_minutes) {
-        let state = state.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(period);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                admin::scan_and_log(&state).await;
-                admin::after_scan(&state).await;
-            }
-        });
-    }
-    if state.config.library_mode == LibraryMode::Mirror
-        && let Some(period) = every(state.config.mirror_interval_minutes)
-    {
-        let state = state.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(period);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                admin::sync_then_scan(state.clone()).await;
-                admin::after_scan(&state).await;
-            }
-        });
-    }
 }
 
 /// Tidies the environment before the settings are parsed:
@@ -968,7 +976,9 @@ async fn run(mut config: Config) -> Result<()> {
     let local = listener.local_addr()?;
     println!("http={local}");
     tracing::info!("SovEmu on http://{local}/");
-    axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()).await?;
+    // With each connection's address, for `client_ip` (sign-in throttling, request spans).
+    let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
     workers.stop_all().await;
     Ok(())
 }

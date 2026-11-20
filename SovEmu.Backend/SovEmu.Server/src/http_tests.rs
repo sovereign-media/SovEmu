@@ -284,6 +284,87 @@ async fn throttles_guessing_and_serves_ops_routes() {
     assert_eq!(h.call("GET", "/graphql", None).await.0, StatusCode::OK);
 }
 
+/// A sign-in attempt from `peer`, with `forwarded` as its `X-Forwarded-For`: the GraphQL error
+/// code, or "" on success.
+async fn login_from(h: &Harness, peer: &str, forwarded: Option<&str>, user: &str) -> String {
+    let body = json!({"query": LOGIN, "variables": {"u": user, "p": "wrong-password"}});
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/graphql")
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(f) = forwarded {
+        request = request.header("x-forwarded-for", f);
+    }
+    let mut request = request.body(Body::from(body.to_string())).unwrap();
+    let peer: std::net::SocketAddr = format!("{peer}:40000").parse().unwrap();
+    request.extensions_mut().insert(axum::extract::ConnectInfo(peer));
+    let response = router(h.state.clone()).oneshot(request).await.unwrap();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    value["errors"][0]["extensions"]["code"].as_str().unwrap_or_default().to_owned()
+}
+
+#[tokio::test]
+async fn throttles_each_address_across_usernames_behind_a_trusted_proxy() {
+    let extra = ["--login-max-failures-per-ip", "3", "--trusted-proxies", "10.0.0.0/8"];
+    let h = Harness::new_with("per-ip", false, extra.map(String::from).to_vec()).await;
+    // A different name each time, so the per-username limit never trips.
+    for name in ["a", "b", "c"] {
+        assert_eq!(login_from(&h, "10.0.0.2", Some("198.51.100.7"), name).await, "UNAUTHENTICATED");
+    }
+    assert_eq!(login_from(&h, "10.0.0.2", Some("198.51.100.7"), "d").await, "TOO_MANY_REQUESTS");
+    // Another client behind the same proxy is not locked out...
+    assert_eq!(login_from(&h, "10.0.0.2", Some("198.51.100.8"), "d").await, "UNAUTHENTICATED");
+    // ...nor can the locked-out one get past by claiming another address: its own claim comes
+    // first, and the proxy appends the real one.
+    let spoofed = Some("203.0.113.1, 198.51.100.7");
+    assert_eq!(login_from(&h, "10.0.0.2", spoofed, "e").await, "TOO_MANY_REQUESTS");
+    // An untrusted peer's header is ignored: it counts as itself.
+    for name in ["f", "g", "h"] {
+        assert_eq!(
+            login_from(&h, "192.0.2.5", Some(&format!("10.1.1.{}", name.len())), name).await,
+            "UNAUTHENTICATED"
+        );
+    }
+    assert_eq!(login_from(&h, "192.0.2.5", Some("10.9.9.9"), "i").await, "TOO_MANY_REQUESTS");
+}
+
+#[tokio::test]
+async fn compresses_api_responses() {
+    let mut h = Harness::new("compression", false).await;
+    h.sign_up_admin().await;
+    let body = json!({"query": "{ __schema { types { name } } }"});
+    let request = Request::builder()
+        .method("POST")
+        .uri("/graphql")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT_ENCODING, "br, gzip")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let response = router(h.state.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_ENCODING], "br");
+    // Without Accept-Encoding, plain.
+    let request = Request::builder()
+        .method("POST")
+        .uri("/graphql")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let response = router(h.state.clone()).oneshot(request).await.unwrap();
+    assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+    // Images are not recompressed.
+    let png = h.games("nes").await[0]["mediaUrl"].as_str().unwrap().to_owned();
+    let request = Request::builder()
+        .uri(png)
+        .header(header::ACCEPT_ENCODING, "gzip")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(h.state.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get(header::CONTENT_ENCODING).is_none(), "{:?}", response.headers());
+}
+
 #[tokio::test]
 async fn browses_the_library() {
     let mut h = Harness::new("library", false).await;

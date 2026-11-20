@@ -268,6 +268,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_USERS_PRUNE` | off | Delete accounts not declared above at startup |
 | `SOVEMU_SESSION_DAYS` | `30` | How long a sign-in lasts |
 | `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
+| `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
 | `SOVEMU_LOGIN_LOCKOUT_MINUTES` | `5` | How long the lockout lasts |
 | **Library** | | |
 | `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
@@ -316,6 +317,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
+| `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
+| `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
 | `SOVEMU_ASSET_KEY` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret: `_FILE` works. Changing it invalidates URLs already handed out |
 | `SOVEMU_ASSET_URL_HOURS` | `24` | How long a signed file URL is valid (rounded to the hour, so URLs stay cacheable) |
 | `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
@@ -381,7 +384,13 @@ helm install sovemu charts/sovemu -f my-values.yaml
 ### Health and sign-in
 
 `GET /health` answers `ok` while the database is reachable. Sign-in locks a username out after
-`SOVEMU_LOGIN_MAX_FAILURES` failed attempts, for `SOVEMU_LOGIN_LOCKOUT_MINUTES`.
+`SOVEMU_LOGIN_MAX_FAILURES` failed attempts, and a client address after
+`SOVEMU_LOGIN_MAX_FAILURES_PER_IP` (across usernames), for `SOVEMU_LOGIN_LOCKOUT_MINUTES`.
+Behind a reverse proxy every request comes from the proxy, so list it in
+`SOVEMU_TRUSTED_PROXIES`: its `X-Forwarded-For` then names the client (the last address in it
+that is not a listed proxy, so a client cannot choose its own). Anyone else's
+`X-Forwarded-For` is ignored. Responses are compressed (Brotli or gzip) for clients that accept
+it, except images and videos.
 
 **Playing away from home:** sessions need UDP from the browser to the session ports. Expose
 8080 through an HTTPS reverse proxy (and set `SOVEMU_SECURE_COOKIES=1`). Then forward
