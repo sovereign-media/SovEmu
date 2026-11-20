@@ -9,7 +9,8 @@ use serde::Serialize;
 use sovemu_protocol::{SdpKind, SessionDescription};
 
 use crate::AppState;
-use crate::auth::{CurrentUser, User};
+use crate::assets::SignedUser;
+use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
 use crate::library::{self, ScanReport};
 use crate::systems::{self, System};
@@ -470,12 +471,12 @@ pub(crate) fn slots(state: &AppState, user_id: i64, game: &Game) -> Vec<SaveSlot
 
 pub async fn state_screenshot(
     State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
+    SignedUser(user_id): SignedUser,
     Path((id, slot)): Path<(i64, u32)>,
 ) -> ApiResult<axum::response::Response> {
     use axum::response::IntoResponse;
-    let game = fetch_game(&state, user.id, id).await?;
-    let (_, dir) = save_dirs(&state, user.id, &game);
+    let game = fetch_game(&state, user_id, id).await?;
+    let (_, dir) = save_dirs(&state, user_id, &game);
     let bytes = tokio::fs::read(dir.join(format!("slot{slot}.png")))
         .await
         .map_err(|_| ApiError::not_found("screenshot"))?;
@@ -521,11 +522,11 @@ pub async fn load_state(state: &AppState, user: &User, id: &str, slot: u32) -> A
     .await
 }
 
-/// A decoration's image (`/media/decorations/<set>/<path>`, the URL `Game.decoration` hands
-/// out). Only files the decoration folders list are served, so the path cannot leave them.
+/// A decoration's image (`/media/decorations/<set>/<path>`, the signed URL `Game.decoration`
+/// hands out). Only files the decoration folders list are served, so the path cannot leave them.
 pub async fn decoration_file(
     State(state): State<AppState>,
-    CurrentUser(_user): CurrentUser,
+    SignedUser(_user): SignedUser,
     Path((set, path)): Path<(String, String)>,
     request: axum::extract::Request,
 ) -> ApiResult<axum::response::Response> {
@@ -554,7 +555,7 @@ pub async fn decoration_file(
 /// so browsers can stream the video.
 pub async fn game_media(
     State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
+    SignedUser(user_id): SignedUser,
     Path((id, kind)): Path<(i64, String)>,
     request: axum::extract::Request,
 ) -> ApiResult<axum::response::Response> {
@@ -563,7 +564,7 @@ pub async fn game_media(
     if !library::MEDIA_KINDS.contains(&kind.as_str()) {
         return Err(ApiError::not_found("media"));
     }
-    let game = fetch_game(&state, user.id, id).await?;
+    let game = fetch_game(&state, user_id, id).await?;
     let file = match media_relative(&state, &game, &kind) {
         Some(relative) => {
             let original = state.config.roms_dir.join(&relative);

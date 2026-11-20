@@ -57,7 +57,10 @@ instead (as Sovereign's server takes its SPA).
 - **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
-  videos, save screenshots) and for `/health`. Resolvers check access
+  videos, save screenshots, decorations) and for `/health`. Those URLs are always **signed** for
+  the requesting user (`state.assets.sign`, `assets.rs`, Sovereign's scheme); a `/media/` route
+  sits behind `require_signature` and serves the signed user's data, never a cookie's. Never hand
+  out or serve an unsigned file URL. Resolvers check access
   (`user(ctx)`, `admin(ctx)`) and call plain functions in the other modules; errors carry
   `extensions.code`. `Int` is 32-bit, so byte counts and Unix times are `Float`. The schema is
   checked in as `SovEmu.Server/schema.graphql` (a test fails when it drifts:

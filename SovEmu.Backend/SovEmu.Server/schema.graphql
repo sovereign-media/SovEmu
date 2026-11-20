@@ -195,7 +195,7 @@ type ControllerMapping {
 
 type Decoration {
 	"""
-	The image (PNG), under `/media/decorations/`.
+	The image (PNG), under `/media/decorations/`: a URL signed for this user.
 	"""
 	url: String!
 	"""
@@ -330,7 +330,8 @@ type Game {
 	"""
 	media: [MediaKind!]!
 	"""
-	Where to load a kind of artwork from, if the game has it.
+	Where to load a kind of artwork from, if the game has it: a URL signed for this user
+	(valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one).
 	"""
 	mediaUrl(kind: MediaKind!): String
 	description: String
@@ -854,7 +855,8 @@ type SaveSlot {
 	"""
 	savedAt: Float!
 	"""
-	The screen when it was saved, if there is one (the URL changes with each save).
+	The screen when it was saved, if there is one: a URL signed for this user that changes
+	with each save.
 	"""
 	screenshotUrl: String
 }
