@@ -26,8 +26,9 @@ env:
 # Linux jobs run where the LINUX_RUNNER variable says: `sovereign-linux`, the self-hosted runners on
 # the cluster (Actions Runner Controller, sovereign-media/sovereign#1547), or GitHub's runners when
 # it is unset. The self-hosted image is the stock `ghcr.io/actions/actions-runner` (Ubuntu 24.04,
-# Docker through a dind sidecar, no compilers or SDKs), so each job installs what it needs, in a way
-# that also works on GitHub's runners.
+# Docker through a dind sidecar, no compilers or SDKs), so each job that builds or caches starts
+# with sovereign-media/actions/setup-runner: it installs only what is missing (zstd among it, so the
+# caches saved here and on GitHub's runners are the same ones), and does nothing on macOS.
 
 jobs:
   # Which parts of the repository this push or pull request touched; each job below runs only
@@ -89,6 +90,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # SovEmu.Media links the system libvpx and libopus through pkg-config. The C toolchain and
+      # libclang (bindgen) are on GitHub's runners but not on the self-hosted image. On macOS this
+      # does nothing; Homebrew installs the codecs below.
+      - name: Set up the runner
+        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
+        with:
+          gh: 'false'
+          apt: build-essential clang libclang-dev libvpx-dev libopus-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -96,14 +106,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: SovEmu.Backend
-
-      # SovEmu.Media links the system libvpx and libopus through pkg-config. The C toolchain and
-      # libclang (bindgen) are on GitHub's runners but not on the self-hosted image.
-      - name: Codec libraries (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential clang libclang-dev libvpx-dev libopus-dev pkg-config
 
       - name: Codec libraries (macOS)
         if: runner.os == 'macOS'
@@ -128,6 +130,11 @@ jobs:
         working-directory: SovEmu.Web
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up the runner
+        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
+        with:
+          gh: 'false'
 
       - uses: actions/setup-node@v4
         with:
@@ -167,6 +174,11 @@ jobs:
           df -h /
 
       - uses: actions/checkout@v4
+
+      - name: Set up the runner
+        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
+        with:
+          gh: 'false'
 
       - uses: docker/setup-buildx-action@v3
         id: buildx
