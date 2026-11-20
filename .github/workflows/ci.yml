@@ -47,9 +47,9 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
       chart: ${{ steps.filter.outputs.chart }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -88,7 +88,7 @@ jobs:
     # The matrix keeps GitHub's labels so the check names do not change; only Linux moves.
     runs-on: ${{ matrix.os == 'ubuntu-latest' && vars.LINUX_RUNNER || matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # SovEmu.Media links the system libvpx and libopus through pkg-config. The C toolchain and
       # libclang (bindgen) are on GitHub's runners but not on the self-hosted image. On macOS this
@@ -129,14 +129,14 @@ jobs:
       run:
         working-directory: SovEmu.Web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up the runner
         uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
         with:
           gh: 'false'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -173,14 +173,14 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
           df -h /
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up the runner
         uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
         with:
           gh: 'false'
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         id: buildx
 
       # Cargo's cache mounts (the registry and each target/) live in the builder and vanish with
@@ -191,7 +191,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         # A cache problem costs time, never the build: the job still passes without one.
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: cache-mount
           key: cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-${{ github.run_id }}
@@ -203,7 +203,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         # A cache problem costs time, never the build: the job still passes without one.
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: cache-mount
           key: cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-${{ github.run_id }}
@@ -228,7 +228,7 @@ jobs:
             }
 
       - name: Test suite and runtime image (probes every core)
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           source: .
           files: SovEmu.Backend/docker-bake.hcl
@@ -252,9 +252,9 @@ jobs:
       run:
         working-directory: charts/sovemu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       # Into the job's temp folder: the self-hosted runner's user cannot write to /usr/local/bin.
       - name: kubeconform
