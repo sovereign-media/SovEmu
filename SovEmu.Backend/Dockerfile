@@ -54,18 +54,29 @@ WORKDIR /build
 COPY scripts/cores.list scripts/install-cores.sh ./
 RUN ./install-cores.sh --out /out/cores
 
-## ---- build: the Rust workspace -----------------------------------------------------------------
-FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS build
+## ---- toolchain: Rust, the build dependencies and the sources --------------------------------------
+# `build` and `test` both start here and neither waits for the other, so BuildKit compiles the
+# release binaries and the test suite side by side. Each has its own `target/` cache (cargo locks
+# a target directory, so a shared one would make them take turns); CI keeps the caches between
+# runs (buildkit-cache-dance in .github/workflows/ci.yml).
+FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS toolchain
 # libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev: the codecs
 # SovEmu.Media links.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 clang libclang-dev cmake pkg-config libvpx-dev libopus-dev \
     && rm -rf /var/lib/apt/lists/*
-ENV CARGO_TERM_COLOR=always
+# No incremental compilation (a one-off build gains nothing from it, and its files would bloat the
+# kept cache); tests keep line tables, enough for a backtrace, not full debug info.
+ENV CARGO_TERM_COLOR=always \
+    CARGO_INCREMENTAL=0 \
+    CARGO_PROFILE_DEV_DEBUG=line-tables-only
 WORKDIR /src
 COPY SovEmu.Backend/ ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+
+## ---- build: the release binaries ------------------------------------------------------------------
+FROM toolchain AS build
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=target-release,target=/src/target \
     cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
     && install -D target/release/sovemu-server /out/sovemu-server \
@@ -73,14 +84,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && strip --strip-debug /out/sovemu-worker /out/sovemu-server
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
-FROM build AS test
+FROM toolchain AS test
 # Mesa (EGL through libglvnd, desktop GL and GLES, llvmpipe): the GPU-rendering tests draw with
 # the software renderer here, as a server without a GPU would.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=target-test,target=/src/target \
     cargo test --workspace --locked
 
 ## ---- runtime ------------------------------------------------------------------------------------
