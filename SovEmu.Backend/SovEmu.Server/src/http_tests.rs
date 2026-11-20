@@ -412,7 +412,7 @@ async fn browses_the_library() {
         StatusCode::FORBIDDEN,
         "signed for another file"
     );
-    let forged = crate::assets::AssetSigner::new(b"other key".to_vec(), 24)
+    let forged = sovemu_assets::AssetSigner::new(b"other key".to_vec(), 24)
         .sign(1, &format!("/media/games/{id}/thumb"));
     assert_eq!(h.call("GET", &forged, None).await.0, StatusCode::FORBIDDEN, "another key");
     h.cookie = cookie;
