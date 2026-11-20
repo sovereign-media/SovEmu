@@ -95,6 +95,9 @@ jobs:
     # loaded. Both build in one bake (SovEmu.Backend/docker-bake.hcl), side by side.
     name: Container image
     runs-on: ubuntu-latest
+    # A whole run takes ~15-20 minutes (a cold build more). Without a limit a hung step holds
+    # the runner, and every later run on main queued behind it, for GitHub's default 6 hours.
+    timeout-minutes: 60
     steps:
       # The runner has ~14 GB free; the build and its cargo caches (copied out of the builder to
       # be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
@@ -143,6 +146,9 @@ jobs:
       - name: Cargo caches into the builder
         # A cache problem costs time, never the build: the job still passes without one.
         continue-on-error: true
+        # The limit covers the post step too (copying the caches back out on main), which once
+        # hung until cancelled; with continue-on-error a timeout there only loses the cache.
+        timeout-minutes: 15
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           builder: ${{ steps.buildx.outputs.name }}
