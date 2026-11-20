@@ -248,6 +248,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut ff_rate = 0.0f64;
     // Then pause (the client's menu) and see the frames stop.
     let mut pause_start: Option<(Instant, usize)> = None;
+    let mut pause_settled: Option<usize> = None;
     let mut paused_frames = usize::MAX;
     while started.elapsed() < Duration::from_secs(15) {
         if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
@@ -265,12 +266,19 @@ fn streams_video_and_audio_and_acknowledges_input() {
             ff_rate = (last - frame) as f64 / at.elapsed().as_secs_f64();
             pause_start = Some((Instant::now(), video_frames));
         }
-        // Paused (the client's menu): frames stop, once the ones in flight have arrived.
-        if let Some((at, frames)) = pause_start
-            && at.elapsed() >= Duration::from_millis(700)
-        {
-            paused_frames = video_frames - frames;
-            break;
+        // Paused (the client's menu): frames stop. Counted only once the switch has settled (the
+        // pause goes out on the next 50 ms tick, and fast-forward's frames are still arriving),
+        // so a busy machine's scheduling does not count as frames sent while paused.
+        if let Some((at, _)) = pause_start {
+            if pause_settled.is_none() && at.elapsed() >= Duration::from_millis(300) {
+                pause_settled = Some(video_frames);
+            }
+            if let Some(frames) = pause_settled
+                && at.elapsed() >= Duration::from_millis(700)
+            {
+                paused_frames = video_frames - frames;
+                break;
+            }
         }
         let timeout = match rtc.poll_output().unwrap() {
             Output::Transmit(t) => {
@@ -356,6 +364,6 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert!(acks.windows(2).all(|w| w[0].frame < w[1].frame), "acks follow the frames");
     eprintln!("emulated {normal_rate:.0} frames/s normally, {ff_rate:.0} fast-forwarding");
     assert!(ff_rate > normal_rate * 2.5, "fast-forward: {ff_rate:.0} vs {normal_rate:.0} frames/s");
-    // 700 ms at 60 fps is 42 frames: a paused game sends at most the few already in flight.
-    assert!(paused_frames <= 6, "{paused_frames} video frames while paused");
+    // 400 ms at 60 fps is 24 frames: a paused game sends none (one, if it was still in flight).
+    assert!(paused_frames <= 1, "{paused_frames} video frames while paused");
 }

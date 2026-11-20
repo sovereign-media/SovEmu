@@ -417,6 +417,17 @@ cargo build --release -p sovemu-server
 target/release/sovemu-server --data-dir ../data --cores-dir ../cores --web-dir ../SovEmu.Web/dist
 ```
 
+Turn on the pre-push hook once per clone: `git config core.hooksPath .githooks`. Before a push
+leaves your machine, it runs the checks for whatever the push changes:
+- **`SovEmu.Backend/`:** `cargo fmt --check`, clippy with `-D warnings`, and the tests.
+- **`SovEmu.Web/`, or the server's `schema.graphql`:** the codegen check, the tests and the
+  build.
+- **Docs, CI or the chart:** nothing.
+
+On a failure it names the step and gives the command to rerun it. `git push --no-verify` skips
+it. CI checks the backend on Linux only (macOS when run by hand), because every push has
+already passed these checks on the developer's Mac.
+
 ## Running a core headless
 
 ```bash

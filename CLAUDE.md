@@ -220,5 +220,9 @@ For web development, `npm run dev` in `SovEmu.Web` proxies `/graphql` and `/medi
   folder under `SOVEMU_DATA_DIR` gets a method there, never a `data_dir.join("…")` elsewhere.
 - Rules load from `.claude/rules/`: `git-branching.md` always, `rust.md` for backend code,
   `web.md` for `SovEmu.Web`.
+- The pre-push hook (`.githooks/pre-push`; once per clone, `git config core.hooksPath .githooks`)
+  runs the backend's fmt, clippy and tests, and the web client's codegen check, tests and build,
+  for whatever a push changes, and stops the push on a failure. CI's macOS backend job runs only
+  by hand because of it.
 - Trunk-based on `main`: branch from a freshly fetched `origin/main` as `feat/`, `fix/`,
   `chore/` or `docs/`, and PR back to `main`.
