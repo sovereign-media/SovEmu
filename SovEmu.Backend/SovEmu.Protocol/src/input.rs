@@ -13,7 +13,9 @@
 //!
 //! Clients send a packet whenever the state changes and at least every 100 ms regardless.
 //! The worker ignores any packet whose `seq` is not newer than the last it applied (comparison
-//! wraps), since the channel is unordered.
+//! wraps), since the channel is unordered. Held buttons lapse like hotkeys: if no packet arrives
+//! for half a second (or the channel closes), the worker releases them, so a client that goes
+//! quiet cannot leave a button held for the rest of the session.
 //!
 //! ## Client → worker: [`Hotkeys`]
 //!
@@ -38,7 +40,8 @@
 //!
 //! Sticks run from −32768 to 32767, x to the right and y **down** (libretro's convention);
 //! triggers from 0 (released) to 32767. Sent like button packets: on change and at least every
-//! 100 ms while any value is off-centre. Added after version 1 without bumping it: clients that
+//! 100 ms while any value is off-centre (the worker centres sticks not refreshed for half a
+//! second). Added after version 1 without bumping it: clients that
 //! never send it leave the sticks centred, and workers that predate it ignore the type.
 //!
 //! ## Worker → client: [`InputAck`]

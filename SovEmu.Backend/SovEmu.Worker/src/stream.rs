@@ -35,8 +35,18 @@ use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 
-/// Hotkeys lapse if the client stops refreshing them (a lost release must not stick).
-const HOTKEY_LAPSE: Duration = Duration::from_millis(500);
+/// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
+/// Every client resends what is held at least every 100 ms, so a release that never arrives (the
+/// input channel stalled or closed while the video kept going, the app lost its window) lets go
+/// within half a second instead of holding the button for the rest of the session.
+const INPUT_LAPSE: Duration = Duration::from_millis(500);
+
+/// Whether held input has gone unrefreshed for [`INPUT_LAPSE`]: buttons held (`held`) and last
+/// sent at `buttons_at`, or sticks off-centre and last sent at `analog_at`.
+fn input_lapsed(held: bool, buttons_at: Instant, analog_at: Option<Instant>, now: Instant) -> bool {
+    let stale = |at: Instant| now.duration_since(at) >= INPUT_LAPSE;
+    (held && stale(buttons_at)) || analog_at.is_some_and(stale)
+}
 
 /// The lowest video bitrate adaptation will choose, kbit/s.
 const MIN_VIDEO_KBPS: u32 = 300;
@@ -121,6 +131,10 @@ pub struct Session {
     audio_kbps: u32,
     hotkeys: Hotkeys,
     hotkeys_at: Instant,
+    /// When `buttons` last arrived, and when the sticks last did while off-centre (`None`:
+    /// centred, nothing to lapse).
+    buttons_at: Instant,
+    analog_at: Option<Instant>,
     /// Frames sent to the client, for RTP timestamps: wall-clock paced even when fast-forward
     /// runs several emulated frames per tick.
     ticks: u64,
@@ -211,6 +225,8 @@ impl Session {
             hotkeys: Hotkeys::default(),
             last_analog_seq: None,
             hotkeys_at: Instant::now(),
+            buttons_at: Instant::now(),
+            analog_at: None,
             ticks: 0,
             shot_size: (0, 0),
             finished: false,
@@ -520,6 +536,11 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     }
                 }
                 Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => p.input = Some(id),
+                Event::ChannelClose(id) if Some(id) == p.input => {
+                    tracing::warn!("input channel closed: releasing held input");
+                    p.input = None;
+                    session.release_input();
+                }
                 Event::ChannelData(data) if Some(data.id) == p.input => {
                     session.handle_input(&data.data);
                 }
@@ -561,6 +582,8 @@ impl Session {
                     .iter()
                     .map(|p| AnalogSticks { left: p.left, right: p.right, l2: p.l2, r2: p.r2 })
                     .collect();
+                let off_centre = sticks.iter().any(|s| *s != AnalogSticks::CENTRED);
+                self.analog_at = off_centre.then(Instant::now);
                 self.core.set_analog(&sticks);
                 return;
             }
@@ -574,7 +597,30 @@ impl Session {
         }
         self.last_seq = Some(packet.seq);
         self.buttons = packet.ports.iter().map(|&b| JoypadButtons(b)).collect();
+        self.buttons_at = Instant::now();
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
+    }
+
+    /// Lets go of every button and stick (the client stopped saying what it holds).
+    fn release_input(&mut self) {
+        self.buttons.clear();
+        self.analog_at = None;
+        self.core.set_analog(&[]);
+        self.hotkeys = Hotkeys::default();
+    }
+
+    /// Releases held input the client has stopped refreshing ([`INPUT_LAPSE`]), and says so:
+    /// a client that goes quiet while holding something is a fault worth seeing in the log.
+    fn lapse_input(&mut self, now: Instant) {
+        let held = self.buttons.iter().any(|b| b.0 != 0);
+        if input_lapsed(held, self.buttons_at, self.analog_at, now) {
+            tracing::warn!(
+                buttons = ?self.buttons.iter().map(|b| b.0).collect::<Vec<_>>(),
+                silent_ms = now.duration_since(self.buttons_at).as_millis() as u64,
+                "client stopped sending input while holding it: released"
+            );
+            self.release_input();
+        }
     }
 
     /// Follows the send-bandwidth estimate, ignoring changes under 10%.
@@ -595,7 +641,8 @@ impl Session {
     /// sends its video, audio and any input ack to the peer.
     fn step(&mut self, p: &mut Peer) -> Result<()> {
         let now = Instant::now();
-        let hotkeys = if now.duration_since(self.hotkeys_at) < HOTKEY_LAPSE {
+        self.lapse_input(now);
+        let hotkeys = if now.duration_since(self.hotkeys_at) < INPUT_LAPSE {
             self.hotkeys
         } else {
             Hotkeys::default()
@@ -709,6 +756,22 @@ pub fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategory>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_input_lets_go_once_the_client_stops_refreshing_it() {
+        let t = Instant::now();
+        let soon = t + Duration::from_millis(100);
+        let late = t + INPUT_LAPSE;
+        // Left held, refreshed every 100 ms: still held.
+        assert!(!input_lapsed(true, t, None, soon));
+        // The refreshes stop (the input channel stalled, the app lost its window): released.
+        assert!(input_lapsed(true, t, None, late));
+        // Nothing held: nothing to release, however long the client is quiet.
+        assert!(!input_lapsed(false, t, None, late));
+        // A stick pushed over, its heartbeat stopped: released too; a centred one sends none.
+        assert!(input_lapsed(false, t, Some(t), late));
+        assert!(!input_lapsed(false, t, Some(soon), soon + Duration::from_millis(100)));
+    }
 
     #[test]
     fn bitrate_follows_the_estimate_within_bounds() {
