@@ -186,6 +186,17 @@ impl Drop for Harness {
     }
 }
 
+/// The LaunchBox dump as its server zips it.
+fn zip_bytes(xml: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("Metadata.xml", options).unwrap();
+    zip.write_all(xml.as_bytes()).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
 /// A pair of UDP ports no other harness in this run uses.
 fn udp_ports() -> String {
     use std::sync::atomic::{AtomicU16, Ordering};
@@ -560,7 +571,7 @@ async fn mock_services(quota: bool) -> String {
                         assert_eq!(q["romtaille"], "64");
                         // MD5 of the fixture's 64 zero bytes.
                         assert_eq!(q["md5"], "3b5d3c7d207e37dceeedd301e35e2e58");
-                        (StatusCode::OK, crate::metadata::screenscraper::tests::SAMPLE.to_owned())
+                        (StatusCode::OK, include_str!("../../SovEmu.Library/tests/fixtures/screenscraper.xml").to_owned())
                     }
                     _ => (StatusCode::NOT_FOUND, "Erreur : Rom/Iso/Dossier non trouvée !".to_owned()),
                 }
@@ -593,7 +604,7 @@ async fn mock_services(quota: bool) -> String {
         )
         .route(
             "/lb/Metadata.zip",
-            get(|| async { crate::metadata::launchbox::tests::zip_bytes(LAUNCHBOX_DUMP) }),
+            get(|| async { zip_bytes(LAUNCHBOX_DUMP) }),
         )
         .route("/img/box.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }));
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

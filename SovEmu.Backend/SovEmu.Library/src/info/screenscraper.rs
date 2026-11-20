@@ -14,7 +14,7 @@ use super::{GameInfo, LookupInput, MetaError, status_error};
 pub const DEFAULT_BASE: &str = "https://api.screenscraper.fr/api2";
 
 /// SovEmu system id → ScreenScraper `systemeid`.
-pub fn system_id(system: &str) -> Option<u32> {
+pub(crate) fn system_id(system: &str) -> Option<u32> {
     Some(match system {
         "megadrive" => 1,
         "mastersystem" => 2,
@@ -51,7 +51,7 @@ pub struct ScreenScraper {
 const CREDENTIAL_PARAMS: &[&str] = &["devid", "devpassword", "ssid", "sspassword"];
 
 /// `url` without its credential parameters.
-pub fn strip_credentials(url: &str) -> String {
+pub(crate) fn strip_credentials(url: &str) -> String {
     let Ok(mut parsed) = reqwest::Url::parse(url) else { return url.to_owned() };
     if !parsed.query_pairs().any(|(k, _)| CREDENTIAL_PARAMS.contains(&k.as_ref())) {
         return url.to_owned();
@@ -70,8 +70,8 @@ pub fn strip_credentials(url: &str) -> String {
 }
 
 /// Default region preference for names, dates and media: USA first, as most sets are.
-pub const DEFAULT_REGIONS: &[&str] = &["us", "wor", "eu", "ss", "uk", "jp"];
-pub const DEFAULT_LANGUAGES: &[&str] = &["en", "wor"];
+pub(crate) const DEFAULT_REGIONS: &[&str] = &["us", "wor", "eu", "ss", "uk", "jp"];
+pub(crate) const DEFAULT_LANGUAGES: &[&str] = &["en", "wor"];
 
 fn pick<'a, S: AsRef<str>>(
     nodes: impl Iterator<Item = roxmltree::Node<'a, 'a>>,
@@ -96,7 +96,11 @@ pub fn parse(xml: &str) -> Option<GameInfo> {
 }
 
 /// [`parse`] with region and language preferences (most preferred first).
-pub fn parse_with<S: AsRef<str>>(xml: &str, regions: &[S], languages: &[S]) -> Option<GameInfo> {
+pub(crate) fn parse_with<S: AsRef<str>>(
+    xml: &str,
+    regions: &[S],
+    languages: &[S],
+) -> Option<GameInfo> {
     let doc = roxmltree::Document::parse(xml).ok()?;
     let jeu = doc.descendants().find(|n| {
         n.has_tag_name("jeu")
@@ -247,36 +251,8 @@ impl ScreenScraper {
 pub(crate) mod tests {
     use super::*;
 
-    pub const SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<Data>
-  <ssuser><id>someone</id><niveau>1</niveau><requeststoday>3</requeststoday><maxrequestsperday>20000</maxrequestsperday></ssuser>
-  <jeu id="1234">
-    <noms>
-      <nom region="jp">Akumajou Dracula</nom>
-      <nom region="us">Castlevania</nom>
-    </noms>
-    <systeme id="3" parentid="0">NES</systeme>
-    <editeur id="1">Konami</editeur>
-    <developpeur id="1">Konami</developpeur>
-    <joueurs>1</joueurs>
-    <note>16</note>
-    <synopsis>
-      <synopsis langue="fr">Simon Belmont part affronter Dracula.</synopsis>
-      <synopsis langue="en">Simon Belmont sets out to defeat Dracula.</synopsis>
-    </synopsis>
-    <dates><date region="jp">1986-09-26</date><date region="us">1987-05-01</date></dates>
-    <genres>
-      <genre id="1" langue="fr">Plateforme</genre>
-      <genre id="1" langue="en">Platform</genre>
-      <genre id="2" langue="en">Action</genre>
-    </genres>
-    <medias>
-      <media type="ss" region="wor" format="png">https://example.invalid/ss.png</media>
-      <media type="box-2D" region="jp" format="png">https://example.invalid/box jp.png</media>
-      <media type="box-2D" region="us" format="png">https://example.invalid/box us.png</media>
-    </medias>
-  </jeu>
-</Data>"#;
+    /// A ScreenScraper answer, shared with the server's tests.
+    pub const SAMPLE: &str = include_str!("../../tests/fixtures/screenscraper.xml");
 
     #[test]
     fn parses_a_game_preferring_us_and_english() {

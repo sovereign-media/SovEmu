@@ -419,7 +419,7 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
 }
 
 /// A system's buttons and pad.
-pub fn system_controls(system: &crate::systems::System) -> SystemControls {
+pub fn system_controls(system: &sovemu_library::systems::System) -> SystemControls {
     SystemControls {
         buttons: labels(system.id)
             .into_iter()
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn every_system_labels_its_buttons_and_draws_each_of_them() {
-        for system in crate::systems::SYSTEMS {
+        for system in sovemu_library::systems::SYSTEMS {
             let controls = system_controls(system);
             let keys: Vec<&str> = controls.layout.keys.iter().map(|k| k.key.as_str()).collect();
             for b in &controls.buttons {

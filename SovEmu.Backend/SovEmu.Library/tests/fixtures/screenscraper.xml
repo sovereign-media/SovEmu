@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Data>
+  <ssuser><id>someone</id><niveau>1</niveau><requeststoday>3</requeststoday><maxrequestsperday>20000</maxrequestsperday></ssuser>
+  <jeu id="1234">
+    <noms>
+      <nom region="jp">Akumajou Dracula</nom>
+      <nom region="us">Castlevania</nom>
+    </noms>
+    <systeme id="3" parentid="0">NES</systeme>
+    <editeur id="1">Konami</editeur>
+    <developpeur id="1">Konami</developpeur>
+    <joueurs>1</joueurs>
+    <note>16</note>
+    <synopsis>
+      <synopsis langue="fr">Simon Belmont part affronter Dracula.</synopsis>
+      <synopsis langue="en">Simon Belmont sets out to defeat Dracula.</synopsis>
+    </synopsis>
+    <dates><date region="jp">1986-09-26</date><date region="us">1987-05-01</date></dates>
+    <genres>
+      <genre id="1" langue="fr">Plateforme</genre>
+      <genre id="1" langue="en">Platform</genre>
+      <genre id="2" langue="en">Action</genre>
+    </genres>
+    <medias>
+      <media type="ss" region="wor" format="png">https://example.invalid/ss.png</media>
+      <media type="box-2D" region="jp" format="png">https://example.invalid/box jp.png</media>
+      <media type="box-2D" region="us" format="png">https://example.invalid/box us.png</media>
+    </medias>
+  </jeu>
+</Data>

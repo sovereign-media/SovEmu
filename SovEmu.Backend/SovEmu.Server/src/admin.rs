@@ -5,8 +5,8 @@ use serde::Serialize;
 
 use crate::error::{ApiError, ApiResult};
 use crate::metadata::{self, JobStatus};
-use crate::mirror::{self, SyncStatus};
 use crate::{AppState, LibraryMode, library};
+use sovemu_library::mirror::{self, SyncStatus};
 
 pub async fn scan_and_log(state: &AppState) {
     // Decoration sets may have been added beside the library: list them again too.

@@ -14,7 +14,7 @@ use super::{GameInfo, LookupInput, MetaError, normalize, status_error};
 pub const DEFAULT_BASE: &str = "https://api.thegamesdb.net/v1";
 
 /// SovEmu system id → TheGamesDB platform id.
-pub fn platform_id(system: &str) -> Option<u32> {
+pub(crate) fn platform_id(system: &str) -> Option<u32> {
     Some(match system {
         "nes" => 7,
         "snes" => 6,
@@ -54,7 +54,7 @@ pub struct TheGamesDb {
 
 /// The best candidate for `title` among `data.games`: an exact (normalised) title match, else
 /// one whose title contains the other, else none (a wrong match is worse than no match).
-pub fn best_match<'a>(games: &'a [Value], title: &str) -> Option<&'a Value> {
+pub(crate) fn best_match<'a>(games: &'a [Value], title: &str) -> Option<&'a Value> {
     let want = normalize(title);
     let name = |g: &Value| normalize(g["game_title"].as_str().unwrap_or(""));
     games.iter().find(|g| name(g) == want).or_else(|| {
@@ -93,7 +93,7 @@ fn to_info(game: &Value, names: &Names) -> GameInfo {
 }
 
 /// `base_url.large` + the front boxart's filename, from a `/Games/Images` response.
-pub fn front_box_art(images: &Value, game_id: i64) -> Option<String> {
+pub(crate) fn front_box_art(images: &Value, game_id: i64) -> Option<String> {
     let base = images["data"]["base_url"]["large"].as_str()?;
     let entries = images["data"]["images"][game_id.to_string()].as_array()?;
     let front = entries.iter().find(|e| e["type"] == "boxart" && e["side"] == "front")?;

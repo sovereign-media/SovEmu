@@ -94,7 +94,7 @@ const GC_PAL: &[&str] = &[
 const NEOGEO: Known =
     one("neogeo.zip", "Neo Geo BIOS set", 1_859_335, &["00dad01abdbf8ea9e79ad2fe11bdb182"]);
 
-pub const SPECS: &[Spec] = &[
+pub(crate) const SPECS: &[Spec] = &[
     Spec {
         system: "nes",
         core_path: "",
