@@ -185,10 +185,12 @@ held 59.93 fps over 300 frames with no resyncs.
       NFS, claim or host-path library; UDP LoadBalancer or host networking for media; Ingress;
       read-only root, uid 1000, no capabilities. Linted and schema-checked in CI
 - [x] Graceful shutdown on SIGTERM (Kubernetes, `docker stop`): every session saves first
-- [x] OIDC: the server is its own OpenID Connect provider (discovery, JWKS, ES256 ID tokens,
-      rotating refresh tokens with replay detection, revocation, end session). `sovemu-web`
-      signs in with the code flow and PKCE and has no password grant; `sovemu-native` (Android,
-      iOS) uses the password grant. The API takes bearer tokens; roles `viewer` and `admin`
+- [x] Sign-in: `SovEmu.Identity`, the `oauth-as` OAuth 2.1 server stored in SQLite (conformance
+      harness passed) with OpenID Connect over it (discovery, JWKS, ES256 ID tokens, userinfo,
+      end session). `sovemu-web`: code flow with PKCE, no password grant. `sovemu-native`: the
+      device grant, or the password fallback (`SOVEMU_PASSWORD_SIGN_IN`). Bearer tokens for the
+      API; roles `viewer` and `admin`
+- [ ] The apps show a sign-in code (the device grant; the server side is done)
 - [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts
 - [ ] H.264 fallback for clients without VP8 decode
 - [ ] Worker resource limits (cgroups/rlimits per session)

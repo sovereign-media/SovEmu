@@ -57,31 +57,31 @@ fn spawn_library(state: &AppState) {
 
 fn spawn_maintenance(state: &AppState) {
     let Some(period) = every(state.config.maintenance_interval_minutes) else { return };
-    let db = state.db.clone();
+    let (db, identity) = (state.db.clone(), state.identity.clone());
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(period);
         tick.tick().await;
         loop {
             tick.tick().await;
-            if let Err(e) = maintain(&db).await {
+            if let Err(e) = maintain(&db, &identity).await {
                 tracing::warn!(error = %e, "database maintenance");
             }
         }
     });
 }
 
-/// One round of upkeep. Returns how many expired sign-ins it deleted.
-pub(crate) async fn maintain(db: &SqlitePool) -> sqlx::Result<u64> {
-    let expired = sqlx::query("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
-        .execute(db)
-        .await?
-        .rows_affected();
-    let expired = expired + crate::oidc::tokens::expire(db).await?;
+/// One round of upkeep: expired sign-ins, codes and tokens deleted (`sovemu_identity`), the query
+/// planner's statistics refreshed, the write-ahead log folded back. How many records expired.
+pub(crate) async fn maintain(
+    db: &SqlitePool,
+    identity: &sovemu_identity::Identity,
+) -> anyhow::Result<u64> {
+    let expired = identity.maintain().await?;
     sqlx::query("PRAGMA optimize").execute(db).await?;
     // PASSIVE: never waits on a reader or writer; what it cannot fold back now waits for the
     // next round.
     sqlx::query("PRAGMA wal_checkpoint(PASSIVE)").execute(db).await?;
-    tracing::debug!(expired_sessions = expired, "database maintenance");
+    tracing::debug!(expired, "database maintenance");
     Ok(expired)
 }
 
@@ -95,6 +95,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db = crate::db::open(&dir.join("jobs.db")).await.unwrap();
+        let config = sovemu_identity::Config {
+            public_urls: vec!["http://localhost:8080".into()],
+            token_secret: "test".into(),
+            access_token_minutes: 60,
+            session_days: 30,
+            secure_cookies: false,
+            password_sign_in: true,
+            max_failures: 5,
+            max_failures_per_ip: 20,
+            lockout: std::time::Duration::from_secs(300),
+            refresh_retry: std::time::Duration::ZERO,
+        };
+        let identity = sovemu_identity::Identity::new(db.clone(), config).await.unwrap();
         sqlx::query("INSERT INTO users (username, password_hash) VALUES ('a', 'x')")
             .execute(&db)
             .await
@@ -110,36 +123,13 @@ mod tests {
             .await
             .unwrap();
         }
-        // Two apps' sign-ins: one whose only token has expired, one still current.
-        for (grant, token, expires) in [(1, "old-app", "-1 minute"), (2, "live-app", "+1 hour")] {
-            sqlx::query(
-                "INSERT INTO oauth_grants (id, client_id, user_id, scope, auth_time)
-                 VALUES (?, 'sovemu-native', 1, '', 0)",
-            )
-            .bind(grant)
-            .execute(&db)
-            .await
-            .unwrap();
-            sqlx::query(
-                "INSERT INTO oauth_tokens (token_hash, grant_id, kind, expires_at)
-                 VALUES (?, ?, 'access', datetime('now', ?))",
-            )
-            .bind(token)
-            .bind(grant)
-            .bind(expires)
-            .execute(&db)
-            .await
-            .unwrap();
-        }
-        assert_eq!(maintain(&db).await.unwrap(), 3, "a session, a token and its sign-in");
+        assert_eq!(maintain(&db, &identity).await.unwrap(), 1);
         let left: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM auth_sessions")
             .fetch_all(&db)
             .await
             .unwrap();
         assert_eq!(left, ["live"]);
-        let grants: Vec<i64> =
-            sqlx::query_scalar("SELECT id FROM oauth_grants").fetch_all(&db).await.unwrap();
-        assert_eq!(grants, [2]);
-        assert_eq!(maintain(&db).await.unwrap(), 0, "nothing left to delete");
+        assert_eq!(maintain(&db, &identity).await.unwrap(), 0, "nothing left to delete");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

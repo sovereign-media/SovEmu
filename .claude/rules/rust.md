@@ -17,7 +17,10 @@ paths:
   everything else is `pub(crate)` or private, so its internals can change freely.
 - **Visibility.** `unreachable_pub` is a workspace lint: an item is `pub` only if another crate
   uses it. A library crate's public items are its interface; keep it small.
-- **Server.** `SovEmu.Server` depends on `Library`, `Assets`, `Sessions` and `Protocol` only; neither it nor
+- **Identity.** `SovEmu.Identity` is accounts and sign-in, on the `oauth-as` crate. Protocol
+  logic (codes, PKCE, refresh rotation, revocation, the device grant) is oauth-as's: build around
+  it, never beside it. `SqliteStorage` keeps passing oauth-as's conformance harness.
+- **Server.** `SovEmu.Server` depends on `Library`, `Assets`, `Identity`, `Sessions` and `Protocol` only; neither it nor
   `Sessions` ever links `RetroHost` or `Media`. Database access is plain
   `sqlx::query` / `query_as` with bound parameters (never format values into SQL); schema changes are new
   files in `migrations/`. The API is GraphQL (`graphql.rs`): resolvers check access with

@@ -58,7 +58,7 @@ instead (as Sovereign's server takes its SPA).
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
   videos, save screenshots, decorations), for sign-in (the OpenID Connect routes OAuth defines,
-  `/.well-known/openid-configuration` and `/oauth/…`, `SovEmu.Server/src/oidc/`) and for
+  `/.well-known/openid-configuration`, `/oauth/…` and `/device`, `SovEmu.Identity`) and for
   `/health`. Those URLs are always **signed** for
   the requesting user (`state.assets.sign`, `SovEmu.Assets`, Sovereign's scheme); a `/media/` route
   sits behind `require_signature` and serves the signed user's data, never a cookie's. Never hand
@@ -69,12 +69,16 @@ instead (as Sovereign's server takes its SPA).
   `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`), and the web client's typed
   documents are generated from it (`npm run codegen` in `SovEmu.Web`, committed in
   `src/graphql/`). A schema change updates all three clients in the same change.
-- **Sign-in is the server's own OpenID Connect provider** (`SovEmu.Server/src/oidc/`). The API
-  is signed in only by `Authorization: Bearer` access tokens, never a cookie; the
-  `sovemu_session` cookie is the browser's sign-in *at the provider*, read only by
-  `/oauth/authorize`. The web client (`sovemu-web`) uses the code flow with PKCE and never has
-  the password grant (a compile-time assert says so); the native apps (`sovemu-native`) use the
-  password grant. Roles are `viewer` and `admin` (`users.role`), checked on every request.
+- **Sign-in is `SovEmu.Identity`**, built on the `oauth-as` crate (an OAuth 2.1 authorization
+  server) with OpenID Connect added over it. Never hand-roll protocol logic that oauth-as owns
+  (codes, PKCE, refresh rotation and reuse detection, revocation, the device grant): extend it
+  around the edges. Its storage, `SqliteStorage`, must keep passing oauth-as's conformance
+  harness. The API is signed in only by `Authorization: Bearer` access tokens, never a cookie;
+  the `sovemu_session` cookie is the browser's sign-in at the server, read only in front of
+  `/oauth/authorize` and `/device`. The web client (`sovemu-web`) has no password grant; the
+  apps (`sovemu-native`) use the device grant or the password fallback (`/oauth/password`,
+  `SOVEMU_PASSWORD_SIGN_IN`). Roles are `viewer` and `admin` (`users.role`), checked on every
+  request.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),
   each tested against the same byte vectors. Change both in
@@ -138,10 +142,11 @@ cargo test --workspace
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
 | `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SOVEMU_ASSET_KEY`, else generated into `data/server.json`) and `load_secret`, the same for any server secret kept there (the token key). No HTTP, no database: the server's `/media/…` middleware calls it. |
+| `SovEmu.Identity` | `sovemu-identity` | Accounts and sign-in: users with argon2 passwords and roles, the sign-in throttle, the browser's sign-in cookie, and the provider: `oauth-as` (OAuth 2.1: code flow with PKCE, device grant, rotation, revocation) stored by `SqliteStorage`, one server per `SOVEMU_PUBLIC_URL`, with OpenID Connect over it (discovery, ES256 ID tokens, JWKS, userinfo, end session), the sign-in form's target and the apps' password fallback. `Identity::user_for_request` names a bearer token's user. Its tables are the server's migrations; it knows nothing about GraphQL. |
 | `SovEmu.Library` | `sovemu-library` | The ROM library without the database: the systems table (Recalbox folder names + aliases, extension fallback), walking a library into games (parts folded together, soft patches found, artwork file names), release labels, BIOS files, the game-information clients (FBNeo, LaunchBox, ScreenScraper, TheGamesDB), the local cache and mirror, decorations. Reads files and asks services; never opens the database. Only what the server uses is `pub`. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
 | `SovEmu.Sessions` | `sovemu-sessions` | Game sessions: `Workers` starts one `sovemu-worker session` per game with a UDP port from a pool and the allow-listed environment, drives it over JSON lines (`SovEmu.Protocol::ipc`), and stops it so saves are written; `starts` (loading progress) and `gpu` (what `sovemu-worker gpu` reports). Reports sessions to an `Observer` (the server's metrics). Never links a core or a codec. |
-| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, roles `viewer`/`admin`, first-run admin setup) and its own OpenID Connect provider (`oidc/`: the web client's code flow with PKCE, the apps' password grant, bearer tokens for the API); the library's tables, kept in step with what `SovEmu.Library` finds; game sessions through `SovEmu.Sessions`. |
+| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); accounts and sign-in through `SovEmu.Identity` (mounting its routes; GraphQL asks it who a bearer token is); the library's tables, kept in step with what `SovEmu.Library` finds; game sessions through `SovEmu.Sessions`. |
 | `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
 
 ```
@@ -151,7 +156,8 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
             └── Worker ──► Media, Protocol
 Library   (no workspace references)                  Assets    (no workspace references)
 Sessions ──► Library, Protocol   (starts workers; never links a core or a codec)
-Server ──► Library, Assets, Sessions, Protocol   (never links a core or a codec)
+Identity  (no workspace references)
+Server ──► Library, Assets, Identity, Sessions, Protocol   (never links a core or a codec)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
 persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the

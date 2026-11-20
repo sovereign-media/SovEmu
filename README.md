@@ -145,19 +145,24 @@ SovEmu's API is GraphQL, at `POST /graphql`; open `/graphql` in a browser for Gr
 Android and iOS clients all use it. The schema, with every type and field documented, is
 [SovEmu.Backend/SovEmu.Server/schema.graphql](SovEmu.Backend/SovEmu.Server/schema.graphql).
 
-- **Sign-in** is OpenID Connect: the server is its own provider (discovery at
-  `/.well-known/openid-configuration`) and every request carries `Authorization: Bearer <access
-  token>`. Two clients are built in, both public:
+- **Sign-in** is OAuth 2.1 with OpenID Connect over it (`SovEmu.Identity`, on the
+  [`oauth-as`](https://crates.io/crates/oauth-as) crate). Discovery is at
+  `/.well-known/openid-configuration`, and every API request carries `Authorization: Bearer
+  <access token>`. Two clients are built in, both public:
   - `sovemu-web`, the web client: the authorization code flow with PKCE (S256, required) and
-    refresh tokens. It never gets the password grant; the password goes only to the server's own
-    sign-in page (`/login/`, which posts to `/oauth/signin`).
-  - `sovemu-native`, the Android and iOS apps: the password grant
-    (`POST /oauth/token`, `grant_type=password`) and refresh tokens.
+    refresh tokens. It has no password grant; the password goes only to the server's own sign-in
+    page (`/login/`, which posts to `/oauth/signin`).
+  - `sovemu-native`, the Android and iOS apps:
+    - the device grant (`/oauth/device_authorization`): the TV shows a code, approved at
+      `/device` in a signed-in browser;
+    - or the password fallback, `POST /oauth/password` (`client_id`, `username`, `password`,
+      `scope`), which answers like the token endpoint. `SOVEMU_PASSWORD_SIGN_IN=false` turns it
+      off.
 
-  Refresh tokens rotate, and a used one presented again a minute later ends that sign-in.
-  `/oauth/revoke` signs an app out. Access tokens are checked against the database on every
-  request, so a revoked sign-in or a changed role applies at once. First-run `setup` is still a
-  mutation; there is no sign-in mutation.
+  Refresh tokens rotate (`POST /oauth/token`, `grant_type=refresh_token`), and a used one
+  presented again ends that sign-in. `/oauth/revoke` signs an app out. Access tokens are looked
+  up on every request, so a revoked sign-in or a changed role applies at once. First-run `setup`
+  is still a mutation; there is no sign-in mutation.
 - **Roles**: `VIEWER` plays; `ADMIN` also runs the server. `User.role` (and `isAdmin`).
 - **Errors** come back in `errors`, each with an `extensions.code`: `UNAUTHENTICATED`,
   `FORBIDDEN`, `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `GONE`, `TOO_MANY_REQUESTS`, `UNAVAILABLE`.
@@ -279,9 +284,11 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_ADMIN_USERNAME`, `SOVEMU_ADMIN_PASSWORD` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
 | `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ROLE` | none | More accounts, kept in step like the admin (see below). `__ROLE` is `viewer` (default) or `admin`; `__ADMIN=true` still means `admin` |
 | `SOVEMU_USERS_PRUNE` | off | Delete accounts not declared above at startup |
-| `SOVEMU_SESSION_DAYS` | `30` | How long a sign-in lasts unused: an app's refresh token (each refresh starts it again), and the browser's sign-in at the server |
+| `SOVEMU_SESSION_DAYS` | `90` | How long a sign-in lasts before signing in again (an app's counts from signing in; refreshing does not extend it), and the browser's sign-in at the server. 0: until signed out |
 | `SOVEMU_ACCESS_TOKEN_MINUTES` | `60` | How long an access token lasts before the app refreshes it |
-| `SOVEMU_PUBLIC_URL` | the request's address | The address people reach the server at (`https://games.example.com`): the issuer of its sign-in tokens. Only needed if a proxy rewrites `Host` |
+| `SOVEMU_REFRESH_RETRY_SECONDS` | `30` | How long a just-used refresh token is honoured again (two tabs refreshing at once); after that, presenting it ends the sign-in. 0: strictly once |
+| `SOVEMU_PUBLIC_URL` | `localhost`, `127.0.0.1` and `SOVEMU_ADVERTISE_IP` on the HTTP port | The addresses people reach the server at, comma-separated (`https://games.example.com,http://192.168.1.10:8080`). Each issues sign-in tokens; signing in elsewhere is refused. Set it when you use a hostname or a proxy |
+| `SOVEMU_PASSWORD_SIGN_IN` | `true` | Whether the apps may sign in with a username and password, as well as with a code shown on the screen |
 | `SOVEMU_TOKEN_KEY` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret: `_FILE` works |
 | `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
 | `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |

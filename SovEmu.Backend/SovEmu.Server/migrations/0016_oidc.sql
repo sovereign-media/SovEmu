@@ -7,40 +7,87 @@ ALTER TABLE users DROP COLUMN is_admin;
 -- The server is an OpenID Connect provider. `auth_sessions` stays: it is now the browser's
 -- sign-in at the provider (the cookie `/oauth/authorize` reads), not the API's.
 
--- Authorization codes (the code flow with PKCE): single use, short-lived. Only a SHA-256 of the
--- code is stored.
-CREATE TABLE oauth_codes (
-    code_hash      TEXT    PRIMARY KEY,
-    client_id      TEXT    NOT NULL,
-    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    redirect_uri   TEXT    NOT NULL,
-    code_challenge TEXT    NOT NULL,
-    scope          TEXT    NOT NULL,
-    nonce          TEXT,
-    -- When the user signed in (Unix seconds), for the ID token's `auth_time`.
-    auth_time      INTEGER NOT NULL,
-    expires_at     TEXT    NOT NULL
+-- The authorization server's storage (oauth-as's `Storage`, `SovEmu.Identity/src/store.rs`).
+-- Each record is kept whole as JSON in `record`, beside the columns it is looked up, cascaded
+-- and swept by. Instants are Unix nanoseconds. Access tokens, refresh tokens and authorization
+-- codes are keyed by the SHA-256 (hex) of the credential, and the credential is left out of
+-- `record`. `subject` is the user id as text: what ending every sign-in of a user deletes by.
+-- There are no foreign keys: oauth-as decides what a subject or a client is, and its
+-- revocations do the cascading.
+
+-- Registered clients (applications that may sign in).
+CREATE TABLE oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    record    TEXT NOT NULL
 );
 
--- One per sign-in of an app: its tokens hang off it, and deleting it signs that app out.
-CREATE TABLE oauth_grants (
-    id         INTEGER PRIMARY KEY,
-    client_id  TEXT    NOT NULL,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    scope      TEXT    NOT NULL,
-    -- When the user signed in (Unix seconds): every ID token of this sign-in repeats it.
-    auth_time  INTEGER NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+-- RFC 8628 device grants. `user_code` is the normalized code a person types, unique so that one
+-- code never answers for two devices; `subject` is set once the grant is approved.
+CREATE TABLE oauth_device_grants (
+    device_code TEXT    PRIMARY KEY,
+    user_code   TEXT    NOT NULL UNIQUE,
+    client_id   TEXT    NOT NULL,
+    subject     TEXT,
+    state       TEXT    NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    record      TEXT    NOT NULL
 );
-CREATE INDEX oauth_grants_user ON oauth_grants(user_id);
+CREATE INDEX oauth_device_grants_client ON oauth_device_grants(client_id);
+CREATE INDEX oauth_device_grants_subject ON oauth_device_grants(subject);
+CREATE INDEX oauth_device_grants_expiry ON oauth_device_grants(expires_at);
 
--- Access and refresh tokens. Only a SHA-256 of each is stored. A refresh token is used once:
--- `used_at` is when it was exchanged, kept so a replay can be recognised.
-CREATE TABLE oauth_tokens (
+-- Authorization codes, in either state (a consumed code is kept until it expires so a replay is
+-- recognised). `state_digest` is the SHA-256 of the state, what a compare-and-swap compares.
+CREATE TABLE oauth_authorization_codes (
+    code_hash    TEXT    PRIMARY KEY,
+    client_id    TEXT    NOT NULL,
+    subject      TEXT    NOT NULL,
+    state_digest TEXT    NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    record       TEXT    NOT NULL
+);
+CREATE INDEX oauth_authorization_codes_client ON oauth_authorization_codes(client_id);
+CREATE INDEX oauth_authorization_codes_subject ON oauth_authorization_codes(subject);
+CREATE INDEX oauth_authorization_codes_expiry ON oauth_authorization_codes(expires_at);
+
+-- Access tokens. `family_id` is the refresh chain the token was minted along, if any.
+CREATE TABLE oauth_access_tokens (
     token_hash TEXT    PRIMARY KEY,
-    grant_id   INTEGER NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE,
-    kind       TEXT    NOT NULL CHECK (kind IN ('access', 'refresh')),
-    expires_at TEXT    NOT NULL,
-    used_at    TEXT
+    client_id  TEXT    NOT NULL,
+    subject    TEXT,
+    family_id  TEXT,
+    expires_at INTEGER NOT NULL,
+    record     TEXT    NOT NULL
 );
-CREATE INDEX oauth_tokens_grant ON oauth_tokens(grant_id);
+CREATE INDEX oauth_access_tokens_client ON oauth_access_tokens(client_id);
+CREATE INDEX oauth_access_tokens_subject ON oauth_access_tokens(subject);
+CREATE INDEX oauth_access_tokens_family ON oauth_access_tokens(family_id);
+CREATE INDEX oauth_access_tokens_expiry ON oauth_access_tokens(expires_at);
+
+-- Refresh tokens, live and spent (a spent one is kept until `expires_at` so reuse is detected;
+-- a chain with no absolute lifetime has none).
+CREATE TABLE oauth_refresh_tokens (
+    token_hash TEXT    PRIMARY KEY,
+    client_id  TEXT    NOT NULL,
+    subject    TEXT,
+    family_id  TEXT    NOT NULL,
+    expires_at INTEGER,
+    record     TEXT    NOT NULL
+);
+CREATE INDEX oauth_refresh_tokens_client ON oauth_refresh_tokens(client_id);
+CREATE INDEX oauth_refresh_tokens_subject ON oauth_refresh_tokens(subject);
+CREATE INDEX oauth_refresh_tokens_family ON oauth_refresh_tokens(family_id);
+CREATE INDEX oauth_refresh_tokens_expiry ON oauth_refresh_tokens(expires_at);
+
+-- What a revocation removed, so that an issuance already in flight cannot write it back: a
+-- deleted client, a revoked refresh family, a withdrawn consent (`scope` the client, `subject`
+-- the user) or every sign-in of one user (`scope` the user id). Swept at `until`.
+CREATE TABLE oauth_revocation_barriers (
+    kind        TEXT    NOT NULL CHECK (kind IN ('client', 'family', 'consent', 'subject')),
+    scope       TEXT    NOT NULL CHECK (scope <> ''),
+    subject     TEXT    NOT NULL DEFAULT '',
+    recorded_at INTEGER NOT NULL,
+    until       INTEGER NOT NULL,
+    PRIMARY KEY (kind, scope, subject)
+);
+CREATE INDEX oauth_revocation_barriers_until ON oauth_revocation_barriers(until);

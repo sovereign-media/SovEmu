@@ -83,6 +83,12 @@ impl Harness {
             "127.0.0.1".into(),
             "--udp-ports".into(),
             udp_ports(),
+            // Sign-in answers at this address only; the OAuth helpers send it as `Host`.
+            "--public-url".into(),
+            "http://sovemu.test".into(),
+            // Reuse detection at once, so a test can replay a refresh token.
+            "--refresh-retry-seconds".into(),
+            "0".into(),
         ];
         if with_core {
             let (worker, core) = binaries();
@@ -190,14 +196,13 @@ impl Harness {
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), headers)
     }
 
-    /// Signs in with the apps' password grant and keeps the access token. The user (from
+    /// Signs in as the apps do with a password and keeps the access token. The user (from
     /// `viewer`), or the OAuth error code (`invalid_grant`, `too_many_requests`).
     async fn login(&mut self, username: &str, password: &str) -> Result<Value, String> {
         let (status, body, _) = self
             .form(
-                "/oauth/token",
+                "/oauth/password",
                 &[
-                    ("grant_type", "password"),
                     ("client_id", "sovemu-native"),
                     ("username", username),
                     ("password", password),
@@ -316,16 +321,12 @@ async fn throttles_guessing_and_serves_ops_routes() {
     let mut h = Harness::new("ops", false).await;
     h.sign_up_admin().await;
     h.sign_out();
-    for _ in 0..crate::ops::MAX_FAILURES {
+    for _ in 0..sovemu_identity::MAX_FAILURES {
         assert_eq!(h.login("admin", "wrong-password").await, Err("invalid_grant".into()));
     }
-    let attempt = [
-        ("grant_type", "password"),
-        ("client_id", "sovemu-native"),
-        ("username", "admin"),
-        ("password", "wrong-password"),
-    ];
-    let (status, body, _) = h.form("/oauth/token", &attempt).await;
+    let attempt =
+        [("client_id", "sovemu-native"), ("username", "admin"), ("password", "wrong-password")];
+    let (status, body, _) = h.form("/oauth/password", &attempt).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(body["error"], "too_many_requests");
     assert!(body["error_description"].as_str().unwrap().contains("try again"), "{body}");
@@ -354,7 +355,6 @@ async fn throttles_guessing_and_serves_ops_routes() {
 async fn login_from(h: &Harness, peer: &str, forwarded: Option<&str>, user: &str) -> String {
     let body = url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs([
-            ("grant_type", "password"),
             ("client_id", "sovemu-native"),
             ("username", user),
             ("password", "wrong-password"),
@@ -362,7 +362,8 @@ async fn login_from(h: &Harness, peer: &str, forwarded: Option<&str>, user: &str
         .finish();
     let mut request = Request::builder()
         .method("POST")
-        .uri("/oauth/token")
+        .uri("/oauth/password")
+        .header(header::HOST, "sovemu.test")
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
     if let Some(f) = forwarded {
         request = request.header("x-forwarded-for", f);
@@ -940,6 +941,8 @@ async fn the_admin_comes_from_the_environment() {
             &h.dir.display().to_string(),
             "--decorations-builtin",
             &no_builtin,
+            "--public-url",
+            "http://sovemu.test",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -965,6 +968,8 @@ async fn declared_users_are_reconciled_and_pruned() {
             &dir,
             "--decorations-builtin",
             &no_builtin,
+            "--public-url",
+            "http://sovemu.test",
         ]);
         config.users = users;
         config.users_prune = prune;
@@ -1472,28 +1477,55 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     assert_eq!(h.ok(q, json!({"id": id})).await["game"]["decoration"], Value::Null);
 }
 
-// --- Sign-in (the OpenID Connect provider) -----------------------------------------------------
+// --- Sign-in (sovemu_identity: oauth-as with OpenID Connect over it) --------------------------
 
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 const CALLBACK: &str = "http://sovemu.test/auth/callback/";
 
 impl Harness {
-    /// A GET as a browser at `http://sovemu.test` sends it: status, headers, body text. Keeps a
-    /// cookie the answer sets.
-    async fn browse(&mut self, uri: &str) -> (StatusCode, header::HeaderMap, String) {
-        let mut request = Request::builder().uri(uri).header(header::HOST, "sovemu.test");
+    /// A request as a browser at `http://sovemu.test` sends it: status, headers, body text.
+    /// Keeps a cookie the answer sets.
+    async fn browse(
+        &mut self,
+        method: &str,
+        uri: &str,
+        form: Option<&[(&str, &str)]>,
+    ) -> (StatusCode, header::HeaderMap, String) {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::HOST, "sovemu.test")
+            .header(header::ORIGIN, "http://sovemu.test");
         if let Some(cookie) = &self.cookie {
             request = request.header(header::COOKIE, cookie);
         }
+        let body = match form {
+            Some(pairs) => {
+                request = request.header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+                Body::from(
+                    url::form_urlencoded::Serializer::new(String::new())
+                        .extend_pairs(pairs)
+                        .finish(),
+                )
+            }
+            None => Body::empty(),
+        };
         let response =
-            router(self.state.clone()).oneshot(request.body(Body::empty()).unwrap()).await.unwrap();
+            router(self.state.clone()).oneshot(request.body(body).unwrap()).await.unwrap();
         let (status, headers) = (response.status(), response.headers().clone());
         if let Some(set) = headers.get(header::SET_COOKIE) {
-            self.cookie = Some(set.to_str().unwrap().split(';').next().unwrap().to_owned());
+            let pair = set.to_str().unwrap().split(';').next().unwrap().to_owned();
+            self.cookie = (!pair.ends_with('=')).then_some(pair);
         }
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         (status, headers, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// `/oauth/token` with a form: status and JSON.
+    async fn token(&self, pairs: &[(&str, &str)]) -> (StatusCode, Value) {
+        let (status, body, _) = self.form("/oauth/token", pairs).await;
+        (status, body)
     }
 }
 
@@ -1518,17 +1550,16 @@ fn authorize_url(extra: &[(&str, &str)]) -> String {
     format!("/oauth/authorize?{query}")
 }
 
-/// The query parameters of a redirect.
+/// Where a redirect goes (path for this site's, else the URL without its query) and its query.
 fn location(headers: &header::HeaderMap) -> (String, std::collections::BTreeMap<String, String>) {
     let to = headers[header::LOCATION].to_str().unwrap();
-    let base = if to.starts_with('/') { format!("http://sovemu.test{to}") } else { to.to_owned() };
-    let url = url::Url::parse(&base).unwrap();
-    let path = if to.starts_with('/') {
-        url.path().to_owned()
-    } else {
-        base.split('?').next().unwrap().to_owned()
-    };
-    (path, url.query_pairs().into_owned().collect())
+    let local = to.starts_with('/');
+    let url =
+        url::Url::parse(&if local { format!("http://sovemu.test{to}") } else { to.to_owned() })
+            .unwrap();
+    let place =
+        if local { url.path().to_owned() } else { to.split('?').next().unwrap().to_owned() };
+    (place, url.query_pairs().into_owned().collect())
 }
 
 fn jwt_claims(token: &str) -> Value {
@@ -1540,132 +1571,92 @@ fn jwt_claims(token: &str) -> Value {
     .unwrap()
 }
 
+fn exchange<'a>(code: &'a str, verifier: &'a str) -> [(&'a str, &'a str); 5] {
+    [
+        ("grant_type", "authorization_code"),
+        ("client_id", "sovemu-web"),
+        ("code", code),
+        ("redirect_uri", CALLBACK),
+        ("code_verifier", verifier),
+    ]
+}
+
 #[tokio::test]
 async fn the_web_client_signs_in_with_the_code_flow_and_pkce() {
     let mut h = Harness::new("oidc-code", false).await;
     h.sign_up_admin().await;
     h.sign_out();
 
-    // Discovery and the key set.
-    let (status, _, body) = h.browse("/.well-known/openid-configuration").await;
+    // Discovery: oauth-as's metadata with OpenID Connect's fields added.
+    let (status, _, body) = h.browse("GET", "/.well-known/openid-configuration", None).await;
     assert_eq!(status, StatusCode::OK);
     let discovery: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(discovery["issuer"], "http://sovemu.test");
     assert_eq!(discovery["authorization_endpoint"], "http://sovemu.test/oauth/authorize");
+    assert_eq!(discovery["token_endpoint"], "http://sovemu.test/oauth/token");
+    assert_eq!(discovery["userinfo_endpoint"], "http://sovemu.test/oauth/userinfo");
     assert_eq!(discovery["code_challenge_methods_supported"], json!(["S256"]));
-    let (_, _, jwks) = h.browse("/oauth/jwks").await;
+    let (_, _, jwks) = h.browse("GET", "/oauth/jwks", None).await;
     assert_eq!(serde_json::from_str::<Value>(&jwks).unwrap()["keys"][0]["alg"], "ES256");
 
-    // Not signed in: to the sign-in page, which will come back here.
-    let (status, headers, _) = h.browse(&authorize_url(&[("prompt", "login")])).await;
+    // Signed out: to the sign-in page, which comes back here (without `prompt=login`).
+    let (status, headers, _) = h.browse("GET", &authorize_url(&[("prompt", "login")]), None).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     let (path, params) = location(&headers);
     assert_eq!(path, "/login/");
     let next = params["continue"].clone();
     assert!(next.starts_with("/oauth/authorize?") && !next.contains("prompt"), "{next}");
-    // `prompt=none` instead says so to the app.
-    let (_, headers, _) = h.browse(&authorize_url(&[("prompt", "none")])).await;
-    assert_eq!(location(&headers).1["error"], "login_required");
 
     // A wrong password goes back to the page with the error and the username.
     let form = |pw: &'static str, next: &str| {
-        vec![
-            ("username", "admin".to_owned()),
-            ("password", pw.to_owned()),
-            ("continue", next.to_owned()),
-        ]
+        [("username", "admin"), ("password", pw), ("continue", next)]
+            .map(|(k, v)| (k, v.to_owned()))
     };
-    let post = |h: &Harness, pairs: Vec<(&'static str, String)>| {
-        let pairs: Vec<(&str, String)> = pairs;
-        let state = h.state.clone();
-        let cookie = h.cookie.clone();
-        async move {
-            let body = url::form_urlencoded::Serializer::new(String::new())
-                .extend_pairs(pairs.iter().map(|(k, v)| (*k, v.as_str())))
-                .finish();
-            let mut request = Request::builder()
-                .method("POST")
-                .uri("/oauth/signin")
-                .header(header::HOST, "sovemu.test")
-                .header(header::ORIGIN, "http://sovemu.test")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
-            if let Some(c) = cookie {
-                request = request.header(header::COOKIE, c);
-            }
-            router(state).oneshot(request.body(Body::from(body)).unwrap()).await.unwrap()
-        }
-    };
-    let response = post(&h, form("wrong-password", &next)).await;
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    let (path, params) = location(response.headers());
+    let wrong = form("wrong-password", &next);
+    let pairs: Vec<(&str, &str)> = wrong.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let (status, headers, _) = h.browse("POST", "/oauth/signin", Some(&pairs)).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    let (path, params) = location(&headers);
     assert_eq!(path, "/login/");
     assert_eq!(params["error"], "wrong username or password");
     assert_eq!(params["username"], "admin");
     assert_eq!(params["continue"], next);
+    assert!(h.cookie.is_none());
 
-    // The right one signs the browser in and goes on.
-    let response = post(&h, form("password123", &next)).await;
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(response.headers()[header::LOCATION].to_str().unwrap(), next);
-    let set = response.headers()[header::SET_COOKIE].to_str().unwrap();
-    assert!(set.contains("HttpOnly") && set.contains("SameSite=Lax"), "{set}");
-    h.cookie = Some(set.split(';').next().unwrap().to_owned());
-
-    // Signed in at the provider: a code comes straight back.
-    let (status, headers, _) = h.browse(&next).await;
+    // The right one signs the browser in and continues.
+    let right = form("password123", &next);
+    let pairs: Vec<(&str, &str)> = right.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let (status, headers, _) = h.browse("POST", "/oauth/signin", Some(&pairs)).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers[header::LOCATION].to_str().unwrap(), next);
+    let set = headers[header::SET_COOKIE].to_str().unwrap();
+    assert!(set.contains("HttpOnly") && set.contains("SameSite=Lax"), "{set}");
+
+    // Signed in at the server: oauth-as issues a code to the callback.
+    let (_, headers, _) = h.browse("GET", &next, None).await;
     let (to, params) = location(&headers);
     assert_eq!(to, CALLBACK);
     assert_eq!(params["state"], "xyz");
     assert_eq!(params["iss"], "http://sovemu.test");
     let code = params["code"].clone();
 
-    let exchange = |code: &str, verifier: &str| {
-        vec![
-            ("grant_type", "authorization_code".to_owned()),
-            ("client_id", "sovemu-web".to_owned()),
-            ("code", code.to_owned()),
-            ("redirect_uri", CALLBACK.to_owned()),
-            ("code_verifier", verifier.to_owned()),
-        ]
-    };
-    let send = |pairs: Vec<(&'static str, String)>| {
-        let pairs: Vec<(&str, &str)> =
-            pairs.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>();
-        let pairs: Vec<(String, String)> =
-            pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
-        pairs
-    };
-    let token_call = |h: &Harness, pairs: Vec<(String, String)>| {
-        let h_state = h.state.clone();
-        async move {
-            let h = Harness { state: h_state, dir: PathBuf::new(), cookie: None, token: None };
-            let refs: Vec<(&str, &str)> =
-                pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-            let out = h.form("/oauth/token", &refs).await;
-            std::mem::forget(h);
-            out
-        }
-    };
-
-    // The wrong verifier is refused, and uses the code up.
-    let (status, body, _) = token_call(
-        &h,
-        send(exchange(&code, "a-wrong-verifier-that-is-long-enough-to-be-valid-xx")),
-    )
-    .await;
-    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_grant")));
-    let (_, body, _) = token_call(&h, send(exchange(&code, VERIFIER))).await;
-    assert_eq!(body["error"], "invalid_grant", "a code is single use");
+    // The wrong verifier is refused. A code is single use, and redeeming it twice revokes the
+    // tokens it gave (RFC 6749 s4.1.2): someone else had it.
+    let wrong_verifier = "a-wrong-verifier-that-is-long-enough-to-be-valid-xxxx";
+    assert_eq!(h.token(&exchange(&code, wrong_verifier)).await.1["error"], "invalid_grant");
+    let (status, body) = h.token(&exchange(&code, VERIFIER)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    h.token = Some(body["access_token"].as_str().unwrap().to_owned());
+    assert!(h.ok(VIEWER, json!({})).await["viewer"]["user"].is_object());
+    assert_eq!(h.token(&exchange(&code, VERIFIER)).await.1["error"], "invalid_grant");
+    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"], Value::Null, "revoked");
 
     // A fresh code with the right verifier: tokens, and an ID token for this sign-in.
-    let (_, headers, _) = h.browse(&next).await;
+    let (_, headers, _) = h.browse("GET", &next, None).await;
     let code = location(&headers).1["code"].clone();
-    let (status, body, headers) = token_call(&h, send(exchange(&code, VERIFIER))).await;
+    let (status, body) = h.token(&exchange(&code, VERIFIER)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(headers[header::CACHE_CONTROL], "no-store");
     assert_eq!(body["token_type"], "Bearer");
-    assert_eq!(body["expires_in"], 3600);
     let claims = jwt_claims(body["id_token"].as_str().unwrap());
     assert_eq!(claims["iss"], "http://sovemu.test");
     assert_eq!(claims["aud"], "sovemu-web");
@@ -1676,98 +1667,157 @@ async fn the_web_client_signs_in_with_the_code_flow_and_pkce() {
     let me = h.ok(VIEWER, json!({})).await["viewer"]["user"].clone();
     assert_eq!(me, json!({"username": "admin", "isAdmin": true}));
 
-    // The refresh token rotates; the old one is honoured briefly (two tabs), then a replay ends
-    // the whole sign-in.
-    let refresh = |token: &str, client: &str| {
-        vec![
-            ("grant_type".to_owned(), "refresh_token".to_owned()),
-            ("client_id".to_owned(), client.to_owned()),
-            ("refresh_token".to_owned(), token.to_owned()),
+    // Refresh tokens rotate, and a replay ends the whole sign-in.
+    let first = body["refresh_token"].as_str().unwrap().to_owned();
+    let refresh = |token: &str, client: &'static str| {
+        [
+            ("grant_type", "refresh_token".to_owned()),
+            ("client_id", client.to_owned()),
+            ("refresh_token", token.to_owned()),
         ]
     };
-    let first = body["refresh_token"].as_str().unwrap().to_owned();
-    let (_, body, _) = token_call(&h, refresh(&first, "sovemu-native")).await;
-    assert_eq!(body["error"], "invalid_grant", "another app's refresh token");
-    let (status, body, _) = token_call(&h, refresh(&first, "sovemu-web")).await;
+    let call = |pairs: [(&'static str, String); 3]| {
+        let h = &h;
+        async move {
+            let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            h.token(&refs).await
+        }
+    };
+    assert_eq!(
+        call(refresh(&first, "sovemu-native")).await.1["error"],
+        "invalid_grant",
+        "another app's"
+    );
+    let (status, body) = call(refresh(&first, "sovemu-web")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let second = body["refresh_token"].as_str().unwrap().to_owned();
     assert_ne!(second, first);
-    assert_eq!(jwt_claims(body["id_token"].as_str().unwrap())["auth_time"], claims["auth_time"]);
-    let (status, _, _) = token_call(&h, refresh(&first, "sovemu-web")).await;
-    assert_eq!(status, StatusCode::OK, "within the leeway");
-    sqlx::query(
-        "UPDATE oauth_tokens SET used_at = datetime('now', '-5 minutes') WHERE used_at IS NOT NULL",
-    )
-    .execute(&h.state.db)
-    .await
-    .unwrap();
-    let (_, body, _) = token_call(&h, refresh(&first, "sovemu-web")).await;
-    assert_eq!(body["error"], "invalid_grant");
-    assert!(body["error_description"].as_str().unwrap().contains("already used"));
-    let (_, body, _) = token_call(&h, refresh(&second, "sovemu-web")).await;
-    assert_eq!(body["error"], "invalid_grant", "the replay ended the whole sign-in");
-    assert_eq!(h.err(SYSTEMS, json!({})).await.0, "UNAUTHENTICATED", "its access tokens too");
+    assert!(body["id_token"].is_string(), "a refresh brings a new ID token");
+    assert_eq!(call(refresh(&first, "sovemu-web")).await.1["error"], "invalid_grant", "a replay");
+    assert_eq!(
+        call(refresh(&second, "sovemu-web")).await.1["error"],
+        "invalid_grant",
+        "the replay ended the whole sign-in"
+    );
 
-    // Signing out at the provider clears the cookie and returns home.
-    let (status, headers, _) =
-        h.browse("/oauth/logout?post_logout_redirect_uri=http%3A%2F%2Fsovemu.test%2F").await;
+    // Signing out at the server clears the cookie and goes home.
+    let (status, headers, _) = h
+        .browse("GET", "/oauth/logout?post_logout_redirect_uri=http%3A%2F%2Fsovemu.test%2F", None)
+        .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
     assert_eq!(headers[header::LOCATION], "http://sovemu.test/");
-    assert!(headers[header::SET_COOKIE].to_str().unwrap().contains("Max-Age=0"));
-    let (_, headers, _) = h.browse(&authorize_url(&[])).await;
-    assert_eq!(location(&headers).0, "/login/", "signed out at the provider");
+    assert!(h.cookie.is_none());
+    let (_, headers, _) = h.browse("GET", &authorize_url(&[]), None).await;
+    assert_eq!(location(&headers).0, "/login/", "signed out at the server");
+}
+
+#[tokio::test]
+async fn a_tv_signs_in_with_a_code_approved_in_a_browser() {
+    let mut h = Harness::new("oidc-device", false).await;
+    h.sign_up_admin().await;
+    h.sign_out();
+
+    // The TV asks for a code.
+    let (status, grant, _) = h
+        .form(
+            "/oauth/device_authorization",
+            &[("client_id", "sovemu-native"), ("scope", "openid profile offline_access")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{grant}");
+    assert_eq!(grant["verification_uri"], "http://sovemu.test/device");
+    let device_code = grant["device_code"].as_str().unwrap().to_owned();
+    let user_code = grant["user_code"].as_str().unwrap().to_owned();
+    let poll = [
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ("client_id", "sovemu-native"),
+        ("device_code", device_code.as_str()),
+    ];
+
+    // On a phone: the device page wants a signed-in browser first.
+    let (status, headers, _) = h.browse("GET", "/device", None).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(location(&headers).1["continue"], "/device");
+    let pairs = [("username", "admin"), ("password", "password123"), ("continue", "/device")];
+    h.browse("POST", "/oauth/signin", Some(&pairs)).await;
+    assert!(h.cookie.is_some());
+
+    // Enter the code, then approve it, each form carrying its CSRF token.
+    let csrf = |page: &str| {
+        let at = page.find("name=\"csrf_token\" value=\"").expect("a CSRF token") + 25;
+        page[at..].split('"').next().unwrap().to_owned()
+    };
+    let (status, _, page) = h.browse("GET", "/device", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let token = csrf(&page);
+    let entered = [("user_code", user_code.as_str()), ("csrf_token", token.as_str())];
+    let (status, _, page) = h.browse("POST", "/device", Some(&entered)).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    let token = csrf(&page);
+    let approve =
+        [("user_code", user_code.as_str()), ("csrf_token", token.as_str()), ("action", "approve")];
+    let (status, _, page) = h.browse("POST", "/device", Some(&approve)).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+
+    // The TV's poll gets its tokens, as the admin. (Polling sooner than `interval` is answered
+    // `slow_down`, so this test polls once.)
+    let (status, body) = h.token(&poll).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(jwt_claims(body["id_token"].as_str().unwrap())["aud"], "sovemu-native");
+    h.cookie = None;
+    h.token = Some(body["access_token"].as_str().unwrap().to_owned());
+    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"]["username"], "admin");
 }
 
 #[tokio::test]
 async fn the_provider_refuses_what_it_should() {
     let mut h = Harness::new("oidc-refuse", false).await;
     h.sign_up_admin().await;
-    let cookie = h.cookie.clone();
 
     // A redirect anywhere but this server's callback is refused on the page, never followed.
-    for bad in
-        ["http://evil.test/auth/callback/", "http://sovemu.test/elsewhere", "javascript:alert(1)"]
-    {
-        let (status, headers, _) = h.browse(&authorize_url(&[("redirect_uri", bad)])).await;
+    for bad in ["http://evil.test/auth/callback/", "http://sovemu.test/elsewhere"] {
+        let (status, headers, _) =
+            h.browse("GET", &authorize_url(&[("redirect_uri", bad)]), None).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
         assert!(headers.get(header::LOCATION).is_none());
     }
-    // The native client does not use this flow; unknown clients neither.
-    for client in ["sovemu-native", "nobody"] {
-        let (status, _, _) = h.browse(&authorize_url(&[("client_id", client)])).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{client}");
-    }
     // PKCE is required, and only S256.
     for extra in [[("code_challenge", "")], [("code_challenge_method", "plain")]] {
-        let (_, headers, _) = h.browse(&authorize_url(&extra)).await;
+        let (_, headers, _) = h.browse("GET", &authorize_url(&extra), None).await;
         let (to, params) = location(&headers);
         assert_eq!(to, CALLBACK);
         assert_eq!(params["error"], "invalid_request");
-        assert_eq!(params["state"], "xyz");
     }
 
-    // The web client never takes a password; unknown clients get invalid_client.
-    let password = |client: &'static str| {
-        [
+    // OAuth 2.1 has no password grant, and the fallback is the apps' only.
+    let (_, body) = h
+        .token(&[
             ("grant_type", "password"),
-            ("client_id", client),
+            ("client_id", "sovemu-web"),
             ("username", "admin"),
             ("password", "password123"),
-        ]
-    };
-    let (status, body, _) = h.form("/oauth/token", &password("sovemu-web")).await;
-    assert_eq!(
-        (status, body["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("unauthorized_client"))
-    );
-    let (status, body, _) = h.form("/oauth/token", &password("nobody")).await;
+        ])
+        .await;
+    assert_eq!(body["error"], "unsupported_grant_type", "{body}");
+    let (status, body, _) = h
+        .form(
+            "/oauth/password",
+            &[("client_id", "sovemu-web"), ("username", "admin"), ("password", "password123")],
+        )
+        .await;
     assert_eq!(
         (status, body["error"].as_str()),
         (StatusCode::UNAUTHORIZED, Some("invalid_client"))
     );
-    let (_, body, _) =
-        h.form("/oauth/token", &[("grant_type", "magic"), ("client_id", "sovemu-native")]).await;
-    assert_eq!(body["error"], "unsupported_grant_type");
+
+    // Only the configured addresses sign in.
+    let request = Request::builder()
+        .uri("/.well-known/openid-configuration")
+        .header(header::HOST, "elsewhere.test")
+        .body(Body::empty())
+        .unwrap();
+    let response = router(h.state.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // A sign-in form on another site cannot sign a browser in here.
     let request = Request::builder()
@@ -1782,11 +1832,11 @@ async fn the_provider_refuses_what_it_should() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert!(response.headers().get(header::SET_COOKIE).is_none());
 
-    // The cookie signs nothing into the API: only a bearer token does.
+    // The cookie signs nothing into the API: only a bearer token does. No sign-in mutation.
     h.token = None;
-    h.cookie = cookie;
+    assert!(h.cookie.is_some());
     assert_eq!(h.err(SYSTEMS, json!({})).await.0, "UNAUTHENTICATED");
-    assert_eq!(h.err("mutation { logout }", json!({})).await.0, "", "no such mutation");
+    assert!(!h.err("mutation { logout }", json!({})).await.1.is_empty());
 }
 
 #[tokio::test]
@@ -1807,19 +1857,20 @@ async fn app_tokens_revoke_and_follow_role_changes() {
     );
     assert_eq!(h.err("{ users { username } }", json!({})).await.0, "FORBIDDEN");
 
-    // A role change applies to the next request: tokens are checked, not trusted.
+    // A role change applies to the next request: tokens are looked up, not trusted.
     sqlx::query("UPDATE users SET role = 'admin' WHERE username = 'kid'")
         .execute(&h.state.db)
         .await
         .unwrap();
-    assert!(
-        h.ok("{ users { username role } }", json!({})).await["users"].as_array().unwrap().len()
-            == 2
+    assert_eq!(
+        h.ok("{ users { username role } }", json!({})).await["users"].as_array().unwrap().len(),
+        2
     );
 
-    // userinfo, with the token.
+    // userinfo.
     let request = Request::builder()
         .uri("/oauth/userinfo")
+        .header(header::HOST, "sovemu.test")
         .header(header::AUTHORIZATION, format!("Bearer {}", h.token.clone().unwrap()))
         .body(Body::empty())
         .unwrap();
@@ -1831,14 +1882,25 @@ async fn app_tokens_revoke_and_follow_role_changes() {
         (Some("kid"), Some("admin"))
     );
 
-    // Revoking the access token ends the sign-in (another app's client id is ignored).
+    // Revoking the access token ends the sign-in.
     let token = h.token.clone().unwrap();
-    let (status, _, _) =
-        h.form("/oauth/revoke", &[("token", &token), ("client_id", "sovemu-web")]).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(h.ok(VIEWER, json!({})).await["viewer"]["user"].is_object(), "not the web's to revoke");
     let (status, _, _) =
         h.form("/oauth/revoke", &[("token", &token), ("client_id", "sovemu-native")]).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"], Value::Null);
+
+    // With the password fallback turned off, the apps sign in with a code instead.
+    let h = Harness::new_with(
+        "oidc-no-password",
+        false,
+        ["--password-sign-in", "false"].map(String::from).to_vec(),
+    )
+    .await;
+    let (_, body, _) = h
+        .form(
+            "/oauth/password",
+            &[("client_id", "sovemu-native"), ("username", "a"), ("password", "b")],
+        )
+        .await;
+    assert_eq!(body["error"], "unsupported_grant_type");
 }

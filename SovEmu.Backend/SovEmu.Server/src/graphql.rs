@@ -26,7 +26,7 @@ use axum::response::{Html, IntoResponse};
 use tokio::sync::OnceCell;
 
 use crate::AppState;
-use crate::auth::{self, Credentials, NewUser, Role, User};
+use crate::auth::{Credentials, NewUser, User};
 use crate::error::ApiError;
 
 pub(crate) type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
@@ -40,9 +40,10 @@ pub(crate) fn schema() -> ApiSchema {
         .finish()
 }
 
-/// Per request: the bearer access token, and the user it names, looked up once.
+/// Per request: its headers (for the bearer access token), and the user they name, looked up
+/// once.
 struct Auth {
-    token: Option<String>,
+    headers: HeaderMap,
     user: OnceCell<Option<User>>,
 }
 
@@ -51,7 +52,7 @@ pub(crate) async fn handler(
     headers: HeaderMap,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
-    let auth = Auth { token: crate::oidc::bearer(&headers), user: OnceCell::new() };
+    let auth = Auth { headers, user: OnceCell::new() };
     let request = request.into_inner();
     // The request span (telemetry::trace_request) names the operation, for logs and traces.
     if let Some(name) = &request.operation_name {
@@ -106,11 +107,9 @@ async fn viewer(ctx: &Context<'_>) -> Result<Option<User>> {
     let auth = ctx.data_unchecked::<Auth>();
     let user = auth
         .user
-        .get_or_try_init(|| {
-            crate::oidc::tokens::user_for_access_token(&state(ctx).db, auth.token.as_deref())
-        })
+        .get_or_try_init(|| state(ctx).identity.user_for_request(&auth.headers))
         .await
-        .map_err(gql)?;
+        .map_err(|e| gql(e.into()))?;
     Ok(user.clone())
 }
 
@@ -131,12 +130,40 @@ fn set_cookie(ctx: &Context<'_>, cookie: HeaderValue) {
 
 // --- Types -----------------------------------------------------------------------------------
 
+/// What an account may do.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+#[graphql(remote = "sovemu_identity::Role", name = "Role")]
+enum RoleKind {
+    /// Plays games: browse the library, play, keep saves and settings of their own.
+    Viewer,
+    /// Also runs the server: users, the library, emulator settings.
+    Admin,
+}
+
+/// An account.
+#[derive(SimpleObject)]
+#[graphql(name = "User")]
+struct Account {
+    id: i64,
+    username: String,
+    role: RoleKind,
+    /// Whether the role is `ADMIN`.
+    is_admin: bool,
+}
+
+impl From<User> for Account {
+    fn from(user: User) -> Self {
+        let is_admin = user.is_admin();
+        Self { id: user.id, username: user.username, role: user.role.into(), is_admin }
+    }
+}
+
 #[derive(SimpleObject)]
 struct Viewer {
     /// No account exists yet: the client should offer first-run setup.
     setup_required: bool,
     /// The signed-in user, if any.
-    user: Option<User>,
+    user: Option<Account>,
 }
 
 #[derive(SimpleObject)]
@@ -1013,8 +1040,8 @@ struct SettingChange {
 struct NewUserInput {
     username: String,
     password: String,
-    #[graphql(default)]
-    role: Role,
+    #[graphql(default_with = "RoleKind::Viewer")]
+    role: RoleKind,
 }
 
 // --- Queries ---------------------------------------------------------------------------------
@@ -1035,11 +1062,9 @@ pub struct Query;
 impl Query {
     /// Who is signed in, and whether first-run setup is needed. Works signed out.
     async fn viewer(&self, ctx: &Context<'_>) -> Result<Viewer> {
-        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(&state(ctx).db)
-            .await
-            .map_err(|e| gql(e.into()))?;
-        Ok(Viewer { setup_required: users == 0, user: viewer(ctx).await? })
+        let setup_required =
+            state(ctx).identity.setup_required().await.map_err(|e| gql(e.into()))?;
+        Ok(Viewer { setup_required, user: viewer(ctx).await?.map(Account::from) })
     }
 
     async fn client_config(&self, ctx: &Context<'_>) -> Result<ClientConfig> {
@@ -1150,9 +1175,10 @@ impl Query {
     }
 
     /// Admins: the accounts.
-    async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>> {
+    async fn users(&self, ctx: &Context<'_>) -> Result<Vec<Account>> {
         admin(ctx).await?;
-        auth::list_users(state(ctx)).await.api()
+        let users = state(ctx).identity.users().await.map_err(|e| gql(e.into()))?;
+        Ok(users.into_iter().map(Account::from).collect())
     }
 
     /// Admins: where 3D systems render, and every device the startup probe tried.
@@ -1229,18 +1255,28 @@ impl Mutation {
     /// signed in at the server's sign-in page (a cookie only `/oauth/authorize` reads), so the
     /// web client finishes signing in there without asking for the password again. Apps sign in
     /// at `/oauth/token`; there is no sign-in mutation.
-    async fn setup(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
-        let (user, cookie) =
-            auth::setup(state(ctx), Credentials { username, password }).await.api()?;
+    async fn setup(
+        &self,
+        ctx: &Context<'_>,
+        username: String,
+        password: String,
+    ) -> Result<Account> {
+        let (user, cookie) = state(ctx)
+            .identity
+            .setup(Credentials { username, password })
+            .await
+            .map_err(|e| gql(e.into()))?;
         set_cookie(ctx, cookie);
-        Ok(user)
+        Ok(user.into())
     }
 
     /// Admins: adds an account (a viewer unless `role` says otherwise).
-    async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<User> {
+    async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<Account> {
         let me = admin(ctx).await?;
-        let new = NewUser { username: input.username, password: input.password, role: input.role };
-        auth::add_user(state(ctx), &me, &new).await.api()
+        let new =
+            NewUser { username: input.username, password: input.password, role: input.role.into() };
+        let user = state(ctx).identity.add_user(&me, &new).await.map_err(|e| gql(e.into()))?;
+        Ok(user.into())
     }
 
     /// Admins: rescans the library.

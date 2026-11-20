@@ -14,7 +14,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are local, in `bios/<system>/` (named like the ROM folder), checked by name and MD5. No user uploads. |
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
-| Auth | Local accounts (argon2) with a role (`viewer` or `admin`). The server is its own OpenID Connect provider: the web client signs in with the code flow and PKCE, the native apps with the password grant, and the API takes bearer access tokens |
+| Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |
 | Video | VP8 by default (libvpx realtime, encoded at the console's native resolution); H.264 (x264 `ultrafast` + `zerolatency`) as a negotiated fallback |
 | Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato` |
 | Input | Unreliable, unordered WebRTC DataChannel; each packet carries a sequence number and the full button state |
@@ -218,7 +218,8 @@ exited workers are reaped.
 - `users` (id, username, password_hash, role, created_at)
 - `identities` (user_id, provider, subject) for signing in with another provider, later
 - `auth_sessions` (the browser's sign-in at the server's provider)
-- `oauth_codes`, `oauth_grants` (one per app sign-in), `oauth_tokens` (access and refresh)
+- `oauth_clients`, `oauth_authorization_codes`, `oauth_device_grants`, `oauth_access_tokens`,
+  `oauth_refresh_tokens`, `oauth_revocation_barriers`: oauth-as's records (`SqliteStorage`)
 - `invites`
 - `systems`, `cores` (name, system, path, version)
 - `roms` (id, system, title, sha1, file_path, size)

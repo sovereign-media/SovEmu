@@ -1,7 +1,8 @@
 // The server's sign-in page, or on first run the admin account's creation.
 //
-// Signing in is OpenID Connect: an app asks the server's /oauth/authorize, which sends a browser
-// that is not signed in here with `?continue=<that request>`. The form posts the password
+// Signing in is OpenID Connect: an app asks the server's /oauth/authorize (or a TV's code is
+// approved at /device), which sends a browser that is not signed in here with
+// `?continue=<that request>`. The form posts the password
 // straight to the server (`POST /oauth/signin`, a plain form post, so password managers see
 // it), which signs the browser in and continues; a wrong password comes back here with `error`.
 // Opened directly, the page starts signing the web client in, which brings it back here.
@@ -12,8 +13,10 @@ import { signIn } from "../lib/auth";
 import { Button } from "./ui/button";
 import { Field, inputClass } from "./ui/primitives";
 
-/** Where the form continues to: only the server's authorization endpoint. */
-const continueTo = (value: string | null) => (value?.startsWith("/oauth/authorize?") ? value : null);
+/** Where the form continues to: only the server's authorization endpoint, or its page that
+ *  approves a TV's sign-in code. */
+const continueTo = (value: string | null) =>
+  value?.startsWith("/oauth/authorize?") || value === "/device" || value?.startsWith("/device?") ? value : null;
 
 export default function LoginPage() {
   const params = new URLSearchParams(location.search);

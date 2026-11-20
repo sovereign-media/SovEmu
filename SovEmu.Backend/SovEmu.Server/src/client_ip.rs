@@ -75,9 +75,9 @@ impl Network {
     }
 }
 
-/// The client's address, if known (tests and other in-process callers have none).
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ClientIp(pub Option<IpAddr>);
+/// The client's address, if known (tests and other in-process callers have none). The type is
+/// `sovemu_identity`'s, whose sign-in throttle reads it.
+pub(crate) use sovemu_identity::ClientIp;
 
 /// The client of a request that arrived from `peer` with `forwarded_for`, given the trusted
 /// proxies. Walks `X-Forwarded-For` from its end (the hop nearest us), past trusted proxies.

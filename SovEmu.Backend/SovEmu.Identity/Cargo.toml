@@ -1,0 +1,31 @@
+[package]
+name = "sovemu-identity"
+description = "SovEmu's accounts and sign-in: users and roles, and an OAuth 2.1 authorization server (oauth-as) with an OpenID Connect layer over it"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+axum = "0.8"
+base64 = "0.22"
+getrandom = "0.3"
+hex = "0.4"
+oauth-as = { version = "1.1", features = ["http", "axum", "jwt", "jwt-p256"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
+tracing = "0.1"
+url = "2"
+
+[dev-dependencies]
+oauth-as = { version = "1.1", features = ["http", "axum", "jwt", "jwt-p256", "test-util"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

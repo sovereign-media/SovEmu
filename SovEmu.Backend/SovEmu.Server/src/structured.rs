@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
-use crate::auth::Role;
+use sovemu_identity::Role;
 
 /// A user declared in the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
