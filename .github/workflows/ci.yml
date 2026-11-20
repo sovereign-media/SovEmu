@@ -96,6 +96,15 @@ jobs:
     name: Container image
     runs-on: ubuntu-latest
     steps:
+      # The runner has ~14 GB free; the build and its cargo caches (copied out of the builder to
+      # be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
+      - name: Free disk space
+        working-directory: .
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          df -h /
+
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
@@ -107,6 +116,8 @@ jobs:
       # to other branches anyway), which keeps the 10 GB cache from filling with PR copies.
       - name: Cargo caches (restore and save, main)
         if: github.ref == 'refs/heads/main'
+        # A cache problem costs time, never the build: the job still passes without one.
+        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: cache-mount
@@ -117,6 +128,8 @@ jobs:
 
       - name: Cargo caches (restore, pull requests)
         if: github.ref != 'refs/heads/main'
+        # A cache problem costs time, never the build: the job still passes without one.
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: cache-mount
@@ -128,6 +141,8 @@ jobs:
       # Puts the restored caches into the builder's cache mounts, and (after the build, on main)
       # takes them back out for the save above. The ids are the Dockerfile's.
       - name: Cargo caches into the builder
+        # A cache problem costs time, never the build: the job still passes without one.
+        continue-on-error: true
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
           builder: ${{ steps.buildx.outputs.name }}
