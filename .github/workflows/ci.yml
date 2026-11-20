@@ -23,6 +23,12 @@ defaults:
 env:
   CARGO_TERM_COLOR: always
 
+# Linux jobs run where the LINUX_RUNNER variable says: `sovereign-linux`, the self-hosted runners on
+# the cluster (Actions Runner Controller, sovereign-media/sovereign#1547), or GitHub's runners when
+# it is unset. The self-hosted image is the stock `ghcr.io/actions/actions-runner` (Ubuntu 24.04,
+# Docker through a dind sidecar, no compilers or SDKs), so each job installs what it needs, in a way
+# that also works on GitHub's runners.
+
 jobs:
   # Which parts of the repository this push or pull request touched; each job below runs only
   # when one of its inputs did (and always when run by hand). A skipped job counts as passed,
@@ -30,7 +36,7 @@ jobs:
   # everything it changes.
   changes:
     name: Changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read
@@ -78,7 +84,8 @@ jobs:
         # formatted, linted and tested there first (.claude/rules/rust.md); its runners cost 10x
         # Linux's on a private repository, so CI checks it only when run by hand.
         os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
-    runs-on: ${{ matrix.os }}
+    # The matrix keeps GitHub's labels so the check names do not change; only Linux moves.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && vars.LINUX_RUNNER || matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,10 +97,13 @@ jobs:
         with:
           workspaces: SovEmu.Backend
 
-      # SovEmu.Media links the system libvpx and libopus through pkg-config.
+      # SovEmu.Media links the system libvpx and libopus through pkg-config. The C toolchain and
+      # libclang (bindgen) are on GitHub's runners but not on the self-hosted image.
       - name: Codec libraries (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libvpx-dev libopus-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev libvpx-dev libopus-dev pkg-config
 
       - name: Codec libraries (macOS)
         if: runner.os == 'macOS'
@@ -112,7 +122,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
     name: Web client (Astro)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: SovEmu.Web
@@ -143,11 +153,13 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.image == 'true'
     name: Container image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
-      # The runner has ~14 GB free; the build and its cargo caches (copied out of the builder to
-      # be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
+      # GitHub's runner has ~14 GB free; the build and its cargo caches (copied out of the builder
+      # to be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
+      # The self-hosted runner has none of them, and its pod requests the disk it needs.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         working-directory: .
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
@@ -223,7 +235,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.chart == 'true'
     name: Helm chart
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: charts/sovemu
@@ -232,10 +244,12 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
+      # Into the job's temp folder: the self-hosted runner's user cannot write to /usr/local/bin.
       - name: kubeconform
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kubeconform
+            | tar -xz -C "$RUNNER_TEMP" kubeconform
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Lint and validate
         run: |
