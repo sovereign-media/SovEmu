@@ -58,6 +58,9 @@ pub struct Game {
     /// One of this user's favourites (filled in by `collections::mark_favourites`).
     #[sqlx(skip)]
     pub(crate) favourite: bool,
+    /// What tells it apart from games of the same title on its system (`releases::label`).
+    #[sqlx(skip)]
+    pub(crate) release: Option<String>,
 }
 
 impl Game {
@@ -134,6 +137,13 @@ pub(crate) const GAME_COLUMNS: &str =
      m.box_art,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
+/// What a list of games carries for this user beyond its rows: which are favourites, and the
+/// labels that tell same-titled releases apart. Every list the API returns goes through here.
+pub(crate) async fn annotate(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
+    crate::collections::mark_favourites(state, user_id, games).await?;
+    crate::releases::label(state, games).await
+}
+
 pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResult<Vec<Game>> {
     system_by_id(state, system)?;
     let games = sqlx::query_as::<_, Game>(&format!(
@@ -147,7 +157,7 @@ pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResul
     .fetch_all(&state.db)
     .await?;
     let mut games = games;
-    crate::collections::mark_favourites(state, user.id, &mut games).await?;
+    annotate(state, user.id, &mut games).await?;
     prefetch_art(state, system, &games);
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
@@ -169,7 +179,7 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
 
 pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
     let mut game = [fetch_game(state, user.id, id).await?];
-    crate::collections::mark_favourites(state, user.id, &mut game).await?;
+    annotate(state, user.id, &mut game).await?;
     let [game] = game;
     Ok(game)
 }

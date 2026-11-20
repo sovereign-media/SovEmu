@@ -6,7 +6,7 @@ let nextId = 1;
 const game = (title: string, over: Partial<Game> = {}): Game => ({
   id: nextId++, system: "nes", title, tags: [], path: `${title}.nes`, size: 1, lastPlayedAt: null, playCount: 0,
   image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
-  publisher: null, genre: null, players: null, rating: null, favourite: false, discs: 1, ...over,
+  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, discs: 1, ...over,
 });
 
 const metroid = game("Metroid", { releaseDate: "1986-08-06", genre: "Action", players: "1", playCount: 3, lastPlayedAt: "2026-11-13 10:00:00", tags: ["USA"] });

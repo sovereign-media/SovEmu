@@ -428,6 +428,11 @@ impl GameNode {
     async fn play_count(&self) -> i64 {
         self.0.play_count.unwrap_or(0)
     }
+    /// What tells it apart from games of the same title on its system: the tags they do not
+    /// share ("Translation", "Rev 1"), else its file's own title. Null when its title is its own.
+    async fn release(&self) -> Option<&str> {
+        self.0.release.as_deref()
+    }
     /// One of this user's favourites.
     async fn favourite(&self) -> bool {
         self.0.favourite

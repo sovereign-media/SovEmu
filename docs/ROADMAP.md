@@ -92,6 +92,9 @@ held 59.93 fps over 300 frames with no resyncs.
       Favourites filter, and Home rows for favourites and each collection
 - [x] Search across every system (`Query.search`: every word, case and accents folded, titles
       starting with the query first), from a Search entry in the navigation and X on Home
+- [x] Release labels (`Game.release`): games showing the same title on one system are told apart
+      by the tags they do not share ("Translation", "Rev 1"), else their file's title (a
+      compilation's games), else their format (`.z64` beside `.v64`)
 
 ## Phase 3: persistence
 

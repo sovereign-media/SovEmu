@@ -115,7 +115,7 @@ export type StartPhase =
   /** Saving and stopping the player's previous session. */
   | 'STOPPING';
 
-export type GameFieldsFragment = { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null };
+export type GameFieldsFragment = { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null };
 
 export type SystemFieldsFragment = { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean };
 
@@ -161,19 +161,19 @@ export type ClientConfigQuery = { clientConfig: { iceServers: unknown } };
 export type HomeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type HomeQuery = { home: { featured: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }>, recent: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null, autoSave: { slot: number, savedAt: number, screenshotUrl: string | null } | null }>, added: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }>, favourites: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> } };
+export type HomeQuery = { home: { featured: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }>, recent: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null, autoSave: { slot: number, savedAt: number, screenshotUrl: string | null } | null }>, added: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }>, favourites: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }> } };
 
 export type SearchQueryVariables = Exact<{
   text: string;
 }>;
 
 
-export type SearchQuery = { search: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> };
+export type SearchQuery = { search: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }> };
 
 export type CollectionsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CollectionsQuery = { collections: Array<{ id: number, name: string, gameCount: number, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> }> };
+export type CollectionsQuery = { collections: Array<{ id: number, name: string, gameCount: number, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }> }> };
 
 export type CollectionIdsQueryVariables = Exact<{
   id: number;
@@ -228,14 +228,14 @@ export type SystemGamesQueryVariables = Exact<{
 }>;
 
 
-export type SystemGamesQuery = { system: { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null }> } | null };
+export type SystemGamesQuery = { system: { id: string, name: string, short: string, manufacturer: string, year: number, color: string, gameCount: number, playable: boolean, needsGpu: boolean, rendering: Rendering | null, biosMissing: boolean, games: Array<{ id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null }> } | null };
 
 export type GameQueryVariables = Exact<{
   id: number;
 }>;
 
 
-export type GameQuery = { game: { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, discs: number, image: string | null, thumb: string | null, video: string | null, saves: Array<{ slot: number, savedAt: number, screenshotUrl: string | null }> } };
+export type GameQuery = { game: { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, discs: number, image: string | null, thumb: string | null, video: string | null, saves: Array<{ slot: number, savedAt: number, screenshotUrl: string | null }> } };
 
 export type SavesQueryVariables = Exact<{
   id: number;
@@ -470,6 +470,7 @@ export const GameFieldsFragmentDoc = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }
     `, {"fragmentName":"GameFields"}) as unknown as TypedDocumentString<GameFieldsFragment, unknown>;
@@ -661,6 +662,7 @@ export const HomeDocument = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }
 fragment SaveFields on SaveSlot {
@@ -695,6 +697,7 @@ export const SearchDocument = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }`) as unknown as TypedDocumentString<SearchQuery, SearchQueryVariables>;
 export const CollectionsDocument = new TypedDocumentString(`
@@ -729,6 +732,7 @@ export const CollectionsDocument = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }`) as unknown as TypedDocumentString<CollectionsQuery, CollectionsQueryVariables>;
 export const CollectionIdsDocument = new TypedDocumentString(`
@@ -850,6 +854,7 @@ export const SystemGamesDocument = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }
 fragment SystemFields on System {
@@ -895,6 +900,7 @@ export const GameDocument = new TypedDocumentString(`
   players
   rating
   favourite
+  release
   discs
 }
 fragment SaveFields on SaveSlot {

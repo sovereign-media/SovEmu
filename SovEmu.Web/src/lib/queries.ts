@@ -23,6 +23,7 @@ graphql(`
     players
     rating
     favourite
+    release
     discs
   }
 `);
