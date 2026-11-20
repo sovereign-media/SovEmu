@@ -1,0 +1,19 @@
+version: 2
+
+updates:
+  # Action versions drift silently and only surface as deprecation warnings on a runner. Every
+  # sovereign-media repository without this entry had drifted (sovereign-media/sovereign#1552).
+  # One grouped pull request a week, against `main`.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    ignore:
+      # dtolnay/rust-toolchain selects a Rust toolchain by ref name, so its "versions" are Rust
+      # releases rather than releases of the action; Dependabot cannot tell the difference.
+      - dependency-name: dtolnay/rust-toolchain
+    commit-message:
+      prefix: ci
