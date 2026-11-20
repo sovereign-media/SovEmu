@@ -22,12 +22,29 @@ pub struct Collection {
     pub game_count: i64,
 }
 
+/// A user's favourites: read for every list of games.
+pub(crate) const FAVOURITE_IDS: &str = "SELECT game_id FROM favourites WHERE user_id = ?";
+/// The user's collections that hold a game: read when its panel opens.
+pub(crate) const OF_GAME: &str = "SELECT c.id FROM collections c
+     JOIN collection_games cg ON cg.collection_id = c.id
+     WHERE c.user_id = ? AND cg.game_id = ? ORDER BY c.name COLLATE NOCASE";
+/// A collection's games, most recently added first (binds: the user's id, the collection's).
+pub(crate) fn collection_games_sql() -> String {
+    format!(
+        "SELECT {GAME_COLUMNS} FROM collection_games cg
+         JOIN games g ON g.id = cg.game_id
+         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
+         LEFT JOIN game_metadata m ON m.game_id = g.id
+         WHERE cg.collection_id = ? ORDER BY cg.added_at DESC, g.id DESC"
+    )
+}
+
 /// Marks the user's favourites among `games`.
 pub async fn mark_favourites(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
     if games.is_empty() {
         return Ok(());
     }
-    let ids: HashSet<i64> = sqlx::query_scalar("SELECT game_id FROM favourites WHERE user_id = ?")
+    let ids: HashSet<i64> = sqlx::query_scalar(FAVOURITE_IDS)
         .bind(user_id)
         .fetch_all(&state.db)
         .await?
@@ -71,31 +88,18 @@ pub async fn list(state: &AppState, user: &User) -> ApiResult<Vec<Collection>> {
 /// A collection's games, most recently added first.
 pub async fn games(state: &AppState, user: &User, collection_id: i64) -> ApiResult<Vec<Game>> {
     owned(state, user, collection_id).await?;
-    let mut games = sqlx::query_as::<_, Game>(&format!(
-        "SELECT {GAME_COLUMNS} FROM collection_games cg
-         JOIN games g ON g.id = cg.game_id
-         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
-         LEFT JOIN game_metadata m ON m.game_id = g.id
-         WHERE cg.collection_id = ? ORDER BY cg.added_at DESC, g.id DESC"
-    ))
-    .bind(user.id)
-    .bind(collection_id)
-    .fetch_all(&state.db)
-    .await?;
+    let mut games = sqlx::query_as::<_, Game>(&collection_games_sql())
+        .bind(user.id)
+        .bind(collection_id)
+        .fetch_all(&state.db)
+        .await?;
     crate::api::annotate(state, user.id, &mut games).await?;
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 
 /// The ids of the user's collections that hold `game_id`.
 pub async fn of_game(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Vec<i64>> {
-    Ok(sqlx::query_scalar(
-        "SELECT c.id FROM collections c JOIN collection_games cg ON cg.collection_id = c.id
-         WHERE c.user_id = ? AND cg.game_id = ? ORDER BY c.name COLLATE NOCASE",
-    )
-    .bind(user_id)
-    .bind(game_id)
-    .fetch_all(&state.db)
-    .await?)
+    Ok(sqlx::query_scalar(OF_GAME).bind(user_id).bind(game_id).fetch_all(&state.db).await?)
 }
 
 /// Creates a collection; a name the user already has is refused.

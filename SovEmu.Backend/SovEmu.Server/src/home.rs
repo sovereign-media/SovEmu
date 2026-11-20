@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::AppState;
-use crate::api::{GAME_COLUMNS, Game};
+use crate::api::Game;
 use crate::auth::User;
 use crate::error::ApiResult;
 
@@ -43,6 +43,39 @@ fn day() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| (d.as_secs() / 86_400) as i64)
 }
 
+/// One of Home's rows: which games, in what order (its SQL is [`row_sql`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Row<'a> {
+    pub filter: &'a str,
+    pub order: &'a str,
+}
+
+/// This player's games, most recently played first.
+pub(crate) const RECENT: Row =
+    Row { filter: "h.last_played_at IS NOT NULL", order: "h.last_played_at DESC" };
+/// Games with something to show first (artwork and a description), then a shuffle that changes
+/// daily: a multiplicative hash of the id, offset by the day (bound). It reads every game with
+/// artwork, by design: it is the only way to shuffle them.
+pub(crate) const FEATURED: Row = Row {
+    filter: "g.media != '' OR m.box_art IS NOT NULL",
+    order: "(m.description IS NOT NULL AND g.media LIKE '%image%') DESC,
+         m.description IS NOT NULL DESC,
+         ((g.id + ?) * 2654435761) % 4294967291",
+};
+/// The library's newest games (read through the `games_added` index).
+pub(crate) const ADDED: Row = Row { filter: "1", order: "g.added_at DESC, g.id DESC" };
+/// This player's favourites, by title (binds the user's id).
+pub(crate) const FAVOURITES: Row = Row {
+    filter: "g.id IN (SELECT game_id FROM favourites WHERE user_id = ?)",
+    order: "COALESCE(m.title, g.title) COLLATE NOCASE, g.id",
+};
+
+/// A row's query; `hidden` is [`hidden_systems`]'s condition.
+pub(crate) fn row_sql(row: Row, hidden: &str) -> String {
+    let Row { filter, order } = row;
+    crate::api::games_sql(&format!("WHERE ({filter}){hidden} ORDER BY {order} LIMIT ?"))
+}
+
 pub(crate) async fn query(
     state: &AppState,
     user_id: i64,
@@ -56,12 +89,7 @@ pub(crate) async fn query(
         return Ok(Vec::new());
     }
     let (hidden, hidden_ids) = hidden_systems(state);
-    let sql = format!(
-        "SELECT {GAME_COLUMNS} FROM games g
-         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
-         LEFT JOIN game_metadata m ON m.game_id = g.id
-         WHERE ({filter}){hidden} ORDER BY {order} LIMIT ?"
-    );
+    let sql = row_sql(Row { filter, order }, &hidden);
     let mut q = sqlx::query_as::<_, Game>(&sql).bind(user_id);
     // Placeholders in the order they appear: the join, the filter, its hidden systems, the order.
     for value in filter_binds {
@@ -80,40 +108,19 @@ pub(crate) async fn query(
 
 pub async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
     let row = state.config.home_row;
-    let recent = query(
-        state,
-        user.id,
-        "h.last_played_at IS NOT NULL",
-        &[],
-        "h.last_played_at DESC",
-        row,
-        None,
-    )
-    .await?;
-    // Games with something to show first (artwork and a description), then a shuffle that
-    // changes daily: a multiplicative hash of the id, offset by the day.
+    let recent = query(state, user.id, RECENT.filter, &[], RECENT.order, row, None).await?;
     let featured = query(
         state,
         user.id,
-        "g.media != '' OR m.box_art IS NOT NULL",
+        FEATURED.filter,
         &[],
-        "(m.description IS NOT NULL AND g.media LIKE '%image%') DESC,
-         m.description IS NOT NULL DESC,
-         ((g.id + ?) * 2654435761) % 4294967291",
+        FEATURED.order,
         state.config.home_featured,
         Some(day()),
     )
     .await?;
-    let added = query(state, user.id, "1", &[], "g.added_at DESC, g.id DESC", row, None).await?;
-    let favourites = query(
-        state,
-        user.id,
-        "g.id IN (SELECT game_id FROM favourites WHERE user_id = ?)",
-        &[user.id],
-        "COALESCE(m.title, g.title) COLLATE NOCASE, g.id",
-        row,
-        None,
-    )
-    .await?;
+    let added = query(state, user.id, ADDED.filter, &[], ADDED.order, row, None).await?;
+    let favourites =
+        query(state, user.id, FAVOURITES.filter, &[user.id], FAVOURITES.order, row, None).await?;
     Ok(Home { featured, recent, added, favourites })
 }

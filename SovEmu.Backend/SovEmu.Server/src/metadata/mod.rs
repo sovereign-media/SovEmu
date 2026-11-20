@@ -412,6 +412,10 @@ pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
             }
         });
     }
+    // Game information renames games: which share a title may have changed.
+    if let Err(e) = crate::releases::refresh(&state.db).await {
+        tracing::warn!(error = %e, "metadata: updating release labels");
+    }
     // Claimed before this job reads as finished, so no one sees both idle in between.
     let artwork = artwork::claim(&meta);
     meta.update(|s| s.running = false);

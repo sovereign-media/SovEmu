@@ -17,6 +17,11 @@ paths:
   `user(ctx)` / `admin(ctx)` and call plain functions (`&AppState`, `&User`, arguments) in the
   other modules; never add a REST route. After changing the schema, regenerate
   `schema.graphql` (`UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`) and the clients.
+- **Hot queries use an index.** A query that runs per request or per page view (sign-in, lists
+  of games, Home's rows, a game's panel) ships with its index in the same migration, and joins
+  `hot_queries` in `SovEmu.Server/src/query_plans.rs`, which fails on a plan that reads a whole
+  table. Work over the whole library (labels, counts) is done when the library changes (after a
+  scan or a lookup) and stored, not redone per request.
 - **unsafe.** Only `LibretroFfi`, `RetroHost`, `Media` and `TestCore` contain `unsafe`. Every `unsafe`
   block gets a `// SAFETY:` comment saying why it holds; every `unsafe fn` gets a `# Safety`
   section. `unsafe_op_in_unsafe_fn` is denied.
