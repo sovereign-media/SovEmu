@@ -15,6 +15,8 @@ paths:
   asks services, and never depends on `sqlx` or the server. Work that needs the database stays in
   the server, calling the library's plain functions. Only what the server uses is `pub`;
   everything else is `pub(crate)` or private, so its internals can change freely.
+- **Visibility.** `unreachable_pub` is a workspace lint: an item is `pub` only if another crate
+  uses it. A library crate's public items are its interface; keep it small.
 - **Server.** `SovEmu.Server` depends on `Library`, `Assets`, `Sessions` and `Protocol` only; neither it nor
   `Sessions` ever links `RetroHost` or `Media`. Database access is plain
   `sqlx::query` / `query_as` with bound parameters (never format values into SQL); schema changes are new

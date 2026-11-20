@@ -53,7 +53,7 @@ const MIN_VIDEO_KBPS: u32 = 300;
 
 /// The video bitrate to use for a send-bandwidth estimate: 85% of it (headroom for retransmits
 /// and estimate noise) minus the audio, clamped to `[MIN_VIDEO_KBPS, max_kbps]`.
-pub fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u32) -> u32 {
+pub(crate) fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u32) -> u32 {
     let usable = (estimate_bps as f64 * 0.85 / 1000.0) as i64 - i64::from(audio_kbps);
     usable.clamp(i64::from(MIN_VIDEO_KBPS.min(max_kbps)), i64::from(max_kbps)) as u32
 }
@@ -63,7 +63,7 @@ const IDLE_WAIT: Duration = Duration::from_millis(20);
 
 /// Work for the streaming loop from its front end (HTTP in `serve`, stdin in `session`).
 #[derive(Debug)]
-pub enum Command {
+pub(crate) enum Command {
     /// A client's offer; the new client replaces any current one.
     Offer { offer: SessionDescription, reply: Sender<Result<SessionDescription, String>> },
     /// A control request: reset, save or load a state, shut down.
@@ -72,14 +72,14 @@ pub enum Command {
 
 /// Something the front end may want to report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StreamEvent {
+pub(crate) enum StreamEvent {
     ClientConnected,
     ClientDisconnected,
 }
 
 /// How to start a session.
 #[derive(Debug, Clone)]
-pub struct SessionConfig {
+pub(crate) struct SessionConfig {
     pub core: PathBuf,
     pub rom: Option<PathBuf>,
     /// The system's BIOS folder.
@@ -110,7 +110,7 @@ struct Peer {
 }
 
 /// The emulation and encoding state, kept across clients.
-pub struct Session {
+pub(crate) struct Session {
     core: Core,
     fps: f64,
     video: Vp8Encoder,
@@ -148,7 +148,7 @@ pub struct Session {
 
 impl Session {
     /// Loads the core and content and sets up the encoders.
-    pub fn open(config: &SessionConfig, report: Report<'_>) -> Result<Self> {
+    pub(crate) fn open(config: &SessionConfig, report: Report<'_>) -> Result<Self> {
         // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
         if let Err(e) = std::fs::create_dir_all(&config.system_dir) {
             tracing::debug!("system dir {}: {e}", config.system_dir.display());
@@ -234,7 +234,7 @@ impl Session {
     }
 
     /// Saves the battery RAM and the auto state, once.
-    pub fn finish(&mut self) {
+    pub(crate) fn finish(&mut self) {
         if std::mem::replace(&mut self.finished, true) {
             return;
         }
@@ -245,17 +245,17 @@ impl Session {
 
     /// The core's name and the content's geometry and timing.
     /// The options the core has declared now that its game is loaded.
-    pub fn options(&self) -> (Vec<CoreOption>, Vec<CoreCategory>) {
+    pub(crate) fn options(&self) -> (Vec<CoreOption>, Vec<CoreCategory>) {
         declared_options(&self.core)
     }
 
-    pub fn describe(&self) -> (String, AvInfo) {
+    pub(crate) fn describe(&self) -> (String, AvInfo) {
         let av = *self.core.av_info().expect("a game is loaded");
         (self.core.system_info().library_name.clone(), av)
     }
 
     /// A multi-disc game's disc count; `None` for one disc or a core without disk control.
-    pub fn discs(&mut self) -> Option<u32> {
+    pub(crate) fn discs(&mut self) -> Option<u32> {
         self.core.discs().map(|d| d.count)
     }
 
@@ -314,7 +314,7 @@ impl Session {
 /// which local address a datagram arrived on. So every received datagram is tagged with this
 /// address. In a container that is the host's address (`SOVEMU_ADVERTISE_IP`), which the
 /// container could not discover on its own.
-pub fn advertised_addr(advertise: Option<IpAddr>, bound: SocketAddr) -> SocketAddr {
+pub(crate) fn advertised_addr(advertise: Option<IpAddr>, bound: SocketAddr) -> SocketAddr {
     let ip = advertise
         .or_else(|| (!bound.ip().is_unspecified()).then(|| bound.ip()))
         .or_else(primary_ip)
@@ -363,7 +363,7 @@ fn payload_type(rtc: &mut Rtc, mid: Mid, codec: Codec) -> Option<Pt> {
 
 /// Runs the session until the command channel closes, a `Shutdown` arrives, or no client has been
 /// connected for `idle_timeout`.
-pub fn run(
+pub(crate) fn run(
     mut session: Session,
     socket: UdpSocket,
     advertised: SocketAddr,
@@ -731,7 +731,7 @@ impl Session {
 
 /// A core's declared options and categories, in the protocol's terms (each option with its
 /// core default, not the value SovEmu set).
-pub fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategory>) {
+pub(crate) fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategory>) {
     let options = core
         .variables()
         .into_iter()

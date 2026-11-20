@@ -7,7 +7,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 
 /// Opens (creating if needed) the SQLite database in WAL mode, applies migrations, and brings
 /// the stored release labels up to date (a new column starts empty).
-pub async fn open(path: &Path) -> anyhow::Result<SqlitePool> {
+pub(crate) async fn open(path: &Path) -> anyhow::Result<SqlitePool> {
     let options = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)

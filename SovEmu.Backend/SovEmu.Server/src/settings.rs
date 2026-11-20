@@ -26,7 +26,7 @@ use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 use sovemu_library::systems::System;
 
-pub use sovemu_protocol::ipc::{CoreCategory, CoreOption};
+pub(crate) use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 
 /// What the probe says about a core.
 #[derive(Debug, Clone, Deserialize)]
@@ -83,7 +83,7 @@ fn core_name(core: &Path) -> String {
 
 /// Keeps the options a core declared in a game session, for cores the probe cannot see them
 /// in. Failing to keep them only costs the Settings page, so it is logged, not returned.
-pub async fn remember(
+pub(crate) async fn remember(
     db: &SqlitePool,
     core: &Path,
     (options, categories): &sovemu_sessions::workers::Declared,
@@ -135,7 +135,7 @@ fn offered(
 /// Where an option's value comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Source {
+pub(crate) enum Source {
     Core,
     Sovemu,
     Admin,
@@ -143,7 +143,10 @@ pub enum Source {
 }
 
 /// The admin's choices for a system.
-pub async fn admin_values(db: &SqlitePool, system: &str) -> sqlx::Result<BTreeMap<String, String>> {
+pub(crate) async fn admin_values(
+    db: &SqlitePool,
+    system: &str,
+) -> sqlx::Result<BTreeMap<String, String>> {
     let rows: Vec<(String, String)> =
         sqlx::query_as("SELECT key, value FROM system_settings WHERE system = ?")
             .bind(system)
@@ -154,7 +157,7 @@ pub async fn admin_values(db: &SqlitePool, system: &str) -> sqlx::Result<BTreeMa
 
 /// The options a game of `system` starts with, beyond the core's own defaults, and where each
 /// comes from.
-pub fn layered(
+pub(crate) fn layered(
     system: &System,
     admin: &BTreeMap<String, String>,
     environment: &BTreeMap<String, String>,
@@ -174,7 +177,10 @@ pub fn layered(
 }
 
 /// The options to start a game of `system` with.
-pub async fn for_launch(state: &AppState, system: &System) -> ApiResult<Vec<(String, String)>> {
+pub(crate) async fn for_launch(
+    state: &AppState,
+    system: &System,
+) -> ApiResult<Vec<(String, String)>> {
     let admin = admin_values(&state.db, system.id).await?;
     Ok(layered(system, &admin, &environment(state, system))
         .into_iter()
@@ -187,7 +193,7 @@ fn environment(state: &AppState, system: &System) -> BTreeMap<String, String> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Setting {
+pub(crate) struct Setting {
     pub(crate) key: String,
     pub(crate) description: String,
     /// What it does, in the core's words (empty where the core does not say).
@@ -204,7 +210,7 @@ pub struct Setting {
 }
 
 #[derive(Debug, Serialize)]
-pub struct SystemSettings {
+pub(crate) struct SystemSettings {
     pub(crate) system: String,
     pub(crate) core: String,
     pub(crate) settings: Vec<Setting>,
@@ -286,12 +292,12 @@ fn system(id: &str) -> ApiResult<&'static System> {
     sovemu_library::systems::by_id(id).ok_or_else(|| ApiError::not_found("system"))
 }
 
-pub async fn get_settings(state: &AppState, id: &str) -> ApiResult<SystemSettings> {
+pub(crate) async fn get_settings(state: &AppState, id: &str) -> ApiResult<SystemSettings> {
     describe(state, system(id)?).await
 }
 
 /// Sets options (`key` → `Some(value)`), or with `None` goes back to the default.
-pub async fn put_settings(
+pub(crate) async fn put_settings(
     state: &AppState,
     id: &str,
     changes: BTreeMap<String, Option<String>>,

@@ -8,10 +8,10 @@
 use std::collections::VecDeque;
 
 /// Snapshot every this many frames.
-pub const INTERVAL: u32 = 2;
+pub(crate) const INTERVAL: u32 = 2;
 
 #[derive(Debug)]
-pub struct Rewind {
+pub(crate) struct Rewind {
     states: VecDeque<Vec<u8>>,
     bytes: usize,
     max_bytes: usize,
@@ -22,7 +22,7 @@ pub struct Rewind {
 }
 
 impl Rewind {
-    pub fn new(max_bytes: usize, max_states: usize) -> Self {
+    pub(crate) fn new(max_bytes: usize, max_states: usize) -> Self {
         Self {
             states: VecDeque::new(),
             bytes: 0,
@@ -34,12 +34,12 @@ impl Rewind {
     }
 
     #[cfg(test)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.states.len()
     }
 
     /// Called once per emulated frame; snapshots every [`INTERVAL`] frames.
-    pub fn record<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
+    pub(crate) fn record<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
         if self.unsupported || self.max_states == 0 || self.max_bytes == 0 {
             return;
         }
@@ -66,7 +66,10 @@ impl Rewind {
     }
 
     /// Restores the newest snapshot and drops it. Returns false when there is nothing left.
-    pub fn step_back<E>(&mut self, unserialize: impl FnOnce(&[u8]) -> Result<(), E>) -> bool {
+    pub(crate) fn step_back<E>(
+        &mut self,
+        unserialize: impl FnOnce(&[u8]) -> Result<(), E>,
+    ) -> bool {
         let Some(state) = self.states.pop_back() else { return false };
         self.bytes -= state.len();
         self.counter = 0;
@@ -74,7 +77,7 @@ impl Rewind {
     }
 
     /// Forgets everything (after loading a state or a reset, history no longer applies).
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.states.clear();
         self.bytes = 0;
         self.counter = 0;

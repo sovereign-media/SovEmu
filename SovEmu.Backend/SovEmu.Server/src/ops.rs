@@ -16,11 +16,11 @@ use tower_http::compression::predicate::{DefaultPredicate, NotForContentType};
 use crate::AppState;
 
 /// Default failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
-pub const MAX_FAILURES: u32 = 5;
+pub(crate) const MAX_FAILURES: u32 = 5;
 /// Default failed sign-ins allowed per client address, across usernames: enough for a household
 /// behind one router to mistype, too few to try many names.
-pub const MAX_FAILURES_PER_IP: u32 = 20;
-pub const LOCKOUT_WINDOW: Duration = Duration::from_secs(300);
+pub(crate) const MAX_FAILURES_PER_IP: u32 = 20;
+pub(crate) const LOCKOUT_WINDOW: Duration = Duration::from_secs(300);
 
 /// Counts failed sign-ins per key (a username, or a client address) and locks the key out after
 /// too many. In memory: a
@@ -81,7 +81,7 @@ impl LoginThrottle {
     }
 }
 
-pub async fn health(State(state): State<AppState>) -> Response {
+pub(crate) async fn health(State(state): State<AppState>) -> Response {
     match sqlx::query_scalar::<_, i64>("SELECT 1").fetch_one(&state.db).await {
         Ok(_) => "ok".into_response(),
         Err(e) => {
@@ -94,13 +94,13 @@ pub async fn health(State(state): State<AppState>) -> Response {
 /// Compresses responses (gzip or Brotli, as the client accepts): the GraphQL API's JSON and the
 /// web client's scripts and styles. Not images, videos or anything tiny, which compress poorly or
 /// not at all.
-pub fn compression() -> tower_http::compression::CompressionLayer<impl Predicate> {
+pub(crate) fn compression() -> tower_http::compression::CompressionLayer<impl Predicate> {
     let predicate = DefaultPredicate::new().and(NotForContentType::const_new("video/"));
     tower_http::compression::CompressionLayer::new().compress_when(predicate)
 }
 
 /// Headers every response carries.
-pub async fn security_headers(request: Request, next: Next) -> Response {
+pub(crate) async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     for (name, value) in [

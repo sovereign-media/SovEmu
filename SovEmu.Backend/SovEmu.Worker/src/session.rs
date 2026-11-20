@@ -33,7 +33,7 @@ impl Out {
     }
 }
 
-pub fn run(args: SessionArgs) -> Result<()> {
+pub(crate) fn run(args: SessionArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
     let stdout = sovemu_retro_host::take_stdout().context("keeping stdout for replies")?;
     let out = Out(Arc::new(Mutex::new(stdout)));

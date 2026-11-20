@@ -10,7 +10,7 @@ pub struct ApiError {
     pub message: String,
 }
 
-pub type ApiResult<T> = Result<T, ApiError>;
+pub(crate) type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {

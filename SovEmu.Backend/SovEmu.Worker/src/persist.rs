@@ -15,21 +15,21 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use sovemu_retro_host::Core;
 
-pub const FLUSH_INTERVAL: Duration = Duration::from_secs(10);
+pub(crate) const FLUSH_INTERVAL: Duration = Duration::from_secs(10);
 /// The auto state's slot, written when a session ends.
-pub const AUTO_SLOT: u32 = 0;
-pub const MAX_SLOT: u32 = 9;
+pub(crate) const AUTO_SLOT: u32 = 0;
+pub(crate) const MAX_SLOT: u32 = 9;
 
 /// The last frame shown, for save-state screenshots.
 #[derive(Debug, Default)]
-pub struct Screenshot<'a> {
+pub(crate) struct Screenshot<'a> {
     pub rgba: &'a [u8],
     pub width: u32,
     pub height: u32,
 }
 
 #[derive(Debug)]
-pub struct Persist {
+pub(crate) struct Persist {
     srm: Option<PathBuf>,
     state_dir: Option<PathBuf>,
     /// The battery RAM as last written, to skip writes when nothing changed.
@@ -38,7 +38,7 @@ pub struct Persist {
 }
 
 /// Writes `bytes` to `path` through a temporary file and a rename.
-pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -59,7 +59,11 @@ fn encode_png(shot: &Screenshot<'_>) -> Result<Vec<u8>> {
 
 impl Persist {
     /// `save_name` is the game's file stem (`<save_dir>/<save_name>.srm`).
-    pub fn new(save_dir: &Path, save_name: Option<&str>, state_dir: Option<PathBuf>) -> Self {
+    pub(crate) fn new(
+        save_dir: &Path,
+        save_name: Option<&str>,
+        state_dir: Option<PathBuf>,
+    ) -> Self {
         Self {
             srm: save_name.map(|name| save_dir.join(format!("{name}.srm"))),
             state_dir,
@@ -69,7 +73,7 @@ impl Persist {
     }
 
     /// Loads the `.srm` into the core's battery RAM, if both exist.
-    pub fn restore(&mut self, core: &mut Core) {
+    pub(crate) fn restore(&mut self, core: &mut Core) {
         let (Some(path), Some(ram)) = (&self.srm, core.save_ram()) else { return };
         match std::fs::read(path) {
             Ok(bytes) => {
@@ -92,7 +96,7 @@ impl Persist {
     }
 
     /// Writes the battery RAM if it changed. Returns whether it wrote.
-    pub fn flush(&mut self, core: &mut Core) -> Result<bool> {
+    pub(crate) fn flush(&mut self, core: &mut Core) -> Result<bool> {
         let (Some(path), Some(ram)) = (&self.srm, core.save_ram()) else { return Ok(false) };
         if ram == self.written.as_slice() {
             return Ok(false);
@@ -104,7 +108,7 @@ impl Persist {
     }
 
     /// Flushes the battery RAM if [`FLUSH_INTERVAL`] has passed since the last check.
-    pub fn tick(&mut self, core: &mut Core, now: Instant) {
+    pub(crate) fn tick(&mut self, core: &mut Core, now: Instant) {
         if now < self.next_check {
             return;
         }
@@ -122,7 +126,7 @@ impl Persist {
         Ok((dir.join(format!("slot{slot}.state")), dir.join(format!("slot{slot}.png"))))
     }
 
-    pub fn save_state(
+    pub(crate) fn save_state(
         &self,
         core: &mut Core,
         slot: u32,
@@ -141,7 +145,7 @@ impl Persist {
         Ok(())
     }
 
-    pub fn load_state(&self, core: &mut Core, slot: u32) -> Result<()> {
+    pub(crate) fn load_state(&self, core: &mut Core, slot: u32) -> Result<()> {
         let (state, _) = self.slot_paths(slot)?;
         let bytes = std::fs::read(&state).with_context(|| format!("slot {slot} is empty"))?;
         core.unserialize(&bytes).context("the core rejected the state")?;
@@ -150,7 +154,7 @@ impl Persist {
     }
 
     /// End of session: battery RAM, then the auto state (if the game was played at all).
-    pub fn finish(&mut self, core: &mut Core, played: bool, shot: Option<Screenshot<'_>>) {
+    pub(crate) fn finish(&mut self, core: &mut Core, played: bool, shot: Option<Screenshot<'_>>) {
         if let Err(e) = self.flush(core) {
             tracing::warn!("battery save failed: {e:#}");
         }

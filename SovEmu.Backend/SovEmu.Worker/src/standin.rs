@@ -9,7 +9,7 @@
 //! first game session instead (`Reply::Options`).
 
 /// A stand-in for a core accepting `extensions`: its extension and bytes.
-pub fn for_extensions(extensions: &[String]) -> Option<(&'static str, Vec<u8>)> {
+pub(crate) fn for_extensions(extensions: &[String]) -> Option<(&'static str, Vec<u8>)> {
     let accepts = |ext: &str| extensions.iter().any(|e| e.eq_ignore_ascii_case(ext));
     if accepts("nes") {
         Some(("nes", nes()))

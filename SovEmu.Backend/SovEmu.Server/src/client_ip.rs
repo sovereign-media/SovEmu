@@ -77,11 +77,11 @@ impl Network {
 
 /// The client's address, if known (tests and other in-process callers have none).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ClientIp(pub Option<IpAddr>);
+pub(crate) struct ClientIp(pub Option<IpAddr>);
 
 /// The client of a request that arrived from `peer` with `forwarded_for`, given the trusted
 /// proxies. Walks `X-Forwarded-For` from its end (the hop nearest us), past trusted proxies.
-pub fn resolve(
+pub(crate) fn resolve(
     peer: Option<IpAddr>,
     forwarded_for: Option<&str>,
     trusted: &[Network],
@@ -104,7 +104,11 @@ pub fn resolve(
 }
 
 /// Works out each request's client, for the handlers (`ClientIp`) and its span.
-pub async fn remember(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
+pub(crate) async fn remember(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
     static WARNED: AtomicBool = AtomicBool::new(false);
     let peer = request.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
     let forwarded = request.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok());

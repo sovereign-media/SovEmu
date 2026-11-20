@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Why a patch could not be applied.
 #[derive(Debug, PartialEq, Eq)]
-pub enum PatchError {
+pub(crate) enum PatchError {
     /// Not an IPS, UPS or BPS file.
     UnknownFormat,
     /// The patch ends early or has an invalid record.
@@ -46,7 +46,7 @@ impl fmt::Display for PatchError {
 impl std::error::Error for PatchError {}
 
 /// Applies `patch` (any of the three formats, told apart by its header) to `source`.
-pub fn apply(source: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
+pub(crate) fn apply(source: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
     if patch.starts_with(b"PATCH") {
         ips(source, patch)
     } else if patch.starts_with(b"UPS1") {
@@ -61,13 +61,13 @@ pub fn apply(source: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
 /// A patched copy of a ROM in a temporary folder, removed when dropped. It keeps the ROM's
 /// extension (cores go by it) and is named `<rom stem> [<patch name>]`, so its battery save is
 /// the patched game's own.
-pub struct PatchedRom {
+pub(crate) struct PatchedRom {
     dir: PathBuf,
     pub path: PathBuf,
 }
 
 impl PatchedRom {
-    pub fn write(rom: &Path, patch: &Path, name: &str) -> anyhow::Result<Self> {
+    pub(crate) fn write(rom: &Path, patch: &Path, name: &str) -> anyhow::Result<Self> {
         use anyhow::Context;
         let source = std::fs::read(rom).with_context(|| format!("reading {}", rom.display()))?;
         let bytes = std::fs::read(patch).with_context(|| format!("reading {}", patch.display()))?;
@@ -297,7 +297,7 @@ fn bps(source: &[u8], patch: &[u8]) -> Result<Vec<u8>, PatchError> {
 }
 
 /// CRC-32 (IEEE), as UPS and BPS use.
-pub fn crc32(bytes: &[u8]) -> u32 {
+pub(crate) fn crc32(bytes: &[u8]) -> u32 {
     static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
     let table = TABLE.get_or_init(|| {
         let mut table = [0u32; 256];

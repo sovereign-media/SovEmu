@@ -16,7 +16,7 @@ const MAX_COLLECTIONS: i64 = 100;
 
 /// A named list of games.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Collection {
+pub(crate) struct Collection {
     pub id: i64,
     pub name: String,
     pub game_count: i64,
@@ -40,7 +40,11 @@ pub(crate) fn collection_games_sql() -> String {
 }
 
 /// Marks the user's favourites among `games`.
-pub async fn mark_favourites(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
+pub(crate) async fn mark_favourites(
+    state: &AppState,
+    user_id: i64,
+    games: &mut [Game],
+) -> ApiResult<()> {
     if games.is_empty() {
         return Ok(());
     }
@@ -57,7 +61,7 @@ pub async fn mark_favourites(state: &AppState, user_id: i64, games: &mut [Game])
 }
 
 /// Adds the game to the user's favourites, or takes it out.
-pub async fn set_favourite(
+pub(crate) async fn set_favourite(
     state: &AppState,
     user: &User,
     game_id: i64,
@@ -74,7 +78,7 @@ pub async fn set_favourite(
 }
 
 /// The user's collections, by name.
-pub async fn list(state: &AppState, user: &User) -> ApiResult<Vec<Collection>> {
+pub(crate) async fn list(state: &AppState, user: &User) -> ApiResult<Vec<Collection>> {
     Ok(sqlx::query_as::<_, Collection>(
         "SELECT c.id, c.name, COUNT(cg.game_id) AS game_count FROM collections c
          LEFT JOIN collection_games cg ON cg.collection_id = c.id
@@ -86,7 +90,11 @@ pub async fn list(state: &AppState, user: &User) -> ApiResult<Vec<Collection>> {
 }
 
 /// A collection's games, most recently added first.
-pub async fn games(state: &AppState, user: &User, collection_id: i64) -> ApiResult<Vec<Game>> {
+pub(crate) async fn games(
+    state: &AppState,
+    user: &User,
+    collection_id: i64,
+) -> ApiResult<Vec<Game>> {
     owned(state, user, collection_id).await?;
     let mut games = sqlx::query_as::<_, Game>(&collection_games_sql())
         .bind(user.id)
@@ -98,12 +106,12 @@ pub async fn games(state: &AppState, user: &User, collection_id: i64) -> ApiResu
 }
 
 /// The ids of the user's collections that hold `game_id`.
-pub async fn of_game(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Vec<i64>> {
+pub(crate) async fn of_game(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Vec<i64>> {
     Ok(sqlx::query_scalar(OF_GAME).bind(user_id).bind(game_id).fetch_all(&state.db).await?)
 }
 
 /// Creates a collection; a name the user already has is refused.
-pub async fn create(state: &AppState, user: &User, name: &str) -> ApiResult<Collection> {
+pub(crate) async fn create(state: &AppState, user: &User, name: &str) -> ApiResult<Collection> {
     let name = valid_name(name)?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM collections WHERE user_id = ?")
         .bind(user.id)
@@ -127,7 +135,7 @@ pub async fn create(state: &AppState, user: &User, name: &str) -> ApiResult<Coll
     Ok(Collection { id, name, game_count: 0 })
 }
 
-pub async fn rename(
+pub(crate) async fn rename(
     state: &AppState,
     user: &User,
     collection_id: i64,
@@ -149,7 +157,7 @@ pub async fn rename(
     Ok(())
 }
 
-pub async fn delete(state: &AppState, user: &User, collection_id: i64) -> ApiResult<()> {
+pub(crate) async fn delete(state: &AppState, user: &User, collection_id: i64) -> ApiResult<()> {
     owned(state, user, collection_id).await?;
     sqlx::query("DELETE FROM collections WHERE id = ?")
         .bind(collection_id)
@@ -159,7 +167,7 @@ pub async fn delete(state: &AppState, user: &User, collection_id: i64) -> ApiRes
 }
 
 /// Puts the game in the collection, or takes it out.
-pub async fn set_member(
+pub(crate) async fn set_member(
     state: &AppState,
     user: &User,
     collection_id: i64,

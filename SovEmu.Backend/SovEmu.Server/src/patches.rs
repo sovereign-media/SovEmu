@@ -18,7 +18,7 @@ use crate::error::{ApiError, ApiResult};
 
 /// A patch for a game.
 #[derive(Debug, Clone, Serialize, FromRow)]
-pub struct Patch {
+pub(crate) struct Patch {
     pub id: i64,
     pub name: String,
     /// Relative to the ROM directory.
@@ -41,7 +41,7 @@ pub(crate) fn chosen_sql(ids: usize) -> String {
 }
 
 /// Sets `patch` on each of `games` that plays one for this user.
-pub async fn mark(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
+pub(crate) async fn mark(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
     let mut names: HashMap<i64, String> = HashMap::new();
     // SQLite allows thousands of parameters; lists are read in parts well inside that.
     for part in games.chunks(500) {
@@ -59,7 +59,7 @@ pub async fn mark(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResu
 }
 
 /// A game's patches: the default first, then by name.
-pub async fn list(state: &AppState, game_id: i64) -> ApiResult<Vec<Patch>> {
+pub(crate) async fn list(state: &AppState, game_id: i64) -> ApiResult<Vec<Patch>> {
     Ok(sqlx::query_as(
         "SELECT id, name, path, is_default FROM game_patches WHERE game_id = ?
          ORDER BY is_default DESC, name COLLATE NOCASE",
@@ -70,7 +70,11 @@ pub async fn list(state: &AppState, game_id: i64) -> ApiResult<Vec<Patch>> {
 }
 
 /// The patch this user plays the game with, if any.
-pub async fn effective(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Option<Patch>> {
+pub(crate) async fn effective(
+    state: &AppState,
+    user_id: i64,
+    game_id: i64,
+) -> ApiResult<Option<Patch>> {
     Ok(sqlx::query_as(
         "SELECT gp.id, gp.name, gp.path, gp.is_default FROM game_patches gp
          LEFT JOIN patch_choices c ON c.game_id = gp.game_id AND c.user_id = ?
@@ -83,7 +87,7 @@ pub async fn effective(state: &AppState, user_id: i64, game_id: i64) -> ApiResul
 }
 
 /// Plays the game with `patch_id` from now on, or the original (`None`).
-pub async fn choose(
+pub(crate) async fn choose(
     state: &AppState,
     user: &User,
     game_id: i64,
@@ -121,6 +125,6 @@ pub async fn choose(
 
 /// A patch's name as it appears in file names (the worker names the patched copy, and so its
 /// battery save, the same way).
-pub fn file_label(name: &str) -> String {
+pub(crate) fn file_label(name: &str) -> String {
     name.replace(['/', '\\'], "-")
 }

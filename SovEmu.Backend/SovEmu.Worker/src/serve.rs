@@ -21,7 +21,7 @@ use crate::web;
 /// How long the HTTP thread waits for the session loop to answer an offer.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub fn run(args: ServeArgs) -> Result<()> {
+pub(crate) fn run(args: ServeArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
     let session = Session::open(
         &SessionConfig {

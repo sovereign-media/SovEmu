@@ -86,7 +86,7 @@ impl TimingSummary {
     }
 }
 
-pub fn run(args: HeadlessArgs) -> Result<()> {
+pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     fs::create_dir_all(&args.out)
         .with_context(|| format!("cannot create output directory {}", args.out.display()))?;
     let save_dir = args.save_dir.clone().unwrap_or_else(|| args.out.join("saves"));

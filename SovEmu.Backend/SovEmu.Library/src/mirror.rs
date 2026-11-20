@@ -7,7 +7,7 @@
 //! copy at once: on a network share each file costs round trips.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
@@ -200,14 +200,10 @@ pub fn sync(
     );
 }
 
-/// The mirror's location for a data directory.
-pub fn mirror_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("library")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("sovemu-mirror-{name}-{}", std::process::id()));

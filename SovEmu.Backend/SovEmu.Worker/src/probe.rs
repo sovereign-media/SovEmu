@@ -105,7 +105,7 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
     result
 }
 
-pub fn run(args: ProbeArgs) -> Result<()> {
+pub(crate) fn run(args: ProbeArgs) -> Result<()> {
     // Cores may print to stdout; the JSON report must be the only thing on it.
     let mut out = sovemu_retro_host::take_stdout().context("keeping stdout for the report")?;
     let cores = expand(&args.cores)?;

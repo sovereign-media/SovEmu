@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 
 /// A merged system directory, removed when dropped.
 #[derive(Debug)]
-pub struct SystemDir {
+pub(crate) struct SystemDir {
     path: PathBuf,
     /// Set when `path` is a temporary merge this worker made.
     owned: bool,
@@ -35,7 +35,7 @@ impl SystemDir {
     /// The system directory for `core`: `bios` itself when its files belong at the root and
     /// the core ships no data, or else a merge of the core data shipped beside the core
     /// (`<core's folder>/system`) and `bios`'s files at `at` (a relative path, `""` the root).
-    pub fn for_core(core: &Path, bios: &Path, at: &str) -> Result<Self> {
+    pub(crate) fn for_core(core: &Path, bios: &Path, at: &str) -> Result<Self> {
         let at = Path::new(at.trim_matches('/'));
         let shipped = core.parent().map(|d| d.join("system")).filter(|d| d.is_dir());
         if shipped.is_none() && at.as_os_str().is_empty() {
@@ -64,7 +64,7 @@ impl SystemDir {
         Ok(dir)
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }

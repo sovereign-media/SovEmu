@@ -210,7 +210,11 @@ For web development, `npm run dev` in `SovEmu.Web` proxies `/graphql` and `/medi
 ## Conventions
 
 - Rust 2024 edition; `rustfmt.toml` (100 columns) and workspace lints in `SovEmu.Backend/Cargo.toml`.
-  Every `unsafe` block carries a `// SAFETY:` comment (clippy enforces it).
+  Every `unsafe` block carries a `// SAFETY:` comment (clippy enforces it). `unreachable_pub` is
+  on: `pub` only for what another crate uses, `pub(crate)` inside one (a binary's modules
+  included).
+- The data folder's layout is `SovEmu.Server/src/paths.rs` (`config.paths()`): a new file or
+  folder under `SOVEMU_DATA_DIR` gets a method there, never a `data_dir.join("…")` elsewhere.
 - Rules load from `.claude/rules/`: `git-branching.md` always, `rust.md` for backend code,
   `web.md` for `SovEmu.Web`.
 - Trunk-based on `main`: branch from a freshly fetched `origin/main` as `feat/`, `fix/`,

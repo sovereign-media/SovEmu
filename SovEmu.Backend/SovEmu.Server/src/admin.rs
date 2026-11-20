@@ -8,7 +8,7 @@ use crate::metadata::{self, JobStatus};
 use crate::{AppState, LibraryMode, library};
 use sovemu_library::mirror::{self, SyncStatus};
 
-pub async fn scan_and_log(state: &AppState) {
+pub(crate) async fn scan_and_log(state: &AppState) {
     // Decoration sets may have been added beside the library: list them again too.
     state.reload_decorations();
     let started = std::time::Instant::now();
@@ -26,7 +26,7 @@ pub async fn scan_and_log(state: &AppState) {
 }
 
 /// After a scan: look up game information for games that have none yet, if configured to.
-pub async fn after_scan(state: &AppState) {
+pub(crate) async fn after_scan(state: &AppState) {
     if state.config.metadata_auto {
         metadata::run_job(state.clone(), None, false).await;
     }
@@ -34,7 +34,7 @@ pub async fn after_scan(state: &AppState) {
 
 /// Mirrors the source into the local library, then rescans it. No-op outside `mirror` mode or
 /// while a sync is running.
-pub async fn sync_then_scan(state: AppState) {
+pub(crate) async fn sync_then_scan(state: AppState) {
     let Some(source) = state.config.source_dir.clone() else { return };
     {
         let mut s = state.mirror.lock().unwrap_or_else(|e| e.into_inner());
@@ -53,7 +53,7 @@ pub async fn sync_then_scan(state: AppState) {
 }
 
 #[derive(Debug, Serialize)]
-pub struct LibraryStatus {
+pub(crate) struct LibraryStatus {
     pub(crate) mode: LibraryMode,
     pub(crate) games: i64,
     /// `cache` mode: bytes on local disk.
@@ -62,10 +62,10 @@ pub struct LibraryStatus {
     pub(crate) mirror: Option<SyncStatus>,
 }
 
-pub async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
+pub(crate) async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
     let games: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&state.db).await?;
     let cache_bytes = (state.config.library_mode == LibraryMode::Cache).then(|| {
-        let dir = state.config.data_dir.join("cache");
+        let dir = state.config.paths().cache();
         let mut total = 0u64;
         let mut stack = vec![dir];
         while let Some(d) = stack.pop() {
@@ -86,7 +86,7 @@ pub async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
 
 /// Starts a mirror sync (then a rescan) in the background.
 /// Starts a mirror sync in the background.
-pub fn library_sync(state: &AppState) -> ApiResult<()> {
+pub(crate) fn library_sync(state: &AppState) -> ApiResult<()> {
     if state.config.library_mode != LibraryMode::Mirror {
         return Err(ApiError::bad_request("the library is not in mirror mode"));
     }
@@ -94,14 +94,14 @@ pub fn library_sync(state: &AppState) -> ApiResult<()> {
     Ok(())
 }
 
-pub fn metadata_status(state: &AppState) -> JobStatus {
+pub(crate) fn metadata_status(state: &AppState) -> JobStatus {
     state.metadata.status()
 }
 
 /// Starts a metadata job in the background.
 /// Starts looking up game information in the background (`system`: one system only; `force`:
 /// look up games that already have it too).
-pub fn metadata_fetch(
+pub(crate) fn metadata_fetch(
     state: &AppState,
     system: Option<String>,
     force: bool,

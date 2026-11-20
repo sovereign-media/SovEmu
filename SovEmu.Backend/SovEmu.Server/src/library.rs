@@ -8,7 +8,7 @@ use sovemu_library::scan::{PartKind, group_discs, walk};
 use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
-pub struct ScanReport {
+pub(crate) struct ScanReport {
     pub found: usize,
     pub added: usize,
     pub removed: usize,
@@ -16,7 +16,7 @@ pub struct ScanReport {
 
 /// Rescans `root` and brings the `games` table in line: new files added, changed ones updated
 /// (keeping their ids, so play history and saves stay attached), missing ones removed.
-pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Error> {
+pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Error> {
     let root = root.to_owned();
     let found =
         tokio::task::spawn_blocking(move || group_discs(walk(&root))).await.unwrap_or_default();

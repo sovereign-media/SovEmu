@@ -13,7 +13,7 @@ use crate::error::ApiError;
 
 /// The user a `/media/…` request was signed for (set by [`require_signature`]).
 #[derive(Debug, Clone, Copy)]
-pub struct SignedUser(pub i64);
+pub(crate) struct SignedUser(pub i64);
 
 impl<S: Send + Sync> FromRequestParts<S> for SignedUser {
     type Rejection = ApiError;
@@ -24,7 +24,7 @@ impl<S: Send + Sync> FromRequestParts<S> for SignedUser {
 }
 
 /// Lets a `/media/…` request through only with a valid signature, for a user who still exists.
-pub async fn require_signature(
+pub(crate) async fn require_signature(
     State(state): State<AppState>,
     mut request: Request,
     next: Next,

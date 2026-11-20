@@ -7,14 +7,14 @@ use std::path::{Component, Path, PathBuf};
 
 /// A file to send back.
 #[derive(Debug, PartialEq, Eq)]
-pub struct StaticFile {
+pub(crate) struct StaticFile {
     pub body: Vec<u8>,
     pub content_type: &'static str,
     pub cache_control: &'static str,
 }
 
 /// Shown at `/` when no web client is installed.
-pub const NOT_INSTALLED: &str = "<!doctype html><title>SovEmu</title>\
+pub(crate) const NOT_INSTALLED: &str = "<!doctype html><title>SovEmu</title>\
 <p>SovEmu is running, but the web client is not installed. Build <code>SovEmu.Web</code> \
 (<code>npm run build</code>) and start the server with <code>--web-dir SovEmu.Web/dist</code>.</p>";
 
@@ -48,7 +48,7 @@ fn resolve(root: &Path, url_path: &str) -> Option<PathBuf> {
 }
 
 /// Looks up `url_path` (no query string) in the web client's directory.
-pub fn lookup(root: &Path, url_path: &str) -> Option<StaticFile> {
+pub(crate) fn lookup(root: &Path, url_path: &str) -> Option<StaticFile> {
     let path = resolve(root, url_path)?;
     let body = std::fs::read(&path).ok()?;
     // Astro fingerprints everything under /_astro/, so those never change; pages must revalidate.

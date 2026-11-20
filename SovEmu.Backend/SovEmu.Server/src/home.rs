@@ -12,7 +12,7 @@ use crate::auth::User;
 use crate::error::ApiResult;
 
 #[derive(Debug, Serialize)]
-pub struct Home {
+pub(crate) struct Home {
     /// The hero: games with artwork and a description first, a new pick each day.
     pub(crate) featured: Vec<Game>,
     /// This player's games, most recently played first.
@@ -106,7 +106,7 @@ pub(crate) async fn query(
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 
-pub async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
+pub(crate) async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
     let row = state.config.home_row;
     let recent = query(state, user.id, RECENT.filter, &[], RECENT.order, row, None).await?;
     let featured = query(
