@@ -133,6 +133,51 @@ enum BiosState {
 }
 
 """
+Where and how to sign in at the address this request reached. Apps ask it first, signed out,
+and use these URLs as given (they hard-code nothing but `/graphql`).
+"""
+type BootstrapConfig {
+	"""
+	Whether anything can sign in at this address. False when it is not one of
+	`SOVEMU_PUBLIC_URL`'s; then the rest is null, and `address` says what to add.
+	"""
+	signInAvailable: Boolean!
+	"""
+	The address the request reached, as `Host` named it.
+	"""
+	address: String!
+	"""
+	The OpenID Connect issuer for this address (discovery at
+	`<issuer>/.well-known/openid-configuration`).
+	"""
+	issuer: String
+	"""
+	The web client's id: the authorization code flow with PKCE.
+	"""
+	webClientId: String
+	"""
+	The apps' id: the device grant, and the password fallback.
+	"""
+	nativeClientId: String
+	authorizationEndpoint: String
+	tokenEndpoint: String
+	revocationEndpoint: String
+	"""
+	Where an app asks for a code to show (RFC 8628 device authorization).
+	"""
+	deviceAuthorizationEndpoint: String
+	"""
+	Where a person approves that code, in a signed-in browser.
+	"""
+	verificationUri: String
+	"""
+	The apps' password fallback: a form post of `client_id`, `username`, `password` and
+	`scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
+	"""
+	passwordEndpoint: String
+}
+
+"""
 A cheat code for a game, this user's.
 """
 type Cheat {
@@ -794,6 +839,11 @@ type Patch {
 }
 
 type Query {
+	"""
+	Where and how to sign in here. Works signed out: an app's first question, which also tells
+	it a SovEmu server is at the address it was given.
+	"""
+	bootstrapConfig: BootstrapConfig!
 	"""
 	Who is signed in, and whether first-run setup is needed. Works signed out.
 	"""

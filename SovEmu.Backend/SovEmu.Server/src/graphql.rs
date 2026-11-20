@@ -158,6 +158,34 @@ impl From<User> for Account {
     }
 }
 
+/// Where and how to sign in at the address this request reached. Apps ask it first, signed out,
+/// and use these URLs as given (they hard-code nothing but `/graphql`).
+#[derive(SimpleObject)]
+struct BootstrapConfig {
+    /// Whether anything can sign in at this address. False when it is not one of
+    /// `SOVEMU_PUBLIC_URL`'s; then the rest is null, and `address` says what to add.
+    sign_in_available: bool,
+    /// The address the request reached, as `Host` named it.
+    address: String,
+    /// The OpenID Connect issuer for this address (discovery at
+    /// `<issuer>/.well-known/openid-configuration`).
+    issuer: Option<String>,
+    /// The web client's id: the authorization code flow with PKCE.
+    web_client_id: Option<String>,
+    /// The apps' id: the device grant, and the password fallback.
+    native_client_id: Option<String>,
+    authorization_endpoint: Option<String>,
+    token_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
+    /// Where an app asks for a code to show (RFC 8628 device authorization).
+    device_authorization_endpoint: Option<String>,
+    /// Where a person approves that code, in a signed-in browser.
+    verification_uri: Option<String>,
+    /// The apps' password fallback: a form post of `client_id`, `username`, `password` and
+    /// `scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
+    password_endpoint: Option<String>,
+}
+
 #[derive(SimpleObject)]
 struct Viewer {
     /// No account exists yet: the client should offer first-run setup.
@@ -1060,6 +1088,33 @@ pub struct Query;
 
 #[Object]
 impl Query {
+    /// Where and how to sign in here. Works signed out: an app's first question, which also tells
+    /// it a SovEmu server is at the address it was given.
+    async fn bootstrap_config(&self, ctx: &Context<'_>) -> BootstrapConfig {
+        let headers = &ctx.data_unchecked::<Auth>().headers;
+        let address = headers
+            .get(axum::http::header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let config = state(ctx).identity.sign_in_config(headers);
+        BootstrapConfig {
+            sign_in_available: config.is_some(),
+            address,
+            issuer: config.as_ref().map(|c| c.issuer.clone()),
+            web_client_id: config.as_ref().map(|c| c.web_client_id.to_owned()),
+            native_client_id: config.as_ref().map(|c| c.native_client_id.to_owned()),
+            authorization_endpoint: config.as_ref().map(|c| c.authorization_endpoint.clone()),
+            token_endpoint: config.as_ref().map(|c| c.token_endpoint.clone()),
+            revocation_endpoint: config.as_ref().map(|c| c.revocation_endpoint.clone()),
+            device_authorization_endpoint: config
+                .as_ref()
+                .map(|c| c.device_authorization_endpoint.clone()),
+            verification_uri: config.as_ref().map(|c| c.verification_uri.clone()),
+            password_endpoint: config.and_then(|c| c.password_endpoint),
+        }
+    }
+
     /// Who is signed in, and whether first-run setup is needed. Works signed out.
     async fn viewer(&self, ctx: &Context<'_>) -> Result<Viewer> {
         let setup_required =

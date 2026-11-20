@@ -69,6 +69,27 @@ pub struct Config {
     pub refresh_retry: Duration,
 }
 
+/// Where and how an app signs in at the address it reached: what an app asks first
+/// (`bootstrapConfig` in the API), so it hard-codes no path but the API's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInConfig {
+    /// The issuer for this address.
+    pub issuer: String,
+    /// The web client's id (the code flow with PKCE).
+    pub web_client_id: &'static str,
+    /// The apps' id (the device grant, the password fallback).
+    pub native_client_id: &'static str,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub revocation_endpoint: String,
+    /// Where an app asks for a code to show (RFC 8628).
+    pub device_authorization_endpoint: String,
+    /// Where a person approves that code, signed in, in a browser.
+    pub verification_uri: String,
+    /// The password fallback, when `SOVEMU_PASSWORD_SIGN_IN` allows it.
+    pub password_endpoint: Option<String>,
+}
+
 /// Accounts and sign-in. Cheap to clone.
 #[derive(Clone)]
 pub struct Identity {
@@ -121,6 +142,32 @@ impl Identity {
     /// beside the API; they read a [`ClientIp`] extension when one is present.
     pub fn router(&self) -> axum::Router {
         provider::router(self.clone())
+    }
+
+    /// Where and how to sign in at the address a request reached (its `Host`); `None` when that
+    /// address is not one of `SOVEMU_PUBLIC_URL`'s, so nothing can sign in there.
+    pub fn sign_in_config(&self, headers: &HeaderMap) -> Option<SignInConfig> {
+        let issuer = self.inner.provider.issuer(headers)?;
+        let url = &issuer.url;
+        // The endpoints as oauth-as was configured with them (`provider.rs`), so there is one
+        // place they are named.
+        let config = issuer.server.config();
+        let endpoint = |e: &Option<String>| e.clone().expect("every endpoint is configured");
+        Some(SignInConfig {
+            issuer: url.clone(),
+            web_client_id: WEB_CLIENT,
+            native_client_id: NATIVE_CLIENT,
+            authorization_endpoint: endpoint(&config.authorization_endpoint),
+            token_endpoint: endpoint(&config.token_endpoint),
+            revocation_endpoint: endpoint(&config.revocation_endpoint),
+            device_authorization_endpoint: endpoint(&config.device_authorization_endpoint),
+            verification_uri: config.verification_uri.clone(),
+            password_endpoint: self
+                .inner
+                .config
+                .password_sign_in
+                .then(|| format!("{url}/oauth/password")),
+        })
     }
 
     /// The user a request's bearer access token belongs to, if it is current. Checked against

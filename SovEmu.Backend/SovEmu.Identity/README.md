@@ -45,6 +45,14 @@ What `provider` adds:
 - **One oauth-as server per address in `SOVEMU_PUBLIC_URL`** (an issuer is fixed per server), all
   sharing one store. A request is answered by the server for its `Host`.
 
+## How apps find it
+
+`Identity::sign_in_config` names the issuer, the client ids and every endpoint for the address a
+request reached. The API serves it as the anonymous `bootstrapConfig` query, which is an app's
+first question, as in Sovereign. The answer also leaves out the password endpoint when the
+fallback is off, and is unavailable at an address that isn't configured. The web client uses
+OpenID Connect discovery instead.
+
 ## Clients
 
 | Client | Grants | Used by |

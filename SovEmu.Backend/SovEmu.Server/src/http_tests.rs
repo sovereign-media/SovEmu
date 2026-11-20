@@ -1770,6 +1770,62 @@ async fn a_tv_signs_in_with_a_code_approved_in_a_browser() {
 }
 
 #[tokio::test]
+async fn apps_learn_where_to_sign_in_from_the_api() {
+    let mut h = Harness::new("bootstrap", false).await;
+    let query = "{ bootstrapConfig { signInAvailable address issuer nativeClientId tokenEndpoint \
+                 revocationEndpoint deviceAuthorizationEndpoint verificationUri passwordEndpoint } }";
+    let body = json!({"query": query});
+    let ask = |h: &Harness, host: &'static str| {
+        let state = h.state.clone();
+        let body = body.to_string();
+        async move {
+            let request = Request::builder()
+                .method("POST")
+                .uri("/graphql")
+                .header(header::HOST, host)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            let response = router(state).oneshot(request).await.unwrap();
+            let bytes = response.into_body().collect().await.unwrap().to_bytes();
+            serde_json::from_slice::<Value>(&bytes).unwrap()["data"]["bootstrapConfig"].clone()
+        }
+    };
+    // Signed out, at a configured address: everything an app needs, as absolute URLs.
+    assert_eq!(
+        ask(&h, "sovemu.test").await,
+        json!({
+            "signInAvailable": true,
+            "address": "sovemu.test",
+            "issuer": "http://sovemu.test",
+            "nativeClientId": "sovemu-native",
+            "tokenEndpoint": "http://sovemu.test/oauth/token",
+            "revocationEndpoint": "http://sovemu.test/oauth/revoke",
+            "deviceAuthorizationEndpoint": "http://sovemu.test/oauth/device_authorization",
+            "verificationUri": "http://sovemu.test/device",
+            "passwordEndpoint": "http://sovemu.test/oauth/password",
+        })
+    );
+    // Anywhere else: nothing can sign in, and the app can say which address to add.
+    let elsewhere = ask(&h, "10.0.0.9:8080").await;
+    assert_eq!(elsewhere["signInAvailable"], false);
+    assert_eq!(elsewhere["address"], "10.0.0.9:8080");
+    assert_eq!(elsewhere["tokenEndpoint"], Value::Null);
+    // The endpoints it names are the ones that answer.
+    h.sign_up_admin().await;
+    assert!(h.token.is_some(), "signed in at the advertised password endpoint");
+
+    // With the password fallback off, the apps are told so.
+    let h = Harness::new_with(
+        "bootstrap-no-password",
+        false,
+        ["--password-sign-in", "false"].map(String::from).to_vec(),
+    )
+    .await;
+    assert_eq!(ask(&h, "sovemu.test").await["passwordEndpoint"], Value::Null);
+}
+
+#[tokio::test]
 async fn the_provider_refuses_what_it_should() {
     let mut h = Harness::new("oidc-refuse", false).await;
     h.sign_up_admin().await;

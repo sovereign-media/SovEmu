@@ -77,7 +77,8 @@ instead (as Sovereign's server takes its SPA).
   the `sovemu_session` cookie is the browser's sign-in at the server, read only in front of
   `/oauth/authorize` and `/device`. The web client (`sovemu-web`) has no password grant; the
   apps (`sovemu-native`) use the device grant or the password fallback (`/oauth/password`,
-  `SOVEMU_PASSWORD_SIGN_IN`). Roles are `viewer` and `admin` (`users.role`), checked on every
+  `SOVEMU_PASSWORD_SIGN_IN`), and learn every sign-in URL and client id from the anonymous
+  `bootstrapConfig` query (never hard-code a sign-in path in an app). Roles are `viewer` and `admin` (`users.role`), checked on every
   request.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
   `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),

@@ -235,7 +235,7 @@ impl Provider {
     }
 
     /// The issuer a request came to, by its `Host`.
-    fn issuer(&self, headers: &HeaderMap) -> Option<&Issuer> {
+    pub(crate) fn issuer(&self, headers: &HeaderMap) -> Option<&Issuer> {
         let host = headers.get(HOST)?.to_str().ok()?.to_ascii_lowercase();
         self.issuers.iter().find(|i| i.authority == host)
     }

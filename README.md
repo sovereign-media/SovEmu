@@ -159,6 +159,11 @@ Android and iOS clients all use it. The schema, with every type and field docume
       `scope`), which answers like the token endpoint. `SOVEMU_PASSWORD_SIGN_IN=false` turns it
       off.
 
+  An app's first question is the anonymous `bootstrapConfig` query, as Sovereign's apps ask
+  theirs. It names the issuer, the client ids and every endpoint URL for the address the app
+  reached (or says sign-in isn't available there), and leaves out the password endpoint when the
+  fallback is off. Apps hard-code nothing but `/graphql`.
+
   Refresh tokens rotate (`POST /oauth/token`, `grant_type=refresh_token`), and a used one
   presented again ends that sign-in. `/oauth/revoke` signs an app out. Access tokens are looked
   up on every request, so a revoked sign-in or a changed role applies at once. First-run `setup`
