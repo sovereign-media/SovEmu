@@ -41,10 +41,23 @@ pub fn run(args: SessionArgs) -> Result<()> {
     let report = move |phase, read, total| {
         report_out.send(&Reply::Progress { phase, read, total });
     };
+    // Loading failed: the server is told why (the player sees it), then the worker exits.
+    let failed = |e: anyhow::Error| {
+        out.send(&Reply::Failed { message: format!("{e:#}") });
+        e
+    };
+    // A patch is applied to a copy, which lives until the session ends.
+    let patched = match (&args.patch, &args.rom) {
+        (Some(patch), Some(rom)) => {
+            Some(crate::patch::PatchedRom::write(rom, patch, &args.patch_name).map_err(failed)?)
+        }
+        _ => None,
+    };
+    let rom = patched.as_ref().map(|p| p.path.clone()).or_else(|| args.rom.clone());
     let mut session = Session::open(
         &SessionConfig {
             core: args.core.clone(),
-            rom: args.rom.clone(),
+            rom,
             system_dir: args.system_dir.clone(),
             bios_path: args.bios_path.clone(),
             save_dir: args.save_dir.clone(),
@@ -59,12 +72,15 @@ pub fn run(args: SessionArgs) -> Result<()> {
             state_dir: args.state_dir.clone(),
         },
         &report,
-    )?;
+    )
+    .map_err(failed)?;
     let (core, av) = session.describe();
     let discs = session.discs();
     let (options, categories) = session.options();
 
-    let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
+    let socket = UdpSocket::bind(args.udp)
+        .with_context(|| format!("binding UDP {}", args.udp))
+        .map_err(failed)?;
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
     tracing::info!("session ready: WebRTC on UDP {udp_addr}, advertising {advertised}");

@@ -5,7 +5,7 @@ import { byline, cardArt, heroArt, moveFocus, nextScroll, startFocus, type RowSh
 const game = (over: Partial<Game> = {}): Game => ({
   id: 7, system: "snes", title: "A Game", tags: [], path: "a.sfc", size: 1, lastPlayedAt: null, playCount: 0,
   image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
-  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, discs: 1, ...over,
+  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, patch: null, discs: 1, ...over,
 });
 
 describe("home focus", () => {

@@ -433,6 +433,21 @@ impl GameNode {
     async fn release(&self) -> Option<&str> {
         self.0.release.as_deref()
     }
+    /// The soft patch this user plays it with (a translation, a fix, a hack), by name: their
+    /// choice, else the patch beside it with its name. Null: the original.
+    async fn patch(&self) -> Option<&str> {
+        self.0.patch.as_deref()
+    }
+    /// The soft patches found with it (IPS, UPS or BPS, beside it with its name or in a folder
+    /// named as it), the default first. Choose one with `setPatch`.
+    async fn patches(&self, ctx: &Context<'_>) -> Result<Vec<PatchNode>> {
+        Ok(crate::patches::list(state(ctx), self.0.id)
+            .await
+            .api()?
+            .into_iter()
+            .map(PatchNode)
+            .collect())
+    }
     /// One of this user's favourites.
     async fn favourite(&self) -> bool {
         self.0.favourite
@@ -547,6 +562,24 @@ struct Home {
 
 /// A named list of this user's games.
 struct CollectionNode(crate::collections::Collection);
+
+/// A soft patch for a game.
+struct PatchNode(crate::patches::Patch);
+
+#[Object(name = "Patch")]
+impl PatchNode {
+    async fn id(&self) -> i64 {
+        self.0.id
+    }
+    /// From its file: "BPS patch" beside the game, else the file's name ("English v1.1").
+    async fn name(&self) -> &str {
+        &self.0.name
+    }
+    /// Applied unless the player chose otherwise (it is beside the game, with its name).
+    async fn is_default(&self) -> bool {
+        self.0.is_default
+    }
+}
 
 #[Object(name = "Collection")]
 impl CollectionNode {
@@ -1216,7 +1249,6 @@ impl Mutation {
         Ok(true)
     }
 
-    /// Saves the session's game to a slot (1–9), with a screenshot.
     /// Adds a game to this user's favourites, or takes it out.
     async fn set_favourite(
         &self,
@@ -1227,6 +1259,18 @@ impl Mutation {
         let user = user(ctx).await?;
         crate::collections::set_favourite(state(ctx), &user, game_id, favourite).await.api()?;
         Ok(favourite)
+    }
+    /// Plays a game with one of its soft patches from now on (`Game.patches`), or the original
+    /// (`patchId` null). Its next session loads it so; a patched game keeps its own saves.
+    async fn set_patch(
+        &self,
+        ctx: &Context<'_>,
+        game_id: i64,
+        patch_id: Option<i64>,
+    ) -> Result<bool> {
+        let user = user(ctx).await?;
+        crate::patches::choose(state(ctx), &user, game_id, patch_id).await.api()?;
+        Ok(true)
     }
     /// Creates a collection (CONFLICT if this user already has one by that name).
     async fn create_collection(&self, ctx: &Context<'_>, name: String) -> Result<CollectionNode> {
@@ -1263,6 +1307,7 @@ impl Mutation {
         crate::api::set_disc(state(ctx), &user, &session_id, disc).await.api()?;
         Ok(true)
     }
+    /// Saves the session's game to a slot (1–9), with a screenshot.
     async fn save_state(&self, ctx: &Context<'_>, session_id: ID, slot: u32) -> Result<bool> {
         let user = user(ctx).await?;
         crate::api::save_state(state(ctx), &user, &session_id, slot).await.api()?;

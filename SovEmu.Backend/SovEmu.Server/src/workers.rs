@@ -120,6 +120,8 @@ pub struct Launch {
     pub rom: PathBuf,
     pub save_dir: PathBuf,
     pub state_dir: PathBuf,
+    /// A soft patch to apply as the game loads, and its name (`patches.rs`).
+    pub patch: Option<(PathBuf, String)>,
     /// Core options (`key`, `value`).
     pub variables: Vec<(String, String)>,
     /// Run once the worker has exited (for example, to cache a large disc image only after the
@@ -426,6 +428,9 @@ impl Workers {
             .arg(&id)
             .arg("--log-format")
             .arg(self.config.log_format.as_arg());
+        if let Some((patch, name)) = &launch.patch {
+            command.arg("--patch").arg(patch).arg("--patch-name").arg(name);
+        }
         for (key, value) in &launch.variables {
             command.arg("--var").arg(format!("{key}={value}"));
         }
@@ -461,6 +466,7 @@ impl Workers {
         let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
+                    Ok(Reply::Failed { message }) => bail!("{message}"),
                     Ok(Reply::Ready { core, width, height, fps, discs, .. }) => {
                         return Ok((core, width, height, fps, discs));
                     }
@@ -534,7 +540,10 @@ impl Workers {
                             let _ = tx.send(reply);
                         }
                     }
-                    Reply::Ready { .. } | Reply::Progress { .. } | Reply::Options { .. } => {}
+                    Reply::Ready { .. }
+                    | Reply::Progress { .. }
+                    | Reply::Options { .. }
+                    | Reply::Failed { .. } => {}
                 }
             }
             // The worker is going (idle timeout, shutdown, a crash): nothing more will answer.
@@ -654,6 +663,7 @@ done
             rom: dir.join("game.nes"),
             save_dir: dir.join("saves"),
             state_dir: dir.join("states"),
+            patch: None,
             variables: Vec::new(),
             after_exit: None,
             start_id: None,

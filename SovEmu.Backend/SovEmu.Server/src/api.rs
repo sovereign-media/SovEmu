@@ -60,6 +60,9 @@ pub struct Game {
     pub(crate) favourite: bool,
     /// What tells it apart from games of the same title on its system (`releases::refresh`).
     pub(crate) release: Option<String>,
+    /// The soft patch this user plays it with, by name (filled in by `patches::mark`).
+    #[sqlx(skip)]
+    pub(crate) patch: Option<String>,
 }
 
 impl Game {
@@ -136,10 +139,11 @@ pub(crate) const GAME_COLUMNS: &str =
      m.box_art, g.release,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
-/// What a list of games carries for this user beyond its rows: which are favourites. Every list
-/// the API returns goes through here.
+/// What a list of games carries for this user beyond its rows: which are favourites, and the
+/// patch each is played with. Every list the API returns goes through here.
 pub(crate) async fn annotate(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
-    crate::collections::mark_favourites(state, user_id, games).await
+    crate::collections::mark_favourites(state, user_id, games).await?;
+    crate::patches::mark(state, user_id, games).await
 }
 
 /// The games of one system, by title: the system page's list.
@@ -172,7 +176,15 @@ pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResul
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 
+/// One game, as this user sees it (favourite, patch).
 async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
+    let mut game = [fetch_row(state, user_id, id).await?];
+    annotate(state, user_id, &mut game).await?;
+    let [game] = game;
+    Ok(game)
+}
+
+async fn fetch_row(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
     sqlx::query_as::<_, Game>(&games_sql(ONE_GAME))
         .bind(user_id)
         .bind(id)
@@ -183,10 +195,7 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
 }
 
 pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
-    let mut game = [fetch_game(state, user.id, id).await?];
-    annotate(state, user.id, &mut game).await?;
-    let [game] = game;
-    Ok(game)
+    fetch_game(state, user.id, id).await
 }
 
 pub async fn scan(state: &AppState) -> ApiResult<ScanReport> {
@@ -306,6 +315,9 @@ async fn launch(
             rom,
             save_dir,
             state_dir,
+            patch: crate::patches::effective(&state, user.id, game.id).await?.map(|p| {
+                (state.config.roms_dir.join(&p.path), crate::patches::file_label(&p.name))
+            }),
             variables: crate::settings::for_launch(&state, system).await?,
             after_exit,
             start_id,
@@ -414,12 +426,16 @@ pub async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<
 }
 
 /// Where a user's saves for a game live: battery saves in
-/// `saves/<user>/<system>/<game>.srm`, states in `saves/<user>/<system>/states/<game>/`.
+/// `saves/<user>/<system>/<game>.srm`, states in `saves/<user>/<system>/states/<game>/`. A
+/// patched game is `<game> [<patch>]`: its saves are its own.
 pub(crate) fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf, PathBuf) {
     let save_dir = state.config.data_dir.join("saves").join(user_id.to_string()).join(&game.system);
-    let stem = std::path::Path::new(&game.path)
+    let mut stem = std::path::Path::new(&game.path)
         .file_stem()
         .map_or_else(|| game.id.to_string(), |s| s.to_string_lossy().into_owned());
+    if let Some(patch) = &game.patch {
+        stem = format!("{stem} [{}]", crate::patches::file_label(patch));
+    }
     let state_dir = save_dir.join("states").join(stem);
     (save_dir, state_dir)
 }

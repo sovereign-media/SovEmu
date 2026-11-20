@@ -50,6 +50,8 @@ struct Harness {
 }
 
 impl Harness {
+    /// Two UDP ports of its own: tests run in parallel, and two harnesses' sessions must not
+    /// bind the same ones.
     async fn new(name: &str, with_core: bool) -> Self {
         Self::new_with(name, with_core, Vec::new()).await
     }
@@ -77,11 +79,7 @@ impl Harness {
             "--udp-bind".into(),
             "127.0.0.1".into(),
             "--udp-ports".into(),
-            format!(
-                "{}-{}",
-                41000 + (std::process::id() % 1000) as u16 * 2,
-                41001 + (std::process::id() % 1000) as u16 * 2
-            ),
+            udp_ports(),
         ];
         if with_core {
             let (worker, core) = binaries();
@@ -180,13 +178,22 @@ impl Drop for Harness {
     }
 }
 
+/// A pair of UDP ports no other harness in this run uses.
+fn udp_ports() -> String {
+    use std::sync::atomic::{AtomicU16, Ordering};
+    static NEXT: AtomicU16 = AtomicU16::new(0);
+    let base =
+        41000 + (std::process::id() % 400) as u16 * 40 + NEXT.fetch_add(2, Ordering::Relaxed);
+    format!("{base}-{}", base + 1)
+}
+
 const SETUP: &str = "mutation($u: String!, $p: String!) { setup(username: $u, password: $p) { id username isAdmin } }";
 const LOGIN: &str = "mutation($u: String!, $p: String!) { login(username: $u, password: $p) { id username isAdmin } }";
 const VIEWER: &str = "{ viewer { setupRequired user { username isAdmin } } }";
 const SYSTEMS: &str = "{ systems { id name gameCount playable rendering } }";
 const GAMES: &str = "query($id: ID!) { system(id: $id) { games {
     id title fileTitle tags lastPlayedAt playCount media mediaUrl(kind: THUMB) description
-    developer releaseDate rating players } } }";
+    developer releaseDate rating players patch } } }";
 const START: &str =
     "mutation($game: Int!, $start: String) { startSession(gameId: $game, startId: $start) {
     id title core width height } }";
@@ -1161,4 +1168,59 @@ async fn search_spans_every_system() {
     assert_eq!(found["search"][0]["system"], "gba", "another system's games too");
     assert_eq!(h.ok(q, json!({"t": "test zelda"})).await["search"], json!([]), "every word");
     assert_eq!(h.ok(q, json!({"t": "   "})).await["search"], json!([]), "blank");
+}
+
+#[tokio::test]
+async fn soft_patches_apply_by_default_and_can_be_chosen() {
+    let mut h = Harness::new("patches", true).await;
+    h.sign_up_admin().await;
+    // A translation beside the game (a real IPS patch: byte 0 becomes 1), and a damaged hack in
+    // its folder.
+    let roms = h.dir.join("roms/nes");
+    let mut ips = b"PATCH".to_vec();
+    ips.extend_from_slice(&[0, 0, 0, 0, 1, 1]);
+    ips.extend_from_slice(b"EOF");
+    std::fs::write(roms.join("Test Game (USA).ips"), ips).unwrap();
+    std::fs::create_dir_all(roms.join("Test Game (USA)")).unwrap();
+    std::fs::write(roms.join("Test Game (USA)/Hard Mode.bps"), [0u8; 8]).unwrap();
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+
+    let games = h.games("nes").await;
+    assert_eq!(games.as_array().unwrap().len(), 1, "patches are not games");
+    let id = games[0]["id"].as_i64().unwrap();
+    let q =
+        "query($id: Int!) { game(id: $id) { patch patches { id name isDefault } saves { slot } } }";
+    let game = h.ok(q, json!({"id": id})).await;
+    assert_eq!(game["game"]["patch"], "IPS patch", "the patch beside it applies by default");
+    let patches = game["game"]["patches"].as_array().unwrap().clone();
+    assert_eq!(patches[0]["name"], "IPS patch");
+    assert_eq!(patches[0]["isDefault"], true);
+    assert_eq!(patches[1]["name"], "Hard Mode");
+
+    // Played patched: its saves are the patched game's own.
+    let sid =
+        h.ok(START, json!({"game": id})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
+    h.ok(save, json!({"s": sid, "slot": 3})).await;
+    assert_eq!(h.ok(q, json!({"id": id})).await["game"]["saves"], json!([{"slot": 3}]));
+    let states = h.dir.join("saves/1/nes/states/Test Game (USA) [IPS patch]");
+    assert!(states.join("slot3.state").is_file(), "{}", states.display());
+
+    // The original: none of the patched game's saves.
+    let set = "mutation($g: Int!, $p: Int) { setPatch(gameId: $g, patchId: $p) }";
+    h.ok(set, json!({"g": id, "p": null})).await;
+    let game = h.ok(q, json!({"id": id})).await;
+    assert_eq!(game["game"]["patch"], Value::Null);
+    assert_eq!(game["game"]["saves"], json!([]));
+    h.ok(START, json!({"game": id})).await;
+
+    // A damaged patch is refused, and the player is told why.
+    h.ok(set, json!({"g": id, "p": patches[1]["id"]})).await;
+    assert_eq!(h.games("nes").await[0]["patch"], "Hard Mode", "the choice shows in lists too");
+    let (code, message) = h.err(START, json!({"game": id})).await;
+    assert_eq!(code, "UNAVAILABLE");
+    assert!(message.contains("not an IPS, UPS or BPS patch"), "{message}");
+
+    let (code, _) = h.err(set, json!({"g": id, "p": 99_999})).await;
+    assert_eq!(code, "NOT_FOUND", "a patch of another game, or none");
 }

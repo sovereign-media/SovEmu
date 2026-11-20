@@ -24,6 +24,7 @@ graphql(`
     rating
     favourite
     release
+    patch
     discs
   }
 `);
@@ -179,6 +180,25 @@ export const HomeQuery = graphql(`
         ...GameFields
       }
     }
+  }
+`);
+
+export const PatchesQuery = graphql(`
+  query Patches($id: Int!) {
+    game(id: $id) {
+      id
+      patches {
+        id
+        name
+        isDefault
+      }
+    }
+  }
+`);
+
+export const SetPatchMutation = graphql(`
+  mutation SetPatch($gameId: Int!, $patchId: Int) {
+    setPatch(gameId: $gameId, patchId: $patchId)
   }
 `);
 

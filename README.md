@@ -177,6 +177,24 @@ The scanner picks up box art, composite images, marquees and video snaps
 (`images/<rom>-thumb.png`, `-image.png`, `-marquee.png`, `videos/<rom>-video.mp4`). The game list
 shows them. Scans run in the background, in parallel.
 
+### Soft patches
+
+Translations, fixes and hacks come as IPS, UPS or BPS patches. SovEmu applies them as the game
+loads and never writes the library. Put a patch where the scanner looks for it:
+
+```
+roms/snes/Mother 2 (Japan).sfc
+roms/snes/Mother 2 (Japan).bps                 # beside it, same name: applied by default
+roms/snes/Mother 2 (Japan)/English v1.1.bps    # in a folder named as the game: to choose
+roms/snes/Mother 2 (Japan)/Hard Mode.ips
+```
+
+The game panel shows a **Patch** choice when a game has any: the original, or one of its patches,
+per player. A patched game keeps its own saves (`Mother 2 (Japan) [English v1.1].srm`), as it is in
+effect another game. UPS and BPS patches carry checksums, so one made for another dump of the
+game is refused with a message rather than applied wrongly; IPS has none. Disc images are not
+patched.
+
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,

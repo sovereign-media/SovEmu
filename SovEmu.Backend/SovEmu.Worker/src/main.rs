@@ -15,6 +15,7 @@ mod gpu;
 mod headless;
 mod loading;
 mod pacing;
+mod patch;
 mod persist;
 mod probe;
 mod rewind;
@@ -108,6 +109,14 @@ struct SessionArgs {
     /// The content to load.
     #[arg(long)]
     rom: Option<PathBuf>,
+
+    /// An IPS, UPS or BPS patch applied to `--rom` as it loads (never on disk).
+    #[arg(long, requires = "rom")]
+    patch: Option<PathBuf>,
+
+    /// The patch's name: the patched game's battery save is `<rom stem> [<name>].srm`.
+    #[arg(long, requires = "patch", default_value = "Patched")]
+    patch_name: String,
 
     /// UDP address for this session's WebRTC traffic.
     #[arg(long)]

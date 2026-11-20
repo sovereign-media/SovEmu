@@ -18,6 +18,7 @@ import type {
   StartProgressQuery,
   SystemFieldsFragment,
   ViewerQuery,
+  PatchesQuery,
 } from "../graphql/graphql";
 import {
   AddCheatMutation,
@@ -58,7 +59,9 @@ import {
   ViewerQuery as ViewerDocument,
   CollectionsQuery as CollectionsDocument,
   CollectionIdsQuery,
+  PatchesQuery as PatchesDocument,
   SearchQuery,
+  SetPatchMutation,
   SetFavouriteMutation,
   CreateCollectionMutation,
   DeleteCollectionMutation,
@@ -75,6 +78,7 @@ export type Game = GameFieldsFragment;
 export type SaveSlot = SaveFieldsFragment;
 export type HomeFeed = HomeQuery["home"];
 export type Collection = CollectionsQuery["collections"][number];
+export type Patch = PatchesQuery["game"]["patches"][number];
 export type RecentGame = HomeFeed["recent"][number];
 export type SessionInfo = SessionFieldsFragment;
 export type StartStatus = StartProgressQuery["startProgress"];
@@ -115,6 +119,10 @@ export const api = {
   saves: async (gameId: number) => (await request(SavesQuery, { id: gameId })).game.saves,
   /** This user's collections, each with its games. */
   collections: async () => (await request(CollectionsDocument)).collections,
+  /** A game's soft patches, the default first. */
+  patches: async (gameId: number) => (await request(PatchesDocument, { id: gameId })).game.patches,
+  /** Plays the game with a patch from now on, or the original (`null`). */
+  setPatch: (gameId: number, patchId: number | null) => request(SetPatchMutation, { gameId, patchId }),
   /** Games from every system matching every word of `text`, best first. */
   search: async (text: string) => (await request(SearchQuery, { text })).search,
   /** The ids of this user's collections that hold the game. */

@@ -104,6 +104,11 @@ pub enum Reply {
         #[serde(default)]
         categories: Vec<CoreCategory>,
     },
+    /// Loading failed (the core, the game, its patch): why, for the player. The worker exits
+    /// after sending it, instead of [`Reply::Ready`].
+    Failed {
+        message: String,
+    },
     /// The core is loaded and the worker is listening for WebRTC on `udp_port`.
     Ready {
         udp_port: u16,

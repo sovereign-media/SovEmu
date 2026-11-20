@@ -174,13 +174,15 @@ function Games() {
     if (i >= 0) setFocus(i);
   }, [openId, shown]);
 
-  // Its saves, after a pause (moving quickly through games does not ask for each).
+  // Its saves, after a pause (moving quickly through games does not ask for each). A patched
+  // game's saves are its own: they change with the patch.
+  const openPatch = open?.patch ?? null;
   useEffect(() => {
     setSlots([]);
     if (openId === null) return;
     const t = setTimeout(() => api.saves(openId).then(setSlots).catch(() => {}), 150);
     return () => clearTimeout(t);
-  }, [openId]);
+  }, [openId, openPatch]);
 
   /** Opens the panel on a game: a new history entry, or the same one when it is already open. */
   const openGame = (id: number) => {
@@ -372,6 +374,7 @@ function Games() {
         onClose={closePanel}
         onPlay={(start) => play(open, start)}
         onFavourite={(favourite) => open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, favourite } : g)))}
+        onPatch={(patch) => open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, patch } : g)))}
       />
       <FilterDrawer
         open={filtersOpen}
