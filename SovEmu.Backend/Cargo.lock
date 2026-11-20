@@ -3371,6 +3371,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sovemu-assets"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "hex",
+ "hmac",
+ "serde_json",
+ "sha2",
+ "tracing",
+]
+
+[[package]]
 name = "sovemu-library"
 version = "0.1.0"
 dependencies = [
@@ -3436,7 +3448,6 @@ dependencies = [
  "clap",
  "getrandom 0.3.4",
  "hex",
- "hmac",
  "http-body-util",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -3445,6 +3456,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sovemu-assets",
  "sovemu-library",
  "sovemu-protocol",
  "sqlx",
