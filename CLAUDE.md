@@ -41,7 +41,7 @@ instead (as Sovereign's server takes its SPA).
   pins the release version and the SHA-256 of its `RetroArch_cores.7z`, and
   `scripts/install-cores.sh` installs the listed cores plus data folders from git at
   pinned commits. x86_64 only, because stable releases have no Linux arm64 cores. Moving to a
-  new release also moves `FBNEO_COMMIT` (`SovEmu.Server/src/metadata/fbneo.rs`).
+  new release also moves `FBNEO_COMMIT` (`SovEmu.Library/src/info/fbneo.rs`).
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
   `RetroHost` or `Media` into `SovEmu.Server`.
@@ -129,8 +129,9 @@ cargo test --workspace
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core (cdylib) that tests load with dlopen exactly like a real one. Never shipped. |
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
+| `SovEmu.Library` | `sovemu-library` | The ROM library without the database: the systems table (Recalbox folder names + aliases, extension fallback), walking a library into games (parts folded together, soft patches found, artwork file names), release labels, BIOS files, the game-information clients (FBNeo, LaunchBox, ScreenScraper, TheGamesDB), the local cache and mirror, decorations. Reads files and asks services; never opens the database. Only what the server uses is `pub`. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
-| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the systems table and library scanner (Recalbox folder names + aliases, extension fallback); one `sovemu-worker session` per game session with a UDP port from a pool. |
+| `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the library's tables, kept in step with what `SovEmu.Library` finds; one `sovemu-worker session` per game session with a UDP port from a pool. |
 | `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; `astro check` in the build. |
 
 ```
@@ -138,7 +139,8 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
     ├── TestCore   (types only; default features off) Protocol  (no workspace references)
     └── RetroHost
             └── Worker ──► Media, Protocol
-Server ──► Protocol   (never links a core or a codec: it runs workers)
+Library   (no workspace references)
+Server ──► Library, Protocol   (never links a core or a codec: it runs workers)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
 persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the

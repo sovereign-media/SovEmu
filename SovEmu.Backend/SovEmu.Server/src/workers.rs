@@ -43,7 +43,7 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
-    /// BIOS files, a folder per system (see [`crate::bios`]).
+    /// BIOS files, a folder per system (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
     pub video_kbps: u32,
@@ -407,7 +407,7 @@ impl Workers {
             .arg("--system-dir")
             .arg(&bios)
             .arg("--bios-path")
-            .arg(crate::bios::core_path(&launch.system))
+            .arg(sovemu_library::bios::core_path(&launch.system))
             .arg("--save-dir")
             .arg(&launch.save_dir)
             .arg("--state-dir")

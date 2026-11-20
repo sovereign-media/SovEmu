@@ -13,8 +13,8 @@ use crate::assets::SignedUser;
 use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
 use crate::library::{self, ScanReport};
-use crate::systems::{self, System};
 use crate::workers::{Launch, SessionInfo};
+use sovemu_library::systems::{self, System};
 
 #[derive(Debug, Serialize)]
 pub struct SystemSummary {
@@ -563,7 +563,7 @@ pub async fn game_media(
 ) -> ApiResult<axum::response::Response> {
     use axum::response::IntoResponse;
     use tower::ServiceExt;
-    if !library::MEDIA_KINDS.contains(&kind.as_str()) {
+    if !sovemu_library::scan::MEDIA_KINDS.contains(&kind.as_str()) {
         return Err(ApiError::not_found("media"));
     }
     let game = fetch_game(&state, user_id, id).await?;
@@ -596,7 +596,7 @@ fn media_relative(state: &AppState, game: &Game, kind: &str) -> Option<String> {
     let rom = std::path::Path::new(&game.path);
     let stem = rom.file_stem()?.to_string_lossy().into_owned();
     let folder = rom.parent().unwrap_or(std::path::Path::new(""));
-    library::media_candidates(&stem, kind)
+    sovemu_library::scan::media_candidates(&stem, kind)
         .into_iter()
         .map(|c| folder.join(c).to_string_lossy().replace('\\', "/"))
         .find(|rel| state.config.roms_dir.join(rel).is_file())
@@ -624,7 +624,7 @@ fn prefetch_art(state: &AppState, system: &str, games: &[Game]) {
                     continue;
                 }
                 // Media file names come from the scan; the first candidate that exists wins.
-                for candidate in library::media_candidates(&stem, kind) {
+                for candidate in sovemu_library::scan::media_candidates(&stem, kind) {
                     let rel = folder.join(&candidate).to_string_lossy().replace('\\', "/");
                     let original = state2.config.roms_dir.join(&rel);
                     if original.is_file() {

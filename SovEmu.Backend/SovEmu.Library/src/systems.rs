@@ -246,7 +246,7 @@ pub fn by_id(id: &str) -> Option<&'static System> {
 /// Batocera/Recalbox folders of systems SovEmu does not play. The scanner skips them rather
 /// than guess from extensions: a Saturn, Sega CD or Neo Geo CD disc is a `.chd` or `.cue`
 /// too, and the PlayStation core cannot run it.
-pub const UNSUPPORTED_FOLDERS: &[&str] = &[
+pub(crate) const UNSUPPORTED_FOLDERS: &[&str] = &[
     "3do",
     "3ds",
     "64dd",
@@ -279,18 +279,18 @@ pub const UNSUPPORTED_FOLDERS: &[&str] = &[
 ];
 
 /// Whether a top-level library folder belongs to a system SovEmu does not play.
-pub fn is_unsupported_folder(folder: &str) -> bool {
+pub(crate) fn is_unsupported_folder(folder: &str) -> bool {
     UNSUPPORTED_FOLDERS.contains(&folder.trim().to_ascii_lowercase().as_str())
 }
 
 /// The system a top-level library folder belongs to.
-pub fn by_folder(folder: &str) -> Option<&'static System> {
+pub(crate) fn by_folder(folder: &str) -> Option<&'static System> {
     let folder = folder.trim().to_ascii_lowercase();
     SYSTEMS.iter().find(|s| s.folders.contains(&folder.as_str()))
 }
 
 /// The system an extension belongs to, if exactly one system claims it.
-pub fn by_extension(ext: &str) -> Option<&'static System> {
+pub(crate) fn by_extension(ext: &str) -> Option<&'static System> {
     let ext = ext.to_ascii_lowercase();
     let mut matches = SYSTEMS.iter().filter(|s| s.extensions.contains(&ext.as_str()));
     let first = matches.next()?;
@@ -299,7 +299,7 @@ pub fn by_extension(ext: &str) -> Option<&'static System> {
 
 /// A display title and its tags from a ROM file name, No-Intro style:
 /// `"Legend of Zelda, The (USA) (Rev 1) [!].nes"` → `("The Legend of Zelda", "USA, Rev 1, !")`.
-pub fn parse_title(stem: &str) -> (String, String) {
+pub(crate) fn parse_title(stem: &str) -> (String, String) {
     let mut title = String::new();
     let mut tags = Vec::new();
     let mut depth = 0;

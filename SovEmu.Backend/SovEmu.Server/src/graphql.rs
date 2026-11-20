@@ -212,7 +212,7 @@ impl SystemNode {
     async fn bios_missing(&self, ctx: &Context<'_>) -> bool {
         let (dir, games) = bios_places(state(ctx), self.0.system);
         let id = self.0.system.id;
-        tokio::task::spawn_blocking(move || crate::bios::missing_required(&dir, games, id))
+        tokio::task::spawn_blocking(move || sovemu_library::bios::missing_required(&dir, games, id))
             .await
             .unwrap_or(false)
     }
@@ -220,9 +220,10 @@ impl SystemNode {
     async fn bios(&self, ctx: &Context<'_>) -> Option<SystemBios> {
         let (dir, games) = bios_places(state(ctx), self.0.system);
         let id = self.0.system.id;
-        let report = tokio::task::spawn_blocking(move || crate::bios::check(&dir, &games(), id))
-            .await
-            .ok()??;
+        let report =
+            tokio::task::spawn_blocking(move || sovemu_library::bios::check(&dir, &games(), id))
+                .await
+                .ok()??;
         Some(SystemBios::from(report, id))
     }
     /// Its games, by title.
@@ -237,12 +238,13 @@ impl SystemNode {
 /// cache mode the core plays a copy of the game alone, so only the BIOS folder counts.
 fn bios_places(
     state: &AppState,
-    system: crate::systems::System,
+    system: sovemu_library::systems::System,
 ) -> (std::path::PathBuf, impl Fn() -> Vec<std::path::PathBuf> + Send + 'static) {
     let roms = (state.config.library_mode != crate::LibraryMode::Cache)
         .then(|| state.config.roms_dir.clone());
-    let games =
-        move || roms.as_deref().map(|r| crate::bios::game_dirs(r, &system)).unwrap_or_default();
+    let games = move || {
+        roms.as_deref().map(|r| sovemu_library::bios::game_dirs(r, &system)).unwrap_or_default()
+    };
     (state.config.bios_dir(), games)
 }
 
@@ -318,8 +320,8 @@ struct BiosFile {
 }
 
 impl SystemBios {
-    fn from(r: crate::bios::Report, system: &str) -> Self {
-        use crate::bios::{FileState, Importance, Kind, State};
+    fn from(r: sovemu_library::bios::Report, system: &str) -> Self {
+        use sovemu_library::bios::{FileState, Importance, Kind, State};
         Self {
             state: match r.state {
                 State::Ready => BiosState::Ready,
@@ -470,7 +472,7 @@ impl GameNode {
     async fn decoration(&self, ctx: &Context<'_>) -> Option<DecorationNode> {
         let state = state(ctx);
         let set = state.config.decoration_for(&self.0.system);
-        if set == crate::decorations::NONE {
+        if set == sovemu_library::decorations::NONE {
             return None;
         }
         let stem = std::path::Path::new(&self.0.path).file_stem()?.to_string_lossy().into_owned();
@@ -634,7 +636,7 @@ impl PatchNode {
 /// Artwork drawn around a game's picture, in Batocera's decoration format: an image with a
 /// transparent window, and where that window is in its pixels. Scale the image to the screen
 /// and fit the picture, keeping its shape, in the scaled window.
-struct DecorationNode(crate::decorations::Decoration);
+struct DecorationNode(sovemu_library::decorations::Decoration);
 
 #[Object(name = "Decoration")]
 impl DecorationNode {

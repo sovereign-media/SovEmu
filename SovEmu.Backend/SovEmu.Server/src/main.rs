@@ -8,15 +8,12 @@ mod admin;
 mod api;
 mod assets;
 mod auth;
-mod bios;
-mod cache;
 mod cheats;
 mod client_ip;
 mod collections;
 mod controllers;
 mod controls;
 mod db;
-mod decorations;
 mod error;
 mod gpu;
 mod graphql;
@@ -26,7 +23,6 @@ mod http_tests;
 mod jobs;
 mod library;
 mod metadata;
-mod mirror;
 mod ops;
 mod patches;
 #[cfg(test)]
@@ -36,7 +32,6 @@ mod search;
 mod settings;
 mod starts;
 mod structured;
-mod systems;
 mod telemetry;
 mod workers;
 
@@ -53,6 +48,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::get;
 use clap::Parser;
+use sovemu_library::{bios, cache, decorations, mirror};
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
 
@@ -140,13 +136,13 @@ pub struct Config {
     /// downloaded into `<data>/metadata/launchbox/`).
     #[arg(long, env = "SOVEMU_LAUNCHBOX", default_value_t = true, action = clap::ArgAction::Set)]
     pub launchbox: bool,
-    #[arg(long, env = "SOVEMU_LAUNCHBOX_URL", default_value = metadata::launchbox::DEFAULT_URL)]
+    #[arg(long, env = "SOVEMU_LAUNCHBOX_URL", default_value = sovemu_library::info::launchbox::DEFAULT_URL)]
     pub launchbox_url: String,
     /// Where the dump's image file names are served from (box art).
     #[arg(
         long,
         env = "SOVEMU_LAUNCHBOX_IMAGES_URL",
-        default_value = metadata::launchbox::DEFAULT_IMAGES_URL
+        default_value = sovemu_library::info::launchbox::DEFAULT_IMAGES_URL
     )]
     pub launchbox_images_url: String,
     /// Look for a newer LaunchBox dump when a metadata job starts and the last check is this
@@ -164,13 +160,13 @@ pub struct Config {
     pub screenscraper_user: Option<String>,
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_PASSWORD")]
     pub screenscraper_password: Option<String>,
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_URL", default_value = metadata::screenscraper::DEFAULT_BASE)]
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_URL", default_value = sovemu_library::info::screenscraper::DEFAULT_BASE)]
     pub screenscraper_url: String,
 
     /// TheGamesDB API key (request one at forums.thegamesdb.net).
     #[arg(long, env = "SOVEMU_THEGAMESDB_KEY")]
     pub thegamesdb_key: Option<String>,
-    #[arg(long, env = "SOVEMU_THEGAMESDB_URL", default_value = metadata::thegamesdb::DEFAULT_BASE)]
+    #[arg(long, env = "SOVEMU_THEGAMESDB_URL", default_value = sovemu_library::info::thegamesdb::DEFAULT_BASE)]
     pub thegamesdb_url: String,
 
     /// Resolved: in `mirror` mode the share being mirrored (and `roms_dir` is the mirror).
@@ -781,12 +777,12 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
             config.roms_dir.display()
         ),
     }
-    let http = metadata::http_client();
+    let http = sovemu_library::info::http_client();
     let screenscraper = match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
         (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => Some(
-            metadata::screenscraper::ScreenScraper::new(
+            sovemu_library::info::screenscraper::ScreenScraper::new(
                 config.screenscraper_url.clone(),
-                metadata::screenscraper::Credentials {
+                sovemu_library::info::screenscraper::Credentials {
                     dev_id: id.clone(),
                     dev_password: pw.clone(),
                     user: config
@@ -802,10 +798,14 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         _ => None,
     };
     let thegamesdb = config.thegamesdb_key.clone().filter(|k| !k.is_empty()).map(|key| {
-        metadata::thegamesdb::TheGamesDb::new(config.thegamesdb_url.clone(), key, http.clone())
+        sovemu_library::info::thegamesdb::TheGamesDb::new(
+            config.thegamesdb_url.clone(),
+            key,
+            http.clone(),
+        )
     });
     let launchbox = config.launchbox.then(|| {
-        metadata::launchbox::LaunchBox::new(
+        sovemu_library::info::launchbox::LaunchBox::new(
             config.launchbox_url.clone(),
             config.launchbox_images_url.clone(),
             config.data_dir.join("metadata").join("launchbox"),

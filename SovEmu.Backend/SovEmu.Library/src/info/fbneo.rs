@@ -23,7 +23,7 @@ pub struct Entry {
     pub manufacturer: Option<String>,
 }
 
-pub type Dat = HashMap<String, Entry>;
+pub(crate) type Dat = HashMap<String, Entry>;
 
 #[derive(Debug)]
 pub struct FbNeoDats {
@@ -121,7 +121,7 @@ impl FbNeoDats {
     }
 }
 
-pub fn to_info(entry: &Entry) -> GameInfo {
+pub(crate) fn to_info(entry: &Entry) -> GameInfo {
     // "Art of Fighting / Ryuuko no Ken (NGM-044 ~ NGH-044)": the parenthesised board, region
     // and set codes are not part of the name.
     let (title, _) = crate::systems::parse_title(&entry.description);

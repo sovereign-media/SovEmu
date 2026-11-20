@@ -46,7 +46,7 @@ const PLATFORMS: &[&str] = &[
 ];
 
 /// SovEmu system id → LaunchBox platforms, most likely first.
-pub fn platforms(system: &str) -> &'static [&'static str] {
+pub(crate) fn platforms(system: &str) -> &'static [&'static str] {
     match system {
         "nes" => &["Nintendo Entertainment System"],
         "snes" => &["Super Nintendo Entertainment System"],
@@ -286,7 +286,7 @@ fn read_records(
 }
 
 /// Reads `Metadata.xml` out of a downloaded `Metadata.zip`.
-pub fn read_zip(path: &Path, regions: &[String], images_url: &str) -> Result<Index, String> {
+pub(crate) fn read_zip(path: &Path, regions: &[String], images_url: &str) -> Result<Index, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file))
         .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -558,7 +558,7 @@ Again.</Overview>
     }
 
     /// Against a real dump: `SOVEMU_LAUNCHBOX_DUMP=/path/to/Metadata.zip cargo test -p
-    /// sovemu-server real_dump -- --ignored --nocapture`.
+    /// sovemu-library real_dump -- --ignored --nocapture`.
     #[test]
     #[ignore = "needs a downloaded Metadata.zip"]
     fn real_dump() {

@@ -104,10 +104,14 @@ pub fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>
     let mut out: BTreeMap<String, SystemSpec> = BTreeMap::new();
     for (id, fields) in group(vars, "SOVEMU_SYSTEMS__") {
         let id = id.to_ascii_lowercase();
-        if crate::systems::by_id(&id).is_none() {
+        if sovemu_library::systems::by_id(&id).is_none() {
             bail!(
                 "SOVEMU_SYSTEMS__{id}: unknown system (known: {})",
-                crate::systems::SYSTEMS.iter().map(|s| s.id).collect::<Vec<_>>().join(", ")
+                sovemu_library::systems::SYSTEMS
+                    .iter()
+                    .map(|s| s.id)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
         // `psx` and `PSX` name the same system: merge their settings.

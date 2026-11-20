@@ -3371,6 +3371,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "sovemu-library"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hex",
+ "md-5 0.11.0",
+ "png",
+ "quick-xml",
+ "reqwest",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "zip",
+]
+
+[[package]]
 name = "sovemu-libretro-ffi"
 version = "0.1.0"
 dependencies = [
@@ -3420,17 +3438,14 @@ dependencies = [
  "hex",
  "hmac",
  "http-body-util",
- "md-5 0.11.0",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "png",
- "quick-xml",
  "reqwest",
- "roxmltree",
  "serde",
  "serde_json",
  "sha2",
+ "sovemu-library",
  "sovemu-protocol",
  "sqlx",
  "tokio",

@@ -7,7 +7,7 @@
 //! the core's last game session reported (`core_options`) are used, and until a game has run
 //! the page says to start one. A game starts with
 //! each option taken from, last one winning: the core's default, SovEmu's own default for the
-//! system ([`crate::systems`]), the admin's choice (the `system_settings` table), and the
+//! system ([`sovemu_library::systems`]), the admin's choice (the `system_settings` table), and the
 //! environment (`SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`). The environment always wins and is shown
 //! as locked, so the app stays reproducible from configuration; the page offers the admin's
 //! choices as environment lines to move there.
@@ -24,7 +24,7 @@ use sqlx::SqlitePool;
 
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
-use crate::systems::System;
+use sovemu_library::systems::System;
 
 pub use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 
@@ -283,7 +283,7 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
 }
 
 fn system(id: &str) -> ApiResult<&'static System> {
-    crate::systems::by_id(id).ok_or_else(|| ApiError::not_found("system"))
+    sovemu_library::systems::by_id(id).ok_or_else(|| ApiError::not_found("system"))
 }
 
 pub async fn get_settings(state: &AppState, id: &str) -> ApiResult<SystemSettings> {
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn the_environment_wins_then_the_admin_then_sovemu() {
-        let psx = crate::systems::by_id("psx").unwrap();
+        let psx = sovemu_library::systems::by_id("psx").unwrap();
         let admin = BTreeMap::from([
             ("pcsx_rearmed_cd_readahead".to_owned(), "64".to_owned()),
             ("pcsx_rearmed_frameskip".to_owned(), "1".to_owned()),

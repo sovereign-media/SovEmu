@@ -152,7 +152,7 @@ impl ControllerSpec {
 pub fn system_key(system: Option<&str>) -> Result<String, String> {
     match system.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(String::new()),
-        Some(id) => crate::systems::by_id(id)
+        Some(id) => sovemu_library::systems::by_id(id)
             .map(|s| s.id.to_owned())
             .ok_or_else(|| format!("{id:?} is not a system")),
     }

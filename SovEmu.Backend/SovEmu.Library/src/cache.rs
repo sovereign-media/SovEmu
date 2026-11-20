@@ -200,7 +200,7 @@ impl Cache {
     }
 
     /// Deletes least recently used copies until the cache fits its cap. `keep` is never evicted.
-    pub fn evict(&self, keep: Option<&Path>) {
+    pub(crate) fn evict(&self, keep: Option<&Path>) {
         let mut files = Vec::new();
         let mut stack = vec![self.dir.clone()];
         while let Some(dir) = stack.pop() {

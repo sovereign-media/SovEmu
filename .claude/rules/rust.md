@@ -11,8 +11,12 @@ paths:
 - **Dependency direction** is the graph in `CLAUDE.md`. `LibretroFfi` depends on nothing in the
   workspace, and nothing but `RetroHost` (and `TestCore`, for types) touches it: higher crates use
   the safe API. New crates join the graph as documented there; update the graph in the same PR.
-- **Server.** `SovEmu.Server` depends on `Protocol` only. Database access is plain `sqlx::query`
-  / `query_as` with bound parameters (never format values into SQL); schema changes are new
+- **Library.** `SovEmu.Library` is the ROM library without the database: it reads files and
+  asks services, and never depends on `sqlx` or the server. Work that needs the database stays in
+  the server, calling the library's plain functions. Only what the server uses is `pub`;
+  everything else is `pub(crate)` or private, so its internals can change freely.
+- **Server.** `SovEmu.Server` depends on `Library` and `Protocol` only. Database access is plain
+  `sqlx::query` / `query_as` with bound parameters (never format values into SQL); schema changes are new
   files in `migrations/`. The API is GraphQL (`graphql.rs`): resolvers check access with
   `user(ctx)` / `admin(ctx)` and call plain functions (`&AppState`, `&User`, arguments) in the
   other modules; never add a REST route. After changing the schema, regenerate
