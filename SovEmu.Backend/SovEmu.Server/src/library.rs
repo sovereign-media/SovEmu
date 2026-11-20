@@ -34,34 +34,43 @@ fn disc_number(tag: &str) -> Option<u32> {
     rest.split_whitespace().next()?.parse().ok()
 }
 
-/// What makes files one game: system, folder, title and every tag but the disc's.
+/// What makes files one game: system, folder, title and the tags before the disc's.
 type DiscGroup = (String, String, String, String);
 
 /// Folds a multi-disc game's files into one entry: files in the same folder of the same system
-/// whose names differ only by a `(Disc N)` tag. The entry is disc 1's (its path, so its artwork
-/// and play history; with the disc tag dropped from its tags), sized as all of them, listing
-/// every disc in order. A lone `(Disc 1)` stays as it is.
+/// whose names agree up to a `(Disc N)` tag. Tags after the disc's name that disc
+/// (`Command & Conquer (USA) (Disc 1) (GDI)`, `(Disc 2) (NOD)`), so they are not part of the
+/// game's. A file with no disc tag joins discs 2, 3… of the same name as their disc 1 (`Final
+/// Fantasy VII (T).chd` beside `(T) (Disc 2)`), as some sets name the first disc.
+///
+/// The entry is disc 1's (its path, so its artwork and play history; with the disc tags dropped
+/// from its tags), sized as all of them, listing every disc in order. A lone `(Disc 1)` stays as
+/// it is.
 pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
     use std::collections::BTreeMap;
     let folder = |p: &str| p.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
     let mut groups: BTreeMap<DiscGroup, Vec<(u32, Found)>> = BTreeMap::new();
-    let mut out = Vec::new();
+    let mut untagged = Vec::new();
     for f in found {
         let tags: Vec<&str> = f.tags.split(", ").filter(|t| !t.is_empty()).collect();
-        let Some(disc) = tags.iter().find_map(|t| disc_number(t)) else {
-            out.push(f);
+        let Some(at) = tags.iter().position(|t| disc_number(t).is_some()) else {
+            untagged.push(f);
             continue;
         };
-        let rest = tags
-            .iter()
-            .filter(|t| disc_number(t).is_none())
-            .copied()
-            .collect::<Vec<_>>()
-            .join(", ");
+        let disc = disc_number(tags[at]).unwrap_or(1);
+        let rest = tags[..at].join(", ");
         groups
             .entry((f.system.to_owned(), folder(&f.path), f.title.clone(), rest))
             .or_default()
             .push((disc, f));
+    }
+    let mut out = Vec::new();
+    for f in untagged {
+        let key = (f.system.to_owned(), folder(&f.path), f.title.clone(), f.tags.clone());
+        match groups.get_mut(&key) {
+            Some(discs) if discs.iter().all(|(n, _)| *n >= 2) => discs.push((1, f)),
+            _ => out.push(f),
+        }
     }
     for ((_, _, _, rest), mut discs) in groups {
         discs.sort_by_key(|(n, f)| (*n, f.path.clone()));
@@ -346,6 +355,15 @@ mod tests {
             ("psx/Epic (USA) (Disc 1).chd", 10),
             ("psx/Epic (USA) (Disc 3).chd", 30),
             ("psx/Epic (Europe) (Disc 1).chd", 10),
+            // Discs named after their number belong together; the name is the disc's.
+            ("psx/War (USA) (Disc 1) (Allies).chd", 10),
+            ("psx/War (USA) (Disc 2) (Soviet).chd", 10),
+            // Disc 1 without a disc tag (as some translations name it).
+            ("psx/Saga (T).chd", 10),
+            ("psx/Saga (T) (Disc 2).chd", 10),
+            ("psx/Saga (T) (Disc 3).chd", 10),
+            // An untagged release beside another release's discs is its own game.
+            ("psx/Epic (Japan).chd", 10),
         ] {
             let p = root.join(path);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -364,7 +382,18 @@ mod tests {
         let psx: Vec<_> =
             group_discs(walk(&root)).into_iter().filter(|f| f.system == "psx").collect();
         std::fs::remove_dir_all(&root).ok();
-        assert_eq!(psx.len(), 2, "the USA discs are one game; the lone European disc stays");
+        let paths: Vec<_> = psx.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "psx/Epic (Europe) (Disc 1).chd",
+                "psx/Epic (Japan).chd",
+                "psx/Epic (USA) (Disc 1).chd",
+                "psx/Saga (T).chd",
+                "psx/War (USA) (Disc 1) (Allies).chd",
+            ],
+            "the USA discs are one game; the lone European disc and the Japanese release stay"
+        );
         let usa = psx.iter().find(|f| f.tags == "USA").expect("the USA game, its disc tag dropped");
         assert_eq!(usa.path, "psx/Epic (USA) (Disc 1).chd");
         assert_eq!(
@@ -378,6 +407,15 @@ mod tests {
         assert_eq!(usa.size, 60);
         let europe = psx.iter().find(|f| f.tags.starts_with("Europe")).unwrap();
         assert!(europe.discs.is_empty());
+        let war = psx.iter().find(|f| f.title == "War").unwrap();
+        assert_eq!(war.tags, "USA", "the discs' names are not the game's tags");
+        assert_eq!(war.discs.len(), 2);
+        let saga = psx.iter().find(|f| f.title == "Saga").unwrap();
+        assert_eq!(
+            saga.discs,
+            ["psx/Saga (T).chd", "psx/Saga (T) (Disc 2).chd", "psx/Saga (T) (Disc 3).chd"]
+        );
+        assert_eq!(saga.tags, "T");
         assert_eq!(disc_number("Disc 2 of 3"), Some(2));
         assert_eq!(disc_number("Disco"), None);
     }
