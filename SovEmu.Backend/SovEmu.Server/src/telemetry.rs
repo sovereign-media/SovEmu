@@ -60,7 +60,7 @@ impl LogFormat {
 
 /// The exporters, kept to flush and stop them at exit.
 #[derive(Default)]
-pub struct Telemetry {
+pub(crate) struct Telemetry {
     tracer: Option<SdkTracerProvider>,
     meter: Option<SdkMeterProvider>,
 }
@@ -68,7 +68,7 @@ pub struct Telemetry {
 impl Telemetry {
     /// Sends what is still buffered. Call outside the async runtime: the exporter's HTTP
     /// client blocks.
-    pub fn shutdown(self) {
+    pub(crate) fn shutdown(self) {
         if let Some(tracer) = self.tracer
             && let Err(e) = tracer.shutdown()
         {
@@ -83,7 +83,7 @@ impl Telemetry {
 }
 
 /// Installs the log subscriber, and the OpenTelemetry exporters when `otel_endpoint` is set.
-pub fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Telemetry> {
+pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Telemetry> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let logs = match format {
         LogFormat::Text => tracing_subscriber::fmt::layer().boxed(),
@@ -145,7 +145,7 @@ fn resource() -> Resource {
 }
 
 /// The instruments recorded as things happen (the gauges are read by [`observe`]).
-pub struct Metrics {
+pub(crate) struct Metrics {
     /// `http.server.request.duration`: seconds per API request, by method, route and status.
     pub requests: Histogram<f64>,
     /// `sovemu.sessions.started`: game sessions started, by system.
@@ -157,7 +157,7 @@ pub struct Metrics {
 /// The instruments, made on first use (after [`init`] has installed the exporter, if any).
 /// Session metrics, as `sovemu_sessions` reports sessions starting and ending.
 #[derive(Debug)]
-pub struct SessionMetrics;
+pub(crate) struct SessionMetrics;
 
 impl sovemu_sessions::Observer for SessionMetrics {
     fn session_started(&self, system: &str) {
@@ -171,7 +171,7 @@ impl sovemu_sessions::Observer for SessionMetrics {
     }
 }
 
-pub fn metrics() -> &'static Metrics {
+pub(crate) fn metrics() -> &'static Metrics {
     static METRICS: OnceLock<Metrics> = OnceLock::new();
     METRICS.get_or_init(|| {
         let meter = global::meter(SERVICE);
@@ -198,11 +198,11 @@ pub fn metrics() -> &'static Metrics {
 /// The gauges, read at each export: sessions running, the sessions the UDP ports allow, accounts
 /// and games per system (counted every minute, so an export never waits on the database). Keep
 /// the returned value for as long as they should be reported.
-pub struct Gauges {
+pub(crate) struct Gauges {
     _gauges: Vec<ObservableGauge<u64>>,
 }
 
-pub fn observe(state: &AppState) -> Gauges {
+pub(crate) fn observe(state: &AppState) -> Gauges {
     let meter = global::meter(SERVICE);
     let mut gauges = Vec::new();
     let workers = state.workers.clone();
@@ -286,7 +286,7 @@ impl Library {
 /// Runs each API request in a `request` span (exported as the server span of its trace) and
 /// records its duration. A route layer, so the route is the pattern (`/media/games/{id}/{kind}`),
 /// never a path with ids in it.
-pub async fn trace_request(request: Request, next: Next) -> Response {
+pub(crate) async fn trace_request(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let route = request
         .extensions()

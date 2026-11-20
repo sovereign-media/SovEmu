@@ -16,8 +16,8 @@ use crate::error::ApiResult;
 use crate::home;
 
 /// Results when the caller does not say; and the most it may ask for.
-pub const DEFAULT_LIMIT: u32 = 48;
-pub const MAX_LIMIT: u32 = 200;
+pub(crate) const DEFAULT_LIMIT: u32 = 48;
+pub(crate) const MAX_LIMIT: u32 = 200;
 /// Words past this many are ignored (a pasted paragraph is not a search).
 const MAX_WORDS: usize = 8;
 
@@ -32,7 +32,12 @@ struct Candidate {
 }
 
 /// The games matching every word of `text`, best first; nothing for a blank query.
-pub async fn search(state: &AppState, user: &User, text: &str, limit: u32) -> ApiResult<Vec<Game>> {
+pub(crate) async fn search(
+    state: &AppState,
+    user: &User,
+    text: &str,
+    limit: u32,
+) -> ApiResult<Vec<Game>> {
     let folded = fold(text);
     let words: Vec<&str> = folded.split_whitespace().take(MAX_WORDS).collect();
     let limit = limit.clamp(1, MAX_LIMIT) as usize;

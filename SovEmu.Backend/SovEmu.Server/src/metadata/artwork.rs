@@ -17,7 +17,7 @@ use super::Metadata;
 use crate::AppState;
 
 /// Downloads of one URL that may fail before the job stops trying it.
-pub const MAX_ATTEMPTS: i64 = 3;
+pub(crate) const MAX_ATTEMPTS: i64 = 3;
 
 /// Rounds of the queue one job works through (each round retries what failed in the last).
 const MAX_ROUNDS: usize = MAX_ATTEMPTS as usize + 2;
@@ -42,7 +42,7 @@ struct Wanted {
 
 /// Starts the job unless one is running: `true` if the caller now owns it and must
 /// [`run_claimed`] it.
-pub fn claim(meta: &Metadata) -> bool {
+pub(crate) fn claim(meta: &Metadata) -> bool {
     let mut s = meta.artwork.lock().unwrap_or_else(|e| e.into_inner());
     if s.running {
         return false;
@@ -74,7 +74,7 @@ async fn wanted(state: &AppState) -> Vec<Wanted> {
 }
 
 /// Works through the queue; the caller has [`claim`]ed the job.
-pub async fn run_claimed(state: AppState) {
+pub(crate) async fn run_claimed(state: AppState) {
     let meta = state.metadata.clone();
     let slots = Arc::new(Semaphore::new(meta.artwork_downloads.max(1)));
     for _ in 0..MAX_ROUNDS {

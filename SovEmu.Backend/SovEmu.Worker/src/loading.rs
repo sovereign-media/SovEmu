@@ -12,15 +12,15 @@ use sovemu_protocol::ipc::LoadPhase;
 
 /// Receives `(phase, bytes read in it so far, bytes it will read)`; called from a sampling
 /// thread as well as the loading one.
-pub type Report<'a> = &'a (dyn Fn(LoadPhase, Option<u64>, Option<u64>) + Sync);
+pub(crate) type Report<'a> = &'a (dyn Fn(LoadPhase, Option<u64>, Option<u64>) + Sync);
 
 /// A report that goes nowhere (`serve`, `headless`).
-pub fn ignore(_: LoadPhase, _: Option<u64>, _: Option<u64>) {}
+pub(crate) fn ignore(_: LoadPhase, _: Option<u64>, _: Option<u64>) {}
 
 const INTERVAL: Duration = Duration::from_millis(250);
 
 /// Bytes this process has read through system calls so far, where the platform says.
-pub fn bytes_read() -> Option<u64> {
+pub(crate) fn bytes_read() -> Option<u64> {
     parse_rchar(&std::fs::read_to_string("/proc/self/io").ok()?)
 }
 
@@ -30,7 +30,7 @@ fn parse_rchar(io: &str) -> Option<u64> {
 
 /// Runs `work` on this thread (a GL context may be current here), reporting `phase` and the
 /// bytes read since it began, at the start and every [`INTERVAL`] until it returns.
-pub fn reporting<T>(
+pub(crate) fn reporting<T>(
     phase: LoadPhase,
     total: Option<u64>,
     report: Report<'_>,

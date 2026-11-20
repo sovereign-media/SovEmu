@@ -11,7 +11,7 @@ use crate::error::{ApiError, ApiResult};
 
 /// A cheat code for a game, this user's.
 #[derive(Debug, Serialize, sqlx::FromRow, async_graphql::SimpleObject)]
-pub struct Cheat {
+pub(crate) struct Cheat {
     pub id: i64,
     pub description: String,
     pub code: String,
@@ -19,7 +19,7 @@ pub struct Cheat {
 }
 
 /// The enabled codes for a user's game, in the order they were added.
-pub async fn enabled_codes(
+pub(crate) async fn enabled_codes(
     state: &AppState,
     user_id: i64,
     game_id: i64,
@@ -57,12 +57,12 @@ async fn list_for(state: &AppState, user_id: i64, game_id: i64) -> ApiResult<Vec
     .await?)
 }
 
-pub async fn list(state: &AppState, user: &User, game_id: i64) -> ApiResult<Vec<Cheat>> {
+pub(crate) async fn list(state: &AppState, user: &User, game_id: i64) -> ApiResult<Vec<Cheat>> {
     list_for(state, user.id, game_id).await
 }
 
 /// Adds a cheat (enabled) and returns the game's cheats.
-pub async fn add(
+pub(crate) async fn add(
     state: &AppState,
     user: &User,
     game_id: i64,
@@ -90,7 +90,7 @@ pub async fn add(
 }
 
 /// Turns a cheat on or off and returns the game's cheats.
-pub async fn set_enabled(
+pub(crate) async fn set_enabled(
     state: &AppState,
     user: &User,
     game_id: i64,
@@ -113,7 +113,12 @@ pub async fn set_enabled(
     list_for(state, user.id, game_id).await
 }
 
-pub async fn remove(state: &AppState, user: &User, game_id: i64, cheat_id: i64) -> ApiResult<()> {
+pub(crate) async fn remove(
+    state: &AppState,
+    user: &User,
+    game_id: i64,
+    cheat_id: i64,
+) -> ApiResult<()> {
     let removed = sqlx::query("DELETE FROM cheats WHERE id = ? AND user_id = ? AND game_id = ?")
         .bind(cheat_id)
         .bind(user.id)

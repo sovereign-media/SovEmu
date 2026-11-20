@@ -12,7 +12,7 @@ use crate::controllers::PadButton::*;
 
 /// A rounded rectangle; a circle when `r` is half its width and height.
 #[derive(Debug, Clone, Copy, PartialEq, async_graphql::SimpleObject)]
-pub struct Shape {
+pub(crate) struct Shape {
     pub x: f64,
     pub y: f64,
     pub w: f64,
@@ -24,7 +24,7 @@ pub struct Shape {
 
 /// A button on a diagram.
 #[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
-pub struct PadKey {
+pub(crate) struct PadKey {
     /// A RetroPad button on a system's pad, an input name (`south` …) on a controller's.
     pub key: String,
     /// What the pad prints on it.
@@ -38,7 +38,7 @@ pub struct PadKey {
 
 /// A pad, drawn from shapes on a `width`×`height` canvas.
 #[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
-pub struct PadLayout {
+pub(crate) struct PadLayout {
     /// A system id, or a controller family (`xbox`, `playstation`, `nintendo`, `generic`).
     pub id: String,
     pub name: String,
@@ -50,14 +50,14 @@ pub struct PadLayout {
 
 /// One of a system's buttons: the RetroPad button that drives it and what the console calls it.
 #[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
-pub struct SystemButton {
+pub(crate) struct SystemButton {
     pub button: PadButton,
     pub label: String,
 }
 
 /// A system's buttons and its pad's diagram.
 #[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
-pub struct SystemControls {
+pub(crate) struct SystemControls {
     /// The buttons the system's pad has, in the order to list them.
     pub buttons: Vec<SystemButton>,
     pub layout: PadLayout,
@@ -419,7 +419,7 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
 }
 
 /// A system's buttons and pad.
-pub fn system_controls(system: &sovemu_library::systems::System) -> SystemControls {
+pub(crate) fn system_controls(system: &sovemu_library::systems::System) -> SystemControls {
     SystemControls {
         buttons: labels(system.id)
             .into_iter()
@@ -481,7 +481,7 @@ fn family_label(family: &str, input: &str) -> Option<&'static str> {
 
 /// The player's controllers, by family: `xbox`, `playstation`, `nintendo` and `generic`. Keys
 /// are inputs (`south`, `l1` …).
-pub fn controller_layouts() -> Vec<PadLayout> {
+pub(crate) fn controller_layouts() -> Vec<PadLayout> {
     [
         ("xbox", "Xbox"),
         ("playstation", "PlayStation"),

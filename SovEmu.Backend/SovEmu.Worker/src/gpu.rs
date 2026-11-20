@@ -33,7 +33,7 @@ struct Report {
     best: Option<String>,
 }
 
-pub fn run() -> Result<()> {
+pub(crate) fn run() -> Result<()> {
     // GL drivers may print to stdout; the JSON report must be the only thing on it.
     let mut out = sovemu_retro_host::take_stdout()?;
     let report = match gl::probe() {

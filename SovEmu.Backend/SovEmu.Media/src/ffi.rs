@@ -6,6 +6,7 @@
     non_snake_case,
     dead_code,
     missing_debug_implementations,
+    unreachable_pub,
     unsafe_op_in_unsafe_fn,
     clippy::all,
     clippy::undocumented_unsafe_blocks

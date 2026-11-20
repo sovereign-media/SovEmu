@@ -59,7 +59,7 @@ fn parse_bool(var: &str, value: &str) -> Result<bool> {
 }
 
 /// Users from `SOVEMU_USERS__<n>__…`, ordered by index. `read_file` reads `__PASSWORD_FILE`.
-pub fn users(
+pub(crate) fn users(
     vars: &[(String, String)],
     read_file: impl Fn(&str) -> Result<String>,
 ) -> Result<Vec<UserSpec>> {
@@ -100,7 +100,7 @@ pub fn users(
 }
 
 /// System overrides from `SOVEMU_SYSTEMS__<id>__…`, keyed by lower-case system id.
-pub fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>> {
+pub(crate) fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>> {
     let mut out: BTreeMap<String, SystemSpec> = BTreeMap::new();
     for (id, fields) in group(vars, "SOVEMU_SYSTEMS__") {
         let id = id.to_ascii_lowercase();
@@ -141,7 +141,9 @@ pub fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>
 
 /// Default controller mappings from `SOVEMU_CONTROLLERS__<n>__…`, ordered by index. A list
 /// rather than a map by ID, since IDs such as `pad:2dc8:6101` cannot be part of a variable name.
-pub fn controllers(vars: &[(String, String)]) -> Result<Vec<crate::controllers::ControllerSpec>> {
+pub(crate) fn controllers(
+    vars: &[(String, String)],
+) -> Result<Vec<crate::controllers::ControllerSpec>> {
     let mut indexed: Vec<(u32, crate::controllers::ControllerSpec)> = Vec::new();
     for (key, fields) in group(vars, "SOVEMU_CONTROLLERS__") {
         let n: u32 = key

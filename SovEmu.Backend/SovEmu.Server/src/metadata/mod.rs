@@ -18,7 +18,7 @@
 //! ScreenScraper and TheGamesDB are only asked about games the sources before them left
 //! incomplete, so their quotas go on what LaunchBox does not know.
 
-pub mod artwork;
+pub(crate) mod artwork;
 
 use sovemu_library::info::{
     GameInfo, LookupInput, MetaError, fbneo, http_client, launchbox, md5_file, screenscraper,
@@ -148,7 +148,7 @@ fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -
 /// Looks up every game without metadata, and every game no service found while a service it was
 /// not asked is now configured (all of a system's, or every game with `force`), one at a time,
 /// and stores what it finds. Returns at once if a job is already running.
-pub async fn run_job(state: AppState, system: Option<String>, force: bool) {
+pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool) {
     let meta = state.metadata.clone();
     {
         let mut s = meta.status.lock().unwrap_or_else(|e| e.into_inner());

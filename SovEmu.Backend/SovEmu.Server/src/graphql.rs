@@ -31,11 +31,11 @@ use crate::auth::{self, Credentials, NewUser, User};
 use crate::client_ip::ClientIp;
 use crate::error::ApiError;
 
-pub type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
+pub(crate) type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
 
 /// The schema, without per-request data. Queries deeper than 12 levels or costlier than 2000
 /// fields are refused.
-pub fn schema() -> ApiSchema {
+pub(crate) fn schema() -> ApiSchema {
     Schema::build(Query, Mutation, EmptySubscription)
         .limit_depth(12)
         .limit_complexity(2000)
@@ -48,7 +48,7 @@ struct Auth {
     user: OnceCell<Option<User>>,
 }
 
-pub async fn handler(
+pub(crate) async fn handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     client: Option<Extension<ClientIp>>,
@@ -66,7 +66,7 @@ pub async fn handler(
 }
 
 /// GraphiQL, for trying queries in a browser (signed in, the cookie comes along).
-pub async fn graphiql() -> impl IntoResponse {
+pub(crate) async fn graphiql() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/graphql").finish())
 }
 

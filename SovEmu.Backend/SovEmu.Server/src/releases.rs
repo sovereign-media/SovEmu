@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 
 /// Works out every game's label again and stores it (`games.release`): after a scan, after a
 /// game-information lookup (titles change), and at startup. Listing games then only reads it.
-pub async fn refresh(db: &SqlitePool) -> sqlx::Result<usize> {
+pub(crate) async fn refresh(db: &SqlitePool) -> sqlx::Result<usize> {
     let rows: Vec<(i64, String, String, String, String, String)> = sqlx::query_as(
         "WITH t AS (
              SELECT g.id, g.system, COALESCE(m.title, g.title) AS title, g.title AS file_title,

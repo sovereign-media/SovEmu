@@ -16,31 +16,31 @@ use sqlx::SqlitePool;
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 
-pub const COOKIE_NAME: &str = "sovemu_session";
+pub(crate) const COOKIE_NAME: &str = "sovemu_session";
 
 /// An account.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, async_graphql::SimpleObject)]
-pub struct User {
+pub(crate) struct User {
     pub id: i64,
     pub username: String,
     pub is_admin: bool,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Credentials {
+pub(crate) struct Credentials {
     pub username: String,
     pub password: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct NewUser {
+pub(crate) struct NewUser {
     pub username: String,
     pub password: String,
     #[serde(default)]
     pub is_admin: bool,
 }
 
-pub fn hash_password(password: &str) -> anyhow::Result<String> {
+pub(crate) fn hash_password(password: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
@@ -48,7 +48,7 @@ pub fn hash_password(password: &str) -> anyhow::Result<String> {
         .map_err(|e| anyhow::anyhow!("hashing password: {e}"))
 }
 
-pub fn verify_password(password: &str, hash: &str) -> bool {
+pub(crate) fn verify_password(password: &str, hash: &str) -> bool {
     PasswordHash::new(hash)
         .map(|parsed| Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
         .unwrap_or(false)
@@ -70,7 +70,7 @@ fn validate(username: &str, password: &str) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<User> {
+pub(crate) async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<User> {
     validate(&new.username, &new.password)?;
     let hash = hash_password(&new.password)?;
     let result = sqlx::query_as::<_, User>(
@@ -94,14 +94,18 @@ pub async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<User> {
 /// Makes sure the configured admin exists with the configured password: created if missing,
 /// otherwise its password and admin flag are brought in line (the environment is the source of
 /// truth, so rotating `SOVEMU_ADMIN_PASSWORD` rotates the password).
-pub async fn ensure_admin(pool: &SqlitePool, username: &str, password: &str) -> anyhow::Result<()> {
+pub(crate) async fn ensure_admin(
+    pool: &SqlitePool,
+    username: &str,
+    password: &str,
+) -> anyhow::Result<()> {
     ensure_user(pool, username, password, true).await
 }
 
 /// Makes sure a declared user exists with the declared password and admin flag: created if
 /// missing, otherwise brought in line (the environment is the source of truth; a changed
 /// password signs that user's browsers out).
-pub async fn ensure_user(
+pub(crate) async fn ensure_user(
     pool: &SqlitePool,
     username: &str,
     password: &str,
@@ -151,7 +155,7 @@ pub async fn ensure_user(
 }
 
 /// Deletes every user not in `keep` (the declared users), for `SOVEMU_USERS_PRUNE`.
-pub async fn prune_users(pool: &SqlitePool, keep: &[String]) -> anyhow::Result<u64> {
+pub(crate) async fn prune_users(pool: &SqlitePool, keep: &[String]) -> anyhow::Result<u64> {
     let all: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, username FROM users").fetch_all(pool).await?;
     let mut removed = 0;
@@ -207,14 +211,17 @@ pub(crate) const SESSION_USER: &str = "SELECT u.id, u.username, u.is_admin FROM 
      WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
 
 /// The user a sign-in cookie's token belongs to, if it is current.
-pub async fn user_for_token(db: &SqlitePool, token: Option<&str>) -> ApiResult<Option<User>> {
+pub(crate) async fn user_for_token(
+    db: &SqlitePool,
+    token: Option<&str>,
+) -> ApiResult<Option<User>> {
     let Some(token) = token else { return Ok(None) };
     Ok(sqlx::query_as::<_, User>(SESSION_USER).bind(token_hash(token)).fetch_optional(db).await?)
 }
 
 /// First-run setup: creates the admin account and signs it in. Only works while there are no
 /// accounts. Returns the user and the `Set-Cookie` value.
-pub async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
+pub(crate) async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
     let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db).await?;
     if users > 0 {
         return Err(ApiError::new(StatusCode::CONFLICT, "setup is already done"));
@@ -233,7 +240,7 @@ pub async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, Hea
 /// Signs in. Returns the user and the `Set-Cookie` value.
 /// `client` is the address it came from (`client_ip`), when known: failures count against it
 /// as well as the username, so one address cannot try many names.
-pub async fn login(
+pub(crate) async fn login(
     state: &AppState,
     creds: Credentials,
     client: Option<IpAddr>,
@@ -280,7 +287,7 @@ pub async fn login(
 }
 
 /// Ends the sign-in session; returns the `Set-Cookie` value that clears the cookie.
-pub async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<HeaderValue> {
+pub(crate) async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<HeaderValue> {
     if let Some(token) = token {
         sqlx::query("DELETE FROM auth_sessions WHERE token_hash = ?")
             .bind(token_hash(token))
@@ -290,13 +297,13 @@ pub async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<HeaderVa
     Ok(HeaderValue::from_static("sovemu_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"))
 }
 
-pub async fn list_users(state: &AppState) -> ApiResult<Vec<User>> {
+pub(crate) async fn list_users(state: &AppState) -> ApiResult<Vec<User>> {
     Ok(sqlx::query_as::<_, User>("SELECT id, username, is_admin FROM users ORDER BY username")
         .fetch_all(&state.db)
         .await?)
 }
 
-pub async fn add_user(state: &AppState, admin: &User, new: &NewUser) -> ApiResult<User> {
+pub(crate) async fn add_user(state: &AppState, admin: &User, new: &NewUser) -> ApiResult<User> {
     let user = create_user(&state.db, new).await?;
     tracing::info!(
         by = %admin.username,

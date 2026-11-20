@@ -252,7 +252,7 @@ pub(crate) mod tests {
     use super::*;
 
     /// A ScreenScraper answer, shared with the server's tests.
-    pub const SAMPLE: &str = include_str!("../../tests/fixtures/screenscraper.xml");
+    pub(crate) const SAMPLE: &str = include_str!("../../tests/fixtures/screenscraper.xml");
 
     #[test]
     fn parses_a_game_preferring_us_and_english() {

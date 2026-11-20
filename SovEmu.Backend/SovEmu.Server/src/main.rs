@@ -24,6 +24,7 @@ mod library;
 mod metadata;
 mod ops;
 mod patches;
+mod paths;
 #[cfg(test)]
 mod query_plans;
 mod releases;
@@ -385,11 +386,16 @@ impl Config {
         self.systems.get(system).and_then(|s| s.decoration.as_deref()).unwrap_or(&self.decoration)
     }
 
+    /// Where everything lives in the data folder.
+    pub fn paths(&self) -> paths::DataPaths {
+        paths::DataPaths::new(&self.data_dir)
+    }
+
     /// The decoration folders, first wins: the configured ones, `<data>/decorations`, then the
     /// built-in one.
     pub fn decoration_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = self.decorations_dirs.clone();
-        dirs.push(self.data_dir.join("decorations"));
+        dirs.push(self.paths().decorations());
         dirs.push(self.builtin_decorations());
         dirs
     }
@@ -398,7 +404,7 @@ impl Config {
         self.decorations_builtin
             .clone()
             .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| self.data_dir.join("cache").join("decorations"))
+            .unwrap_or_else(|| self.paths().builtin_decorations())
     }
 
     /// Where BIOS files live: `<bios_dir>/<system>/`.
@@ -407,7 +413,7 @@ impl Config {
         self.bios
             .clone()
             .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| self.data_dir.join("bios"))
+            .unwrap_or_else(|| self.paths().bios())
     }
 
     fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
@@ -715,14 +721,15 @@ fn default_worker() -> PathBuf {
 }
 
 pub async fn build_state(mut config: Config) -> Result<AppState> {
-    let library = config.roms.clone().unwrap_or_else(|| config.data_dir.join("roms"));
+    let paths = config.paths();
+    let library = config.roms.clone().unwrap_or_else(|| paths.roms());
     // `SOVEMU_MIRROR_SYSTEMS=` (empty) means all systems, not a system called "".
     config.mirror_systems.retain(|s| !s.trim().is_empty());
     for s in &mut config.mirror_systems {
         *s = s.trim().to_lowercase();
     }
     if config.library_mode == LibraryMode::Mirror {
-        config.roms_dir = mirror::mirror_dir(&config.data_dir);
+        config.roms_dir = paths.mirror();
         config.source_dir = Some(library);
     } else {
         config.roms_dir = library;
@@ -731,7 +738,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
     bios::prepare(&config.bios_dir());
-    let db = db::open(&config.data_dir.join("sovemu.db")).await?;
+    let db = db::open(&paths.database()).await?;
     reconcile_users(&db, &config).await?;
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
@@ -755,7 +762,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         log_format: config.log_format.as_arg(),
         observer: Arc::new(telemetry::SessionMetrics),
     });
-    let cache_dir = config.data_dir.join("cache");
+    let cache_dir = paths.cache();
     let cache_bytes = match config.library_mode {
         LibraryMode::Cache => config.cache_gb.unwrap_or(20).saturating_mul(1 << 30),
         _ => 0,
@@ -807,13 +814,13 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         sovemu_library::info::launchbox::LaunchBox::new(
             config.launchbox_url.clone(),
             config.launchbox_images_url.clone(),
-            config.data_dir.join("metadata").join("launchbox"),
+            paths.launchbox(),
             config.launchbox_refresh_hours,
             config.metadata_regions.clone(),
         )
     });
     let metadata = metadata::Metadata::new(
-        config.data_dir.join("metadata"),
+        paths.metadata(),
         launchbox,
         screenscraper,
         thegamesdb,

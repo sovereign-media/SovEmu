@@ -15,7 +15,7 @@ use sqlx::SqlitePool;
 use crate::{AppState, LibraryMode, admin};
 
 /// Starts every background job.
-pub fn spawn(state: &AppState) {
+pub(crate) fn spawn(state: &AppState) {
     spawn_library(state);
     spawn_maintenance(state);
 }
@@ -71,7 +71,7 @@ fn spawn_maintenance(state: &AppState) {
 }
 
 /// One round of upkeep. Returns how many expired sign-ins it deleted.
-pub async fn maintain(db: &SqlitePool) -> sqlx::Result<u64> {
+pub(crate) async fn maintain(db: &SqlitePool) -> sqlx::Result<u64> {
     let expired = sqlx::query("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
         .execute(db)
         .await?

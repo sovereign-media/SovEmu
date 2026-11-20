@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 const MAX_LAG_FRAMES: u32 = 3;
 
 #[derive(Debug)]
-pub struct Pacer {
+pub(crate) struct Pacer {
     period: Duration,
     origin: Instant,
     frame: u32,
@@ -19,14 +19,14 @@ pub struct Pacer {
 }
 
 impl Pacer {
-    pub fn new(fps: f64, now: Instant) -> Self {
+    pub(crate) fn new(fps: f64, now: Instant) -> Self {
         let period = Duration::from_secs_f64(1.0 / fps.clamp(1.0, 1000.0));
         Self { period, origin: now, frame: 0, resyncs: 0 }
     }
 
     /// Advances one frame and returns when that frame is due.
     /// Resynchronises first if `now` is too far past the schedule.
-    pub fn next_deadline(&mut self, now: Instant) -> Instant {
+    pub(crate) fn next_deadline(&mut self, now: Instant) -> Instant {
         self.frame += 1;
         let deadline = self.origin + self.period * self.frame;
         if now > deadline + self.period * MAX_LAG_FRAMES {
@@ -39,7 +39,7 @@ impl Pacer {
     }
 
     /// Sleeps until the next frame is due.
-    pub fn wait(&mut self) {
+    pub(crate) fn wait(&mut self) {
         let deadline = self.next_deadline(Instant::now());
         if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
             std::thread::sleep(remaining);

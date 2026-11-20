@@ -18,12 +18,12 @@ use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
 
 /// The inputs a controller (anything but the keyboard) can bind, named by position.
-pub const PAD_INPUTS: [&str; 16] = [
+pub(crate) const PAD_INPUTS: [&str; 16] = [
     "south", "east", "west", "north", "l1", "r1", "l2", "r2", "select", "start", "l3", "r3", "up",
     "down", "left", "right",
 ];
 /// A controller's stick directions (a stick pushed past half-way), bindable like buttons.
-pub const STICK_INPUTS: [&str; 8] =
+pub(crate) const STICK_INPUTS: [&str; 8] =
     ["ls_up", "ls_down", "ls_left", "ls_right", "rs_up", "rs_down", "rs_left", "rs_right"];
 /// The keyboard's fast-forward and rewind keys, which cannot be bound.
 const RESERVED_KEYS: [&str; 2] = ["Tab", "Backspace"];
@@ -88,7 +88,7 @@ pub enum MappingSource {
 
 /// A mapping for one controller model, on one system or on every system.
 #[derive(Debug, Clone, async_graphql::SimpleObject)]
-pub struct ControllerMapping {
+pub(crate) struct ControllerMapping {
     /// `keyboard`, a known model (`xbox`, `dualsense` …) or `pad:<vendor>:<product>`.
     pub controller: String,
     /// The system it is for, or null for every system.
@@ -149,7 +149,7 @@ impl ControllerSpec {
 }
 
 /// Checks an optional system id and gives the tables' form of it.
-pub fn system_key(system: Option<&str>) -> Result<String, String> {
+pub(crate) fn system_key(system: Option<&str>) -> Result<String, String> {
     match system.map(str::trim).filter(|s| !s.is_empty()) {
         None => Ok(String::new()),
         Some(id) => sovemu_library::systems::by_id(id)
@@ -159,12 +159,12 @@ pub fn system_key(system: Option<&str>) -> Result<String, String> {
 }
 
 /// A button by its libretro name (`B`, `SELECT`, `L2` …), as the API and the environment write it.
-pub fn parse_button(name: &str) -> Option<PadButton> {
+pub(crate) fn parse_button(name: &str) -> Option<PadButton> {
     serde_json::from_value(serde_json::Value::String(name.trim().to_ascii_uppercase())).ok()
 }
 
 /// `south:B,east:A`, the environment's form of a binding list.
-pub fn bindings_line(bindings: &[Binding]) -> String {
+pub(crate) fn bindings_line(bindings: &[Binding]) -> String {
     let pairs: Vec<String> = bindings
         .iter()
         .map(|b| {
@@ -176,7 +176,7 @@ pub fn bindings_line(bindings: &[Binding]) -> String {
 }
 
 /// Parses `south:B, east:A` (the environment's `__BINDINGS`).
-pub fn parse_bindings(line: &str) -> Result<Vec<Binding>, String> {
+pub(crate) fn parse_bindings(line: &str) -> Result<Vec<Binding>, String> {
     line.split(',')
         .map(str::trim)
         .filter(|pair| !pair.is_empty())
@@ -202,7 +202,7 @@ fn valid_id(id: &str) -> bool {
 
 /// Checks a mapping against docs/CONTROLLERS.md: known input names for a controller, plain
 /// `KeyboardEvent.code` values (not the hotkeys) for the keyboard, each input at most once.
-pub fn check(controller: &str, name: &str, bindings: &[Binding]) -> Result<(), String> {
+pub(crate) fn check(controller: &str, name: &str, bindings: &[Binding]) -> Result<(), String> {
     if !valid_id(controller) {
         return Err("a controller ID is up to 64 lowercase letters, digits, '-' and ':'".into());
     }
@@ -241,7 +241,7 @@ type Key = (String, String);
 
 /// Every default, for every system and for single systems: the environment's, then an admin's
 /// where the environment leaves a controller and system alone.
-pub async fn defaults(state: &AppState) -> ApiResult<Vec<ControllerMapping>> {
+pub(crate) async fn defaults(state: &AppState) -> ApiResult<Vec<ControllerMapping>> {
     let mut out: BTreeMap<Key, ControllerMapping> = admin_defaults(state)
         .await?
         .into_iter()
@@ -267,7 +267,7 @@ async fn admin_defaults(state: &AppState) -> ApiResult<Vec<ControllerMapping>> {
 /// none, on every system). For each model, the first of: their own for the system, their own
 /// for every system, the default for the system, the default for every system. A model missing
 /// here uses the clients' built-in defaults.
-pub async fn list(
+pub(crate) async fn list(
     state: &AppState,
     user: &User,
     system: Option<&str>,
@@ -302,7 +302,7 @@ pub async fn list(
 
 /// The admin's defaults as environment lines, numbered after the ones already there, to make
 /// them part of the configuration.
-pub async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>> {
+pub(crate) async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>> {
     let configured = &state.config.controllers;
     let mut lines = Vec::new();
     let mut n = configured.len();
@@ -326,7 +326,7 @@ pub async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>> {
 
 /// Saves (replaces) the default for a controller model on a system (or every system), for
 /// every user without their own.
-pub async fn save_default(
+pub(crate) async fn save_default(
     state: &AppState,
     controller: &str,
     system: Option<&str>,
@@ -365,7 +365,7 @@ pub async fn save_default(
 
 /// Forgets an admin's default for a controller model on a system (or every system). Returns
 /// whether there was one.
-pub async fn reset_default(
+pub(crate) async fn reset_default(
     state: &AppState,
     controller: &str,
     system: Option<&str>,
@@ -382,7 +382,7 @@ pub async fn reset_default(
 }
 
 /// Saves (replaces) the user's mapping for a controller model on a system (or every system).
-pub async fn save(
+pub(crate) async fn save(
     state: &AppState,
     user: &User,
     controller: &str,
@@ -432,7 +432,7 @@ pub async fn save(
 
 /// Forgets the user's mapping for a controller model on a system (or every system), so the
 /// next layer applies (docs/CONTROLLERS.md). Returns whether there was one.
-pub async fn reset(
+pub(crate) async fn reset(
     state: &AppState,
     user: &User,
     controller: &str,

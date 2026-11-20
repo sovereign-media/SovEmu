@@ -7,7 +7,7 @@ use sovemu_retro_host::JoypadButtons;
 
 /// Buttons held over an inclusive range of frames, parsed from `120-130:start` or `300:a+b`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputHold {
+pub(crate) struct InputHold {
     pub frames: RangeInclusive<u64>,
     pub buttons: JoypadButtons,
 }
@@ -36,7 +36,7 @@ impl FromStr for InputHold {
 }
 
 /// The buttons held on `frame`: the union of every hold covering it.
-pub fn buttons_at(holds: &[InputHold], frame: u64) -> JoypadButtons {
+pub(crate) fn buttons_at(holds: &[InputHold], frame: u64) -> JoypadButtons {
     holds
         .iter()
         .filter(|h| h.frames.contains(&frame))

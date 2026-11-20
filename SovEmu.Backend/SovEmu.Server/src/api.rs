@@ -17,7 +17,7 @@ use sovemu_library::systems::{self, System};
 use sovemu_sessions::workers::{Launch, SessionInfo};
 
 #[derive(Debug, Serialize)]
-pub struct SystemSummary {
+pub(crate) struct SystemSummary {
     #[serde(flatten)]
     pub(crate) system: System,
     pub(crate) game_count: i64,
@@ -29,7 +29,7 @@ pub struct SystemSummary {
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct Game {
+pub(crate) struct Game {
     pub(crate) id: i64,
     pub(crate) system: String,
     pub(crate) title: String,
@@ -94,7 +94,7 @@ fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Erro
 
 /// The installed core for a system, if any: the one `SOVEMU_SYSTEMS__<id>__CORE` names, or
 /// else the first of SovEmu's choices that is installed.
-pub fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
+pub(crate) fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
     let chosen = state.config.systems.get(system.id).and_then(|s| s.core.as_deref());
     let names: Vec<&str> = chosen.map_or_else(|| system.cores.to_vec(), |c| vec![c]);
     names.iter().find_map(|name| {
@@ -115,7 +115,7 @@ fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
     systems::by_id(id).filter(|s| enabled(state, s.id)).ok_or_else(|| ApiError::not_found("system"))
 }
 
-pub async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
+pub(crate) async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
     let counts: Vec<(String, i64)> =
         sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system")
             .fetch_all(&state.db)
@@ -166,7 +166,11 @@ pub(crate) fn games_sql(tail: &str) -> String {
     )
 }
 
-pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResult<Vec<Game>> {
+pub(crate) async fn list_games(
+    state: &AppState,
+    user: &User,
+    system: &str,
+) -> ApiResult<Vec<Game>> {
     system_by_id(state, system)?;
     let games = sqlx::query_as::<_, Game>(&games_sql(LIST_GAMES))
         .bind(user.id)
@@ -197,17 +201,17 @@ async fn fetch_row(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
         .ok_or_else(|| ApiError::not_found("game"))
 }
 
-pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
+pub(crate) async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
     fetch_game(state, user.id, id).await
 }
 
-pub async fn scan(state: &AppState) -> ApiResult<ScanReport> {
+pub(crate) async fn scan(state: &AppState) -> ApiResult<ScanReport> {
     Ok(library::scan(&state.db, &state.config.roms_dir).await?)
 }
 
 /// Starts a game. Ends the user's current session first. `start_id`, chosen by the client, lets
 /// it follow the start's progress ([`start_progress`]) while this waits.
-pub async fn start_session(
+pub(crate) async fn start_session(
     state: &AppState,
     user: &User,
     game_id: i64,
@@ -231,7 +235,7 @@ pub async fn start_session(
 }
 
 /// How far the start `start_id` has got (see [`sovemu_sessions::starts`]).
-pub fn start_progress(
+pub(crate) fn start_progress(
     state: &AppState,
     user: &User,
     start_id: &str,
@@ -357,7 +361,7 @@ fn write_playlist(
     game_id: i64,
     discs: &[String],
 ) -> anyhow::Result<std::path::PathBuf> {
-    let dir = state.config.data_dir.join("cache").join("discs");
+    let dir = state.config.paths().disc_playlists();
     std::fs::create_dir_all(&dir)?;
     let mut text = String::new();
     for disc in discs {
@@ -372,7 +376,7 @@ fn write_playlist(
 }
 
 /// Changes a multi-disc game's disc (1-based), as a player swaps discs when the game asks.
-pub async fn set_disc(state: &AppState, user: &User, id: &str, disc: u32) -> ApiResult<()> {
+pub(crate) async fn set_disc(state: &AppState, user: &User, id: &str, disc: u32) -> ApiResult<()> {
     let session = owned_session(state, user.id, id)?;
     let count = session.info().discs;
     if disc == 0 || disc > count {
@@ -387,7 +391,7 @@ pub async fn set_disc(state: &AppState, user: &User, id: &str, disc: u32) -> Api
     Ok(())
 }
 
-pub fn current_session(state: &AppState, user: &User) -> Option<SessionInfo> {
+pub(crate) fn current_session(state: &AppState, user: &User) -> Option<SessionInfo> {
     state.workers.for_user(user.id).map(|s| s.info())
 }
 
@@ -404,7 +408,12 @@ fn owned_session(
 }
 
 /// A client's SDP offer for the session; returns the worker's answer.
-pub async fn offer(state: &AppState, user: &User, id: &str, sdp: String) -> ApiResult<String> {
+pub(crate) async fn offer(
+    state: &AppState,
+    user: &User,
+    id: &str,
+    sdp: String,
+) -> ApiResult<String> {
     let session = owned_session(state, user.id, id)?;
     let answer = session
         .offer(SessionDescription { kind: SdpKind::Offer, sdp })
@@ -413,7 +422,7 @@ pub async fn offer(state: &AppState, user: &User, id: &str, sdp: String) -> ApiR
     Ok(answer.sdp)
 }
 
-pub async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
+pub(crate) async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
     let session = owned_session(state, user.id, id)?;
     session
         .request(|id| sovemu_protocol::ipc::Request::Reset { id })
@@ -422,7 +431,7 @@ pub async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
     Ok(())
 }
 
-pub async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
+pub(crate) async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
     owned_session(state, user.id, id)?;
     state.workers.stop(id).await;
     Ok(())
@@ -432,7 +441,7 @@ pub async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<
 /// `saves/<user>/<system>/<game>.srm`, states in `saves/<user>/<system>/states/<game>/`. A
 /// patched game is `<game> [<patch>]`: its saves are its own.
 pub(crate) fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf, PathBuf) {
-    let save_dir = state.config.data_dir.join("saves").join(user_id.to_string()).join(&game.system);
+    let save_dir = state.config.paths().saves(user_id, &game.system);
     let mut stem = std::path::Path::new(&game.path)
         .file_stem()
         .map_or_else(|| game.id.to_string(), |s| s.to_string_lossy().into_owned());
@@ -447,7 +456,7 @@ pub(crate) fn save_dirs(state: &AppState, user_id: i64, game: &Game) -> (PathBuf
 const MAX_SLOT: u32 = 9;
 
 #[derive(Debug, Serialize)]
-pub struct SaveSlot {
+pub(crate) struct SaveSlot {
     pub slot: u32,
     /// Unix seconds.
     pub saved_at: u64,
@@ -471,7 +480,7 @@ pub(crate) fn slots(state: &AppState, user_id: i64, game: &Game) -> Vec<SaveSlot
         .collect()
 }
 
-pub async fn state_screenshot(
+pub(crate) async fn state_screenshot(
     State(state): State<AppState>,
     SignedUser(user_id): SignedUser,
     Path((id, slot)): Path<(i64, u32)>,
@@ -485,7 +494,12 @@ pub async fn state_screenshot(
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes).into_response())
 }
 
-pub async fn delete_state(state: &AppState, user: &User, id: i64, slot: u32) -> ApiResult<()> {
+pub(crate) async fn delete_state(
+    state: &AppState,
+    user: &User,
+    id: i64,
+    slot: u32,
+) -> ApiResult<()> {
     let game = fetch_game(state, user.id, id).await?;
     let (_, dir) = save_dirs(state, user.id, &game);
     let state_file = dir.join(format!("slot{slot}.state"));
@@ -508,7 +522,12 @@ async fn session_request(
     Ok(())
 }
 
-pub async fn save_state(state: &AppState, user: &User, id: &str, slot: u32) -> ApiResult<()> {
+pub(crate) async fn save_state(
+    state: &AppState,
+    user: &User,
+    id: &str,
+    slot: u32,
+) -> ApiResult<()> {
     session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::SaveState {
         id: rid,
         slot,
@@ -516,7 +535,12 @@ pub async fn save_state(state: &AppState, user: &User, id: &str, slot: u32) -> A
     .await
 }
 
-pub async fn load_state(state: &AppState, user: &User, id: &str, slot: u32) -> ApiResult<()> {
+pub(crate) async fn load_state(
+    state: &AppState,
+    user: &User,
+    id: &str,
+    slot: u32,
+) -> ApiResult<()> {
     session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::LoadState {
         id: rid,
         slot,
@@ -526,7 +550,7 @@ pub async fn load_state(state: &AppState, user: &User, id: &str, slot: u32) -> A
 
 /// A decoration's image (`/media/decorations/<set>/<path>`, the signed URL `Game.decoration`
 /// hands out). Only files the decoration folders list are served, so the path cannot leave them.
-pub async fn decoration_file(
+pub(crate) async fn decoration_file(
     State(state): State<AppState>,
     SignedUser(_user): SignedUser,
     Path((set, path)): Path<(String, String)>,
@@ -555,7 +579,7 @@ pub async fn decoration_file(
 
 /// A game's artwork or video (`image`, `thumb`, `marquee`, `video`), served with range support
 /// so browsers can stream the video.
-pub async fn game_media(
+pub(crate) async fn game_media(
     State(state): State<AppState>,
     SignedUser(user_id): SignedUser,
     Path((id, kind)): Path<(i64, String)>,
