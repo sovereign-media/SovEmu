@@ -157,12 +157,15 @@ loaded per process.
 
 ## Container
 
-`SovEmu.Backend/Dockerfile` (context: the repository root) has five stages: `web` runs the web
+`SovEmu.Backend/Dockerfile` (context: the repository root) has six stages: `web` runs the web
 client's tests and builds it on `node:<ver>-trixie-slim`; `cores` installs every core in
 `scripts/cores.list` from the libretro stable release with `scripts/install-cores.sh` (refusing
-to build for anything but `linux/amd64`); `build` compiles the
-workspace on `rust:<ver>-trixie` against Debian's libvpx and libopus; `test` runs
-`cargo test --workspace` with Mesa's llvmpipe; `runtime` is `debian:trixie-slim` with
+to build for anything but `linux/amd64`); `toolchain` is `rust:<ver>-trixie` with the sources
+and Debian's libvpx and libopus; `build` compiles the release binaries and `test` runs
+`cargo test --workspace` with Mesa's llvmpipe, both from `toolchain`: compiled side by side, each
+with its own `target/` cache mount, the tests run once the release build is done (some time the
+emulator) (CI builds both at once with `SovEmu.Backend/docker-bake.hcl` and
+keeps the cache mounts between runs); `runtime` is `debian:trixie-slim` with
 `libstdc++6`, `libvpx9`, `libopus0`, `tini`, libglvnd and Mesa (GL, EGL; no Vulkan drivers yet),
 `libxi6` and `libusb-1.0-0` (the release's Dolphin links them), sets
 `NVIDIA_DRIVER_CAPABILITIES=graphics,video,utility` for NVIDIA's toolkit, has the web client in
