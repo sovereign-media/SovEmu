@@ -2,8 +2,9 @@
 //! (`Sovereign__DataSources__Radarr__0__Url`): lists and maps that a flat variable cannot hold.
 //!
 //! - Users: `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ADMIN`.
-//! - Systems: `SOVEMU_SYSTEMS__<id>__CORE` (the core to use), `__ENABLED` (false hides it), and
-//!   `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
+//! - Systems: `SOVEMU_SYSTEMS__<id>__CORE` (the core to use), `__ENABLED` (false hides it),
+//!   `__DECORATION` (the decoration set, or `none`), and `__OPTIONS__<core option>` (libretro core
+//!   options, over SovEmu's own).
 //! - Controller defaults: `SOVEMU_CONTROLLERS__<n>__ID` (a controller ID from
 //!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` (a
 //!   system id: the default for that system only) and `__NAME`.
@@ -31,6 +32,8 @@ pub struct SystemSpec {
     pub enabled: Option<bool>,
     /// Core options, merged over SovEmu's defaults for the system.
     pub options: BTreeMap<String, String>,
+    /// The decoration set its games are framed with (`none`: no frame).
+    pub decoration: Option<String>,
 }
 
 /// Groups `PREFIX__<key>__<rest>=value` into key → (rest → value).
@@ -119,9 +122,12 @@ pub fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, SystemSpec>
                 match field.to_ascii_uppercase().as_str() {
                     "CORE" => spec.core = Some(value.trim().to_owned()).filter(|c| !c.is_empty()),
                     "ENABLED" => spec.enabled = Some(parse_bool(&var, &value)?),
-                    other => {
-                        bail!("{var}: unknown setting {other:?} (CORE, ENABLED or OPTIONS__<name>)")
+                    "DECORATION" => {
+                        spec.decoration = Some(value.trim().to_owned()).filter(|d| !d.is_empty())
                     }
+                    other => bail!(
+                        "{var}: unknown setting {other:?} (CORE, ENABLED, DECORATION or OPTIONS__<name>)"
+                    ),
                 }
             }
         }

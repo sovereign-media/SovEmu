@@ -10,6 +10,8 @@ services:
   sovemu:
     environment:
       SOVEMU_ROMS_DIR: /nas/roms
+      # A Batocera-style decorations folder beside the ROMs, if the share has one.
+      SOVEMU_DECORATIONS_DIRS: ${SOVEMU_DECORATIONS_DIRS:-/nas/decorations}
       # SOVEMU_LIBRARY_MODE (direct | cache | mirror), SOVEMU_CACHE_GB and SOVEMU_MIRROR_SYSTEMS
       # come from .env like every other setting.
       # The share's credentials are only for the mount below: blank them inside the container

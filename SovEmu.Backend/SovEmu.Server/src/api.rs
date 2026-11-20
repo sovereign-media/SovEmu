@@ -521,6 +521,35 @@ pub async fn load_state(state: &AppState, user: &User, id: &str, slot: u32) -> A
     .await
 }
 
+/// A decoration's image (`/media/decorations/<set>/<path>`, the URL `Game.decoration` hands
+/// out). Only files the decoration folders list are served, so the path cannot leave them.
+pub async fn decoration_file(
+    State(state): State<AppState>,
+    CurrentUser(_user): CurrentUser,
+    Path((set, path)): Path<(String, String)>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    use tower::ServiceExt;
+    let decorations = state.decorations();
+    let file = decorations
+        .file(&set, &path)
+        .filter(|_| path.ends_with(".png"))
+        .ok_or_else(|| ApiError::not_found("decoration"))?
+        .to_owned();
+    let mut response = tower_http::services::ServeFile::new(file)
+        .oneshot(request)
+        .await
+        .map_err(ApiError::internal)?
+        .into_response();
+    // Decorations change only when a folder's files do; let browsers keep them a day.
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, max-age=86400"),
+    );
+    Ok(response)
+}
+
 /// A game's artwork or video (`image`, `thumb`, `marquee`, `video`), served with range support
 /// so browsers can stream the video.
 pub async fn game_media(

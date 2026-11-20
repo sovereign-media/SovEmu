@@ -98,6 +98,11 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Soft patches (IPS, UPS, BPS): beside a game with its name (applied by default) or in a
       folder named as it; chosen per player on the game panel, applied to a copy as the game
       loads, with the patched game's own saves
+- [x] Decorations (bezels), server side: Batocera-layout sets from `SOVEMU_DECORATIONS_DIRS`,
+      `data/decorations` and the built-in `sovemu` set (drawn by the server's code), merged;
+      chosen with `SOVEMU_DECORATION` / `SOVEMU_SYSTEMS__<id>__DECORATION`; `Game.decoration`
+- [x] Decorations drawn by the web player (framed only when the screen is wider than the picture)
+- [ ] Decorations drawn by the Android and iOS players
 
 ## Phase 3: persistence
 

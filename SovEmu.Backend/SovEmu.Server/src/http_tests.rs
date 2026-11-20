@@ -87,6 +87,9 @@ impl Harness {
             std::fs::copy(core, cores.join(format!("fceumm_libretro.{ext}"))).unwrap();
             args.extend(["--worker".into(), worker.display().to_string()]);
         }
+        // No built-in decorations: drawing them takes seconds in a debug build. A test that
+        // wants decorations gives its own set.
+        args.extend(["--decorations-builtin".into(), dir.join("no-builtin").display().to_string()]);
         // Never the real LaunchBox server: a test that wants it points it at a mock.
         if !extra.iter().any(|a| a.starts_with("--launchbox")) {
             args.extend(["--launchbox".into(), "false".into()]);
@@ -757,11 +760,18 @@ async fn the_admin_comes_from_the_environment() {
     assert_eq!(h.login("boss", "first-password").await.unwrap()["isAdmin"], true);
 
     // Restarting with a new password rotates it and signs existing browsers out.
+    let no_builtin = h.dir.join("no-builtin").display().to_string();
     let config = Config::parse_from(
-        ["sovemu-server", "--data-dir", &h.dir.display().to_string()]
-            .into_iter()
-            .map(str::to_owned)
-            .chain(admin("second-password")),
+        [
+            "sovemu-server",
+            "--data-dir",
+            &h.dir.display().to_string(),
+            "--decorations-builtin",
+            &no_builtin,
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(admin("second-password")),
     );
     h.state = build_state(config).await.unwrap();
     assert_eq!(h.err(SYSTEMS, json!({})).await.0, "UNAUTHENTICATED", "old session gone");
@@ -775,8 +785,15 @@ async fn declared_users_are_reconciled_and_pruned() {
     let mut h = Harness::new("env-users", false).await;
     h.sign_up_admin().await;
     let dir = h.dir.display().to_string();
+    let no_builtin = h.dir.join("no-builtin").display().to_string();
     let restart = |users: Vec<crate::structured::UserSpec>, prune: bool| {
-        let mut config = Config::parse_from(["sovemu-server", "--data-dir", &dir]);
+        let mut config = Config::parse_from([
+            "sovemu-server",
+            "--data-dir",
+            &dir,
+            "--decorations-builtin",
+            &no_builtin,
+        ]);
         config.users = users;
         config.users_prune = prune;
         config
@@ -1223,4 +1240,57 @@ async fn soft_patches_apply_by_default_and_can_be_chosen() {
 
     let (code, _) = h.err(set, json!({"g": id, "p": 99_999})).await;
     assert_eq!(code, "NOT_FOUND", "a patch of another game, or none");
+}
+
+#[tokio::test]
+async fn decorations_come_from_the_chosen_set_and_are_served() {
+    let mut h =
+        Harness::new_with("decorations", false, vec!["--decoration".into(), "arcade".into()]).await;
+    h.sign_up_admin().await;
+    // A set in <data>/decorations, Batocera's layout: one for the system, one for the game.
+    let set = h.dir.join("decorations/arcade");
+    let info =
+        r#"{"width":1920,"height":1080,"top":0,"left":300,"bottom":0,"right":300,"opacity":1}"#;
+    // A PNG header is all the server reads of an image without a .info: 1280 x 960.
+    let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+    header.extend_from_slice(&1280u32.to_be_bytes());
+    header.extend_from_slice(&960u32.to_be_bytes());
+    for (path, bytes) in [
+        ("systems/nes.png", b"system".as_slice()),
+        ("systems/nes.info", info.as_bytes()),
+        ("games/nes/Test Game (USA).png", &header),
+        // Unreadable, without a .info: passed over.
+        ("games/nes/Other.png", b"not a png"),
+    ] {
+        std::fs::create_dir_all(set.join(path).parent().unwrap()).unwrap();
+        std::fs::write(set.join(path), bytes).unwrap();
+    }
+    h.state.reload_decorations();
+
+    let q = "query($id: Int!) { game(id: $id) { decoration { url set width height left right top bottom } } }";
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+    let decoration = h.ok(q, json!({"id": id})).await["game"]["decoration"].clone();
+    assert_eq!(
+        decoration["url"],
+        "/media/decorations/arcade/games/nes/Test%20Game%20%28USA%29.png"
+    );
+    assert_eq!(decoration["set"], "arcade");
+    // No .info of its own: the image's largest centred 4:3 window.
+    assert_eq!((decoration["width"].clone(), decoration["left"].clone()), (json!(1280), json!(0)));
+    assert_eq!(h.call("GET", decoration["url"].as_str().unwrap(), None).await.0, StatusCode::OK);
+    let system = h.state.decorations().for_game("arcade", "nes", "Other").unwrap();
+    assert_eq!(system.path, "systems/nes.png", "an unreadable image is passed over");
+    assert_eq!(system.window.left, 300, "from its .info");
+    assert_eq!(
+        h.call("GET", "/media/decorations/arcade/..%2F..%2Fsovemu.db", None).await.0,
+        StatusCode::NOT_FOUND,
+        "only listed files"
+    );
+    // `none` turns them off for a system.
+    let mut h =
+        Harness::new_with("decorations-none", false, vec!["--decoration".into(), "none".into()])
+            .await;
+    h.sign_up_admin().await;
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+    assert_eq!(h.ok(q, json!({"id": id})).await["game"]["decoration"], Value::Null);
 }

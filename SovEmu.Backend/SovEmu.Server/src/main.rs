@@ -14,6 +14,7 @@ mod collections;
 mod controllers;
 mod controls;
 mod db;
+mod decorations;
 mod error;
 mod gpu;
 mod graphql;
@@ -81,6 +82,26 @@ pub struct Config {
     /// The built web client (`SovEmu.Web/dist`).
     #[arg(long, env = "SOVEMU_WEB_DIR")]
     pub web_dir: Option<PathBuf>,
+
+    /// Decoration (bezel) folders in Batocera's layout, besides `<data>/decorations` and the
+    /// built-in one: a `decorations` folder on the NAS, say. Comma-separated; for the same file
+    /// the first folder wins, and the built-in set comes last.
+    #[arg(long, env = "SOVEMU_DECORATIONS_DIRS", value_delimiter = ',')]
+    pub decorations_dirs: Vec<PathBuf>,
+
+    /// The built-in decorations (the image sets `/opt/sovemu/decorations`). Unset: they are
+    /// drawn into `<data>/cache/decorations` at startup.
+    #[arg(long, env = "SOVEMU_DECORATIONS_BUILTIN")]
+    pub decorations_builtin: Option<PathBuf>,
+
+    /// The decoration set games are framed with: `sovemu` (built in), a set from the
+    /// decoration folders, or `none`. Per system: `SOVEMU_SYSTEMS__<id>__DECORATION`.
+    #[arg(long, env = "SOVEMU_DECORATION", default_value = decorations::BUILTIN)]
+    pub decoration: String,
+
+    /// Draws the built-in decorations into this folder and exits (the image's build runs it).
+    #[arg(long, hide = true)]
+    pub write_decorations: Option<PathBuf>,
 
     /// The worker binary. Default: `sovemu-worker` next to this binary.
     #[arg(long, env = "SOVEMU_WORKER")]
@@ -334,6 +355,27 @@ const SECRETS: &[&str] = &[
 ];
 
 impl Config {
+    /// The decoration set a system's games are framed with (`none`: no frame).
+    pub fn decoration_for(&self, system: &str) -> &str {
+        self.systems.get(system).and_then(|s| s.decoration.as_deref()).unwrap_or(&self.decoration)
+    }
+
+    /// The decoration folders, first wins: the configured ones, `<data>/decorations`, then the
+    /// built-in one.
+    pub fn decoration_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = self.decorations_dirs.clone();
+        dirs.push(self.data_dir.join("decorations"));
+        dirs.push(self.builtin_decorations());
+        dirs
+    }
+
+    pub fn builtin_decorations(&self) -> PathBuf {
+        self.decorations_builtin
+            .clone()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| self.data_dir.join("cache").join("decorations"))
+    }
+
     /// Where BIOS files live: `<bios_dir>/<system>/`.
     pub fn bios_dir(&self) -> PathBuf {
         // `SOVEMU_BIOS_DIR=` (empty) means the default, not the working directory.
@@ -426,6 +468,12 @@ impl Config {
                 self.launchbox_url,
                 self.launchbox_images_url,
                 self.launchbox_refresh_hours
+            ),
+            format!(
+                "decoration={} decorations_dirs={:?} decorations_builtin={}",
+                self.decoration,
+                self.decorations_dirs,
+                self.builtin_decorations().display()
             ),
             format!(
                 "log_format={} otel_endpoint={}",
@@ -542,6 +590,21 @@ pub struct AppState {
     pub core_info: Arc<settings::CoreInfoCache>,
     /// The GraphQL schema (cheap to clone: shared).
     pub schema: graphql::ApiSchema,
+    /// The decoration sets found, listed again after each library scan.
+    pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
+}
+
+impl AppState {
+    /// The decoration sets as last listed.
+    pub fn decorations(&self) -> Arc<decorations::Decorations> {
+        self.decorations.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Lists the decoration folders again (a set may have been added).
+    pub fn reload_decorations(&self) {
+        let fresh = Arc::new(decorations::Decorations::load(&self.config.decoration_dirs()));
+        *self.decorations.write().unwrap_or_else(|e| e.into_inner()) = fresh;
+    }
 }
 
 impl std::fmt::Debug for AppState {
@@ -558,6 +621,7 @@ pub fn router(state: AppState) -> Router {
         .route("/graphql", get(graphql::graphiql).post(graphql::handler))
         .route("/media/games/{id}/{kind}", get(api::game_media))
         .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
+        .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
         .route("/health", get(ops::health))
         .route_layer(middleware::from_fn(telemetry::trace_request))
         .with_state(state.clone());
@@ -692,6 +756,13 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         std::time::Duration::from_secs(config.login_lockout_minutes * 60),
     );
     let copy_threads = config.copy_threads;
+    // The built-in set: drawn here unless the image already holds it (it does, once per version).
+    if config.decorations_builtin.is_none()
+        && let Err(e) = decorations::write_builtin(&config.builtin_decorations())
+    {
+        tracing::warn!(error = %e, "drawing the built-in decorations");
+    }
+    let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -704,6 +775,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         gpu: Arc::new(gpu),
         core_info: Arc::default(),
         schema: graphql::schema(),
+        decorations: Arc::new(std::sync::RwLock::new(decorations)),
     })
 }
 
@@ -825,6 +897,11 @@ async fn shutdown_signal() {
 fn main() -> Result<()> {
     unset_empty_settings();
     let config = Config::parse();
+    if let Some(dir) = &config.write_decorations {
+        decorations::write_builtin(dir).with_context(|| format!("writing {}", dir.display()))?;
+        println!("decorations: {}", dir.join(decorations::BUILTIN).display());
+        return Ok(());
+    }
     let telemetry = telemetry::init(config.log_format, config.otel_endpoint.as_deref())?;
     let result =
         tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(config));

@@ -313,6 +313,15 @@ export const GameQuery = graphql(`
       saves {
         ...SaveFields
       }
+      decoration {
+        url
+        width
+        height
+        top
+        left
+        bottom
+        right
+      }
     }
   }
 `);

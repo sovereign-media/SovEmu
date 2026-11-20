@@ -250,7 +250,7 @@ export type GameQueryVariables = Exact<{
 }>;
 
 
-export type GameQuery = { game: { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, patch: string | null, discs: number, image: string | null, thumb: string | null, video: string | null, saves: Array<{ slot: number, savedAt: number, screenshotUrl: string | null }> } };
+export type GameQuery = { game: { id: number, system: string, title: string, fileTitle: string | null, tags: Array<string>, path: string, size: number, lastPlayedAt: string | null, playCount: number, description: string | null, releaseDate: string | null, developer: string | null, publisher: string | null, genre: string | null, players: string | null, rating: number | null, favourite: boolean, release: string | null, patch: string | null, discs: number, image: string | null, thumb: string | null, video: string | null, saves: Array<{ slot: number, savedAt: number, screenshotUrl: string | null }>, decoration: { url: string, width: number, height: number, top: number, left: number, bottom: number, right: number } | null } };
 
 export type SavesQueryVariables = Exact<{
   id: number;
@@ -913,6 +913,15 @@ export const GameDocument = new TypedDocumentString(`
     ...GameFields
     saves {
       ...SaveFields
+    }
+    decoration {
+      url
+      width
+      height
+      top
+      left
+      bottom
+      right
     }
   }
 }
