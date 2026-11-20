@@ -136,6 +136,9 @@ service:
   port: 8080
   annotations: {}
 
+# Behind an ingress every request comes from the ingress controller: set
+# settings.TRUSTED_PROXIES to its pods' range (e.g. "10.42.0.0/16"), so sign-in throttling
+# counts each client, not the controller.
 ingress:
   enabled: false
   className: ""

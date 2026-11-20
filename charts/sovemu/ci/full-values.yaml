@@ -7,6 +7,7 @@ settings:
   METADATA_AUTO: true
   SOVEMU_VIDEO_KBPS: 3000
   LOG_FORMAT: json
+  TRUSTED_PROXIES: 10.42.0.0/16
   OTEL_ENDPOINT: http://otel-collector.monitoring:4318
 secrets:
   SCREENSCRAPER_DEVPASSWORD: dev-password

@@ -1,5 +1,5 @@
-//! Operational routes and safeguards: health, client configuration (ICE servers), sign-in
-//! throttling and security headers. Metrics are OpenTelemetry's (`telemetry.rs`).
+//! Operational routes and safeguards: health, sign-in throttling, security headers and
+//! response compression. Metrics are OpenTelemetry's (`telemetry.rs`).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -10,13 +10,20 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
+use tower_http::compression::Predicate;
+use tower_http::compression::predicate::{DefaultPredicate, NotForContentType};
+
 use crate::AppState;
 
 /// Default failed sign-ins allowed per username within [`LOCKOUT_WINDOW`].
 pub const MAX_FAILURES: u32 = 5;
+/// Default failed sign-ins allowed per client address, across usernames: enough for a household
+/// behind one router to mistype, too few to try many names.
+pub const MAX_FAILURES_PER_IP: u32 = 20;
 pub const LOCKOUT_WINDOW: Duration = Duration::from_secs(300);
 
-/// Counts failed sign-ins per username and locks a name out after too many. In memory: a
+/// Counts failed sign-ins per key (a username, or a client address) and locks the key out after
+/// too many. In memory: a
 /// restart forgets, which is fine for slowing down guessing on a home server.
 #[derive(Debug)]
 pub struct LoginThrottle {
@@ -82,6 +89,14 @@ pub async fn health(State(state): State<AppState>) -> Response {
             (StatusCode::SERVICE_UNAVAILABLE, "database unavailable").into_response()
         }
     }
+}
+
+/// Compresses responses (gzip or Brotli, as the client accepts): the GraphQL API's JSON and the
+/// web client's scripts and styles. Not images, videos or anything tiny, which compress poorly or
+/// not at all.
+pub fn compression() -> tower_http::compression::CompressionLayer<impl Predicate> {
+    let predicate = DefaultPredicate::new().and(NotForContentType::const_new("video/"));
+    tower_http::compression::CompressionLayer::new().compress_when(predicate)
 }
 
 /// Headers every response carries.

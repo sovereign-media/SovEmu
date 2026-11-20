@@ -2,6 +2,8 @@
 //! (only its SHA-256 is stored). The first account, made through first-run setup, is the admin;
 //! the admin adds the rest. OIDC sign-in comes later (docs/ROADMAP.md).
 
+use std::net::IpAddr;
+
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -229,9 +231,20 @@ pub async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, Hea
 }
 
 /// Signs in. Returns the user and the `Set-Cookie` value.
-pub async fn login(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
+/// `client` is the address it came from (`client_ip`), when known: failures count against it
+/// as well as the username, so one address cannot try many names.
+pub async fn login(
+    state: &AppState,
+    creds: Credentials,
+    client: Option<IpAddr>,
+) -> ApiResult<(User, HeaderValue)> {
     let now = std::time::Instant::now();
-    if let Err(wait) = state.login_throttle.check(&creds.username, now) {
+    let address = client.map(|ip| ip.to_string());
+    let locked =
+        state.login_throttle.check(&creds.username, now).err().or_else(|| {
+            address.as_deref().and_then(|a| state.login_ip_throttle.check(a, now).err())
+        });
+    if let Some(wait) = locked {
         tracing::warn!(user.name = %creds.username, wait_s = wait, "sign-in refused: locked out");
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -252,6 +265,9 @@ pub async fn login(state: &AppState, creds: Credentials) -> ApiResult<(User, Hea
     let valid = verify_password(&creds.password, &hash);
     let Some(user) = user.filter(|_| valid) else {
         state.login_throttle.failed(&creds.username, now);
+        if let Some(a) = &address {
+            state.login_ip_throttle.failed(a, now);
+        }
         tracing::warn!(user.name = %creds.username, "sign-in failed");
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "wrong username or password"));
     };

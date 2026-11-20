@@ -285,7 +285,11 @@ pub async fn trace_request(request: Request, next: Next) -> Response {
         http.response.status_code = Empty,
         graphql.operation.name = Empty,
         otel.status_code = Empty,
+        client.address = Empty,
     );
+    if let Some(crate::client_ip::ClientIp(Some(ip))) = request.extensions().get() {
+        span.record("client.address", tracing::field::display(ip));
+    }
     let start = Instant::now();
     let response = next.run(request).instrument(span.clone()).await;
     let status = response.status().as_u16();

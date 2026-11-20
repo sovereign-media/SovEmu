@@ -19,6 +19,7 @@ use async_graphql::{
     SimpleObject,
 };
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use axum::Extension;
 use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -27,6 +28,7 @@ use tokio::sync::OnceCell;
 
 use crate::AppState;
 use crate::auth::{self, Credentials, NewUser, User};
+use crate::client_ip::ClientIp;
 use crate::error::ApiError;
 
 pub type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
@@ -49,6 +51,7 @@ struct Auth {
 pub async fn handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    client: Option<Extension<ClientIp>>,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     let auth = Auth { token: auth::cookie_token(&headers), user: OnceCell::new() };
@@ -57,7 +60,8 @@ pub async fn handler(
     if let Some(name) = &request.operation_name {
         tracing::Span::current().record("graphql.operation.name", name.as_str());
     }
-    let request = request.data(state.clone()).data(auth);
+    let client = client.map(|Extension(c)| c).unwrap_or_default();
+    let request = request.data(state.clone()).data(auth).data(client);
     state.schema.execute(request).await.into()
 }
 
@@ -1202,10 +1206,12 @@ impl Mutation {
         Ok(user)
     }
 
-    /// Signs in (sets the cookie). Repeated failures for a username are slowed down.
+    /// Signs in (sets the cookie). Repeated failures for a username, or from an address, are
+    /// locked out for a while.
     async fn login(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
+        let client = ctx.data_opt::<ClientIp>().and_then(|c| c.0);
         let (user, cookie) =
-            auth::login(state(ctx), Credentials { username, password }).await.api()?;
+            auth::login(state(ctx), Credentials { username, password }, client).await.api()?;
         set_cookie(ctx, cookie);
         Ok(user)
     }
