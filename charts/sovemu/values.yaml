@@ -18,16 +18,19 @@ fullnameOverride: ""
 #   LIBRARY_MODE: cache
 #   CACHE_GB: "50"
 #   SCAN_INTERVAL_MINUTES: "30"
+#   LOG_FORMAT: json
+#   OTEL_ENDPOINT: http://otel-collector.monitoring:4318
 # They go into a ConfigMap. Values are strings: quote numbers and booleans.
 settings: {}
 
-# Secret settings, without the SOVEMU_ prefix (ADMIN_PASSWORD, METRICS_TOKEN,
-# SCREENSCRAPER_DEVPASSWORD, SCREENSCRAPER_PASSWORD, THEGAMESDB_KEY, ...). They go into a Secret
+# Secret settings, without the SOVEMU_ prefix (ADMIN_PASSWORD, SCREENSCRAPER_DEVPASSWORD,
+# SCREENSCRAPER_PASSWORD, THEGAMESDB_KEY, ...). They go into a Secret
 # this chart creates. Prefer existingSecret for anything kept in Git.
 secrets: {}
 
 # A Secret you manage (sealed-secrets, external-secrets, ...) whose keys are full variable
-# names (SOVEMU_ADMIN_PASSWORD, ...), loaded with envFrom.
+# names (SOVEMU_ADMIN_PASSWORD, ..., or OTEL_EXPORTER_OTLP_HEADERS for a collector that wants a
+# token), loaded with envFrom.
 existingSecret: ""
 
 # The admin account, created at startup and kept in step with these values. With it set there

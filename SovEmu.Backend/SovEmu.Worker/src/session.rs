@@ -81,7 +81,10 @@ pub fn run(args: SessionArgs) -> Result<()> {
 
     let (commands_tx, commands_rx) = mpsc::channel();
     let reader_out = out.clone();
+    // The session's span (its id, from the server) carries over to this thread's log lines.
+    let span = tracing::Span::current();
     thread::Builder::new().name("stdin".into()).spawn(move || {
+        let _span = span.enter();
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
             if line.trim().is_empty() {

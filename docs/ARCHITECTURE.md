@@ -84,7 +84,7 @@ The API is GraphQL (async-graphql), chosen to match Sovereign's and so that the 
 iOS clients share one typed contract: `SovEmu.Server/schema.graphql`, checked in and kept current
 by a test, from which the web client's TypeScript is generated. There is no REST API. Plain HTTP
 remains only where GraphQL does not fit: files (`/media/…`, artwork and save screenshots, whose
-URLs the API returns), and `/health` and `/metrics` for probes and Prometheus. Long operations
+URLs the API returns), and `/health` for probes. Long operations
 (starting a game, metadata lookups, mirror syncs) are followed by polling a query, not by
 subscriptions.
 

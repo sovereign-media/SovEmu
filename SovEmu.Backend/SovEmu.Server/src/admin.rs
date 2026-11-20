@@ -12,14 +12,14 @@ pub async fn scan_and_log(state: &AppState) {
     let started = std::time::Instant::now();
     match library::scan(&state.db, &state.config.roms_dir).await {
         Ok(r) => tracing::info!(
-            "library {}: {} games ({} new, {} removed) in {:.1} s",
-            state.config.roms_dir.display(),
-            r.found,
-            r.added,
-            r.removed,
-            started.elapsed().as_secs_f64()
+            library = %state.config.roms_dir.display(),
+            games = r.found,
+            added = r.added,
+            removed = r.removed,
+            elapsed_s = started.elapsed().as_secs_f64(),
+            "library scanned"
         ),
-        Err(e) => tracing::error!("library scan failed: {e}"),
+        Err(e) => tracing::error!(error = %e, "library scan failed"),
     }
 }
 

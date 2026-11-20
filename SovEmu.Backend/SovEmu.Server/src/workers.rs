@@ -27,6 +27,7 @@ use sovemu_protocol::ipc::{Reply, Request};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, watch};
+use tracing::Instrument;
 
 use crate::starts::{Phase, Starts};
 
@@ -58,6 +59,8 @@ pub struct WorkerConfig {
     pub keyframe_interval: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
     pub gpu: String,
+    /// How workers write their log lines (as the server does); each also gets its session id.
+    pub log_format: crate::telemetry::LogFormat,
 }
 
 /// The only environment a worker inherits. Cores are third-party code: they get no credentials
@@ -140,6 +143,8 @@ pub struct Session {
     disc: std::sync::atomic::AtomicU32,
     /// The options the core declared with its game loaded (the worker's `options` reply).
     declared: Mutex<Option<Declared>>,
+    /// The `session` span: its id, game, system and user, on every line logged about it.
+    span: tracing::Span,
 }
 
 /// A core's options and categories, as a session reported them.
@@ -176,25 +181,35 @@ impl Process {
         port: u16,
         workers: Arc<Workers>,
         after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
+        span: tracing::Span,
+        system: String,
     ) -> Self {
         let pid = child.id();
+        let started = Instant::now();
         let (kill, mut killed) = oneshot::channel::<()>();
         let (exit_tx, exited) = watch::channel(false);
-        tokio::spawn(async move {
-            let status = tokio::select! {
-                status = child.wait() => status,
-                Ok(()) = &mut killed => {
-                    let _ = child.start_kill();
-                    child.wait().await
+        tokio::spawn(
+            async move {
+                let status = tokio::select! {
+                    status = child.wait() => status,
+                    Ok(()) = &mut killed => {
+                        let _ = child.start_kill();
+                        child.wait().await
+                    }
+                };
+                let ran = started.elapsed();
+                tracing::info!(?status, duration_s = ran.as_secs(), "session ended");
+                crate::telemetry::metrics()
+                    .session_duration
+                    .record(ran.as_secs_f64(), &[opentelemetry::KeyValue::new("system", system)]);
+                let _ = exit_tx.send(true);
+                workers.forget(&id, port);
+                if let Some(after) = after_exit {
+                    after();
                 }
-            };
-            tracing::info!("session {id} ended ({status:?})");
-            let _ = exit_tx.send(true);
-            workers.forget(&id, port);
-            if let Some(after) = after_exit {
-                after();
             }
-        });
+            .instrument(span),
+        );
         Self { pid, kill: Mutex::new(Some(kill)), exited }
     }
 
@@ -360,6 +375,14 @@ impl Workers {
         if let Err(e) = std::fs::create_dir_all(&bios) {
             tracing::debug!("BIOS folder {}: {e}", bios.display());
         }
+        let id = random_id();
+        let span = tracing::info_span!(
+            "session",
+            session.id = %id,
+            game.id = launch.game_id,
+            system = %launch.system,
+            user.id = launch.user_id,
+        );
         let mut command = Command::new(&self.config.worker_bin);
         command.env_clear();
         for var in WORKER_ENV {
@@ -398,7 +421,11 @@ impl Workers {
             .arg("--keyframe-interval")
             .arg(self.config.keyframe_interval.to_string())
             .arg("--gpu")
-            .arg(&self.config.gpu);
+            .arg(&self.config.gpu)
+            .arg("--session-id")
+            .arg(&id)
+            .arg("--log-format")
+            .arg(self.config.log_format.as_arg());
         for (key, value) in &launch.variables {
             command.arg("--var").arg(format!("{key}={value}"));
         }
@@ -420,8 +447,15 @@ impl Workers {
         };
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
-        let id = random_id();
-        let process = Process::reap(child, id.clone(), port, self.clone(), after_exit);
+        let process = Process::reap(
+            child,
+            id.clone(),
+            port,
+            self.clone(),
+            after_exit,
+            span.clone(),
+            launch.system.clone(),
+        );
 
         let mut declared = None;
         let ready = tokio::time::timeout(self.config.start_timeout, async {
@@ -479,8 +513,12 @@ impl Workers {
             connected: AtomicBool::new(false),
             disc: std::sync::atomic::AtomicU32::new(1),
             declared: Mutex::new(declared),
+            span: span.clone(),
         });
-        tracing::info!("session {id}: {} ({}) on UDP {port}", launch.title, launch.system);
+        tracing::info!(parent: &span, game = %launch.title, udp.port = port, "session started");
+        crate::telemetry::metrics()
+            .sessions_started
+            .add(1, &[opentelemetry::KeyValue::new("system", launch.system.clone())]);
 
         let reader = session.clone();
         tokio::spawn(async move {
@@ -520,18 +558,19 @@ impl Workers {
         let limit = self.config.stop_timeout;
         let deadline = tokio::time::Instant::now() + limit;
         if let Err(e) = session.request_within(limit, |id| Request::Shutdown { id }).await {
-            tracing::warn!("session {id} did not acknowledge shutdown: {e:#}");
+            tracing::warn!(parent: &session.span, error = %format!("{e:#}"), "session did not acknowledge shutdown");
         }
         if session.process.exited_by(deadline).await {
             return;
         }
-        tracing::warn!("session {id} is still running {limit:?} after shutdown; killing it");
+        tracing::warn!(parent: &session.span, ?limit, "session still running after shutdown; killing it");
         session.process.kill();
         if !session.process.exited_by(tokio::time::Instant::now() + KILL_WAIT).await {
             tracing::error!(
-                "session {id} (pid {:?}) did not die when killed: it is blocked in the kernel, \
-                 most likely on the network share; leaving it",
-                session.process.pid
+                parent: &session.span,
+                pid = ?session.process.pid,
+                "session did not die when killed: it is blocked in the kernel, most likely on \
+                 the network share; leaving it"
             );
         }
     }
@@ -564,6 +603,7 @@ mod tests {
     /// A stand-in worker: says it is ready, then answers every request with `done`. After a
     /// shutdown it runs `then` (`exit 0`, or a sleep for a worker slow to go).
     const WORKER: &str = r#"#!/bin/sh
+echo "$@" > "$(dirname "$0")/args"
 echo '{"type":"ready","udp_port":1,"core":"fake","width":320,"height":240,"fps":60.0}'
 while read -r line; do
   id=$(echo "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
@@ -600,6 +640,7 @@ done
             fast_forward: 1,
             keyframe_interval: 60,
             gpu: "off".into(),
+            log_format: crate::telemetry::LogFormat::Text,
         })
     }
 
@@ -646,6 +687,17 @@ done
         workers.stop_all().await;
         settle(&workers, 2).await;
         assert_eq!(workers.count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_worker_logs_with_its_session_id_and_the_servers_format() {
+        let dir = dir("args");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let session = workers.start(launch(&dir, 1, 1)).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains(&format!("--session-id {}", session.id)), "{args}");
+        assert!(args.contains("--log-format text"), "{args}");
+        workers.stop_all().await;
     }
 
     #[tokio::test]

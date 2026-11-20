@@ -260,7 +260,7 @@ async fn throttles_guessing_and_serves_ops_routes() {
     assert_eq!(
         h.call("GET", "/metrics", None).await.0,
         StatusCode::NOT_FOUND,
-        "off without a token"
+        "no Prometheus route: metrics go out over OpenTelemetry"
     );
     assert_eq!(h.err("{ clientConfig { iceServers } }", json!({})).await.0, "UNAUTHENTICATED");
     // The REST API is gone.

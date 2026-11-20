@@ -40,6 +40,33 @@ use crate::schedule::InputHold;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+
+    /// How log lines are written to stderr: `text`, or `json` (one object per line) for a log
+    /// collector. The server passes its own `SOVEMU_LOG_FORMAT`.
+    #[arg(long, global = true, value_enum, default_value_t = LogFormat::Text)]
+    log_format: LogFormat,
+
+    /// The server's id for this game session, on every log line (in a `session` span).
+    #[arg(long, global = true)]
+    session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LogFormat {
+    Text,
+    Json,
+}
+
+/// Logs to stderr (stdout is the server's channel), as text or JSON lines.
+fn init_logs(format: LogFormat) {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::io::stderr);
+    match format {
+        LogFormat::Text => builder.init(),
+        LogFormat::Json => {
+            builder.json().flatten_event(true).with_current_span(true).with_span_list(false).init()
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -286,14 +313,10 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 }
 
 fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_writer(std::io::stderr)
-        .init();
-
     let cli = Cli::parse();
+    init_logs(cli.log_format);
+    let span = cli.session_id.as_deref().map(|id| tracing::info_span!("session", session.id = %id));
+    let _session = span.as_ref().map(tracing::Span::enter);
     let result = match cli.command {
         Command::Session(args) => session::run(args),
         Command::Serve(mut args) => {
@@ -311,7 +334,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            tracing::error!("{err:#}");
+            tracing::error!(error = %format!("{err:#}"), "worker failed");
             ExitCode::FAILURE
         }
     }

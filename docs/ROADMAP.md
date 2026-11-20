@@ -143,7 +143,14 @@ held 59.93 fps over 300 frames with no resyncs.
       the estimate minus audio, between 300 kbit/s and the configured rate, changes over 10% only)
 - [x] STUN/TURN: `SOVEMU_ICE_SERVERS` is handed to browsers through `/api/config`
 - [x] Sign-in throttling: five failures lock a username out for five minutes
-- [x] `GET /health`; Prometheus `GET /metrics` behind a bearer token (off by default)
+- [x] `GET /health` for probes
+- [x] Structured logs (`SOVEMU_LOG_FORMAT=json`): every API request in a `request` span (route,
+      status, GraphQL operation) and every game session in a `session` span, whose id the
+      worker also logs with
+- [x] OpenTelemetry traces and metrics over OTLP/HTTP (`SOVEMU_OTEL_ENDPOINT`, off by default):
+      request spans, session spans, request durations, sessions started and their length,
+      sessions running, capacity, accounts and games per system. This replaced the Prometheus
+      `/metrics` route
 - [x] Security headers (nosniff, frame denial, referrer and permissions policies); compose healthcheck
 - [x] Configuration reference in the README
 - [x] Configuration entirely through environment variables: the admin account

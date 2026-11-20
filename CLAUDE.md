@@ -57,7 +57,7 @@ instead (as Sovereign's server takes its SPA).
 - **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
-  videos, save screenshots) and for `/health` and `/metrics`. Resolvers check access
+  videos, save screenshots) and for `/health`. Resolvers check access
   (`user(ctx)`, `admin(ctx)`) and call plain functions in the other modules; errors carry
   `extensions.code`. `Int` is 32-bit, so byte counts and Unix times are `Float`. The schema is
   checked in as `SovEmu.Server/schema.graphql` (a test fails when it drifts:
@@ -95,8 +95,14 @@ instead (as Sovereign's server takes its SPA).
   `auto`, which workers resolve hardware-first. Vulkan cores are not supported yet.
 - **Workers get no secrets.** `Workers::spawn` clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
-- **Never expose operational data without a switch.** `/metrics` stays off unless
-  `SOVEMU_METRICS_TOKEN` is set; new operational routes follow the same pattern.
+- **Never expose operational data without a switch.** Telemetry is pushed, never served: traces
+  and metrics go out over OpenTelemetry (OTLP/HTTP, `telemetry.rs`) only when
+  `SOVEMU_OTEL_ENDPOINT` is set, and there is no metrics route. New metrics are instruments in
+  `telemetry.rs`; new operational routes stay off unless a setting turns them on.
+- **Log with fields, not formatted strings.** `tracing::info!(game = %title, "session started")`,
+  not `info!("session {id} started")`: `SOVEMU_LOG_FORMAT=json` turns fields into keys. Work for
+  a request or a session runs inside its span (`request`, `session`), so its lines carry the
+  route or the session id; a worker gets its session id as `--session-id`.
 - **The server shuts down on SIGTERM as on Ctrl-C**: it stops every worker (so saves are
   written) before exiting. Kubernetes and `docker stop` send SIGTERM; never exit without it.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the

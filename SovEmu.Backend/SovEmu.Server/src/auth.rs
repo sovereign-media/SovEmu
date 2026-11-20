@@ -123,7 +123,7 @@ pub async fn ensure_user(
             create_user(pool, &new)
                 .await
                 .map_err(|e| anyhow::anyhow!("creating {username}: {}", e.message))?;
-            tracing::info!("created user {username} (admin: {admin}) from the environment");
+            tracing::info!(user.name = %username, admin, "created a user declared in the environment");
         }
         Some((id, hash, is_admin)) => {
             if !verify_password(password, &hash) {
@@ -136,7 +136,7 @@ pub async fn ensure_user(
                     .bind(id)
                     .execute(pool)
                     .await?;
-                tracing::info!("updated {username}'s password from the environment");
+                tracing::info!(user.name = %username, "updated a password from the environment");
             }
             if is_admin != admin {
                 sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
@@ -158,7 +158,7 @@ pub async fn prune_users(pool: &SqlitePool, keep: &[String]) -> anyhow::Result<u
     for (id, name) in all {
         if !keep.iter().any(|k| k.eq_ignore_ascii_case(&name)) {
             sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(pool).await?;
-            tracing::info!("removed user {name}: not declared in the environment");
+            tracing::info!(user.name = %name, "removed a user not declared in the environment");
             removed += 1;
         }
     }
@@ -254,6 +254,7 @@ pub async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, Hea
 pub async fn login(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
     let now = std::time::Instant::now();
     if let Err(wait) = state.login_throttle.check(&creds.username, now) {
+        tracing::warn!(user.name = %creds.username, wait_s = wait, "sign-in refused: locked out");
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             format!("too many failed attempts; try again in {wait} s"),
@@ -273,9 +274,11 @@ pub async fn login(state: &AppState, creds: Credentials) -> ApiResult<(User, Hea
     let valid = verify_password(&creds.password, &hash);
     let Some(user) = user.filter(|_| valid) else {
         state.login_throttle.failed(&creds.username, now);
+        tracing::warn!(user.name = %creds.username, "sign-in failed");
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "wrong username or password"));
     };
     state.login_throttle.succeeded(&creds.username);
+    tracing::info!(user.name = %user.username, user.id = user.id, "signed in");
     let cookie =
         start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
             .await?;
@@ -301,7 +304,12 @@ pub async fn list_users(state: &AppState) -> ApiResult<Vec<User>> {
 
 pub async fn add_user(state: &AppState, admin: &User, new: &NewUser) -> ApiResult<User> {
     let user = create_user(&state.db, new).await?;
-    tracing::info!("{} added user {} (admin: {})", admin.username, user.username, user.is_admin);
+    tracing::info!(
+        by = %admin.username,
+        user.name = %user.username,
+        admin = user.is_admin,
+        "added a user"
+    );
     Ok(user)
 }
 
