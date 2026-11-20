@@ -82,7 +82,7 @@ pub async fn games(state: &AppState, user: &User, collection_id: i64) -> ApiResu
     .bind(collection_id)
     .fetch_all(&state.db)
     .await?;
-    mark_favourites(state, user.id, &mut games).await?;
+    crate::api::annotate(state, user.id, &mut games).await?;
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 

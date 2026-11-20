@@ -86,6 +86,7 @@ function GameCard({
       <div className="min-w-0 px-0.5">
         <p className="truncate text-sm font-semibold">{game.title}</p>
         <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
+          {game.release && <span className="truncate font-medium text-amber-200/90">{game.release} ·</span>}
           {game.releaseDate?.slice(0, 4) ?? game.tags[0] ?? system.short}
           {players !== null && players >= 2 && (
             <span className="flex items-center gap-0.5">

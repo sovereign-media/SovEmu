@@ -107,6 +107,7 @@ export function GameCard({
         <p className="truncate text-sm font-semibold">{game.title}</p>
         <p className="truncate text-xs text-slate-400">
           {short}
+          {game.release && <span className="font-medium text-amber-200/90"> · {game.release}</span>}
           {game.lastPlayedAt && wide ? ` · ${formatAgo(game.lastPlayedAt)}` : ""}
         </p>
       </div>

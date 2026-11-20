@@ -74,7 +74,7 @@ pub(crate) async fn query(
         q = q.bind(seed);
     }
     let mut games = q.bind(limit).fetch_all(&state.db).await?;
-    crate::collections::mark_favourites(state, user_id, &mut games).await?;
+    crate::api::annotate(state, user_id, &mut games).await?;
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
 

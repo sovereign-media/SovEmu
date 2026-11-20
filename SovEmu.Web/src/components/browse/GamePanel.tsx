@@ -140,6 +140,7 @@ export function GamePanel({
               <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-6 pt-2 pb-6">
                 <div>
                   <Dialog.Title className="text-2xl leading-tight font-black">{shown.title}</Dialog.Title>
+                  {shown.release && <p className="mt-1 text-sm font-medium text-amber-200/90">{shown.release}</p>}
                   {shown.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{shown.tags.join(" · ")}</p>}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                     {year && <Fact icon={<CalendarDays />}>{year}</Fact>}

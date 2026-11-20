@@ -24,6 +24,7 @@ mod library;
 mod metadata;
 mod mirror;
 mod ops;
+mod releases;
 mod search;
 mod settings;
 mod starts;
