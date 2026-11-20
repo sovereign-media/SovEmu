@@ -65,7 +65,7 @@ held 59.93 fps over 300 frames with no resyncs.
       mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
       effective configuration logged (redacted); compose loads `.env` whole; workers start with a
       cleared environment
-- [ ] OIDC sign-in (deferred to Phase 6)
+- [x] OIDC sign-in (Phase 6)
 - [x] NAS library: `compose.nas.yaml` mounts the SMB share read-only (credentials in a gitignored
       `.env`); Batocera artwork (box art, image, marquee, video snaps) is scanned and served with
       range support; the game list shows it; scans run in the background, in parallel
@@ -185,7 +185,11 @@ held 59.93 fps over 300 frames with no resyncs.
       NFS, claim or host-path library; UDP LoadBalancer or host networking for media; Ingress;
       read-only root, uid 1000, no capabilities. Linted and schema-checked in CI
 - [x] Graceful shutdown on SIGTERM (Kubernetes, `docker stop`): every session saves first
-- [ ] OIDC sign-in
+- [x] OIDC: the server is its own OpenID Connect provider (discovery, JWKS, ES256 ID tokens,
+      rotating refresh tokens with replay detection, revocation, end session). `sovemu-web`
+      signs in with the code flow and PKCE and has no password grant; `sovemu-native` (Android,
+      iOS) uses the password grant. The API takes bearer tokens; roles `viewer` and `admin`
+- [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts
 - [ ] H.264 fallback for clients without VP8 decode
 - [ ] Worker resource limits (cgroups/rlimits per session)
 

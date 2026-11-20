@@ -1,6 +1,10 @@
-//! Local accounts: argon2 password hashes, and a random session token in an HttpOnly cookie
-//! (only its SHA-256 is stored). The first account, made through first-run setup, is the admin;
-//! the admin adds the rest. OIDC sign-in comes later (docs/ROADMAP.md).
+//! Local accounts: argon2 password hashes and a role (`viewer` or `admin`). The first account,
+//! made through first-run setup, is an admin; admins add the rest.
+//!
+//! Apps never see this module's cookie: they sign in through the server's OpenID Connect
+//! provider (`crate::oidc`) and call the API with its bearer tokens. The cookie, a random token
+//! of which only the SHA-256 is stored, is the browser's sign-in *at the provider*: it lets
+//! `/oauth/authorize` hand out a code without asking for the password again.
 
 use std::net::IpAddr;
 
@@ -18,12 +22,72 @@ use crate::error::{ApiError, ApiResult};
 
 pub(crate) const COOKIE_NAME: &str = "sovemu_session";
 
+/// What an account may do.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    sqlx::Type,
+    async_graphql::Enum,
+)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(rename_all = "lowercase")]
+pub(crate) enum Role {
+    /// Plays games: browse the library, play, keep saves and settings of their own.
+    #[default]
+    Viewer,
+    /// Also runs the server: users, the library, emulator settings.
+    Admin,
+}
+
+impl Role {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Viewer => "viewer",
+            Self::Admin => "admin",
+        }
+    }
+}
+
+impl std::str::FromStr for Role {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "viewer" => Ok(Self::Viewer),
+            "admin" => Ok(Self::Admin),
+            other => Err(format!("unknown role {other:?} (viewer or admin)")),
+        }
+    }
+}
+
 /// An account.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow, async_graphql::SimpleObject)]
+#[graphql(complex)]
 pub(crate) struct User {
     pub id: i64,
     pub username: String,
-    pub is_admin: bool,
+    pub role: Role,
+}
+
+#[async_graphql::ComplexObject]
+impl User {
+    /// Whether the role is `ADMIN`.
+    #[graphql(name = "isAdmin")]
+    async fn admin_role(&self) -> bool {
+        self.is_admin()
+    }
+}
+
+impl User {
+    pub(crate) fn is_admin(&self) -> bool {
+        self.role == Role::Admin
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,7 +101,7 @@ pub(crate) struct NewUser {
     pub username: String,
     pub password: String,
     #[serde(default)]
-    pub is_admin: bool,
+    pub role: Role,
 }
 
 pub(crate) fn hash_password(password: &str) -> anyhow::Result<String> {
@@ -52,10 +116,6 @@ pub(crate) fn verify_password(password: &str, hash: &str) -> bool {
     PasswordHash::new(hash)
         .map(|parsed| Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
         .unwrap_or(false)
-}
-
-fn token_hash(token: &str) -> String {
-    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 fn validate(username: &str, password: &str) -> ApiResult<()> {
@@ -74,12 +134,12 @@ pub(crate) async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<U
     validate(&new.username, &new.password)?;
     let hash = hash_password(&new.password)?;
     let result = sqlx::query_as::<_, User>(
-        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)
-         RETURNING id, username, is_admin",
+        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)
+         RETURNING id, username, role",
     )
     .bind(&new.username)
     .bind(hash)
-    .bind(new.is_admin)
+    .bind(new.role)
     .fetch_one(pool)
     .await;
     match result {
@@ -92,65 +152,75 @@ pub(crate) async fn create_user(pool: &SqlitePool, new: &NewUser) -> ApiResult<U
 }
 
 /// Makes sure the configured admin exists with the configured password: created if missing,
-/// otherwise its password and admin flag are brought in line (the environment is the source of
+/// otherwise its password and role are brought in line (the environment is the source of
 /// truth, so rotating `SOVEMU_ADMIN_PASSWORD` rotates the password).
 pub(crate) async fn ensure_admin(
     pool: &SqlitePool,
     username: &str,
     password: &str,
 ) -> anyhow::Result<()> {
-    ensure_user(pool, username, password, true).await
+    ensure_user(pool, username, password, Role::Admin).await
 }
 
-/// Makes sure a declared user exists with the declared password and admin flag: created if
-/// missing, otherwise brought in line (the environment is the source of truth; a changed
-/// password signs that user's browsers out).
+/// Makes sure a declared user exists with the declared password and role: created if missing,
+/// otherwise brought in line (the environment is the source of truth; a changed password signs
+/// that user out everywhere: browsers and apps).
 pub(crate) async fn ensure_user(
     pool: &SqlitePool,
     username: &str,
     password: &str,
-    admin: bool,
+    role: Role,
 ) -> anyhow::Result<()> {
     validate(username, password).map_err(|e| anyhow::anyhow!("user {username}: {}", e.message))?;
-    let existing: Option<(i64, String, bool)> =
-        sqlx::query_as("SELECT id, password_hash, is_admin FROM users WHERE username = ?")
+    let existing: Option<(i64, String, Role)> =
+        sqlx::query_as("SELECT id, password_hash, role FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(pool)
             .await?;
     match existing {
         None => {
-            let new = NewUser {
-                username: username.to_owned(),
-                password: password.to_owned(),
-                is_admin: admin,
-            };
+            let new =
+                NewUser { username: username.to_owned(), password: password.to_owned(), role };
             create_user(pool, &new)
                 .await
                 .map_err(|e| anyhow::anyhow!("creating {username}: {}", e.message))?;
-            tracing::info!(user.name = %username, admin, "created a user declared in the environment");
+            tracing::info!(
+                user.name = %username,
+                role = role.as_str(),
+                "created a user declared in the environment"
+            );
         }
-        Some((id, hash, is_admin)) => {
+        Some((id, hash, current)) => {
             if !verify_password(password, &hash) {
                 sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
                     .bind(hash_password(password)?)
                     .bind(id)
                     .execute(pool)
                     .await?;
-                sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?")
-                    .bind(id)
-                    .execute(pool)
-                    .await?;
+                sign_out_everywhere(pool, id).await?;
                 tracing::info!(user.name = %username, "updated a password from the environment");
             }
-            if is_admin != admin {
-                sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
-                    .bind(admin)
+            if current != role {
+                sqlx::query("UPDATE users SET role = ? WHERE id = ?")
+                    .bind(role)
                     .bind(id)
                     .execute(pool)
                     .await?;
+                tracing::info!(
+                    user.name = %username,
+                    role = role.as_str(),
+                    "updated a role from the environment"
+                );
             }
         }
     }
+    Ok(())
+}
+
+/// Ends every sign-in of a user: browsers at the provider, and every app's tokens.
+pub(crate) async fn sign_out_everywhere(pool: &SqlitePool, user_id: i64) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?").bind(user_id).execute(pool).await?;
+    sqlx::query("DELETE FROM oauth_grants WHERE user_id = ?").bind(user_id).execute(pool).await?;
     Ok(())
 }
 
@@ -169,16 +239,10 @@ pub(crate) async fn prune_users(pool: &SqlitePool, keep: &[String]) -> anyhow::R
     Ok(removed)
 }
 
-/// Creates a sign-in session and returns the `Set-Cookie` value for it.
-async fn start_session(
-    pool: &SqlitePool,
-    user_id: i64,
-    secure: bool,
-    days: u32,
-) -> ApiResult<HeaderValue> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(ApiError::internal)?;
-    let token = hex::encode(bytes);
+/// Signs a browser in at the provider: a new sign-in session, and the `Set-Cookie` value for it.
+pub(crate) async fn start_session(state: &AppState, user_id: i64) -> ApiResult<HeaderValue> {
+    let days = state.config.session_days;
+    let token = random_token()?;
     sqlx::query(
         "INSERT INTO auth_sessions (token_hash, user_id, expires_at)
          VALUES (?, ?, datetime('now', ?))",
@@ -186,14 +250,26 @@ async fn start_session(
     .bind(token_hash(&token))
     .bind(user_id)
     .bind(format!("+{days} days"))
-    .execute(pool)
+    .execute(&state.db)
     .await?;
-    let secure = if secure { "; Secure" } else { "" };
+    let secure = if state.config.secure_cookies { "; Secure" } else { "" };
     let cookie = format!(
         "{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}",
         u64::from(days) * 86_400
     );
     HeaderValue::from_str(&cookie).map_err(ApiError::internal)
+}
+
+/// 32 random bytes as hex: a session token, an authorization code, an access or refresh token.
+pub(crate) fn random_token() -> ApiResult<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(ApiError::internal)?;
+    Ok(hex::encode(bytes))
+}
+
+/// What is stored for a token: its SHA-256, as hex.
+pub(crate) fn token_hash(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 pub(crate) fn cookie_token(headers: &HeaderMap) -> Option<String> {
@@ -205,22 +281,27 @@ pub(crate) fn cookie_token(headers: &HeaderMap) -> Option<String> {
     })
 }
 
-/// Every signed-in request's first query.
-pub(crate) const SESSION_USER: &str = "SELECT u.id, u.username, u.is_admin FROM auth_sessions s
-     JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
-
-/// The user a sign-in cookie's token belongs to, if it is current.
-pub(crate) async fn user_for_token(
+/// The browser's sign-in at the provider: the user its cookie names, and when they signed in
+/// (Unix seconds), if the sign-in is current.
+pub(crate) async fn browser_user(
     db: &SqlitePool,
-    token: Option<&str>,
-) -> ApiResult<Option<User>> {
-    let Some(token) = token else { return Ok(None) };
-    Ok(sqlx::query_as::<_, User>(SESSION_USER).bind(token_hash(token)).fetch_optional(db).await?)
+    headers: &HeaderMap,
+) -> ApiResult<Option<(User, i64)>> {
+    let Some(token) = cookie_token(headers) else { return Ok(None) };
+    let row: Option<(i64, String, Role, i64)> = sqlx::query_as(
+        "SELECT u.id, u.username, u.role, CAST(strftime('%s', s.created_at) AS INTEGER)
+         FROM auth_sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
+    )
+    .bind(token_hash(&token))
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|(id, username, role, at)| (User { id, username, role }, at)))
 }
 
-/// First-run setup: creates the admin account and signs it in. Only works while there are no
-/// accounts. Returns the user and the `Set-Cookie` value.
+/// First-run setup: creates the admin account and signs the browser in at the provider (the
+/// web client then finishes signing in through `/oauth/authorize`). Only works while there are
+/// no accounts. Returns the user and the `Set-Cookie` value.
 pub(crate) async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(User, HeaderValue)> {
     let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(&state.db).await?;
     if users > 0 {
@@ -228,23 +309,22 @@ pub(crate) async fn setup(state: &AppState, creds: Credentials) -> ApiResult<(Us
     }
     let user = create_user(
         &state.db,
-        &NewUser { username: creds.username, password: creds.password, is_admin: true },
+        &NewUser { username: creds.username, password: creds.password, role: Role::Admin },
     )
     .await?;
-    let cookie =
-        start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
-            .await?;
+    let cookie = start_session(state, user.id).await?;
     Ok((user, cookie))
 }
 
-/// Signs in. Returns the user and the `Set-Cookie` value.
+/// Checks a username and password: the sign-in form's and the password grant's one check.
 /// `client` is the address it came from (`client_ip`), when known: failures count against it
-/// as well as the username, so one address cannot try many names.
-pub(crate) async fn login(
+/// as well as the username, so one address cannot try many names. Wrong credentials are
+/// `UNAUTHORIZED`; a locked-out name or address is `TOO_MANY_REQUESTS`.
+pub(crate) async fn check_password(
     state: &AppState,
-    creds: Credentials,
+    creds: &Credentials,
     client: Option<IpAddr>,
-) -> ApiResult<(User, HeaderValue)> {
+) -> ApiResult<User> {
     let now = std::time::Instant::now();
     let address = client.map(|ip| ip.to_string());
     let locked =
@@ -258,15 +338,14 @@ pub(crate) async fn login(
             format!("too many failed attempts; try again in {wait} s"),
         ));
     }
-    let row: Option<(i64, String, bool, String)> = sqlx::query_as(
-        "SELECT id, username, is_admin, password_hash FROM users WHERE username = ?",
-    )
-    .bind(&creds.username)
-    .fetch_optional(&state.db)
-    .await?;
+    let row: Option<(i64, String, Role, String)> =
+        sqlx::query_as("SELECT id, username, role, password_hash FROM users WHERE username = ?")
+            .bind(&creds.username)
+            .fetch_optional(&state.db)
+            .await?;
     // Hash even for an unknown user, so timing does not reveal which usernames exist.
     let (user, hash) = match row {
-        Some((id, username, is_admin, hash)) => (Some(User { id, username, is_admin }), hash),
+        Some((id, username, role, hash)) => (Some(User { id, username, role }), hash),
         None => (None, state.dummy_hash.clone()),
     };
     let valid = verify_password(&creds.password, &hash);
@@ -280,17 +359,15 @@ pub(crate) async fn login(
     };
     state.login_throttle.succeeded(&creds.username);
     tracing::info!(user.name = %user.username, user.id = user.id, "signed in");
-    let cookie =
-        start_session(&state.db, user.id, state.config.secure_cookies, state.config.session_days)
-            .await?;
-    Ok((user, cookie))
+    Ok(user)
 }
 
-/// Ends the sign-in session; returns the `Set-Cookie` value that clears the cookie.
-pub(crate) async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<HeaderValue> {
-    if let Some(token) = token {
+/// Ends the browser's sign-in at the provider; returns the `Set-Cookie` value that clears the
+/// cookie.
+pub(crate) async fn end_session(state: &AppState, headers: &HeaderMap) -> ApiResult<HeaderValue> {
+    if let Some(token) = cookie_token(headers) {
         sqlx::query("DELETE FROM auth_sessions WHERE token_hash = ?")
-            .bind(token_hash(token))
+            .bind(token_hash(&token))
             .execute(&state.db)
             .await?;
     }
@@ -298,7 +375,7 @@ pub(crate) async fn logout(state: &AppState, token: Option<&str>) -> ApiResult<H
 }
 
 pub(crate) async fn list_users(state: &AppState) -> ApiResult<Vec<User>> {
-    Ok(sqlx::query_as::<_, User>("SELECT id, username, is_admin FROM users ORDER BY username")
+    Ok(sqlx::query_as::<_, User>("SELECT id, username, role FROM users ORDER BY username")
         .fetch_all(&state.db)
         .await?)
 }
@@ -308,7 +385,7 @@ pub(crate) async fn add_user(state: &AppState, admin: &User, new: &NewUser) -> A
     tracing::info!(
         by = %admin.username,
         user.name = %user.username,
-        admin = user.is_admin,
+        role = user.role.as_str(),
         "added a user"
     );
     Ok(user)
@@ -334,6 +411,14 @@ mod tests {
         assert_eq!(cookie_token(&headers).as_deref(), Some("abc123"));
         headers.insert(COOKIE, HeaderValue::from_static("sovemu_session="));
         assert_eq!(cookie_token(&headers), None);
+    }
+
+    #[test]
+    fn parses_roles() {
+        assert_eq!("viewer".parse(), Ok(Role::Viewer));
+        assert_eq!(" Admin ".parse(), Ok(Role::Admin));
+        assert!("owner".parse::<Role>().is_err());
+        assert_eq!(Role::default(), Role::Viewer);
     }
 
     #[test]

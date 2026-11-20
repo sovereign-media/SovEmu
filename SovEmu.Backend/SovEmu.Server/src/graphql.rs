@@ -3,8 +3,8 @@
 //! URLs the API hands out; `/health` stays plain HTTP for probes.
 //!
 //! Resolvers call the same functions the rest of the server does (`crate::api`, `crate::auth`,
-//! …). Sign-in is the `sovemu_session` cookie, as before: `login` and `setup` set it, `logout`
-//! clears it. Errors carry a `code` in their extensions (`UNAUTHENTICATED`, `FORBIDDEN`,
+//! …). Requests are signed in with `Authorization: Bearer <access token>`, from the server's
+//! OpenID Connect provider (`crate::oidc`); cookies sign nothing in here. Errors carry a `code` in their extensions (`UNAUTHENTICATED`, `FORBIDDEN`,
 //! `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `GONE`, `TOO_MANY_REQUESTS`, `UNAVAILABLE`, …).
 //!
 //! Numbers: GraphQL's `Int` is 32-bit, so byte counts and Unix times are `Float` (exact to
@@ -19,7 +19,6 @@ use async_graphql::{
     SimpleObject,
 };
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
-use axum::Extension;
 use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -27,8 +26,7 @@ use axum::response::{Html, IntoResponse};
 use tokio::sync::OnceCell;
 
 use crate::AppState;
-use crate::auth::{self, Credentials, NewUser, User};
-use crate::client_ip::ClientIp;
+use crate::auth::{self, Credentials, NewUser, Role, User};
 use crate::error::ApiError;
 
 pub(crate) type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
@@ -42,7 +40,7 @@ pub(crate) fn schema() -> ApiSchema {
         .finish()
 }
 
-/// Per request: the sign-in token from the cookie, and the user it names, looked up once.
+/// Per request: the bearer access token, and the user it names, looked up once.
 struct Auth {
     token: Option<String>,
     user: OnceCell<Option<User>>,
@@ -51,21 +49,20 @@ struct Auth {
 pub(crate) async fn handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    client: Option<Extension<ClientIp>>,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
-    let auth = Auth { token: auth::cookie_token(&headers), user: OnceCell::new() };
+    let auth = Auth { token: crate::oidc::bearer(&headers), user: OnceCell::new() };
     let request = request.into_inner();
     // The request span (telemetry::trace_request) names the operation, for logs and traces.
     if let Some(name) = &request.operation_name {
         tracing::Span::current().record("graphql.operation.name", name.as_str());
     }
-    let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let request = request.data(state.clone()).data(auth).data(client);
+    let request = request.data(state.clone()).data(auth);
     state.schema.execute(request).await.into()
 }
 
-/// GraphiQL, for trying queries in a browser (signed in, the cookie comes along).
+/// GraphiQL, for trying queries in a browser. Signed-in queries need an access token in the
+/// headers pane: `{"Authorization": "Bearer …"}`.
 pub(crate) async fn graphiql() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/graphql").finish())
 }
@@ -109,7 +106,9 @@ async fn viewer(ctx: &Context<'_>) -> Result<Option<User>> {
     let auth = ctx.data_unchecked::<Auth>();
     let user = auth
         .user
-        .get_or_try_init(|| auth::user_for_token(&state(ctx).db, auth.token.as_deref()))
+        .get_or_try_init(|| {
+            crate::oidc::tokens::user_for_access_token(&state(ctx).db, auth.token.as_deref())
+        })
         .await
         .map_err(gql)?;
     Ok(user.clone())
@@ -123,7 +122,7 @@ async fn user(ctx: &Context<'_>) -> Result<User> {
 /// The signed-in user, who must be an admin, or `FORBIDDEN`.
 async fn admin(ctx: &Context<'_>) -> Result<User> {
     let user = user(ctx).await?;
-    if user.is_admin { Ok(user) } else { Err(gql(ApiError::forbidden())) }
+    if user.is_admin() { Ok(user) } else { Err(gql(ApiError::forbidden())) }
 }
 
 fn set_cookie(ctx: &Context<'_>, cookie: HeaderValue) {
@@ -1015,7 +1014,7 @@ struct NewUserInput {
     username: String,
     password: String,
     #[graphql(default)]
-    is_admin: bool,
+    role: Role,
 }
 
 // --- Queries ---------------------------------------------------------------------------------
@@ -1226,8 +1225,10 @@ pub struct Mutation;
 
 #[Object]
 impl Mutation {
-    /// First run: creates the admin account and signs it in (sets the cookie). Only while no
-    /// account exists.
+    /// First run: creates the admin account. Only while no account exists. The browser is then
+    /// signed in at the server's sign-in page (a cookie only `/oauth/authorize` reads), so the
+    /// web client finishes signing in there without asking for the password again. Apps sign in
+    /// at `/oauth/token`; there is no sign-in mutation.
     async fn setup(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
         let (user, cookie) =
             auth::setup(state(ctx), Credentials { username, password }).await.api()?;
@@ -1235,32 +1236,10 @@ impl Mutation {
         Ok(user)
     }
 
-    /// Signs in (sets the cookie). Repeated failures for a username, or from an address, are
-    /// locked out for a while.
-    async fn login(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
-        let client = ctx.data_opt::<ClientIp>().and_then(|c| c.0);
-        let (user, cookie) =
-            auth::login(state(ctx), Credentials { username, password }, client).await.api()?;
-        set_cookie(ctx, cookie);
-        Ok(user)
-    }
-
-    /// Signs out (clears the cookie).
-    async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
-        let token = ctx.data_unchecked::<Auth>().token.clone();
-        let cookie = auth::logout(state(ctx), token.as_deref()).await.api()?;
-        set_cookie(ctx, cookie);
-        Ok(true)
-    }
-
-    /// Admins: adds an account.
+    /// Admins: adds an account (a viewer unless `role` says otherwise).
     async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<User> {
         let me = admin(ctx).await?;
-        let new = NewUser {
-            username: input.username,
-            password: input.password,
-            is_admin: input.is_admin,
-        };
+        let new = NewUser { username: input.username, password: input.password, role: input.role };
         auth::add_user(state(ctx), &me, &new).await.api()
     }
 

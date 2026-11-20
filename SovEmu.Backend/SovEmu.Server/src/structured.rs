@@ -1,7 +1,8 @@
 //! Structured settings from the environment, in the `__` hierarchy Sovereign uses for its own
 //! (`Sovereign__DataSources__Radarr__0__Url`): lists and maps that a flat variable cannot hold.
 //!
-//! - Users: `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ADMIN`.
+//! - Users: `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ROLE`
+//!   (`viewer`, the default, or `admin`; `__ADMIN=true` is the older spelling of `admin`).
 //! - Systems: `SOVEMU_SYSTEMS__<id>__CORE` (the core to use), `__ENABLED` (false hides it),
 //!   `__DECORATION` (the decoration set, or `none`), and `__OPTIONS__<core option>` (libretro core
 //!   options, over SovEmu's own).
@@ -16,12 +17,14 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
+use crate::auth::Role;
+
 /// A user declared in the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserSpec {
     pub username: String,
     pub password: String,
-    pub admin: bool,
+    pub(crate) role: Role,
 }
 
 /// Per-system overrides.
@@ -92,9 +95,21 @@ pub(crate) fn users(
                     bail!("{} or {} is required", var("PASSWORD"), var("PASSWORD_FILE"))
                 }
             };
-            let admin =
-                f.get("ADMIN").map(|v| parse_bool(&var("ADMIN"), v)).transpose()?.unwrap_or(false);
-            Ok(UserSpec { username: username.clone(), password, admin })
+            let role = f
+                .get("ROLE")
+                .filter(|r| !r.is_empty())
+                .map(|r| r.parse::<Role>().map_err(|e| anyhow::anyhow!("{}: {e}", var("ROLE"))))
+                .transpose()?;
+            let admin = f.get("ADMIN").map(|v| parse_bool(&var("ADMIN"), v)).transpose()?;
+            let role = match (role, admin) {
+                (Some(role), Some(admin)) if admin != (role == Role::Admin) => {
+                    bail!("{} and {} disagree: set only {}", var("ROLE"), var("ADMIN"), var("ROLE"))
+                }
+                (Some(role), _) => role,
+                (None, Some(true)) => Role::Admin,
+                (None, _) => Role::Viewer,
+            };
+            Ok(UserSpec { username: username.clone(), password, role })
         })
         .collect()
 }
@@ -212,18 +227,30 @@ mod tests {
             ("SOVEMU_USERS__1__PASSWORD_FILE", "/run/secrets/kid"),
             ("SOVEMU_USERS__0__USERNAME", "mum"),
             ("SOVEMU_USERS__0__PASSWORD", "password123"),
-            ("SOVEMU_USERS__0__ADMIN", "true"),
+            ("SOVEMU_USERS__0__ROLE", "Admin"),
+            ("SOVEMU_USERS__2__USERNAME", "dad"),
+            ("SOVEMU_USERS__2__PASSWORD", "password456"),
+            ("SOVEMU_USERS__2__ADMIN", "true"),
             ("SOVEMU_OTHER", "x"),
         ]);
         let users = users(&v, |path| Ok(format!("from {path}"))).unwrap();
         assert_eq!(
             users,
             [
-                UserSpec { username: "mum".into(), password: "password123".into(), admin: true },
+                UserSpec {
+                    username: "mum".into(),
+                    password: "password123".into(),
+                    role: Role::Admin
+                },
                 UserSpec {
                     username: "kid".into(),
                     password: "from /run/secrets/kid".into(),
-                    admin: false
+                    role: Role::Viewer
+                },
+                UserSpec {
+                    username: "dad".into(),
+                    password: "password456".into(),
+                    role: Role::Admin
                 },
             ]
         );
@@ -247,6 +274,18 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{bad_bool:#}").contains("ADMIN"));
+        let user = |extra: &[(&str, &str)]| {
+            let mut v =
+                vars(&[("SOVEMU_USERS__0__USERNAME", "a"), ("SOVEMU_USERS__0__PASSWORD", "p")]);
+            v.extend(vars(extra));
+            users(&v, |_| Ok(String::new()))
+        };
+        let bad_role = user(&[("SOVEMU_USERS__0__ROLE", "owner")]).unwrap_err();
+        assert!(format!("{bad_role:#}").contains("SOVEMU_USERS__0__ROLE"));
+        let disagree =
+            user(&[("SOVEMU_USERS__0__ROLE", "viewer"), ("SOVEMU_USERS__0__ADMIN", "true")])
+                .unwrap_err();
+        assert!(format!("{disagree:#}").contains("disagree"));
     }
 
     #[test]

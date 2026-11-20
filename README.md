@@ -145,7 +145,20 @@ SovEmu's API is GraphQL, at `POST /graphql`; open `/graphql` in a browser for Gr
 Android and iOS clients all use it. The schema, with every type and field documented, is
 [SovEmu.Backend/SovEmu.Server/schema.graphql](SovEmu.Backend/SovEmu.Server/schema.graphql).
 
-- **Sign-in** is a cookie: the `login` (or first-run `setup`) mutation sets it, `logout` clears it.
+- **Sign-in** is OpenID Connect: the server is its own provider (discovery at
+  `/.well-known/openid-configuration`) and every request carries `Authorization: Bearer <access
+  token>`. Two clients are built in, both public:
+  - `sovemu-web`, the web client: the authorization code flow with PKCE (S256, required) and
+    refresh tokens. It never gets the password grant; the password goes only to the server's own
+    sign-in page (`/login/`, which posts to `/oauth/signin`).
+  - `sovemu-native`, the Android and iOS apps: the password grant
+    (`POST /oauth/token`, `grant_type=password`) and refresh tokens.
+
+  Refresh tokens rotate, and a used one presented again a minute later ends that sign-in.
+  `/oauth/revoke` signs an app out. Access tokens are checked against the database on every
+  request, so a revoked sign-in or a changed role applies at once. First-run `setup` is still a
+  mutation; there is no sign-in mutation.
+- **Roles**: `VIEWER` plays; `ADMIN` also runs the server. `User.role` (and `isAdmin`).
 - **Errors** come back in `errors`, each with an `extensions.code`: `UNAUTHENTICATED`,
   `FORBIDDEN`, `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `GONE`, `TOO_MANY_REQUESTS`, `UNAVAILABLE`.
 - **Files** (artwork, videos, save screenshots) are plain HTTP under `/media/`, at the URLs the
@@ -264,9 +277,12 @@ effective configuration at startup, with secrets redacted.
 |---|---|---|
 | **Accounts** | | |
 | `SOVEMU_ADMIN_USERNAME`, `SOVEMU_ADMIN_PASSWORD` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
-| `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ADMIN` | none | More accounts, kept in step like the admin (see below) |
+| `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ROLE` | none | More accounts, kept in step like the admin (see below). `__ROLE` is `viewer` (default) or `admin`; `__ADMIN=true` still means `admin` |
 | `SOVEMU_USERS_PRUNE` | off | Delete accounts not declared above at startup |
-| `SOVEMU_SESSION_DAYS` | `30` | How long a sign-in lasts |
+| `SOVEMU_SESSION_DAYS` | `30` | How long a sign-in lasts unused: an app's refresh token (each refresh starts it again), and the browser's sign-in at the server |
+| `SOVEMU_ACCESS_TOKEN_MINUTES` | `60` | How long an access token lasts before the app refreshes it |
+| `SOVEMU_PUBLIC_URL` | the request's address | The address people reach the server at (`https://games.example.com`): the issuer of its sign-in tokens. Only needed if a proxy rewrites `Host` |
+| `SOVEMU_TOKEN_KEY` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret: `_FILE` works |
 | `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
 | `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
 | `SOVEMU_LOGIN_LOCKOUT_MINUTES` | `5` | How long the lockout lasts |
@@ -345,7 +361,7 @@ SOVEMU_USERS__0__USERNAME=kid
 SOVEMU_USERS__0__PASSWORD_FILE=/run/secrets/kid     # or __PASSWORD
 SOVEMU_USERS__1__USERNAME=dad
 SOVEMU_USERS__1__PASSWORD=...
-SOVEMU_USERS__1__ADMIN=true
+SOVEMU_USERS__1__ROLE=admin                         # viewer (the default) or admin
 SOVEMU_USERS_PRUNE=true                             # nobody else keeps an account
 
 SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core option

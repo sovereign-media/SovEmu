@@ -12,12 +12,15 @@
 
 use sqlx::Row;
 
-use crate::{api, auth, collections, home};
+use crate::{api, collections, home};
 
 /// The hot queries, by what they serve.
 fn hot_queries() -> Vec<(&'static str, String)> {
     vec![
-        ("every signed-in request: the session's user", auth::SESSION_USER.to_owned()),
+        (
+            "every signed-in request: the access token's user",
+            crate::oidc::tokens::ACCESS_USER.to_owned(),
+        ),
         ("a system's games", api::games_sql(api::LIST_GAMES)),
         ("a game's panel", api::games_sql(api::ONE_GAME)),
         ("Home: continue playing", home::row_sql(home::RECENT, "")),

@@ -583,21 +583,14 @@ type MirrorSync {
 
 type Mutation {
 	"""
-	First run: creates the admin account and signs it in (sets the cookie). Only while no
-	account exists.
+	First run: creates the admin account. Only while no account exists. The browser is then
+	signed in at the server's sign-in page (a cookie only `/oauth/authorize` reads), so the
+	web client finishes signing in there without asking for the password again. Apps sign in
+	at `/oauth/token`; there is no sign-in mutation.
 	"""
 	setup(username: String!, password: String!): User!
 	"""
-	Signs in (sets the cookie). Repeated failures for a username, or from an address, are
-	locked out for a while.
-	"""
-	login(username: String!, password: String!): User!
-	"""
-	Signs out (clears the cookie).
-	"""
-	logout: Boolean!
-	"""
-	Admins: adds an account.
+	Admins: adds an account (a viewer unless `role` says otherwise).
 	"""
 	addUser(input: NewUserInput!): User!
 	"""
@@ -703,7 +696,7 @@ type Mutation {
 input NewUserInput {
 	username: String!
 	password: String!
-	isAdmin: Boolean! = false
+	role: Role! = VIEWER
 }
 
 """
@@ -875,6 +868,20 @@ enum Rendering {
 	GPU
 	SOFTWARE
 	OFF
+}
+
+"""
+What an account may do.
+"""
+enum Role {
+	"""
+	Plays games: browse the library, play, keep saves and settings of their own.
+	"""
+	VIEWER
+	"""
+	Also runs the server: users, the library, emulator settings.
+	"""
+	ADMIN
 }
 
 type SaveSlot {
@@ -1082,6 +1089,10 @@ An account.
 type User {
 	id: Int!
 	username: String!
+	role: Role!
+	"""
+	Whether the role is `ADMIN`.
+	"""
 	isAdmin: Boolean!
 }
 

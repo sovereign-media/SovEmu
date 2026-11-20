@@ -22,6 +22,7 @@ mod http_tests;
 mod jobs;
 mod library;
 mod metadata;
+mod oidc;
 mod ops;
 mod patches;
 mod paths;
@@ -211,6 +212,23 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ASSET_KEY")]
     pub asset_key: Option<String>,
 
+    /// The secret the server's sign-in (OpenID Connect) key is derived from: it signs the ID
+    /// tokens apps receive. Unset: one is generated on first run and kept in
+    /// `<data>/server.json`.
+    #[arg(long, env = "SOVEMU_TOKEN_KEY")]
+    pub token_key: Option<String>,
+
+    /// The address people reach the server at (`https://games.example.com`), the issuer of its
+    /// sign-in tokens. Unset: the address each request came to, so the server works at its LAN
+    /// address and behind a proxy alike; set it if a proxy rewrites `Host`.
+    #[arg(long, env = "SOVEMU_PUBLIC_URL")]
+    pub public_url: Option<String>,
+
+    /// How long an app's access token lasts, in minutes, before it refreshes it. Signing out
+    /// and role changes apply at once regardless: every request checks its token.
+    #[arg(long, env = "SOVEMU_ACCESS_TOKEN_MINUTES", default_value_t = 60)]
+    pub access_token_minutes: u32,
+
     /// How long a signed file URL stays valid, in hours (rounded to the hour, so URLs are
     /// cacheable).
     #[arg(long, env = "SOVEMU_ASSET_URL_HOURS", default_value_t = 24)]
@@ -236,7 +254,8 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
     pub audio_kbps: u32,
 
-    /// How many days a sign-in lasts.
+    /// How many days a sign-in lasts without being used (an app's refresh token; the browser's
+    /// sign-in at the server).
     #[arg(long, env = "SOVEMU_SESSION_DAYS", default_value_t = 30)]
     pub session_days: u32,
 
@@ -378,6 +397,7 @@ const SECRETS: &[&str] = &[
     "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
     "SOVEMU_SCREENSCRAPER_PASSWORD",
     "SOVEMU_THEGAMESDB_KEY",
+    "SOVEMU_TOKEN_KEY",
 ];
 
 impl Config {
@@ -420,6 +440,7 @@ impl Config {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
             "SOVEMU_ASSET_KEY" => &mut self.asset_key,
+            "SOVEMU_TOKEN_KEY" => &mut self.token_key,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
             "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
@@ -513,6 +534,12 @@ impl Config {
                 self.asset_url_hours
             ),
             format!(
+                "token_key={} public_url={} access_token_minutes={}",
+                secret(&self.token_key),
+                opt(&self.public_url),
+                self.access_token_minutes
+            ),
+            format!(
                 "log_format={} otel_endpoint={}",
                 self.log_format.as_arg(),
                 opt(&self.otel_endpoint)
@@ -545,7 +572,13 @@ impl Config {
                 } else {
                     self.users
                         .iter()
-                        .map(|u| format!("{}{}", u.username, if u.admin { "(admin)" } else { "" }))
+                        .map(|u| {
+                            format!(
+                                "{}{}",
+                                u.username,
+                                if u.role == auth::Role::Admin { "(admin)" } else { "" }
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(",")
                 },
@@ -650,6 +683,8 @@ pub struct AppState {
     pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
+    /// Signs the ID tokens the sign-in provider issues (`oidc`).
+    pub(crate) token_keys: Arc<oidc::keys::TokenKeys>,
 }
 
 impl AppState {
@@ -673,7 +708,8 @@ impl std::fmt::Debug for AppState {
 
 pub fn router(state: AppState) -> Router {
     // The API is GraphQL. Files (artwork, videos, save screenshots) are plain HTTP, at URLs
-    // the API hands out; so is the health probe. Every route runs in a traced `request` span
+    // the API hands out; so are sign-in (OpenID Connect defines its own routes) and the health
+    // probe. Every route runs in a traced `request` span
     // (the web client's static files, the fallback, do not).
     let mut app = Router::new()
         .route("/graphql", get(graphql::graphiql).post(graphql::handler))
@@ -689,6 +725,7 @@ pub fn router(state: AppState) -> Router {
                     assets::require_signature,
                 )),
         )
+        .merge(oidc::routes())
         .route("/health", get(ops::health))
         .route_layer(middleware::from_fn(telemetry::trace_request))
         .route_layer(middleware::from_fn_with_state(state.clone(), client_ip::remember))
@@ -840,6 +877,13 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
     let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
     let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
+    let token_secret = sovemu_assets::load_secret(
+        config.token_key.as_deref(),
+        &config.data_dir,
+        "tokenSigningKey",
+        "token signing key",
+    )?;
+    let token_keys = Arc::new(oidc::keys::TokenKeys::from_secret(&token_secret));
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -855,6 +899,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
         assets,
+        token_keys,
     })
 }
 
@@ -867,7 +912,7 @@ async fn reconcile_users(db: &SqlitePool, config: &Config) -> Result<()> {
         declared.push(user.clone());
     }
     for user in &config.users {
-        auth::ensure_user(db, &user.username, &user.password, user.admin).await?;
+        auth::ensure_user(db, &user.username, &user.password, user.role).await?;
         declared.push(user.username.clone());
     }
     if config.users_prune {

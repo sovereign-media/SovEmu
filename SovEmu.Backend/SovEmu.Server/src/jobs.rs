@@ -76,6 +76,7 @@ pub(crate) async fn maintain(db: &SqlitePool) -> sqlx::Result<u64> {
         .execute(db)
         .await?
         .rows_affected();
+    let expired = expired + crate::oidc::tokens::expire(db).await?;
     sqlx::query("PRAGMA optimize").execute(db).await?;
     // PASSIVE: never waits on a reader or writer; what it cannot fold back now waits for the
     // next round.
@@ -94,7 +95,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db = crate::db::open(&dir.join("jobs.db")).await.unwrap();
-        sqlx::query("INSERT INTO users (username, password_hash, is_admin) VALUES ('a', 'x', 0)")
+        sqlx::query("INSERT INTO users (username, password_hash) VALUES ('a', 'x')")
             .execute(&db)
             .await
             .unwrap();
@@ -109,12 +110,36 @@ mod tests {
             .await
             .unwrap();
         }
-        assert_eq!(maintain(&db).await.unwrap(), 1);
+        // Two apps' sign-ins: one whose only token has expired, one still current.
+        for (grant, token, expires) in [(1, "old-app", "-1 minute"), (2, "live-app", "+1 hour")] {
+            sqlx::query(
+                "INSERT INTO oauth_grants (id, client_id, user_id, scope, auth_time)
+                 VALUES (?, 'sovemu-native', 1, '', 0)",
+            )
+            .bind(grant)
+            .execute(&db)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO oauth_tokens (token_hash, grant_id, kind, expires_at)
+                 VALUES (?, ?, 'access', datetime('now', ?))",
+            )
+            .bind(token)
+            .bind(grant)
+            .bind(expires)
+            .execute(&db)
+            .await
+            .unwrap();
+        }
+        assert_eq!(maintain(&db).await.unwrap(), 3, "a session, a token and its sign-in");
         let left: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM auth_sessions")
             .fetch_all(&db)
             .await
             .unwrap();
         assert_eq!(left, ["live"]);
+        let grants: Vec<i64> =
+            sqlx::query_scalar("SELECT id FROM oauth_grants").fetch_all(&db).await.unwrap();
+        assert_eq!(grants, [2]);
         assert_eq!(maintain(&db).await.unwrap(), 0, "nothing left to delete");
     }
 }

@@ -122,6 +122,7 @@ export const ViewerQuery = graphql(`
       user {
         id
         username
+        role
         isAdmin
       }
     }
@@ -135,22 +136,6 @@ export const SetupMutation = graphql(`
       username
       isAdmin
     }
-  }
-`);
-
-export const LoginMutation = graphql(`
-  mutation Login($username: String!, $password: String!) {
-    login(username: $username, password: $password) {
-      id
-      username
-      isAdmin
-    }
-  }
-`);
-
-export const LogoutMutation = graphql(`
-  mutation Logout {
-    logout
   }
 `);
 
