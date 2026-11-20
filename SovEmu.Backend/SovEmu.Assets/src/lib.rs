@@ -140,23 +140,21 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// Why the signing key could not be had.
+/// Why a key could not be had.
 #[derive(Debug)]
 pub enum KeyError {
-    /// The system has no source of randomness to generate one.
-    NoRandomness(String),
-    /// It could not be kept in `server.json`.
-    Keep(std::path::PathBuf, std::io::Error),
+    /// The system has no source of randomness to generate one (the key's name).
+    NoRandomness(&'static str, String),
+    /// It could not be kept in `server.json` (the key's name).
+    Keep(&'static str, std::path::PathBuf, std::io::Error),
 }
 
 impl std::fmt::Display for KeyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoRandomness(e) => {
-                write!(f, "no randomness to generate the asset signing key: {e}")
-            }
-            Self::Keep(file, e) => {
-                write!(f, "keeping the asset signing key in {}: {e}", file.display())
+            Self::NoRandomness(name, e) => write!(f, "no randomness to generate the {name}: {e}"),
+            Self::Keep(name, file, e) => {
+                write!(f, "keeping the {name} in {}: {e}", file.display())
             }
         }
     }
@@ -167,31 +165,44 @@ impl std::error::Error for KeyError {}
 /// The signing key: `configured` (`SOVEMU_ASSET_KEY`), else the one kept in
 /// `<data_dir>/server.json`, generated there on first run.
 pub fn load_key(configured: Option<&str>, data_dir: &Path) -> Result<Vec<u8>, KeyError> {
+    load_secret(configured, data_dir, "assetSigningKey", "asset signing key")
+        .map(String::into_bytes)
+}
+
+/// A server secret: `configured` (its setting), else the one kept under `field` in
+/// `<data_dir>/server.json`, generated there (64 random alphanumeric characters) on first run.
+/// `name` is what it is called in logs and errors. The asset signing key is one; the server's
+/// token signing key is another.
+pub fn load_secret(
+    configured: Option<&str>,
+    data_dir: &Path,
+    field: &str,
+    name: &'static str,
+) -> Result<String, KeyError> {
     if let Some(key) = configured.map(str::trim).filter(|k| !k.is_empty()) {
-        return Ok(key.as_bytes().to_vec());
+        return Ok(key.to_owned());
     }
     let file = data_dir.join("server.json");
     let mut doc: serde_json::Map<String, serde_json::Value> = match std::fs::read(&file) {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
         Err(_) => serde_json::Map::new(),
     };
-    if let Some(key) = doc.get("assetSigningKey").and_then(|v| v.as_str()).filter(|k| !k.is_empty())
-    {
-        return Ok(key.as_bytes().to_vec());
+    if let Some(key) = doc.get(field).and_then(|v| v.as_str()).filter(|k| !k.is_empty()) {
+        return Ok(key.to_owned());
     }
-    let key = generate_key()?;
-    doc.insert("assetSigningKey".into(), serde_json::Value::String(key.clone()));
+    let key = generate_key().map_err(|e| KeyError::NoRandomness(name, e))?;
+    doc.insert(field.into(), serde_json::Value::String(key.clone()));
     let bytes = serde_json::to_vec_pretty(&doc).expect("a JSON map serializes");
-    write_private(&file, &bytes).map_err(|e| KeyError::Keep(file.clone(), e))?;
-    tracing::info!(file = %file.display(), "generated the asset signing key");
-    Ok(key.into_bytes())
+    write_private(&file, &bytes).map_err(|e| KeyError::Keep(name, file.clone(), e))?;
+    tracing::info!(file = %file.display(), key = name, "generated a key");
+    Ok(key)
 }
 
 /// 64 random alphanumeric characters.
-fn generate_key() -> Result<String, KeyError> {
+fn generate_key() -> Result<String, String> {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let mut bytes = [0u8; 64];
-    getrandom::fill(&mut bytes).map_err(|e| KeyError::NoRandomness(e.to_string()))?;
+    getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     // 256 is a multiple of 62 to within 4/256: the bias is far below anything usable.
     Ok(bytes.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect())
 }
@@ -303,6 +314,12 @@ mod tests {
         let doc: serde_json::Value =
             serde_json::from_slice(&std::fs::read(dir.join("server.json")).unwrap()).unwrap();
         assert_eq!(doc["other"], "kept", "the file's other settings stay");
+        // Another secret goes beside it, and leaves it alone.
+        let token = load_secret(None, &dir, "tokenSigningKey", "token signing key").unwrap();
+        assert_eq!(token.len(), 64);
+        assert_ne!(token.as_bytes(), first.as_slice());
+        assert_eq!(load_key(None, &dir).unwrap(), first);
+        assert_eq!(load_secret(None, &dir, "tokenSigningKey", "token signing key").unwrap(), token);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

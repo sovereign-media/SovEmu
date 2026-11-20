@@ -21,10 +21,8 @@ type Documents = {
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": typeof types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": typeof types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": typeof types.MetadataFieldsFragmentDoc,
-    "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": typeof types.ViewerDocument,
+    "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n": typeof types.ViewerDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.SetupDocument,
-    "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": typeof types.LoginDocument,
-    "\n  mutation Logout {\n    logout\n  }\n": typeof types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": typeof types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": typeof types.HomeDocument,
     "\n  query Patches($id: Int!) {\n    game(id: $id) {\n      id\n      patches {\n        id\n        name\n        isDefault\n      }\n    }\n  }\n": typeof types.PatchesDocument,
@@ -75,10 +73,8 @@ const documents: Documents = {
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": types.SessionFieldsFragmentDoc,
     "\n  fragment SettingsFields on EmulatorSettings {\n    system\n    core\n    needsGame\n    environment\n    categories {\n      key\n      description\n      info\n    }\n    settings {\n      key\n      description\n      info\n      category\n      choices\n      labels\n      default\n      value\n      source\n    }\n  }\n": types.SettingsFieldsFragmentDoc,
     "\n  fragment MetadataFields on MetadataStatus {\n    running\n    total\n    done\n    found\n    notFound\n    failed\n    sources\n    notes\n    artwork {\n      running\n      total\n      done\n      downloaded\n      failed\n    }\n  }\n": types.MetadataFieldsFragmentDoc,
-    "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n": types.ViewerDocument,
+    "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n": types.ViewerDocument,
     "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.SetupDocument,
-    "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n": types.LoginDocument,
-    "\n  mutation Logout {\n    logout\n  }\n": types.LogoutDocument,
     "\n  query ClientConfig {\n    clientConfig {\n      iceServers\n    }\n  }\n": types.ClientConfigDocument,
     "\n  query Home {\n    home {\n      featured {\n        ...GameFields\n      }\n      recent {\n        ...GameFields\n        autoSave {\n          ...SaveFields\n        }\n      }\n      added {\n        ...GameFields\n      }\n      favourites {\n        ...GameFields\n      }\n    }\n  }\n": types.HomeDocument,
     "\n  query Patches($id: Int!) {\n    game(id: $id) {\n      id\n      patches {\n        id\n        name\n        isDefault\n      }\n    }\n  }\n": types.PatchesDocument,
@@ -150,19 +146,11 @@ export function graphql(source: "\n  fragment MetadataFields on MetadataStatus {
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        isAdmin\n      }\n    }\n  }\n"): typeof import('./graphql').ViewerDocument;
+export function graphql(source: "\n  query Viewer {\n    viewer {\n      setupRequired\n      user {\n        id\n        username\n        role\n        isAdmin\n      }\n    }\n  }\n"): typeof import('./graphql').ViewerDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation Setup($username: String!, $password: String!) {\n    setup(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n"): typeof import('./graphql').SetupDocument;
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation Login($username: String!, $password: String!) {\n    login(username: $username, password: $password) {\n      id\n      username\n      isAdmin\n    }\n  }\n"): typeof import('./graphql').LoginDocument;
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation Logout {\n    logout\n  }\n"): typeof import('./graphql').LogoutDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

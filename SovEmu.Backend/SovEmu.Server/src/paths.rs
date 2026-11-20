@@ -3,7 +3,7 @@
 //! ```text
 //! <data>/
 //!   sovemu.db             the database (SQLite, WAL)
-//!   server.json           the asset signing key, if not set (sovemu_assets::load_key)
+//!   server.json           the asset and token signing keys, if not set (sovemu_assets)
 //!   roms/                 the library, unless SOVEMU_ROMS_DIR points elsewhere
 //!   library/              mode `mirror`: the local copy of the library
 //!   bios/<system>/        BIOS files, unless SOVEMU_BIOS_DIR points elsewhere

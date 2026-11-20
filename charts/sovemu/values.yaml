@@ -23,7 +23,7 @@ fullnameOverride: ""
 # They go into a ConfigMap. Values are strings: quote numbers and booleans.
 settings: {}
 
-# Secret settings, without the SOVEMU_ prefix (ADMIN_PASSWORD, ASSET_KEY,
+# Secret settings, without the SOVEMU_ prefix (ADMIN_PASSWORD, ASSET_KEY, TOKEN_KEY,
 # SCREENSCRAPER_DEVPASSWORD, SCREENSCRAPER_PASSWORD, THEGAMESDB_KEY, ...). They go into a Secret
 # this chart creates. Prefer existingSecret for anything kept in Git.
 secrets: {}

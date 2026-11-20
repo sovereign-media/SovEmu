@@ -3,8 +3,8 @@
 //! URLs the API hands out; `/health` stays plain HTTP for probes.
 //!
 //! Resolvers call the same functions the rest of the server does (`crate::api`, `crate::auth`,
-//! …). Sign-in is the `sovemu_session` cookie, as before: `login` and `setup` set it, `logout`
-//! clears it. Errors carry a `code` in their extensions (`UNAUTHENTICATED`, `FORBIDDEN`,
+//! …). Requests are signed in with `Authorization: Bearer <access token>`, from the server's
+//! OpenID Connect provider (`crate::oidc`); cookies sign nothing in here. Errors carry a `code` in their extensions (`UNAUTHENTICATED`, `FORBIDDEN`,
 //! `NOT_FOUND`, `BAD_REQUEST`, `CONFLICT`, `GONE`, `TOO_MANY_REQUESTS`, `UNAVAILABLE`, …).
 //!
 //! Numbers: GraphQL's `Int` is 32-bit, so byte counts and Unix times are `Float` (exact to
@@ -19,7 +19,6 @@ use async_graphql::{
     SimpleObject,
 };
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
-use axum::Extension;
 use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -27,8 +26,7 @@ use axum::response::{Html, IntoResponse};
 use tokio::sync::OnceCell;
 
 use crate::AppState;
-use crate::auth::{self, Credentials, NewUser, User};
-use crate::client_ip::ClientIp;
+use crate::auth::{Credentials, NewUser, User};
 use crate::error::ApiError;
 
 pub(crate) type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
@@ -42,30 +40,30 @@ pub(crate) fn schema() -> ApiSchema {
         .finish()
 }
 
-/// Per request: the sign-in token from the cookie, and the user it names, looked up once.
+/// Per request: its headers (for the bearer access token), and the user they name, looked up
+/// once.
 struct Auth {
-    token: Option<String>,
+    headers: HeaderMap,
     user: OnceCell<Option<User>>,
 }
 
 pub(crate) async fn handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    client: Option<Extension<ClientIp>>,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
-    let auth = Auth { token: auth::cookie_token(&headers), user: OnceCell::new() };
+    let auth = Auth { headers, user: OnceCell::new() };
     let request = request.into_inner();
     // The request span (telemetry::trace_request) names the operation, for logs and traces.
     if let Some(name) = &request.operation_name {
         tracing::Span::current().record("graphql.operation.name", name.as_str());
     }
-    let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let request = request.data(state.clone()).data(auth).data(client);
+    let request = request.data(state.clone()).data(auth);
     state.schema.execute(request).await.into()
 }
 
-/// GraphiQL, for trying queries in a browser (signed in, the cookie comes along).
+/// GraphiQL, for trying queries in a browser. Signed-in queries need an access token in the
+/// headers pane: `{"Authorization": "Bearer …"}`.
 pub(crate) async fn graphiql() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/graphql").finish())
 }
@@ -109,9 +107,9 @@ async fn viewer(ctx: &Context<'_>) -> Result<Option<User>> {
     let auth = ctx.data_unchecked::<Auth>();
     let user = auth
         .user
-        .get_or_try_init(|| auth::user_for_token(&state(ctx).db, auth.token.as_deref()))
+        .get_or_try_init(|| state(ctx).identity.user_for_request(&auth.headers))
         .await
-        .map_err(gql)?;
+        .map_err(|e| gql(e.into()))?;
     Ok(user.clone())
 }
 
@@ -123,7 +121,7 @@ async fn user(ctx: &Context<'_>) -> Result<User> {
 /// The signed-in user, who must be an admin, or `FORBIDDEN`.
 async fn admin(ctx: &Context<'_>) -> Result<User> {
     let user = user(ctx).await?;
-    if user.is_admin { Ok(user) } else { Err(gql(ApiError::forbidden())) }
+    if user.is_admin() { Ok(user) } else { Err(gql(ApiError::forbidden())) }
 }
 
 fn set_cookie(ctx: &Context<'_>, cookie: HeaderValue) {
@@ -132,12 +130,68 @@ fn set_cookie(ctx: &Context<'_>, cookie: HeaderValue) {
 
 // --- Types -----------------------------------------------------------------------------------
 
+/// What an account may do.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+#[graphql(remote = "sovemu_identity::Role", name = "Role")]
+enum RoleKind {
+    /// Plays games: browse the library, play, keep saves and settings of their own.
+    Viewer,
+    /// Also runs the server: users, the library, emulator settings.
+    Admin,
+}
+
+/// An account.
+#[derive(SimpleObject)]
+#[graphql(name = "User")]
+struct Account {
+    id: i64,
+    username: String,
+    role: RoleKind,
+    /// Whether the role is `ADMIN`.
+    is_admin: bool,
+}
+
+impl From<User> for Account {
+    fn from(user: User) -> Self {
+        let is_admin = user.is_admin();
+        Self { id: user.id, username: user.username, role: user.role.into(), is_admin }
+    }
+}
+
+/// Where and how to sign in at the address this request reached. Apps ask it first, signed out,
+/// and use these URLs as given (they hard-code nothing but `/graphql`).
+#[derive(SimpleObject)]
+struct BootstrapConfig {
+    /// Whether anything can sign in at this address. False when it is not one of
+    /// `SOVEMU_PUBLIC_URL`'s; then the rest is null, and `address` says what to add.
+    sign_in_available: bool,
+    /// The address the request reached, as `Host` named it.
+    address: String,
+    /// The OpenID Connect issuer for this address (discovery at
+    /// `<issuer>/.well-known/openid-configuration`).
+    issuer: Option<String>,
+    /// The web client's id: the authorization code flow with PKCE.
+    web_client_id: Option<String>,
+    /// The apps' id: the device grant, and the password fallback.
+    native_client_id: Option<String>,
+    authorization_endpoint: Option<String>,
+    token_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
+    /// Where an app asks for a code to show (RFC 8628 device authorization).
+    device_authorization_endpoint: Option<String>,
+    /// Where a person approves that code, in a signed-in browser.
+    verification_uri: Option<String>,
+    /// The apps' password fallback: a form post of `client_id`, `username`, `password` and
+    /// `scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
+    password_endpoint: Option<String>,
+}
+
 #[derive(SimpleObject)]
 struct Viewer {
     /// No account exists yet: the client should offer first-run setup.
     setup_required: bool,
     /// The signed-in user, if any.
-    user: Option<User>,
+    user: Option<Account>,
 }
 
 #[derive(SimpleObject)]
@@ -1014,8 +1068,8 @@ struct SettingChange {
 struct NewUserInput {
     username: String,
     password: String,
-    #[graphql(default)]
-    is_admin: bool,
+    #[graphql(default_with = "RoleKind::Viewer")]
+    role: RoleKind,
 }
 
 // --- Queries ---------------------------------------------------------------------------------
@@ -1034,13 +1088,38 @@ pub struct Query;
 
 #[Object]
 impl Query {
+    /// Where and how to sign in here. Works signed out: an app's first question, which also tells
+    /// it a SovEmu server is at the address it was given.
+    async fn bootstrap_config(&self, ctx: &Context<'_>) -> BootstrapConfig {
+        let headers = &ctx.data_unchecked::<Auth>().headers;
+        let address = headers
+            .get(axum::http::header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        let config = state(ctx).identity.sign_in_config(headers);
+        BootstrapConfig {
+            sign_in_available: config.is_some(),
+            address,
+            issuer: config.as_ref().map(|c| c.issuer.clone()),
+            web_client_id: config.as_ref().map(|c| c.web_client_id.to_owned()),
+            native_client_id: config.as_ref().map(|c| c.native_client_id.to_owned()),
+            authorization_endpoint: config.as_ref().map(|c| c.authorization_endpoint.clone()),
+            token_endpoint: config.as_ref().map(|c| c.token_endpoint.clone()),
+            revocation_endpoint: config.as_ref().map(|c| c.revocation_endpoint.clone()),
+            device_authorization_endpoint: config
+                .as_ref()
+                .map(|c| c.device_authorization_endpoint.clone()),
+            verification_uri: config.as_ref().map(|c| c.verification_uri.clone()),
+            password_endpoint: config.and_then(|c| c.password_endpoint),
+        }
+    }
+
     /// Who is signed in, and whether first-run setup is needed. Works signed out.
     async fn viewer(&self, ctx: &Context<'_>) -> Result<Viewer> {
-        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(&state(ctx).db)
-            .await
-            .map_err(|e| gql(e.into()))?;
-        Ok(Viewer { setup_required: users == 0, user: viewer(ctx).await? })
+        let setup_required =
+            state(ctx).identity.setup_required().await.map_err(|e| gql(e.into()))?;
+        Ok(Viewer { setup_required, user: viewer(ctx).await?.map(Account::from) })
     }
 
     async fn client_config(&self, ctx: &Context<'_>) -> Result<ClientConfig> {
@@ -1151,9 +1230,10 @@ impl Query {
     }
 
     /// Admins: the accounts.
-    async fn users(&self, ctx: &Context<'_>) -> Result<Vec<User>> {
+    async fn users(&self, ctx: &Context<'_>) -> Result<Vec<Account>> {
         admin(ctx).await?;
-        auth::list_users(state(ctx)).await.api()
+        let users = state(ctx).identity.users().await.map_err(|e| gql(e.into()))?;
+        Ok(users.into_iter().map(Account::from).collect())
     }
 
     /// Admins: where 3D systems render, and every device the startup probe tried.
@@ -1226,42 +1306,32 @@ pub struct Mutation;
 
 #[Object]
 impl Mutation {
-    /// First run: creates the admin account and signs it in (sets the cookie). Only while no
-    /// account exists.
-    async fn setup(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
-        let (user, cookie) =
-            auth::setup(state(ctx), Credentials { username, password }).await.api()?;
+    /// First run: creates the admin account. Only while no account exists. The browser is then
+    /// signed in at the server's sign-in page (a cookie only `/oauth/authorize` reads), so the
+    /// web client finishes signing in there without asking for the password again. Apps sign in
+    /// at `/oauth/token`; there is no sign-in mutation.
+    async fn setup(
+        &self,
+        ctx: &Context<'_>,
+        username: String,
+        password: String,
+    ) -> Result<Account> {
+        let (user, cookie) = state(ctx)
+            .identity
+            .setup(Credentials { username, password })
+            .await
+            .map_err(|e| gql(e.into()))?;
         set_cookie(ctx, cookie);
-        Ok(user)
+        Ok(user.into())
     }
 
-    /// Signs in (sets the cookie). Repeated failures for a username, or from an address, are
-    /// locked out for a while.
-    async fn login(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
-        let client = ctx.data_opt::<ClientIp>().and_then(|c| c.0);
-        let (user, cookie) =
-            auth::login(state(ctx), Credentials { username, password }, client).await.api()?;
-        set_cookie(ctx, cookie);
-        Ok(user)
-    }
-
-    /// Signs out (clears the cookie).
-    async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
-        let token = ctx.data_unchecked::<Auth>().token.clone();
-        let cookie = auth::logout(state(ctx), token.as_deref()).await.api()?;
-        set_cookie(ctx, cookie);
-        Ok(true)
-    }
-
-    /// Admins: adds an account.
-    async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<User> {
+    /// Admins: adds an account (a viewer unless `role` says otherwise).
+    async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<Account> {
         let me = admin(ctx).await?;
-        let new = NewUser {
-            username: input.username,
-            password: input.password,
-            is_admin: input.is_admin,
-        };
-        auth::add_user(state(ctx), &me, &new).await.api()
+        let new =
+            NewUser { username: input.username, password: input.password, role: input.role.into() };
+        let user = state(ctx).identity.add_user(&me, &new).await.map_err(|e| gql(e.into()))?;
+        Ok(user.into())
     }
 
     /// Admins: rescans the library.

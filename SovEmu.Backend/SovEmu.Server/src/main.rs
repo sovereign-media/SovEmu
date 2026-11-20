@@ -211,6 +211,35 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ASSET_KEY")]
     pub asset_key: Option<String>,
 
+    /// The secret the server's sign-in (OpenID Connect) key is derived from: it signs the ID
+    /// tokens apps receive. Unset: one is generated on first run and kept in
+    /// `<data>/server.json`.
+    #[arg(long, env = "SOVEMU_TOKEN_KEY")]
+    pub token_key: Option<String>,
+
+    /// The addresses people reach the server at, comma-separated
+    /// (`https://games.example.com,http://192.168.1.10:8080`). Each is an issuer of sign-in
+    /// tokens, and a browser can sign in only at one of them. Unset: `localhost`, `127.0.0.1`
+    /// and `SOVEMU_ADVERTISE_IP` on the HTTP port.
+    #[arg(long, env = "SOVEMU_PUBLIC_URL", value_delimiter = ',')]
+    pub public_url: Vec<String>,
+
+    /// Whether the apps may sign in with a username and password (`POST /oauth/password`),
+    /// beside signing in with a code shown on the screen (the device grant).
+    #[arg(long, env = "SOVEMU_PASSWORD_SIGN_IN", default_value_t = true, action = clap::ArgAction::Set)]
+    pub password_sign_in: bool,
+
+    /// How long an app's access token lasts, in minutes, before it refreshes it. Signing out
+    /// and role changes apply at once regardless: every request checks its token.
+    #[arg(long, env = "SOVEMU_ACCESS_TOKEN_MINUTES", default_value_t = 60)]
+    pub access_token_minutes: u32,
+
+    /// How long a just-used refresh token is still honoured, in seconds: two tabs or requests
+    /// refreshing at once get the same new tokens. Presenting it after this ends the sign-in (a
+    /// copied token). 0: strictly once.
+    #[arg(long, env = "SOVEMU_REFRESH_RETRY_SECONDS", default_value_t = 30)]
+    pub refresh_retry_seconds: u64,
+
     /// How long a signed file URL stays valid, in hours (rounded to the hour, so URLs are
     /// cacheable).
     #[arg(long, env = "SOVEMU_ASSET_URL_HOURS", default_value_t = 24)]
@@ -236,12 +265,13 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
     pub audio_kbps: u32,
 
-    /// How many days a sign-in lasts.
-    #[arg(long, env = "SOVEMU_SESSION_DAYS", default_value_t = 30)]
+    /// How many days a sign-in lasts before signing in again (an app's, from signing in:
+    /// refreshing does not extend it; the browser's at the server). 0: until signed out.
+    #[arg(long, env = "SOVEMU_SESSION_DAYS", default_value_t = 90)]
     pub session_days: u32,
 
     /// Failed sign-ins per username before it is locked out (0: never).
-    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES", default_value_t = ops::MAX_FAILURES)]
+    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES", default_value_t = sovemu_identity::MAX_FAILURES)]
     pub login_max_failures: u32,
 
     /// How long a locked-out username waits, and the window failures are counted in.
@@ -250,7 +280,7 @@ pub struct Config {
 
     /// Failed sign-ins from one address, across usernames, before it is locked out (0: never).
     /// Behind a reverse proxy, list it in `SOVEMU_TRUSTED_PROXIES`, or every client is the proxy.
-    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES_PER_IP", default_value_t = ops::MAX_FAILURES_PER_IP)]
+    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES_PER_IP", default_value_t = sovemu_identity::MAX_FAILURES_PER_IP)]
     pub login_max_failures_per_ip: u32,
 
     /// Reverse proxies whose `X-Forwarded-For` is believed (addresses or ranges,
@@ -378,9 +408,29 @@ const SECRETS: &[&str] = &[
     "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
     "SOVEMU_SCREENSCRAPER_PASSWORD",
     "SOVEMU_THEGAMESDB_KEY",
+    "SOVEMU_TOKEN_KEY",
 ];
 
 impl Config {
+    /// The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own on the HTTP
+    /// port.
+    pub fn public_urls(&self) -> Vec<String> {
+        if !self.public_url.is_empty() {
+            return self
+                .public_url
+                .iter()
+                .map(|u| u.trim().trim_end_matches('/').to_owned())
+                .collect();
+        }
+        let port = self.http.port();
+        let mut urls = vec![format!("http://localhost:{port}"), format!("http://127.0.0.1:{port}")];
+        if let Some(ip) = self.advertise_ip.filter(|ip| !ip.is_loopback() && !ip.is_unspecified()) {
+            let host = if ip.is_ipv6() { format!("[{ip}]") } else { ip.to_string() };
+            urls.push(format!("http://{host}:{port}"));
+        }
+        urls
+    }
+
     /// The decoration set a system's games are framed with (`none`: no frame).
     pub fn decoration_for(&self, system: &str) -> &str {
         self.systems.get(system).and_then(|s| s.decoration.as_deref()).unwrap_or(&self.decoration)
@@ -420,6 +470,7 @@ impl Config {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
             "SOVEMU_ASSET_KEY" => &mut self.asset_key,
+            "SOVEMU_TOKEN_KEY" => &mut self.token_key,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
             "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
@@ -513,6 +564,15 @@ impl Config {
                 self.asset_url_hours
             ),
             format!(
+                "token_key={} public_urls={} access_token_minutes={} refresh_retry_seconds={} \
+                 password_sign_in={}",
+                secret(&self.token_key),
+                self.public_urls().join(","),
+                self.access_token_minutes,
+                self.refresh_retry_seconds,
+                self.password_sign_in
+            ),
+            format!(
                 "log_format={} otel_endpoint={}",
                 self.log_format.as_arg(),
                 opt(&self.otel_endpoint)
@@ -545,7 +605,13 @@ impl Config {
                 } else {
                     self.users
                         .iter()
-                        .map(|u| format!("{}{}", u.username, if u.admin { "(admin)" } else { "" }))
+                        .map(|u| {
+                            format!(
+                                "{}{}",
+                                u.username,
+                                if u.role == auth::Role::Admin { "(admin)" } else { "" }
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join(",")
                 },
@@ -632,11 +698,6 @@ pub struct AppState {
     pub db: SqlitePool,
     pub config: Arc<Config>,
     pub workers: Arc<Workers>,
-    /// Verified against when a username does not exist, so failures take the same time.
-    pub dummy_hash: String,
-    pub login_throttle: Arc<ops::LoginThrottle>,
-    /// The same, per client address (across usernames).
-    pub login_ip_throttle: Arc<ops::LoginThrottle>,
     pub cache: Arc<cache::Cache>,
     pub metadata: Arc<metadata::Metadata>,
     pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
@@ -650,6 +711,8 @@ pub struct AppState {
     pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
+    /// Accounts and sign-in (`sovemu_identity`).
+    pub identity: sovemu_identity::Identity,
 }
 
 impl AppState {
@@ -673,7 +736,8 @@ impl std::fmt::Debug for AppState {
 
 pub fn router(state: AppState) -> Router {
     // The API is GraphQL. Files (artwork, videos, save screenshots) are plain HTTP, at URLs
-    // the API hands out; so is the health probe. Every route runs in a traced `request` span
+    // the API hands out; so are sign-in (OpenID Connect defines its own routes) and the health
+    // probe. Every route runs in a traced `request` span
     // (the web client's static files, the fallback, do not).
     let mut app = Router::new()
         .route("/graphql", get(graphql::graphiql).post(graphql::handler))
@@ -690,9 +754,11 @@ pub fn router(state: AppState) -> Router {
                 )),
         )
         .route("/health", get(ops::health))
+        .with_state(state.clone())
+        // Sign-in: OpenID Connect discovery, `/oauth/…` and the device page (sovemu_identity).
+        .merge(state.identity.router())
         .route_layer(middleware::from_fn(telemetry::trace_request))
-        .route_layer(middleware::from_fn_with_state(state.clone(), client_ip::remember))
-        .with_state(state.clone());
+        .route_layer(middleware::from_fn_with_state(state.clone(), client_ip::remember));
     if let Some(dir) = &state.config.web_dir {
         app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
     }
@@ -739,7 +805,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     std::fs::create_dir_all(&config.roms_dir).ok();
     bios::prepare(&config.bios_dir());
     let db = db::open(&paths.database()).await?;
-    reconcile_users(&db, &config).await?;
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!("GPU probe:\n{}", gpu.summary());
@@ -827,9 +892,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         std::time::Duration::from_millis(config.screenscraper_delay_ms),
         config.artwork_downloads,
     );
-    let lockout = std::time::Duration::from_secs(config.login_lockout_minutes * 60);
-    let login_throttle = ops::LoginThrottle::new(config.login_max_failures, lockout);
-    let login_ip_throttle = ops::LoginThrottle::new(config.login_max_failures_per_ip, lockout);
     let copy_threads = config.copy_threads;
     // The built-in set: drawn here unless the image already holds it (it does, once per version).
     if config.decorations_builtin.is_none()
@@ -840,13 +902,33 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
     let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
     let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
+    let token_secret = sovemu_assets::load_secret(
+        config.token_key.as_deref(),
+        &config.data_dir,
+        "tokenSigningKey",
+        "token signing key",
+    )?;
+    let identity = sovemu_identity::Identity::new(
+        db.clone(),
+        sovemu_identity::Config {
+            public_urls: config.public_urls(),
+            token_secret,
+            access_token_minutes: config.access_token_minutes,
+            session_days: config.session_days,
+            secure_cookies: config.secure_cookies,
+            password_sign_in: config.password_sign_in,
+            max_failures: config.login_max_failures,
+            max_failures_per_ip: config.login_max_failures_per_ip,
+            lockout: std::time::Duration::from_secs(config.login_lockout_minutes * 60),
+            refresh_retry: std::time::Duration::from_secs(config.refresh_retry_seconds),
+        },
+    )
+    .await?;
+    reconcile_users(&identity, &config).await?;
     Ok(AppState {
         db,
         config: Arc::new(config),
         workers,
-        dummy_hash: auth::hash_password("x")?,
-        login_throttle: Arc::new(login_throttle),
-        login_ip_throttle: Arc::new(login_ip_throttle),
         cache: cache::Cache::new(cache_dir, cache_bytes, copy_threads),
         metadata,
         mirror: Arc::default(),
@@ -855,19 +937,20 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
         assets,
+        identity,
     })
 }
 
 /// Brings the accounts in line with the environment: the admin and every declared user exist
 /// with their declared passwords, and with `SOVEMU_USERS_PRUNE` nobody else does.
-async fn reconcile_users(db: &SqlitePool, config: &Config) -> Result<()> {
+async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) -> Result<()> {
     let mut declared = Vec::new();
     if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
-        auth::ensure_admin(db, user, password).await?;
+        identity.ensure_user(user, password, auth::Role::Admin).await?;
         declared.push(user.clone());
     }
     for user in &config.users {
-        auth::ensure_user(db, &user.username, &user.password, user.admin).await?;
+        identity.ensure_user(&user.username, &user.password, user.role).await?;
         declared.push(user.username.clone());
     }
     if config.users_prune {
@@ -876,7 +959,7 @@ async fn reconcile_users(db: &SqlitePool, config: &Config) -> Result<()> {
                 "SOVEMU_USERS_PRUNE is set but no users are declared: that would delete everyone"
             );
         }
-        auth::prune_users(db, &declared).await?;
+        identity.prune_users(&declared).await?;
     }
     Ok(())
 }

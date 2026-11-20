@@ -97,6 +97,13 @@ export type Rendering =
   | 'OFF'
   | 'SOFTWARE';
 
+/** What an account may do. */
+export type Role =
+  /** Also runs the server: users, the library, emulator settings. */
+  | 'ADMIN'
+  /** Plays games: browse the library, play, keep saves and settings of their own. */
+  | 'VIEWER';
+
 /** A change to one emulator setting. */
 export type SettingChange = {
   key: string;
@@ -143,7 +150,7 @@ export type MetadataFieldsFragment = { running: boolean, total: number, done: nu
 export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ViewerQuery = { viewer: { setupRequired: boolean, user: { id: number, username: string, isAdmin: boolean } | null } };
+export type ViewerQuery = { viewer: { setupRequired: boolean, user: { id: number, username: string, role: Role, isAdmin: boolean } | null } };
 
 export type SetupMutationVariables = Exact<{
   username: string;
@@ -152,19 +159,6 @@ export type SetupMutationVariables = Exact<{
 
 
 export type SetupMutation = { setup: { id: number, username: string, isAdmin: boolean } };
-
-export type LoginMutationVariables = Exact<{
-  username: string;
-  password: string;
-}>;
-
-
-export type LoginMutation = { login: { id: number, username: string, isAdmin: boolean } };
-
-export type LogoutMutationVariables = Exact<{ [key: string]: never; }>;
-
-
-export type LogoutMutation = { logout: boolean };
 
 export type ClientConfigQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -616,6 +610,7 @@ export const ViewerDocument = new TypedDocumentString(`
     user {
       id
       username
+      role
       isAdmin
     }
   }
@@ -630,20 +625,6 @@ export const SetupDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SetupMutation, SetupMutationVariables>;
-export const LoginDocument = new TypedDocumentString(`
-    mutation Login($username: String!, $password: String!) {
-  login(username: $username, password: $password) {
-    id
-    username
-    isAdmin
-  }
-}
-    `) as unknown as TypedDocumentString<LoginMutation, LoginMutationVariables>;
-export const LogoutDocument = new TypedDocumentString(`
-    mutation Logout {
-  logout
-}
-    `) as unknown as TypedDocumentString<LogoutMutation, LogoutMutationVariables>;
 export const ClientConfigDocument = new TypedDocumentString(`
     query ClientConfig {
   clientConfig {

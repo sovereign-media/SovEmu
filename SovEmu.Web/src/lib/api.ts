@@ -1,5 +1,6 @@
 // The SovEmu API (GraphQL), as the pages use it: one function per operation, returning the
 // types codegen derived from the documents in queries.ts. Signed out, a call goes to sign-in.
+// Signing in and out is auth.ts (OpenID Connect), not the API.
 import type {
   AdminStatusQuery,
   BiosQuery as BiosQueryResult,
@@ -35,8 +36,6 @@ import {
   GameQuery,
   HomeQuery as HomeDocument,
   LoadStateMutation,
-  LoginMutation,
-  LogoutMutation,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
@@ -106,8 +105,6 @@ export const AUTO_SLOT = 0;
 export const api = {
   viewer: async () => (await request(ViewerDocument)).viewer,
   setup: async (username: string, password: string) => (await request(SetupMutation, { username, password })).setup,
-  login: async (username: string, password: string) => (await request(LoginMutation, { username, password })).login,
-  logout: () => request(LogoutMutation),
   iceServers: async () => (await request(ClientConfigQuery)).clientConfig.iceServers as RTCIceServer[],
   home: async () => (await request(HomeDocument)).home,
   systems: async () => (await request(SystemsQuery)).systems,

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "SovEmu.Assets",
+    "SovEmu.Identity",
     "SovEmu.LibretroFfi",
     "SovEmu.Library",
     "SovEmu.Media",
