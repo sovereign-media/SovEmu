@@ -88,6 +88,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Group multi-disc games (`(Disc N)`) into one entry: the scanner folds them (`game_discs`),
       the worker plays an `.m3u` of the discs and changes disc through libretro's disk control
       (`setDisc`), and the in-game menus offer Change disc
+- [x] Multi-part media named every common way: Redump/No-Intro `(Disc N)`, `(Disk N)`, `(Disk A)`;
+      TOSEC `(Disk 1 of 2)`, `(Tape 2 of 2 Side B)`, `(Side A)`, `(Part 1 of 3)`; `[Disc 1]`,
+      `(CD1)` and a title's `- Disc 1`. The kind (`Game.partKind`) picks the grid badge's icon
 - [x] Favourites and per-user collections: a heart and a collections menu on the game panel, a
       Favourites filter, and Home rows for favourites and each collection
 - [x] Search across every system (`Query.search`: every word, case and accents folded, titles

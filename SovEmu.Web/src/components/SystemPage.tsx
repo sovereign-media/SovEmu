@@ -6,7 +6,8 @@
 // Pad and keyboard: the d-pad moves through the grid, A opens the panel (and in it plays), B
 // closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
 // The list logic is src/lib/games.ts.
-import { ArrowDownAZ, Check, CircleCheck, Disc3, Microchip, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
+import { PartIcon } from "./browse/PartIcon";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
@@ -20,6 +21,7 @@ import {
   jumpTo,
   letterOf,
   maxPlayers,
+  partsLabel,
   sortGames,
   urlWithGame,
   type GameFilters,
@@ -80,10 +82,10 @@ function GameCard({
         {game.discs > 1 && (
           <span
             className="absolute top-2 left-2 flex h-6 items-center gap-1 rounded-full bg-black/70 px-2 text-xs font-semibold text-white tabular-nums"
-            title={`${game.discs} discs`}
-            aria-label={`${game.discs} discs`}
+            title={partsLabel(game.discs, game.partKind)}
+            aria-label={partsLabel(game.discs, game.partKind)}
           >
-            <Disc3 className="size-3.5" />
+            <PartIcon kind={game.partKind} className="size-3.5" />
             {game.discs}
           </span>
         )}

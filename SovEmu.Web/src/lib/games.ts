@@ -158,3 +158,10 @@ export function urlWithGame(href: string, id: number | null): string {
   else url.searchParams.set("game", String(id));
   return url.pathname + url.search + url.hash;
 }
+
+/** A multi-part game's count in words: "3 discs", "2 disks", "2 sides" (discs when unknown). */
+export function partsLabel(count: number, kind: string | null | undefined): string {
+  const nouns: Record<string, string> = { DISC: "disc", DISK: "disk", TAPE: "tape", SIDE: "side", PART: "part" };
+  const noun = nouns[kind ?? "DISC"] ?? "disc";
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}

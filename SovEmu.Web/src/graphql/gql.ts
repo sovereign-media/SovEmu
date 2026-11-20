@@ -15,7 +15,7 @@ import * as types from './graphql';
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n  }\n": typeof types.GameFieldsFragmentDoc,
+    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n    partKind\n  }\n": typeof types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": typeof types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": typeof types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": typeof types.SessionFieldsFragmentDoc,
@@ -69,7 +69,7 @@ type Documents = {
     "\n  mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {\n    changeEmulatorSettings(system: $system, changes: $changes) {\n      ...SettingsFields\n    }\n  }\n": typeof types.ChangeEmulatorSettingsDocument,
 };
 const documents: Documents = {
-    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n  }\n": types.GameFieldsFragmentDoc,
+    "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n    partKind\n  }\n": types.GameFieldsFragmentDoc,
     "\n  fragment SystemFields on System {\n    id\n    name\n    short\n    manufacturer\n    year\n    color\n    gameCount\n    playable\n    needsGpu\n    rendering\n    biosMissing\n  }\n": types.SystemFieldsFragmentDoc,
     "\n  fragment SaveFields on SaveSlot {\n    slot\n    savedAt\n    screenshotUrl\n  }\n": types.SaveFieldsFragmentDoc,
     "\n  fragment SessionFields on GameSession {\n    id\n    gameId\n    system\n    title\n    core\n    width\n    height\n    fps\n    connected\n    discs\n    disc\n  }\n": types.SessionFieldsFragmentDoc,
@@ -126,7 +126,7 @@ const documents: Documents = {
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n  }\n"): typeof import('./graphql').GameFieldsFragmentDoc;
+export function graphql(source: "\n  fragment GameFields on Game {\n    id\n    system\n    title\n    fileTitle\n    tags\n    path\n    size\n    lastPlayedAt\n    playCount\n    image: mediaUrl(kind: IMAGE)\n    thumb: mediaUrl(kind: THUMB)\n    video: mediaUrl(kind: VIDEO)\n    description\n    releaseDate\n    developer\n    publisher\n    genre\n    players\n    rating\n    favourite\n    release\n    patch\n    discs\n    partKind\n  }\n"): typeof import('./graphql').GameFieldsFragmentDoc;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
