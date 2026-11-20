@@ -540,6 +540,7 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     tracing::warn!("input channel closed: releasing held input");
                     p.input = None;
                     session.release_input();
+                    session.hotkeys = Hotkeys::default();
                 }
                 Event::ChannelData(data) if Some(data.id) == p.input => {
                     session.handle_input(&data.data);
@@ -601,12 +602,13 @@ impl Session {
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
     }
 
-    /// Lets go of every button and stick (the client stopped saying what it holds).
+    /// Lets go of every button and stick (the client stopped saying what it holds). Hotkeys
+    /// (pause among them) lapse on their own, refreshed separately: a lapse of buttons must not
+    /// unpause a game whose menu is still open.
     fn release_input(&mut self) {
         self.buttons.clear();
         self.analog_at = None;
         self.core.set_analog(&[]);
-        self.hotkeys = Hotkeys::default();
     }
 
     /// Releases held input the client has stopped refreshing ([`INPUT_LAPSE`]), and says so:

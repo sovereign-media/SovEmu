@@ -643,7 +643,7 @@ pub struct AppState {
     /// The GraphQL schema (cheap to clone: shared).
     pub schema: graphql::ApiSchema,
     /// Signs the file URLs the API hands out, and checks them on `/media/…`.
-    pub assets: Arc<assets::AssetSigner>,
+    pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
 }
@@ -832,8 +832,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         tracing::warn!(error = %e, "drawing the built-in decorations");
     }
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
-    let asset_key = assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
-    let assets = Arc::new(assets::AssetSigner::new(asset_key, config.asset_url_hours));
+    let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
+    let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
     Ok(AppState {
         db,
         config: Arc::new(config),

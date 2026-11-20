@@ -58,7 +58,7 @@ instead (as Sovereign's server takes its SPA).
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
   videos, save screenshots, decorations) and for `/health`. Those URLs are always **signed** for
-  the requesting user (`state.assets.sign`, `assets.rs`, Sovereign's scheme); a `/media/` route
+  the requesting user (`state.assets.sign`, `SovEmu.Assets`, Sovereign's scheme); a `/media/` route
   sits behind `require_signature` and serves the signed user's data, never a cookie's. Never hand
   out or serve an unsigned file URL. Resolvers check access
   (`user(ctx)`, `admin(ctx)`) and call plain functions in the other modules; errors carry
@@ -129,6 +129,7 @@ cargo test --workspace
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core (cdylib) that tests load with dlopen exactly like a real one. Never shipped. |
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
+| `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SOVEMU_ASSET_KEY`, else generated into `data/server.json`). No HTTP, no database: the server's `/media/…` middleware calls it. |
 | `SovEmu.Library` | `sovemu-library` | The ROM library without the database: the systems table (Recalbox folder names + aliases, extension fallback), walking a library into games (parts folded together, soft patches found, artwork file names), release labels, BIOS files, the game-information clients (FBNeo, LaunchBox, ScreenScraper, TheGamesDB), the local cache and mirror, decorations. Reads files and asks services; never opens the database. Only what the server uses is `pub`. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
 | `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); local accounts (argon2, HttpOnly cookie, first-run admin setup); the library's tables, kept in step with what `SovEmu.Library` finds; one `sovemu-worker session` per game session with a UDP port from a pool. |
@@ -139,8 +140,8 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
     ├── TestCore   (types only; default features off) Protocol  (no workspace references)
     └── RetroHost
             └── Worker ──► Media, Protocol
-Library   (no workspace references)
-Server ──► Library, Protocol   (never links a core or a codec: it runs workers)
+Library   (no workspace references)                  Assets    (no workspace references)
+Server ──► Library, Assets, Protocol   (never links a core or a codec: it runs workers)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
 persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the

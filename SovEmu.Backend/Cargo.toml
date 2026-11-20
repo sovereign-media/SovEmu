@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "SovEmu.Assets",
     "SovEmu.LibretroFfi",
     "SovEmu.Library",
     "SovEmu.Media",
