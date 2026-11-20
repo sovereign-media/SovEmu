@@ -90,9 +90,16 @@ FROM toolchain AS test
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
+# Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
+# must be several times faster than normal play), and a release link on the same cores would
+# slow them. Copying from `build` makes BuildKit wait for it before the tests run.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
-    cargo test --workspace --locked
+    cargo test --workspace --locked --no-run
+COPY --from=build /out/sovemu-server /tmp/release-built
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=target-test,target=/src/target \
+    rm /tmp/release-built && cargo test --workspace --locked
 
 ## ---- runtime ------------------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
