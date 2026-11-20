@@ -155,6 +155,22 @@ pub struct Metrics {
 }
 
 /// The instruments, made on first use (after [`init`] has installed the exporter, if any).
+/// Session metrics, as `sovemu_sessions` reports sessions starting and ending.
+#[derive(Debug)]
+pub struct SessionMetrics;
+
+impl sovemu_sessions::Observer for SessionMetrics {
+    fn session_started(&self, system: &str) {
+        metrics().sessions_started.add(1, &[KeyValue::new("system", system.to_owned())]);
+    }
+
+    fn session_ended(&self, system: &str, ran: std::time::Duration) {
+        metrics()
+            .session_duration
+            .record(ran.as_secs_f64(), &[KeyValue::new("system", system.to_owned())]);
+    }
+}
+
 pub fn metrics() -> &'static Metrics {
     static METRICS: OnceLock<Metrics> = OnceLock::new();
     METRICS.get_or_init(|| {

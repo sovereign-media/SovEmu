@@ -55,7 +55,7 @@ impl CoreInfoCache {
             .arg("probe")
             .arg(core)
             .env_clear()
-            .envs(crate::workers::worker_env())
+            .envs(sovemu_sessions::workers::worker_env())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -86,7 +86,7 @@ fn core_name(core: &Path) -> String {
 pub async fn remember(
     db: &SqlitePool,
     core: &Path,
-    (options, categories): &crate::workers::Declared,
+    (options, categories): &sovemu_sessions::workers::Declared,
 ) {
     let result = sqlx::query(
         "INSERT INTO core_options (core, options, categories) VALUES (?, ?, ?)
@@ -107,7 +107,7 @@ pub async fn remember(
 async fn remembered(
     db: &SqlitePool,
     core: &Path,
-) -> sqlx::Result<Option<crate::workers::Declared>> {
+) -> sqlx::Result<Option<sovemu_sessions::workers::Declared>> {
     let row: Option<(String, String)> =
         sqlx::query_as("SELECT options, categories FROM core_options WHERE core = ?")
             .bind(core_name(core))
@@ -121,7 +121,7 @@ async fn remembered(
 /// them with a game), the last session's. The flag says neither has any yet.
 fn offered(
     probe: &CoreInfo,
-    remembered: Option<crate::workers::Declared>,
+    remembered: Option<sovemu_sessions::workers::Declared>,
 ) -> (Vec<CoreOption>, Vec<CoreCategory>, bool) {
     if !probe.variables.is_empty() {
         return (probe.variables.clone(), probe.categories.clone(), false);

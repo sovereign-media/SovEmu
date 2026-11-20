@@ -154,12 +154,12 @@ enum Rendering {
     Off,
 }
 
-impl From<crate::gpu::Mode> for Rendering {
-    fn from(m: crate::gpu::Mode) -> Self {
+impl From<sovemu_sessions::gpu::Mode> for Rendering {
+    fn from(m: sovemu_sessions::gpu::Mode) -> Self {
         match m {
-            crate::gpu::Mode::Gpu => Self::Gpu,
-            crate::gpu::Mode::Software => Self::Software,
-            crate::gpu::Mode::Off => Self::Off,
+            sovemu_sessions::gpu::Mode::Gpu => Self::Gpu,
+            sovemu_sessions::gpu::Mode::Software => Self::Software,
+            sovemu_sessions::gpu::Mode::Off => Self::Off,
         }
     }
 }
@@ -695,7 +695,7 @@ impl CollectionNode {
 }
 
 /// A running game: one worker streaming over WebRTC.
-struct SessionNode(crate::workers::SessionInfo);
+struct SessionNode(sovemu_sessions::workers::SessionInfo);
 
 #[Object(name = "GameSession")]
 impl SessionNode {
@@ -768,9 +768,9 @@ struct StartStatus {
     error: Option<String>,
 }
 
-impl From<crate::starts::StartStatus> for StartStatus {
-    fn from(s: crate::starts::StartStatus) -> Self {
-        use crate::starts::Phase;
+impl From<sovemu_sessions::starts::StartStatus> for StartStatus {
+    fn from(s: sovemu_sessions::starts::StartStatus) -> Self {
+        use sovemu_sessions::starts::Phase;
         Self {
             phase: match s.phase {
                 Phase::Stopping => StartPhase::Stopping,

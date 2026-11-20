@@ -3459,6 +3459,7 @@ dependencies = [
  "sovemu-assets",
  "sovemu-library",
  "sovemu-protocol",
+ "sovemu-sessions",
  "sqlx",
  "tokio",
  "tower",
@@ -3467,6 +3468,20 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "zip",
+]
+
+[[package]]
+name = "sovemu-sessions"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "hex",
+ "serde",
+ "serde_json",
+ "sovemu-library",
+ "sovemu-protocol",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use sovemu_protocol::SessionDescription;
 use sovemu_protocol::ipc::{CoreCategory, CoreOption};
@@ -30,6 +29,9 @@ use tokio::sync::{oneshot, watch};
 use tracing::Instrument;
 
 use crate::starts::{Phase, Starts};
+use crate::{Error, Observer};
+
+type Result<T> = std::result::Result<T, Error>;
 
 /// How long a request to a worker may take.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -59,13 +61,16 @@ pub struct WorkerConfig {
     pub keyframe_interval: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
     pub gpu: String,
-    /// How workers write their log lines (as the server does); each also gets its session id.
-    pub log_format: crate::telemetry::LogFormat,
+    /// How workers write their log lines (`--log-format`: `text` or `json`, as the server does);
+    /// each also gets its session id.
+    pub log_format: &'static str,
+    /// Told when sessions start and end (the server records metrics).
+    pub observer: Arc<dyn Observer>,
 }
 
 /// The only environment a worker inherits. Cores are third-party code: they get no credentials
 /// (the NAS password, API keys) and nothing else of the server's environment.
-pub const WORKER_ENV: &[&str] = &[
+pub(crate) const WORKER_ENV: &[&str] = &[
     "PATH",
     "HOME",
     "TMPDIR",
@@ -201,9 +206,7 @@ impl Process {
                 };
                 let ran = started.elapsed();
                 tracing::info!(?status, duration_s = ran.as_secs(), "session ended");
-                crate::telemetry::metrics()
-                    .session_duration
-                    .record(ran.as_secs_f64(), &[opentelemetry::KeyValue::new("system", system)]);
+                workers.config.observer.session_ended(&system, ran);
                 let _ = exit_tx.send(true);
                 workers.forget(&id, port);
                 if let Some(after) = after_exit {
@@ -262,14 +265,14 @@ impl Session {
         let result = async {
             {
                 let mut stdin = self.stdin.lock().await;
-                stdin.write_all(line.as_bytes()).await.context("worker stdin closed")?;
-                stdin.flush().await?;
+                stdin.write_all(line.as_bytes()).await.map_err(|_| Error::Closed)?;
+                stdin.flush().await.map_err(|_| Error::Closed)?;
             }
             match tokio::time::timeout(limit, rx).await {
-                Ok(Ok(Reply::Error { message, .. })) => bail!("{message}"),
+                Ok(Ok(Reply::Error { message, .. })) => Err(Error::Worker(message)),
                 Ok(Ok(reply)) => Ok(reply),
-                Ok(Err(_)) => bail!("the session ended"),
-                Err(_) => bail!("the session did not answer in time"),
+                Ok(Err(_)) => Err(Error::Ended),
+                Err(_) => Err(Error::Timeout("the session did not answer in time")),
             }
         }
         .await;
@@ -282,7 +285,7 @@ impl Session {
     pub async fn offer(&self, offer: SessionDescription) -> Result<SessionDescription> {
         match self.request(|id| Request::Offer { id, offer }).await? {
             Reply::Answer { answer, .. } => Ok(answer),
-            other => bail!("unexpected reply {other:?}"),
+            other => Err(Error::Unexpected(format!("{other:?}"))),
         }
     }
 }
@@ -349,11 +352,8 @@ impl Workers {
             self.stop(&existing.id).await;
         }
         phase(Phase::Launching);
-        let port = self
-            .lock()
-            .free_ports
-            .pop_first()
-            .ok_or_else(|| anyhow!("all {} session ports are in use", self.port_count()))?;
+        let port =
+            self.lock().free_ports.pop_first().ok_or_else(|| Error::NoPort(self.port_count()))?;
         let after_exit = launch.after_exit.take();
         // From here the port goes back to the pool when the worker exits (`Process::reap`).
         let session = self.spawn(&launch, port, after_exit).await?;
@@ -427,7 +427,7 @@ impl Workers {
             .arg("--session-id")
             .arg(&id)
             .arg("--log-format")
-            .arg(self.config.log_format.as_arg());
+            .arg(self.config.log_format);
         if let Some((patch, name)) = &launch.patch {
             command.arg("--patch").arg(patch).arg("--patch-name").arg(name);
         }
@@ -442,7 +442,7 @@ impl Workers {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .with_context(|| format!("starting {}", self.config.worker_bin.display()));
+            .map_err(|e| Error::Spawn(self.config.worker_bin.clone(), e));
         let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {
@@ -466,7 +466,7 @@ impl Workers {
         let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
-                    Ok(Reply::Failed { message }) => bail!("{message}"),
+                    Ok(Reply::Failed { message }) => return Err(Error::Worker(message)),
                     Ok(Reply::Ready { core, width, height, fps, discs, .. }) => {
                         return Ok((core, width, height, fps, discs));
                     }
@@ -482,7 +482,7 @@ impl Workers {
                     Err(_) => tracing::debug!("worker: {line}"),
                 }
             }
-            bail!("the worker exited while loading the game")
+            Err(Error::Exited)
         })
         .await;
         let ready = match ready {
@@ -490,7 +490,7 @@ impl Workers {
             Ok(Err(e)) => return Err(e),
             Err(_) => {
                 process.kill();
-                bail!("the worker took too long to load the game");
+                return Err(Error::Timeout("the worker took too long to load the game"));
             }
         };
 
@@ -522,9 +522,7 @@ impl Workers {
             span: span.clone(),
         });
         tracing::info!(parent: &span, game = %launch.title, udp.port = port, "session started");
-        crate::telemetry::metrics()
-            .sessions_started
-            .add(1, &[opentelemetry::KeyValue::new("system", launch.system.clone())]);
+        self.config.observer.session_started(&launch.system);
 
         let reader = session.clone();
         tokio::spawn(async move {
@@ -649,7 +647,8 @@ done
             fast_forward: 1,
             keyframe_interval: 60,
             gpu: "off".into(),
-            log_format: crate::telemetry::LogFormat::Text,
+            log_format: "text",
+            observer: Arc::new(()),
         })
     }
 
