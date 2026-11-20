@@ -3,6 +3,8 @@
 **/.git
 **/.DS_Store
 SovEmu.Backend/target
+# CI's build definition: changing it must not invalidate the compile.
+SovEmu.Backend/docker-bake.hcl
 cores
 roms
 system

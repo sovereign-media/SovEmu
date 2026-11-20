@@ -4,13 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # By hand (Actions → CI → Run workflow): also checks the backend on macOS.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its older run. Runs on main all finish: each saves
+  # the cargo caches the next builds start from, and a cancelled one would save nothing.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
   run:
@@ -25,8 +29,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux is the deployment target; macOS is where development happens.
-        os: [ubuntu-latest, macos-latest]
+        # Linux is the deployment target. macOS is where development happens, and every push is
+        # formatted, linted and tested there first (.claude/rules/rust.md); its runners cost 10x
+        # Linux's on a private repository, so CI checks it only when run by hand.
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -84,33 +90,61 @@ jobs:
         run: npm run build
 
   image:
-    # The shipped artefact: Debian, cores built from source. The `test` target runs the whole
-    # suite in the image; the runtime build fails if any shipped core cannot be loaded.
+    # The shipped artefact: Debian, cores from the pinned libretro release. The `test` target
+    # runs the whole suite in the image; the runtime build fails if any shipped core cannot be
+    # loaded. Both build in one bake (SovEmu.Backend/docker-bake.hcl), side by side.
     name: Container image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+        id: buildx
 
-      - name: Test suite in the image
-        uses: docker/build-push-action@v6
+      # Cargo's cache mounts (the registry and each target/) live in the builder and vanish with
+      # the runner; keep them in the Actions cache so unchanged crates are not compiled again.
+      # Pushes to main save them; pull requests only read them (a branch's cache is invisible
+      # to other branches anyway), which keeps the 10 GB cache from filling with PR copies.
+      - name: Cargo caches (restore and save, main)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache@v4
         with:
-          context: .
-          file: SovEmu.Backend/Dockerfile
-          target: test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          path: cache-mount
+          key: cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-
+            cargo-mounts-
 
-      - name: Runtime image (probes every core)
-        uses: docker/build-push-action@v6
+      - name: Cargo caches (restore, pull requests)
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@v4
         with:
-          context: .
-          file: SovEmu.Backend/Dockerfile
-          target: runtime
-          load: true
-          tags: sovemu:ci
-          cache-from: type=gha
+          path: cache-mount
+          key: cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-
+            cargo-mounts-
+
+      # Puts the restored caches into the builder's cache mounts, and (after the build, on main)
+      # takes them back out for the save above. The ids are the Dockerfile's.
+      - name: Cargo caches into the builder
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          skip-extraction: ${{ github.ref != 'refs/heads/main' }}
+          cache-map: |
+            {
+              "cache-mount/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+              "cache-mount/target-release": { "target": "/src/target", "id": "target-release" },
+              "cache-mount/target-test": { "target": "/src/target", "id": "target-test" }
+            }
+
+      - name: Test suite and runtime image (probes every core)
+        uses: docker/bake-action@v6
+        with:
+          source: .
+          files: SovEmu.Backend/docker-bake.hcl
+          targets: ci
 
       - name: Smoke test
         working-directory: .
