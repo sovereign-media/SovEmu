@@ -320,6 +320,8 @@ pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Er
         .rows_affected() as usize;
     let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&mut *tx).await?;
     tx.commit().await?;
+    // Titles came and went: which games share one may have changed.
+    crate::releases::refresh(pool).await?;
     let added = (after - before + removed as i64).max(0) as usize;
     Ok(ScanReport { found: found.len(), added, removed })
 }

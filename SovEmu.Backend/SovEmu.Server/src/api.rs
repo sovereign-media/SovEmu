@@ -58,8 +58,7 @@ pub struct Game {
     /// One of this user's favourites (filled in by `collections::mark_favourites`).
     #[sqlx(skip)]
     pub(crate) favourite: bool,
-    /// What tells it apart from games of the same title on its system (`releases::label`).
-    #[sqlx(skip)]
+    /// What tells it apart from games of the same title on its system (`releases::refresh`).
     pub(crate) release: Option<String>,
 }
 
@@ -134,28 +133,39 @@ pub(crate) const GAME_COLUMNS: &str =
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art,
+     m.box_art, g.release,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
-/// What a list of games carries for this user beyond its rows: which are favourites, and the
-/// labels that tell same-titled releases apart. Every list the API returns goes through here.
+/// What a list of games carries for this user beyond its rows: which are favourites. Every list
+/// the API returns goes through here.
 pub(crate) async fn annotate(state: &AppState, user_id: i64, games: &mut [Game]) -> ApiResult<()> {
-    crate::collections::mark_favourites(state, user_id, games).await?;
-    crate::releases::label(state, games).await
+    crate::collections::mark_favourites(state, user_id, games).await
+}
+
+/// The games of one system, by title: the system page's list.
+pub(crate) const LIST_GAMES: &str =
+    "WHERE g.system = ? ORDER BY COALESCE(m.title, g.title) COLLATE NOCASE, g.path";
+/// One game.
+pub(crate) const ONE_GAME: &str = "WHERE g.id = ?";
+
+/// A query for games with their user's play history and game information: `tail` is the
+/// `WHERE … ORDER BY …` (binds: the user's id, then the tail's).
+pub(crate) fn games_sql(tail: &str) -> String {
+    format!(
+        "SELECT {GAME_COLUMNS} FROM games g
+         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
+         LEFT JOIN game_metadata m ON m.game_id = g.id
+         {tail}"
+    )
 }
 
 pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResult<Vec<Game>> {
     system_by_id(state, system)?;
-    let games = sqlx::query_as::<_, Game>(&format!(
-        "SELECT {GAME_COLUMNS} FROM games g
-         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
-         LEFT JOIN game_metadata m ON m.game_id = g.id
-         WHERE g.system = ? ORDER BY COALESCE(m.title, g.title) COLLATE NOCASE, g.path"
-    ))
-    .bind(user.id)
-    .bind(system)
-    .fetch_all(&state.db)
-    .await?;
+    let games = sqlx::query_as::<_, Game>(&games_sql(LIST_GAMES))
+        .bind(user.id)
+        .bind(system)
+        .fetch_all(&state.db)
+        .await?;
     let mut games = games;
     annotate(state, user.id, &mut games).await?;
     prefetch_art(state, system, &games);
@@ -163,18 +173,13 @@ pub async fn list_games(state: &AppState, user: &User, system: &str) -> ApiResul
 }
 
 async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
-    sqlx::query_as::<_, Game>(&format!(
-        "SELECT {GAME_COLUMNS} FROM games g
-         LEFT JOIN play_history h ON h.game_id = g.id AND h.user_id = ?
-         LEFT JOIN game_metadata m ON m.game_id = g.id
-         WHERE g.id = ?"
-    ))
-    .bind(user_id)
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?
-    .map(Game::with_box_art)
-    .ok_or_else(|| ApiError::not_found("game"))
+    sqlx::query_as::<_, Game>(&games_sql(ONE_GAME))
+        .bind(user_id)
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .map(Game::with_box_art)
+        .ok_or_else(|| ApiError::not_found("game"))
 }
 
 pub async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {

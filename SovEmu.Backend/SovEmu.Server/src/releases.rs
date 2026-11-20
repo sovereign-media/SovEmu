@@ -4,15 +4,12 @@
 //! `Game.release`, that the clients show with the title; a game whose title is its own gets none.
 //!
 //! The label is worked out over the whole library, not the list being shown, so a game keeps the
-//! same label in every row it appears in.
+//! same label in every row it appears in; and it is stored (`games.release`, by [`refresh`]), so
+//! listing games never works it out again.
 
 use std::collections::{HashMap, HashSet};
 
-use sqlx::FromRow;
-
-use crate::AppState;
-use crate::api::Game;
-use crate::error::ApiResult;
+use sqlx::{FromRow, SqlitePool};
 
 /// A game whose title another game on its system shares.
 #[derive(Debug, Clone, FromRow)]
@@ -29,11 +26,9 @@ pub struct Twin {
     pub path: String,
 }
 
-/// Sets `release` on each of `games` that shares its title with another game on its system.
-pub async fn label(state: &AppState, games: &mut [Game]) -> ApiResult<()> {
-    if games.is_empty() {
-        return Ok(());
-    }
+/// Works out every game's label again and stores it (`games.release`): after a scan, after a
+/// game-information lookup (titles change), and at startup. Listing games then only reads it.
+pub async fn refresh(db: &SqlitePool) -> sqlx::Result<usize> {
     let twins: Vec<Twin> = sqlx::query_as(
         "WITH t AS (
              SELECT g.id, g.system, COALESCE(m.title, g.title) AS title, g.title AS file_title,
@@ -43,13 +38,22 @@ pub async fn label(state: &AppState, games: &mut [Game]) -> ApiResult<()> {
          WHERE (system, folded) IN (
              SELECT system, folded FROM t GROUP BY system, folded HAVING COUNT(*) > 1)",
     )
-    .fetch_all(&state.db)
+    .fetch_all(db)
     .await?;
     let labels = labels(&twins);
-    for game in games {
-        game.release = labels.get(&game.id).cloned();
+    let mut tx = db.begin().await?;
+    sqlx::query("UPDATE games SET release = NULL WHERE release IS NOT NULL")
+        .execute(&mut *tx)
+        .await?;
+    for (id, label) in &labels {
+        sqlx::query("UPDATE games SET release = ? WHERE id = ?")
+            .bind(label)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
     }
-    Ok(())
+    tx.commit().await?;
+    Ok(labels.len())
 }
 
 /// Each twin's label: the tags its twins do not all share (a translation's `T` reads

@@ -201,16 +201,15 @@ pub(crate) fn cookie_token(headers: &HeaderMap) -> Option<String> {
     })
 }
 
+/// Every signed-in request's first query.
+pub(crate) const SESSION_USER: &str = "SELECT u.id, u.username, u.is_admin FROM auth_sessions s
+     JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
+
 /// The user a sign-in cookie's token belongs to, if it is current.
 pub async fn user_for_token(db: &SqlitePool, token: Option<&str>) -> ApiResult<Option<User>> {
     let Some(token) = token else { return Ok(None) };
-    Ok(sqlx::query_as::<_, User>(
-        "SELECT u.id, u.username, u.is_admin FROM auth_sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ? AND s.expires_at > datetime('now')",
-    )
-    .bind(token_hash(token))
-    .fetch_optional(db)
-    .await?)
+    Ok(sqlx::query_as::<_, User>(SESSION_USER).bind(token_hash(token)).fetch_optional(db).await?)
 }
 
 /// The signed-in user (for the file routes). Rejects with 401 if there is none.

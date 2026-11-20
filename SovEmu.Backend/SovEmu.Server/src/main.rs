@@ -24,6 +24,8 @@ mod library;
 mod metadata;
 mod mirror;
 mod ops;
+#[cfg(test)]
+mod query_plans;
 mod releases;
 mod search;
 mod settings;
