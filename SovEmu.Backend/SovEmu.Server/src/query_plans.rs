@@ -26,6 +26,7 @@ fn hot_queries() -> Vec<(&'static str, String)> {
         ("Home: a collection's row", collections::collection_games_sql()),
         ("every list: the user's favourites", collections::FAVOURITE_IDS.to_owned()),
         ("a game's panel: its collections", collections::OF_GAME.to_owned()),
+        ("every list: the patch each game plays", crate::patches::chosen_sql(3)),
     ]
 }
 

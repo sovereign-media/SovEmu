@@ -138,7 +138,7 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
 Server ──► Protocol   (never links a core or a codec: it runs workers)
 
 Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
-persist.rs (battery saves and states), rewind.rs, headless.rs, probe.rs (and standin.rs, the
+persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the
 stand-in games that make option-on-load cores declare their options).
 ```
 

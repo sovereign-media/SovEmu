@@ -26,6 +26,78 @@ pub struct Found {
     pub media: String,
     /// A multi-disc game's discs in order (disc 1's is [`Found::path`]); empty for one disc.
     pub discs: Vec<String>,
+    /// Soft patches found with it (see [`PATCH_EXTENSIONS`]).
+    pub patches: Vec<FoundPatch>,
+}
+
+/// A soft patch for a game: beside it with its name (`Game.bps`, applied by default, as
+/// RetroArch does; named "BPS patch"), or in a folder named as it (`Game/English v1.1.bps`,
+/// named after its file, to choose).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundPatch {
+    /// Relative to the ROM directory, with `/` separators.
+    pub path: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// Patch formats, in the order one is preferred when a game has several beside it.
+pub const PATCH_EXTENSIONS: &[&str] = &["bps", "ups", "ips"];
+
+/// Disc images and playlists: these patch formats are for cartridge ROMs, so none are offered.
+const DISC_EXTENSIONS: &[&str] =
+    &["chd", "cue", "gdi", "iso", "cso", "pbp", "m3u", "rvz", "gcz", "wbfs", "cdi", "ccd", "ciso"];
+
+/// The patches for each game: listed with the files, matched to games afterwards.
+#[derive(Default)]
+struct Listing {
+    candidates: Vec<Candidate>,
+    patches: Vec<PathBuf>,
+}
+
+fn patch_extension(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    PATCH_EXTENSIONS.contains(&ext.as_str()).then_some(ext)
+}
+
+/// Gives each candidate its patches: those beside it with its name, and those in a folder
+/// named as it.
+fn attach_patches(candidates: &mut [Candidate], patches: &[PathBuf]) {
+    use std::collections::HashMap;
+    let mut beside: HashMap<(PathBuf, String), Vec<&PathBuf>> = HashMap::new();
+    let mut folders: HashMap<PathBuf, Vec<&PathBuf>> = HashMap::new();
+    for p in patches {
+        let (Some(dir), Some(stem)) = (p.parent(), p.file_stem()) else { continue };
+        beside.entry((dir.to_owned(), stem.to_string_lossy().into_owned())).or_default().push(p);
+        folders.entry(dir.to_owned()).or_default().push(p);
+    }
+    for c in candidates {
+        let ext = c.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+        if ext.is_some_and(|e| DISC_EXTENSIONS.contains(&e.as_str())) {
+            continue;
+        }
+        let (Some(dir), Some(stem)) = (c.path.parent(), c.path.file_stem()) else { continue };
+        let stem = stem.to_string_lossy().into_owned();
+        let mut own: Vec<(PathBuf, bool)> = beside
+            .get(&(dir.to_owned(), stem.clone()))
+            .into_iter()
+            .flatten()
+            .map(|p| ((*p).clone(), true))
+            .collect();
+        // Preferred first: BPS, then UPS, then IPS.
+        own.sort_by_key(|(p, _)| {
+            patch_extension(p).and_then(|e| PATCH_EXTENSIONS.iter().position(|x| *x == e))
+        });
+        let mut chosen: Vec<(PathBuf, bool)> = folders
+            .get(&dir.join(&stem))
+            .into_iter()
+            .flatten()
+            .map(|p| ((*p).clone(), false))
+            .collect();
+        chosen.sort();
+        own.extend(chosen);
+        c.patches = own;
+    }
 }
 
 /// The disc number in a tag such as `Disc 2` (or `Disc 2 of 3`).
@@ -117,6 +189,8 @@ struct Candidate {
     path: PathBuf,
     system: &'static System,
     media: String,
+    /// Its patches, and whether each is beside it (named as it).
+    patches: Vec<(PathBuf, bool)>,
 }
 
 /// Threads reading file sizes and dates: on a network library each is a round trip, so they
@@ -131,6 +205,7 @@ const STAT_THREADS: usize = 16;
 pub fn walk(root: &Path) -> Vec<Found> {
     let Ok(entries) = std::fs::read_dir(root) else { return Vec::new() };
     let mut candidates = Vec::new();
+    let mut patches = Vec::new();
     let mut folders = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
@@ -145,7 +220,7 @@ pub fn walk(root: &Path) -> Vec<Found> {
             }
             folders.push((path, system));
         } else if let Some(system) = pick_system(&path, None) {
-            candidates.push(Candidate { path, system, media: String::new() });
+            candidates.push(Candidate { path, system, media: String::new(), patches: Vec::new() });
         }
     }
     std::thread::scope(|scope| {
@@ -153,16 +228,19 @@ pub fn walk(root: &Path) -> Vec<Found> {
             .iter()
             .map(|(dir, system)| {
                 scope.spawn(move || {
-                    let mut found = Vec::new();
+                    let mut found = Listing::default();
                     walk_dir(dir, *system, 1, &mut found);
                     found
                 })
             })
             .collect();
         for handle in handles {
-            candidates.extend(handle.join().unwrap_or_default());
+            let listing = handle.join().unwrap_or_default();
+            candidates.extend(listing.candidates);
+            patches.extend(listing.patches);
         }
     });
+    attach_patches(&mut candidates, &patches);
 
     let chunk = candidates.len().div_ceil(STAT_THREADS).max(1);
     let mut found: Vec<Found> = std::thread::scope(|scope| {
@@ -180,7 +258,7 @@ pub fn walk(root: &Path) -> Vec<Found> {
     found
 }
 
-fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &mut Vec<Candidate>) {
+fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &mut Listing) {
     if depth > MAX_DEPTH {
         return;
     }
@@ -204,6 +282,8 @@ fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &m
             if !MEDIA_DIRS.contains(&name.to_ascii_lowercase().as_str()) {
                 walk_dir(&path, system, depth + 1, found);
             }
+        } else if patch_extension(&path).is_some() {
+            found.patches.push(path);
         } else if let Some(sys) = pick_system(&path, system) {
             let stem =
                 path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -213,7 +293,7 @@ fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &m
                 .copied()
                 .collect::<Vec<_>>()
                 .join(",");
-            found.push(Candidate { path, system: sys, media });
+            found.candidates.push(Candidate { path, system: sys, media, patches: Vec::new() });
         }
     }
 }
@@ -242,6 +322,31 @@ fn pick_system(path: &Path, folder: Option<&'static System>) -> Option<&'static 
 /// Reads a candidate's size and date and parses its title.
 fn to_found(root: &Path, c: &Candidate) -> Option<Found> {
     let meta = std::fs::metadata(&c.path).ok()?;
+    let relative_to_root = |p: &Path| -> Option<String> {
+        Some(
+            p.strip_prefix(root)
+                .ok()?
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/"),
+        )
+    };
+    let mut first_beside = true;
+    let patches = c
+        .patches
+        .iter()
+        .filter_map(|(p, beside)| {
+            let ext = patch_extension(p)?.to_uppercase();
+            let name = if *beside {
+                format!("{ext} patch")
+            } else {
+                p.file_stem()?.to_string_lossy().into_owned()
+            };
+            let is_default = *beside && std::mem::replace(&mut first_beside, false);
+            Some(FoundPatch { path: relative_to_root(p)?, name, is_default })
+        })
+        .collect();
     let relative: PathBuf = c.path.strip_prefix(root).ok()?.to_path_buf();
     let stem = c.path.file_stem()?.to_string_lossy();
     let (title, tags) = systems::parse_title(&stem);
@@ -262,6 +367,7 @@ fn to_found(root: &Path, c: &Candidate) -> Option<Found> {
             .map_or(0, |d| d.as_secs() as i64),
         media: c.media.clone(),
         discs: Vec::new(),
+        patches,
     })
 }
 
@@ -277,6 +383,10 @@ pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Er
         .execute(&mut *tx)
         .await?;
     sqlx::query("DELETE FROM seen").execute(&mut *tx).await?;
+    sqlx::query("CREATE TEMP TABLE IF NOT EXISTS seen_patches (path TEXT PRIMARY KEY)")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM seen_patches").execute(&mut *tx).await?;
     for f in &found {
         sqlx::query(
             "INSERT INTO games (system, path, title, tags, size, modified, media)
@@ -313,7 +423,29 @@ pub async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Er
             .execute(&mut *tx)
             .await?;
         }
+        // Patches keep their ids across scans (by path), so players' choices stay put.
+        for patch in &f.patches {
+            sqlx::query(
+                "INSERT INTO game_patches (game_id, path, name, is_default)
+                 SELECT id, ?, ?, ? FROM games WHERE path = ?
+                 ON CONFLICT(path) DO UPDATE SET game_id = excluded.game_id,
+                   name = excluded.name, is_default = excluded.is_default",
+            )
+            .bind(&patch.path)
+            .bind(&patch.name)
+            .bind(patch.is_default)
+            .bind(&f.path)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query("INSERT OR IGNORE INTO seen_patches (path) VALUES (?)")
+                .bind(&patch.path)
+                .execute(&mut *tx)
+                .await?;
+        }
     }
+    sqlx::query("DELETE FROM game_patches WHERE path NOT IN (SELECT path FROM seen_patches)")
+        .execute(&mut *tx)
+        .await?;
     let removed = sqlx::query("DELETE FROM games WHERE path NOT IN (SELECT path FROM seen)")
         .execute(&mut *tx)
         .await?
@@ -376,6 +508,53 @@ mod tests {
 
     fn rand_suffix() -> u128 {
         std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+    }
+
+    #[test]
+    fn finds_patches_beside_a_game_and_in_its_folder() {
+        let root = std::env::temp_dir().join(format!("sovemu-patches-{}", rand_suffix()));
+        for path in [
+            "snes/Mother (Japan).sfc",
+            "snes/Mother (Japan).ips",
+            "snes/Mother (Japan).bps",
+            "snes/Mother (Japan)/English v1.1.bps",
+            "snes/Mother (Japan)/Hard Mode.ips",
+            "snes/Other (USA).sfc",
+            "snes/notes.txt",
+            // Disc images get no patches.
+            "psx/Disc (USA).chd",
+            "psx/Disc (USA).ips",
+        ] {
+            let p = root.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, [0u8; 4]).unwrap();
+        }
+        let found = walk(&root);
+        std::fs::remove_dir_all(&root).ok();
+        let paths: Vec<_> = found.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["psx/Disc (USA).chd", "snes/Mother (Japan).sfc", "snes/Other (USA).sfc"],
+            "patches are not games"
+        );
+        let mother = &found[1];
+        let summary: Vec<_> = mother
+            .patches
+            .iter()
+            .map(|p| (p.path.as_str(), p.name.as_str(), p.is_default))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("snes/Mother (Japan).bps", "BPS patch", true),
+                ("snes/Mother (Japan).ips", "IPS patch", false),
+                ("snes/Mother (Japan)/English v1.1.bps", "English v1.1", false),
+                ("snes/Mother (Japan)/Hard Mode.ips", "Hard Mode", false),
+            ],
+            "beside it first (BPS preferred, applied by default), then its folder's"
+        );
+        assert!(found[0].patches.is_empty(), "no patches for a disc image");
+        assert!(found[2].patches.is_empty());
     }
 
     #[test]

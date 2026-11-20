@@ -11,6 +11,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/primitives";
 import { GameCollections } from "./GameCollections";
+import { GamePatch } from "./GamePatch";
 
 function Art({ game, color, short }: { game: Game; color: string; short: string }) {
   const [video, setVideo] = useState(false);
@@ -82,6 +83,7 @@ export function GamePanel({
   onClose,
   onPlay,
   onFavourite,
+  onPatch,
 }: {
   game: Game | null;
   system: SystemSummary;
@@ -90,6 +92,8 @@ export function GamePanel({
   onPlay: (start: "continue" | "new") => void;
   /** The game was added to favourites (true) or taken out. */
   onFavourite: (favourite: boolean) => void;
+  /** The patch it plays with changed (its saves are the patched game's own). */
+  onPatch: (patch: string | null) => void;
 }) {
   // The last game stays drawn while the panel slides out after closing.
   const [shown, setShown] = useState(game);
@@ -166,6 +170,7 @@ export function GamePanel({
                   )}
                   <GameCollections game={shown} onFavourite={onFavourite} />
                 </div>
+                <GamePatch game={shown} onPatch={onPatch} />
                 {shown.description && <p className="text-sm leading-relaxed text-slate-300">{shown.description}</p>}
                 {slots.length > 0 && (
                   <div>

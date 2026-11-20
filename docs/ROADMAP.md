@@ -95,6 +95,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Release labels (`Game.release`): games showing the same title on one system are told apart
       by the tags they do not share ("Translation", "Rev 1"), else their file's title (a
       compilation's games), else their format (`.z64` beside `.v64`)
+- [x] Soft patches (IPS, UPS, BPS): beside a game with its name (applied by default) or in a
+      folder named as it; chosen per player on the game panel, applied to a copy as the game
+      loads, with the patched game's own saves
 
 ## Phase 3: persistence
 
