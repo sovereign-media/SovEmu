@@ -96,7 +96,9 @@ fn probe_one(path: &Path, scratch: &Path) -> ProbeResult {
                         (result.variables, result.categories) =
                             crate::stream::declared_options(&core);
                     }
-                    Err(e) => tracing::warn!("{}: stand-in game did not load: {e}", path.display()),
+                    Err(e) => {
+                        tracing::warn!(path = %path.display(), error = %e, "stand-in game did not load")
+                    }
                 }
             }
         }
@@ -121,7 +123,11 @@ pub(crate) fn run(args: ProbeArgs) -> Result<()> {
     writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
     let failed: Vec<_> = results.iter().filter(|r| r.error.is_some()).collect();
     for r in &failed {
-        tracing::error!("{}: {}", r.path.display(), r.error.as_deref().unwrap_or_default());
+        tracing::error!(
+            path = %r.path.display(),
+            error = r.error.as_deref().unwrap_or_default(),
+            "core failed to load"
+        );
     }
     if !failed.is_empty() {
         bail!("{} of {} cores failed to load", failed.len(), results.len());

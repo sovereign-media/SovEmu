@@ -137,10 +137,10 @@ pub fn sync(
         s.bytes_total = total_bytes;
     });
     tracing::info!(
-        "mirror: {} of {} files to copy ({} MB)",
-        todo.len(),
-        wanted.len(),
-        total_bytes >> 20
+        count = todo.len(),
+        total = wanted.len(),
+        bytes = total_bytes,
+        "mirror sync started"
     );
 
     // Copy, several at a time.
@@ -157,7 +157,7 @@ pub fn sync(
                             bytes.fetch_add(len, Ordering::Relaxed);
                         }
                         Err(e) => {
-                            tracing::warn!("mirror: copying {rel} failed: {e}");
+                            tracing::warn!(file = %rel, error = %e, "mirror copy failed");
                             failed.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -194,9 +194,10 @@ pub fn sync(
         s.finished_at = Some(now);
     });
     tracing::info!(
-        "mirror: done ({} copied, {} failed, {removed} removed)",
-        done.load(Ordering::Relaxed),
-        failed.load(Ordering::Relaxed)
+        copied = done.load(Ordering::Relaxed),
+        failed = failed.load(Ordering::Relaxed),
+        removed,
+        "mirror sync done"
     );
 }
 

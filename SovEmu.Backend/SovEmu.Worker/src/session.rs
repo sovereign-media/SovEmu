@@ -68,6 +68,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             rewind_max_mb: args.rewind_max_mb,
             fast_forward: args.fast_forward,
             run_ahead: args.run_ahead,
+            health_interval: args.health_interval,
             keyframe_interval: args.keyframe_interval,
             gpu: args.gpu.0.clone(),
             state_dir: args.state_dir.clone(),
@@ -84,7 +85,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
         .map_err(failed)?;
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
-    tracing::info!("session ready: WebRTC on UDP {udp_addr}, advertising {advertised}");
+    tracing::info!(udp = %udp_addr, advertised = %advertised, "session ready");
 
     out.send(&Reply::Options { options, categories });
     out.send(&Reply::Ready {
@@ -111,7 +112,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             }
             match serde_json::from_str::<Request>(&line) {
                 Ok(request) => dispatch(request, &commands_tx, &reader_out, &reader_replies),
-                Err(e) => tracing::warn!("ignoring bad request {line:?}: {e}"),
+                Err(e) => tracing::warn!(line = %line, error = %e, "ignoring a bad request"),
             }
         }
         // Dropping the sender tells the stream loop to stop.

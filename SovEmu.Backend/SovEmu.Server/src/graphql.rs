@@ -13,10 +13,12 @@
 
 use std::collections::BTreeMap;
 
+use async_graphql::extensions::{Extension, ExtensionContext, ExtensionFactory, NextParseQuery};
 use async_graphql::http::GraphiQLSource;
+use async_graphql::parser::types::ExecutableDocument;
 use async_graphql::{
     Context, EmptySubscription, Enum, ErrorExtensions, ID, InputObject, Json, Object, Schema,
-    SimpleObject,
+    ServerResult, SimpleObject, Variables,
 };
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::extract::State;
@@ -35,6 +37,7 @@ pub(crate) type ApiSchema = Schema<Query, Mutation, EmptySubscription>;
 /// fields are refused.
 pub(crate) fn schema() -> ApiSchema {
     Schema::build(Query, Mutation, EmptySubscription)
+        .extension(OperationType)
         .limit_depth(12)
         .limit_complexity(2000)
         .finish()
@@ -59,7 +62,112 @@ pub(crate) async fn handler(
         tracing::Span::current().record("graphql.operation.name", name.as_str());
     }
     let request = request.data(state.clone()).data(auth);
-    state.schema.execute(request).await.into()
+    let response = state.schema.execute(request).await;
+    log_errors(&response.errors);
+    response.into()
+}
+
+/// Names the operation's type (`query`, `mutation`) on the request span, once the query is
+/// parsed: the span's other GraphQL attribute, after OpenTelemetry's `graphql.operation.type`.
+struct OperationType;
+
+impl ExtensionFactory for OperationType {
+    fn create(&self) -> std::sync::Arc<dyn Extension> {
+        std::sync::Arc::new(OperationType)
+    }
+}
+
+#[async_graphql::async_trait::async_trait]
+impl Extension for OperationType {
+    async fn parse_query(
+        &self,
+        ctx: &ExtensionContext<'_>,
+        query: &str,
+        variables: &Variables,
+        next: NextParseQuery<'_>,
+    ) -> ServerResult<ExecutableDocument> {
+        let document = next.run(ctx, query, variables).await?;
+        let mut types = document.operations.iter().map(|(_, op)| op.node.ty);
+        if let Some(first) = types.next()
+            && types.all(|ty| ty == first)
+        {
+            tracing::Span::current().record("graphql.operation.type", first.to_string());
+        }
+        Ok(document)
+    }
+}
+
+/// How a GraphQL error is logged: a 200 response can still carry errors, so without this a
+/// failed menu action leaves nothing in the log.
+#[derive(Debug, PartialEq, Eq)]
+enum ErrorKind {
+    /// The query did not parse or validate (no `code`, no `path`): usually a client out of step
+    /// with the schema.
+    InvalidQuery,
+    /// The caller's own doing, or routine (an expired token, an id that is gone): debug.
+    Routine(&'static str),
+    /// Worth seeing at the default level, but the server is fine (a refused action): info.
+    Refused(&'static str),
+    /// The server's fault, or a service it relies on: warn, and the request span is an error.
+    Failed(&'static str),
+}
+
+fn error_kind(code: Option<&str>, has_path: bool) -> ErrorKind {
+    match code {
+        None if !has_path => ErrorKind::InvalidQuery,
+        Some("UNAUTHENTICATED") => ErrorKind::Routine("UNAUTHENTICATED"),
+        Some("FORBIDDEN") => ErrorKind::Routine("FORBIDDEN"),
+        Some("NOT_FOUND") => ErrorKind::Routine("NOT_FOUND"),
+        Some("BAD_REQUEST") => ErrorKind::Refused("BAD_REQUEST"),
+        Some("CONFLICT") => ErrorKind::Refused("CONFLICT"),
+        Some("GONE") => ErrorKind::Refused("GONE"),
+        Some("TOO_MANY_REQUESTS") => ErrorKind::Refused("TOO_MANY_REQUESTS"),
+        Some("BAD_GATEWAY") => ErrorKind::Failed("BAD_GATEWAY"),
+        Some("UNAVAILABLE") => ErrorKind::Failed("UNAVAILABLE"),
+        // INTERNAL, or an error that never went through `gql` (a panic, a stray `?`).
+        _ => ErrorKind::Failed("INTERNAL"),
+    }
+}
+
+/// A result path as text: `game.saves.0.screenshot`.
+fn error_path(path: &[async_graphql::PathSegment]) -> String {
+    let segments = path.iter().map(|segment| match segment {
+        async_graphql::PathSegment::Field(name) => name.clone(),
+        async_graphql::PathSegment::Index(i) => i.to_string(),
+    });
+    segments.collect::<Vec<_>>().join(".")
+}
+
+/// Logs each error in a response inside the request span (which names the operation and the
+/// user), with its code as `error.type` and the result path that failed.
+fn log_errors(errors: &[async_graphql::ServerError]) {
+    let span = tracing::Span::current();
+    for error in errors {
+        let code = error.extensions.as_ref().and_then(|ext| match ext.get("code") {
+            Some(async_graphql::Value::String(code)) => Some(code.as_str()),
+            _ => None,
+        });
+        let path = error_path(&error.path);
+        let message = error.message.as_str();
+        match error_kind(code, !error.path.is_empty()) {
+            ErrorKind::InvalidQuery => {
+                span.record("error.type", "GRAPHQL_VALIDATION_FAILED");
+                tracing::warn!(error = message, "graphql: invalid query");
+            }
+            ErrorKind::Routine(code) => {
+                tracing::debug!(error.type = code, graphql.error.path = path, error = message, "graphql error");
+            }
+            ErrorKind::Refused(code) => {
+                span.record("error.type", code);
+                tracing::info!(error.type = code, graphql.error.path = path, error = message, "graphql error");
+            }
+            ErrorKind::Failed(code) => {
+                span.record("error.type", code);
+                span.record("otel.status_code", "ERROR");
+                tracing::warn!(error.type = code, graphql.error.path = path, error = message, "graphql error");
+            }
+        }
+    }
 }
 
 /// GraphiQL, for trying queries in a browser. Signed-in queries need an access token in the
@@ -107,7 +215,14 @@ async fn viewer(ctx: &Context<'_>) -> Result<Option<User>> {
     let auth = ctx.data_unchecked::<Auth>();
     let user = auth
         .user
-        .get_or_try_init(|| state(ctx).identity.user_for_request(&auth.headers))
+        .get_or_try_init(|| async {
+            let user = state(ctx).identity.user_for_request(&auth.headers).await?;
+            // Every line logged for the rest of the request then names whose it was.
+            if let Some(user) = &user {
+                tracing::Span::current().record("user.id", user.id);
+            }
+            Ok::<_, sovemu_identity::Error>(user)
+        })
         .await
         .map_err(|e| gql(e.into()))?;
     Ok(user.clone())
@@ -1654,6 +1769,40 @@ impl Mutation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn errors_are_logged_by_how_much_they_matter() {
+        assert_eq!(error_kind(None, false), ErrorKind::InvalidQuery);
+        assert_eq!(
+            error_kind(Some("UNAUTHENTICATED"), true),
+            ErrorKind::Routine("UNAUTHENTICATED")
+        );
+        assert_eq!(error_kind(Some("CONFLICT"), true), ErrorKind::Refused("CONFLICT"));
+        assert_eq!(error_kind(Some("UNAVAILABLE"), true), ErrorKind::Failed("UNAVAILABLE"));
+        assert_eq!(error_kind(Some("INTERNAL"), true), ErrorKind::Failed("INTERNAL"));
+        assert_eq!(
+            error_kind(None, true),
+            ErrorKind::Failed("INTERNAL"),
+            "no code: never went through gql"
+        );
+    }
+
+    #[test]
+    fn an_error_path_reads_as_dotted_text() {
+        use async_graphql::PathSegment::{Field, Index};
+        let path = [Field("game".into()), Field("saves".into()), Index(0), Field("url".into())];
+        assert_eq!(error_path(&path), "game.saves.0.url");
+    }
+
+    /// A query that fails to validate comes back as an error with no path or code: the case
+    /// logged as an invalid query, so the classification above sees real responses' shape.
+    #[tokio::test]
+    async fn an_invalid_query_has_neither_path_nor_code() {
+        let response = schema().execute("{ noSuchField }").await;
+        let error = &response.errors[0];
+        assert!(error.path.is_empty());
+        assert!(error.extensions.as_ref().and_then(|e| e.get("code")).is_none());
+    }
 
     /// The checked-in schema, which the clients build against, matches the server's. Regenerate
     /// it with `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`.

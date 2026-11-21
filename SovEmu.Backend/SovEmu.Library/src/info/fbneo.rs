@@ -90,9 +90,9 @@ impl FbNeoDats {
                     file.replace(' ', "%20")
                 );
                 match fetch(http, &url, &path).await {
-                    Ok(()) => tracing::info!("metadata: downloaded {file}"),
+                    Ok(()) => tracing::info!(file, "metadata file downloaded"),
                     Err(e) => {
-                        tracing::warn!("metadata: cannot download {file}: {e}");
+                        tracing::warn!(file, error = %e, "cannot download metadata file");
                         return Dat::new();
                     }
                 }

@@ -37,6 +37,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             rewind_max_mb: args.rewind_max_mb,
             fast_forward: args.fast_forward,
             run_ahead: args.run_ahead,
+            health_interval: args.health_interval,
             keyframe_interval: args.keyframe_interval,
             gpu: args.gpu.0.clone(),
             state_dir: Some(args.save_dir.join("states")),
@@ -47,14 +48,14 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
-    tracing::info!("WebRTC on UDP {udp_addr}, advertising {advertised}");
+    tracing::info!(udp = %udp_addr, advertised = %advertised, "WebRTC listening");
 
     let (commands_tx, commands_rx) = mpsc::channel();
     let http_addr = spawn_http(args.http, args.web_dir.clone(), commands_tx)?;
     // Machine-readable lines for whoever started us (tests).
     println!("http={http_addr}");
     println!("udp={udp_addr}");
-    tracing::info!("open http://{http_addr}/ in a browser");
+    tracing::info!(url = %format!("http://{http_addr}/"), "open in a browser");
 
     stream::run(session, socket, advertised, commands_rx, &mut |_| {}, None)
 }
@@ -78,7 +79,7 @@ fn spawn_http(
             let body =
                 std::io::Read::read_to_string(request.as_reader(), &mut body).ok().map(|_| body);
             if let Err(e) = handle_http(&method, &url, body, request, web_dir.as_deref(), &offers) {
-                tracing::debug!("HTTP response failed: {e}");
+                tracing::debug!(error = %e, "HTTP response failed");
             }
         }
     })?;

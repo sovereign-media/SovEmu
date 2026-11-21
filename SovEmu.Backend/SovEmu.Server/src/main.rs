@@ -332,6 +332,12 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_KEYFRAME_INTERVAL", default_value_t = 600)]
     pub keyframe_interval: u32,
 
+    /// Seconds between each game's `session health` log line while someone is playing (frame
+    /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
+    /// logs a `session summary` when it ends.
+    #[arg(long, env = "SOVEMU_SESSION_HEALTH_SECS", default_value_t = 10)]
+    pub session_health_secs: u32,
+
     /// `cache` mode: games larger than this (MiB) are copied before starting, smaller ones
     /// are played from the share while the copy runs.
     #[arg(long, env = "SOVEMU_CACHE_LARGE_GAME_MB", default_value_t = 64)]
@@ -631,13 +637,14 @@ impl Config {
             ),
             format!(
                 "worker_start_timeout={}s worker_stop_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
-                 keyframe_interval={}",
+                 keyframe_interval={} session_health_secs={}",
                 self.worker_start_timeout,
                 self.worker_stop_timeout,
                 self.rewind_seconds,
                 self.rewind_max_mb,
                 self.fast_forward,
-                self.keyframe_interval
+                self.keyframe_interval,
+                self.session_health_secs
             ),
             format!(
                 "gpu={} home_featured={} home_row={}",
@@ -807,7 +814,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let db = db::open(&paths.database()).await?;
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
-    tracing::info!("GPU probe:\n{}", gpu.summary());
+    tracing::info!(summary = %gpu.summary(), "GPU probe");
     let workers = Workers::new(WorkerConfig {
         worker_bin,
         ports: config.udp_ports,
@@ -823,6 +830,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         rewind_max_mb: config.rewind_max_mb,
         fast_forward: config.fast_forward,
         keyframe_interval: config.keyframe_interval,
+        health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
         observer: Arc::new(telemetry::SessionMetrics),
@@ -834,18 +842,18 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     };
     match config.library_mode {
         LibraryMode::Direct => {
-            tracing::info!("library {}: played directly", config.roms_dir.display())
+            tracing::info!(path = %config.roms_dir.display(), "library played directly")
         }
         LibraryMode::Cache => tracing::info!(
-            "library {}: caching up to {} GiB in {}",
-            config.roms_dir.display(),
-            cache_bytes >> 30,
-            cache_dir.display()
+            path = %config.roms_dir.display(),
+            bytes = cache_bytes,
+            cache = %cache_dir.display(),
+            "library cached"
         ),
         LibraryMode::Mirror => tracing::info!(
-            "library {}: mirrored into {}",
-            config.source_dir.as_deref().unwrap_or(&config.roms_dir).display(),
-            config.roms_dir.display()
+            source = %config.source_dir.as_deref().unwrap_or(&config.roms_dir).display(),
+            path = %config.roms_dir.display(),
+            "library mirrored"
         ),
     }
     let http = sovemu_library::info::http_client();
@@ -1052,7 +1060,7 @@ async fn run(mut config: Config) -> Result<()> {
     config.controllers = structured::controllers(&vars)?;
     let addr = config.http;
     let state = build_state(config).await?;
-    tracing::info!("configuration:\n{}", state.config.summary());
+    tracing::info!(summary = %state.config.summary(), "configuration");
     let _gauges = telemetry::observe(&state);
     spawn_initial_scan(&state);
     let workers = state.workers.clone();
@@ -1064,7 +1072,7 @@ async fn run(mut config: Config) -> Result<()> {
         tokio::net::TcpListener::bind(addr).await.with_context(|| format!("binding {addr}"))?;
     let local = listener.local_addr()?;
     println!("http={local}");
-    tracing::info!("SovEmu on http://{local}/");
+    tracing::info!(url = %format!("http://{local}/"), "SovEmu listening");
     // With each connection's address, for `client_ip` (sign-in throttling, request spans).
     let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;

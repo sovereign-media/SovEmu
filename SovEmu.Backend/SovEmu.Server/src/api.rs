@@ -340,7 +340,7 @@ async fn launch(
         && let Err(e) =
             session.request(|id| sovemu_protocol::ipc::Request::SetCheats { id, codes }).await
     {
-        tracing::warn!("could not apply cheats: {e:#}");
+        tracing::warn!(error = %format!("{e:#}"), "could not apply cheats");
     }
     sqlx::query(
         "INSERT INTO play_history (user_id, game_id, last_played_at, play_count)

@@ -391,9 +391,10 @@ impl Core {
                     && !self.info.valid_extensions.contains(ext)
                 {
                     tracing::warn!(
-                        "{} does not list .{ext} among its extensions {:?}",
-                        self.info.library_name,
-                        self.info.valid_extensions
+                        core = %self.info.library_name,
+                        extension = %ext,
+                        extensions = ?self.info.valid_extensions,
+                        "the core does not list the game's extension"
                     );
                 }
                 let data =
@@ -511,10 +512,10 @@ impl Core {
         );
         let ctx = GlContext::create(&choice, request.context, w, h).map_err(Error::Gpu)?;
         tracing::info!(
-            "GPU rendering on {} ({}){}",
-            ctx.info.renderer,
-            ctx.info.version,
-            if ctx.info.software { ", in software" } else { "" }
+            renderer = %ctx.info.renderer,
+            version = %ctx.info.version,
+            software = ctx.info.software,
+            "GPU rendering"
         );
         HW_FRAMEBUFFER.store(ctx.framebuffer() as usize, Ordering::Release);
         self.hw = Some((ctx, request));

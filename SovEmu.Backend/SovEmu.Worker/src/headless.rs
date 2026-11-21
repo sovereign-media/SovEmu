@@ -108,15 +108,15 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     let mut core = Core::load(&args.core, options)
         .with_context(|| format!("loading core {}", args.core.display()))?;
     let info = core.system_info().clone();
-    tracing::info!("loaded {} {}", info.library_name, info.library_version);
+    tracing::info!(core = %info.library_name, version = %info.library_version, "core loaded");
 
     let av = *core.load_game(args.rom.as_deref()).context("loading content")?;
     tracing::info!(
-        "{}x{} @ {:.4} fps, audio {} Hz",
-        av.base_width,
-        av.base_height,
-        av.fps,
-        av.sample_rate
+        width = av.base_width,
+        height = av.base_height,
+        fps = av.fps,
+        sample_rate = av.sample_rate,
+        "game loaded"
     );
 
     let wav_rate = av.sample_rate.round() as u32;
@@ -148,7 +148,7 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         frames_run += 1;
 
         if out.av_changed.is_some() {
-            tracing::warn!("core changed geometry/timing at frame {n}; summary shows the initial");
+            tracing::warn!(frame = n, "core changed geometry/timing; summary shows the initial");
         }
         if !out.video_updated {
             duped += 1;
@@ -177,7 +177,7 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         }
 
         if core.shutdown_requested() {
-            tracing::info!("core requested shutdown at frame {n}");
+            tracing::info!(frame = n, "core requested shutdown");
             break;
         }
         if let Some(pacer) = &mut pacer {

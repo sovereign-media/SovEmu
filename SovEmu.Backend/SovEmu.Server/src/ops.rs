@@ -15,7 +15,7 @@ pub(crate) async fn health(State(state): State<AppState>) -> Response {
     match sqlx::query_scalar::<_, i64>("SELECT 1").fetch_one(&state.db).await {
         Ok(_) => "ok".into_response(),
         Err(e) => {
-            tracing::error!("health check: {e}");
+            tracing::error!(error = %e, "health check failed");
             (StatusCode::SERVICE_UNAVAILABLE, "database unavailable").into_response()
         }
     }

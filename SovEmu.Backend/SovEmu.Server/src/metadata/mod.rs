@@ -184,7 +184,7 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
     .filter(|g| force || needs_lookup(g.status.as_deref(), g.tried.as_deref(), &available))
     .collect();
     meta.update(|s| s.total = games.len() as u64);
-    tracing::info!("metadata: looking up {} game(s)", games.len());
+    tracing::info!(count = games.len(), "metadata lookup started");
 
     // Download, refresh or read the LaunchBox dump once for the whole job (not at all when
     // there is nothing to look up, as after most scans).
@@ -193,7 +193,7 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
         Some(lb) => match lb.prepare().await {
             Ok(index) => Some(index),
             Err(e) => {
-                tracing::warn!("metadata: LaunchBox unavailable: {e}");
+                tracing::warn!(error = %e, "metadata: LaunchBox unavailable");
                 meta.update(|s| s.notes.push(format!("LaunchBox: {e}")));
                 None
             }
@@ -249,13 +249,13 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
                 }
                 Ok(None) => tried.push("screenscraper"),
                 Err(e @ (MetaError::Unauthorized(_) | MetaError::Quota(_))) => {
-                    tracing::warn!("metadata: ScreenScraper stopped: {e}");
+                    tracing::warn!(error = %e, "metadata: ScreenScraper stopped");
                     meta.update(|s| s.notes.push(format!("ScreenScraper: {e}")));
                     use_ss = false;
                     failed = true;
                 }
                 Err(e) => {
-                    tracing::debug!("metadata: ScreenScraper {}: {e}", game.title);
+                    tracing::debug!(game = %game.title, error = %e, "metadata: ScreenScraper lookup failed");
                     failed = true;
                 }
             }
@@ -272,13 +272,13 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
                 }
                 Ok(None) => tried.push("thegamesdb"),
                 Err(e @ (MetaError::Unauthorized(_) | MetaError::Quota(_))) => {
-                    tracing::warn!("metadata: TheGamesDB stopped: {e}");
+                    tracing::warn!(error = %e, "metadata: TheGamesDB stopped");
                     meta.update(|s| s.notes.push(format!("TheGamesDB: {e}")));
                     use_tgdb = false;
                     failed = true;
                 }
                 Err(e) => {
-                    tracing::debug!("metadata: TheGamesDB {}: {e}", game.title);
+                    tracing::debug!(game = %game.title, error = %e, "metadata: TheGamesDB lookup failed");
                     failed = true;
                 }
             }
@@ -308,10 +308,10 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
     meta.update(|s| s.running = false);
     let s = meta.status();
     tracing::info!(
-        "metadata: done ({} found, {} not found, {} failed)",
-        s.found,
-        s.not_found,
-        s.failed
+        found = s.found,
+        not_found = s.not_found,
+        failed = s.failed,
+        "metadata lookup done"
     );
     // Box art in the background: the scan loop waits for this job, not for the downloads.
     if artwork {

@@ -59,6 +59,8 @@ pub struct WorkerConfig {
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
     pub keyframe_interval: u32,
+    /// Seconds between a worker's `session health` log lines (0: none).
+    pub health_interval_secs: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
     pub gpu: String,
     /// How workers write their log lines (`--log-format`: `text` or `json`, as the server does);
@@ -377,7 +379,7 @@ impl Workers {
         // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
         let bios = self.config.bios_dir.join(&launch.system);
         if let Err(e) = std::fs::create_dir_all(&bios) {
-            tracing::debug!("BIOS folder {}: {e}", bios.display());
+            tracing::debug!(path = %bios.display(), error = %e, "cannot create the BIOS folder");
         }
         let id = random_id();
         let span = tracing::info_span!(
@@ -387,6 +389,20 @@ impl Workers {
             system = %launch.system,
             user.id = launch.user_id,
         );
+        // Everything that decides how the game runs, so a report about one game can be read
+        // against what it was started with.
+        tracing::info!(
+            parent: &span,
+            game = %launch.title,
+            core = %launch.core.display(),
+            rom = %launch.rom.display(),
+            patch = launch.patch.as_ref().map(|(_, name)| name.as_str()),
+            options = launch.variables.len(),
+            run_ahead = launch.run_ahead,
+            udp.port = port,
+            "session starting"
+        );
+        let started = Instant::now();
         let mut command = Command::new(&self.config.worker_bin);
         command.env_clear();
         for var in WORKER_ENV {
@@ -426,8 +442,12 @@ impl Workers {
             .arg(self.config.keyframe_interval.to_string())
             .arg("--gpu")
             .arg(&self.config.gpu)
+            .arg("--health-interval")
+            .arg(self.config.health_interval_secs.to_string())
             .arg("--session-id")
             .arg(&id)
+            .arg("--system")
+            .arg(&launch.system)
             .arg("--log-format")
             .arg(self.config.log_format);
         if let Some((patch, name)) = &launch.patch {
@@ -468,6 +488,8 @@ impl Workers {
         );
 
         let mut declared = None;
+        // When the core had loaded and the game began to: splits the load time in two.
+        let mut content_from = None;
         let ready = tokio::time::timeout(self.config.start_timeout, async {
             while let Some(line) = lines.next_line().await? {
                 match serde_json::from_str::<Reply>(&line) {
@@ -479,12 +501,17 @@ impl Workers {
                         declared = Some((options, categories));
                     }
                     Ok(Reply::Progress { phase, read, total }) => {
+                        if phase == sovemu_protocol::ipc::LoadPhase::Content {
+                            content_from.get_or_insert_with(Instant::now);
+                        }
                         if let Some(id) = &launch.start_id {
                             self.starts.update(id, phase.into(), read, total, Instant::now());
                         }
                     }
-                    Ok(other) => tracing::debug!("worker said {other:?} before ready"),
-                    Err(_) => tracing::debug!("worker: {line}"),
+                    Ok(other) => tracing::debug!(reply = ?other, "worker replied before ready"),
+                    Err(_) => {
+                        tracing::debug!(line = %line, "worker wrote a line that is not a reply")
+                    }
                 }
             }
             Err(Error::Exited)
@@ -492,12 +519,30 @@ impl Workers {
         .await;
         let ready = match ready {
             Ok(Ok(ready)) => ready,
-            Ok(Err(e)) => return Err(e),
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    parent: &span,
+                    error = %e,
+                    load_ms = started.elapsed().as_millis() as u64,
+                    "session failed to start"
+                );
+                return Err(e);
+            }
             Err(_) => {
                 process.kill();
-                return Err(Error::Timeout("the worker took too long to load the game"));
+                let e = Error::Timeout("the worker took too long to load the game");
+                tracing::warn!(
+                    parent: &span,
+                    error = %e,
+                    load_ms = started.elapsed().as_millis() as u64,
+                    "session failed to start"
+                );
+                return Err(e);
             }
         };
+        let ready_at = Instant::now();
+        let core_ms = content_from.unwrap_or(ready_at).duration_since(started).as_millis() as u64;
+        let content_ms = content_from.map(|from| ready_at.duration_since(from).as_millis() as u64);
 
         let (core, width, height, fps, discs) = ready;
         let session = Arc::new(Session {
@@ -526,7 +571,20 @@ impl Workers {
             declared: Mutex::new(declared),
             span: span.clone(),
         });
-        tracing::info!(parent: &span, game = %launch.title, udp.port = port, "session started");
+        tracing::info!(
+            parent: &span,
+            game = %launch.title,
+            udp.port = port,
+            core.name = %session.info.core,
+            width = session.info.width,
+            height = session.info.height,
+            fps = session.info.fps,
+            run_ahead = launch.run_ahead,
+            load_ms = ready_at.duration_since(started).as_millis() as u64,
+            core_ms,
+            content_ms,
+            "session started"
+        );
         self.config.observer.session_started(&launch.system);
 
         let reader = session.clone();
@@ -662,6 +720,7 @@ done
             rewind_max_mb: 0,
             fast_forward: 1,
             keyframe_interval: 60,
+            health_interval_secs: 10,
             gpu: "off".into(),
             log_format: "text",
             observer: Arc::new(()),
