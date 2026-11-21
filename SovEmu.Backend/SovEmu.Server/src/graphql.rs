@@ -1163,7 +1163,7 @@ struct RunAheadSetting {
     frames: i32,
     /// The most a system may run ahead.
     max: i32,
-    /// `SOVEMU` when nothing sets it (off); `ENVIRONMENT` is
+    /// `SOVEMU` when nothing sets it (1 frame on the systems that support it); `ENVIRONMENT` is
     /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD`, which always wins (locked).
     source: SettingSource,
     /// Whether the system can run ahead at all (the 2D systems).
@@ -1584,7 +1584,7 @@ impl Mutation {
     }
 
     /// Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
-    /// `frames` back to off. Applies to the next game started. Refused while
+    /// `frames` back to SovEmu's default (1 frame on the systems that support it). Applies to the next game started. Refused while
     /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` sets it.
     async fn set_run_ahead(
         &self,

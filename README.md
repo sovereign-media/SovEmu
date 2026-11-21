@@ -136,8 +136,9 @@ A press then shows up N frames (about 17 ms each at 60 fps) sooner, while the ga
 timeline and its sound are untouched. Most games need 1 or 2; too many and the game visibly
 skips ahead. Each frame costs N more emulated frames and a save state, so it is only for the
 systems that render in software (not N64, Dreamcast, GameCube or PS2), and a worker that
-cannot keep up runs fewer frames ahead by itself. It is off until set, per system, by
-`SOVEMU_SYSTEMS__<id>__RUN_AHEAD` (0 to 4, which wins) or by an admin (`setRunAhead`).
+cannot keep up runs fewer frames ahead by itself. It is on by default, 1 frame on every
+system that supports it; change it per system with `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` (0 to 4,
+0 turns it off; this wins) or as an admin (`setRunAhead`).
 
 ## Loading progress
 
@@ -393,7 +394,7 @@ SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core op
 SOVEMU_SYSTEMS__nes__CORE=nestopia                  # use this core (if installed)
 SOVEMU_SYSTEMS__gamegear__ENABLED=false             # hide a system
 SOVEMU_SYSTEMS__gba__DECORATION=none                # no frame around GBA games
-SOVEMU_SYSTEMS__snes__RUN_AHEAD=1                   # hide a frame of the games' input lag
+SOVEMU_SYSTEMS__snes__RUN_AHEAD=2                   # hide two frames of input lag (default 1)
 ```
 
 Declared accounts are created at startup and kept in step: a changed password signs that user

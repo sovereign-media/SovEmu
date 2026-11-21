@@ -217,7 +217,8 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Run-ahead (#85): per system, the picture runs 0-4 frames ahead of the game, hiding its
       own input lag (single-instance: save, run ahead, show, restore; sound from the real
       frame). `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` or the admin (`system_run_ahead`, migration
-      0017); 2D systems only, and a worker that cannot keep up runs fewer frames ahead
+      0017); 2D systems only, on by default (1 frame), and a worker that cannot keep up runs
+      fewer frames ahead
 - [x] Core options v1/v2 in RetroHost (`GET_CORE_OPTIONS_VERSION` = 2): the settings page groups
       each system's settings by the core's categories (else by keyword) under a system dropdown,
       and shows the core's explanation of each

@@ -228,13 +228,14 @@ pub(crate) struct SystemSettings {
 pub(crate) struct RunAhead {
     /// 0: off.
     pub(crate) frames: u32,
-    /// `Sovemu` when nothing sets it (off), else the admin or the environment (locked).
+    /// `Sovemu` when nothing sets it (the default), else the admin or the environment (locked).
     pub(crate) source: Source,
     /// Whether the system can run ahead at all (the 2D systems).
     pub(crate) supported: bool,
 }
 
-/// The run-ahead a game of `system` starts with: the environment's, else the admin's, else off.
+/// The run-ahead a game of `system` starts with: the environment's, else the admin's, else
+/// SovEmu's default (`System::default_run_ahead`: on for the 2D systems).
 pub(crate) fn layered_run_ahead(
     system: &System,
     admin: Option<u32>,
@@ -244,7 +245,7 @@ pub(crate) fn layered_run_ahead(
     let (frames, source) = match (environment, admin) {
         (Some(frames), _) => (frames, Source::Environment),
         (None, Some(frames)) => (frames, Source::Admin),
-        (None, None) => (0, Source::Sovemu),
+        (None, None) => (system.default_run_ahead(), Source::Sovemu),
     };
     RunAhead { frames: if supported { frames } else { 0 }, source, supported }
 }
@@ -497,17 +498,21 @@ mod tests {
     }
 
     #[test]
-    fn run_ahead_comes_from_the_environment_then_the_admin_else_is_off() {
+    fn run_ahead_comes_from_the_environment_then_the_admin_else_is_one_frame() {
         let snes = sovemu_library::systems::by_id("snes").unwrap();
-        let off = layered_run_ahead(snes, None, None);
-        assert_eq!((off.frames, off.source, off.supported), (0, Source::Sovemu, true));
+        let default = layered_run_ahead(snes, None, None);
+        assert_eq!((default.frames, default.source, default.supported), (1, Source::Sovemu, true));
         let admin = layered_run_ahead(snes, Some(2), None);
         assert_eq!((admin.frames, admin.source), (2, Source::Admin));
+        let off = layered_run_ahead(snes, Some(0), None);
+        assert_eq!((off.frames, off.source), (0, Source::Admin), "an admin can turn it off");
         let env = layered_run_ahead(snes, Some(2), Some(1));
         assert_eq!((env.frames, env.source), (1, Source::Environment));
         let n64 = sovemu_library::systems::by_id("n64").unwrap();
         let n64 = layered_run_ahead(n64, Some(2), None);
         assert_eq!((n64.frames, n64.supported), (0, false), "never on a 3D system");
+        let ps2 = sovemu_library::systems::by_id("ps2").unwrap();
+        assert_eq!(layered_run_ahead(ps2, None, None).frames, 0, "not even by default");
     }
 
     #[test]

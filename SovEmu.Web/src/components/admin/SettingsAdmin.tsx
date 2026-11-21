@@ -124,7 +124,7 @@ function RunAheadPanel({
             className="w-56 max-w-full"
           />
           {setting.source === "ADMIN" && (
-            <Tooltip content="Turn run-ahead off">
+            <Tooltip content="Back to the default (1 frame)">
               <Button variant="ghost" size="icon" aria-label="Reset run-ahead" onClick={() => onChange(null)}>
                 <RotateCcw />
               </Button>
@@ -183,7 +183,12 @@ function Settings() {
     try {
       saved(current.id, await api.setRunAhead(current.id, frames));
       setMessage({
-        text: frames ? "Saved. Applies to the next game started." : "Run-ahead off. Applies to the next game started.",
+        text:
+          frames === null
+            ? "Back to the default. Applies to the next game started."
+            : frames
+              ? "Saved. Applies to the next game started."
+              : "Run-ahead off. Applies to the next game started.",
       });
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });

@@ -713,7 +713,7 @@ type Mutation {
 	reportClientEvents(client: String!, events: [ClientEventInput!]!): Int!
 	"""
 	Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
-	`frames` back to off. Applies to the next game started. Refused while
+	`frames` back to SovEmu's default (1 frame on the systems that support it). Applies to the next game started. Refused while
 	`SOVEMU_SYSTEMS__<id>__RUN_AHEAD` sets it.
 	"""
 	setRunAhead(system: ID!, frames: Int): EmulatorSettings!
@@ -1007,7 +1007,7 @@ type RunAheadSetting {
 	"""
 	max: Int!
 	"""
-	`SOVEMU` when nothing sets it (off); `ENVIRONMENT` is
+	`SOVEMU` when nothing sets it (1 frame on the systems that support it); `ENVIRONMENT` is
 	`SOVEMU_SYSTEMS__<id>__RUN_AHEAD`, which always wins (locked).
 	"""
 	source: SettingSource!
