@@ -161,6 +161,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.image == 'true'
     name: Container image
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      # Pushes to main publish the image to GHCR (the steps at the end).
+      packages: write
     steps:
       # GitHub's runner has ~14 GB free; the build and its cargo caches (copied out of the builder
       # to be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
@@ -240,6 +244,33 @@ jobs:
           # The image runs sovemu-server by default; name each binary to run it instead.
           docker run --rm sovemu:ci sovemu-server --version
           docker run --rm sovemu:ci sovemu-worker probe /opt/sovemu/cores > /dev/null
+
+      # Every push to main that passed the tests and the smoke test is published, as the image
+      # just tested (no rebuild): `bleeding` moves with main, `bleeding-<UTC yyyymmddHHMMSS>` is
+      # fixed per build. The time is the commit's, not the build's, so a slow older build that
+      # finishes after a newer one cannot sort above it. Keel follows `glob:bleeding-*`, which
+      # compares tags as strings: the fixed width is what makes that order chronological. The
+      # package is private, as the repository is.
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: .
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/sovemu
+        run: |
+          stamp=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)
+          for tag in bleeding "bleeding-$stamp"; do
+            docker tag sovemu:ci "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+          echo "Published \`$IMAGE:bleeding-$stamp\` ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
 
   chart:
     # charts/sovemu: lint and render every value set in ci/, and validate what it renders

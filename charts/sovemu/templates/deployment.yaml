@@ -10,6 +10,10 @@ metadata:
   name: {{ include "sovemu.fullname" . }}
   labels:
     {{- include "sovemu.labels" . | nindent 4 }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   # One instance: SQLite, and the media ports belong to one pod.
   replicas: 1

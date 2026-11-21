@@ -407,6 +407,12 @@ exiting, so saves are written.
 helm install sovemu charts/sovemu -f my-values.yaml
 ```
 
+CI publishes the image to `ghcr.io/sovereign-media/sovemu` (a private package) on every merge to
+`main`, once the test suite and the core probe have passed: `bleeding` follows `main`, and
+`bleeding-<UTC yyyymmddHHMMSS>` pins one build and sorts by time, so an updater can track
+`glob:bleeding-*` (Keel: put its `keel.sh/*` keys in `annotations`, which land on the
+Deployment). Pull it with an `imagePullSecrets` entry holding a token with `read:packages`.
+
 `charts/sovemu/ci/full-values.yaml` uses every option.
 
 ### Health and sign-in
