@@ -7,7 +7,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{OnceLock, mpsc};
 use std::time::Duration;
 
-use sovemu_protocol::ipc::{LoadPhase, Reply, Request};
+use sovemu_protocol::ipc::{ExitReason, LoadPhase, Reply, Request};
 
 fn test_core() -> PathBuf {
     // Built once per test binary, before any test starts a worker with it: tests run in
@@ -154,6 +154,9 @@ fn control_requests_and_save_states() {
 
     // Shutdown replies, then exits. Nothing was played, so there is no auto state.
     assert_eq!(worker.send(Request::Shutdown { id: 6 }), Reply::Done { id: 6 });
+    // Its last word says why, so the server can tell this from a crash.
+    let last = worker.replies.recv_timeout(Duration::from_secs(10)).expect("an exiting reply");
+    assert_eq!(last, Reply::Exiting { reason: ExitReason::Stopped });
     let status = worker.child.wait().unwrap();
     assert!(status.success());
     assert!(!dir.join("states/slot0.state").exists());

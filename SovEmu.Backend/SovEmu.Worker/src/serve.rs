@@ -57,7 +57,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     println!("udp={udp_addr}");
     tracing::info!(url = %format!("http://{http_addr}/"), "open in a browser");
 
-    stream::run(session, socket, advertised, commands_rx, &mut |_| {}, None)
+    stream::run(session, socket, advertised, commands_rx, &mut |_| {}, None).map(drop)
 }
 
 /// Serves the web client and `POST /api/offer` on a background thread.

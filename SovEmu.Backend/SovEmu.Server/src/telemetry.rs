@@ -152,6 +152,9 @@ pub(crate) struct Metrics {
     pub sessions_started: Counter<u64>,
     /// `sovemu.session.duration`: seconds each game session ran, by system.
     pub session_duration: Histogram<f64>,
+    /// `sovemu.sessions.ended`: game sessions ended, by system, core and reason (`crashed`
+    /// counts a core that keeps crashing).
+    pub sessions_ended: Counter<u64>,
 }
 
 /// The instruments, made on first use (after [`init`] has installed the exporter, if any).
@@ -164,10 +167,18 @@ impl sovemu_sessions::Observer for SessionMetrics {
         metrics().sessions_started.add(1, &[KeyValue::new("system", system.to_owned())]);
     }
 
-    fn session_ended(&self, system: &str, ran: std::time::Duration) {
+    fn session_ended(&self, ended: &sovemu_sessions::Ended<'_>) {
         metrics()
             .session_duration
-            .record(ran.as_secs_f64(), &[KeyValue::new("system", system.to_owned())]);
+            .record(ended.ran.as_secs_f64(), &[KeyValue::new("system", ended.system.to_owned())]);
+        metrics().sessions_ended.add(
+            1,
+            &[
+                KeyValue::new("system", ended.system.to_owned()),
+                KeyValue::new("core", ended.core.to_owned()),
+                KeyValue::new("reason", ended.reason.as_str()),
+            ],
+        );
     }
 }
 
@@ -190,6 +201,10 @@ pub(crate) fn metrics() -> &'static Metrics {
                 .with_unit("s")
                 .with_description("How long game sessions ran.")
                 .with_boundaries(vec![60.0, 300.0, 900.0, 1800.0, 3600.0, 7200.0, 14400.0])
+                .build(),
+            sessions_ended: meter
+                .u64_counter("sovemu.sessions.ended")
+                .with_description("Game sessions ended, by why.")
                 .build(),
         }
     })

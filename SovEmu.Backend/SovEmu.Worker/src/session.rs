@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use sovemu_protocol::ipc::{Reply, Request};
+use sovemu_protocol::ipc::{ExitReason, Reply, Request};
 
 use crate::SessionArgs;
 use crate::stream::{self, Command, Session, SessionConfig, StreamEvent};
@@ -137,7 +137,10 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
     // before the process exits: the server waits for it, and would otherwise wait out its stop
     // timeout. Each reply thread has its answer, or sees the loop gone, so this is quick.
     replies.finish();
-    result
+    // The session (moved into the loop) is gone, so its saves are written: say why we stop.
+    let reason = result.as_ref().map_or(ExitReason::Error, |reason| *reason);
+    out.send(&Reply::Exiting { reason });
+    result.map(drop)
 }
 
 /// The threads writing replies, kept so none is lost when the worker exits.
