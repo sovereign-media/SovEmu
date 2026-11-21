@@ -20,7 +20,7 @@ use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
 use sovemu_protocol::ipc::Request;
 use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
 use sovemu_protocol::{
-    ClientMessage, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
+    ClientMessage, ClientStats, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
 use sovemu_retro_host::{AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons};
 use str0m::bwe::{Bitrate, BweKind};
@@ -140,6 +140,9 @@ pub(crate) struct Session {
     health: Health,
     /// The last send-bandwidth estimate, for the health lines.
     estimate_kbps: Option<u64>,
+    /// When the client's last stats were logged (they are logged at most every
+    /// [`STATS_SPACING`], however often a client sends them).
+    stats_at: Option<Instant>,
     /// The configured (maximum) video bitrate; adaptation stays at or below it.
     max_video_kbps: u32,
     audio_kbps: u32,
@@ -237,6 +240,7 @@ impl Session {
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
+            stats_at: None,
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
@@ -635,6 +639,15 @@ impl Session {
                 self.core.set_analog(&sticks);
                 return;
             }
+            Ok(ClientMessage::Stats(stats)) => {
+                let now = Instant::now();
+                if self.stats_at.is_some_and(|at| now.duration_since(at) < STATS_SPACING) {
+                    return;
+                }
+                self.stats_at = Some(now);
+                log_client_stats(&stats);
+                return;
+            }
             Err(e) => {
                 tracing::debug!(error = %e, "bad input message");
                 return;
@@ -807,6 +820,31 @@ impl Session {
         self.health.report_if_due(Instant::now(), &at);
         Ok(())
     }
+}
+
+/// Clients send their stats once a second while the overlay is open; any faster is dropped,
+/// so a client cannot fill the log.
+const STATS_SPACING: Duration = Duration::from_millis(900);
+
+/// The client's view of the stream, beside the worker's own `session health` lines.
+fn log_client_stats(s: &ClientStats) {
+    tracing::info!(
+        client = s.client.as_deref(),
+        estimate_ms = s.estimate_ms,
+        input_rtt_p50_ms = s.input_rtt_p50_ms,
+        input_rtt_p95_ms = s.input_rtt_p95_ms,
+        net_rtt_ms = s.net_rtt_ms,
+        jitter_ms = s.jitter_ms,
+        decode_ms = s.decode_ms,
+        width = s.width,
+        height = s.height,
+        fps = s.fps,
+        kbps = s.kbps,
+        packets_lost = s.packets_lost,
+        game_mode = s.game_mode,
+        wifi_lock = s.wifi_lock,
+        "client stats"
+    );
 }
 
 /// A core's declared options and categories, in the protocol's terms (each option with its

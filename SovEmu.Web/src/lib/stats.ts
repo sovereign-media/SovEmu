@@ -1,9 +1,16 @@
 // Latency and stream health from RTCPeerConnection.getStats(), sampled once a second.
+import type { ClientStats } from "./protocol";
 import type { Session } from "./session";
 
 export interface StatItem {
   label: string;
   value: string;
+}
+
+/** What the overlay shows: its rows, and the same numbers for the worker's log. */
+export interface StatsSample {
+  items: StatItem[];
+  numbers: ClientStats;
 }
 
 type Sample = { t: number; video?: RTCInboundRtpStreamStats; audio?: RTCInboundRtpStreamStats };
@@ -16,10 +23,17 @@ function median(values: number[]): number {
   return s[Math.floor(s.length / 2)];
 }
 
+/** Nearest-rank percentile, as the Android client computes it. */
+function percentile(values: number[], p: number): number {
+  if (!values.length) return NaN;
+  const s = [...values].sort((a, b) => a - b);
+  return s[Math.min(s.length, Math.max(1, Math.ceil((p / 100) * s.length))) - 1];
+}
+
 export class StatsSampler {
   private last: Sample | null = null;
 
-  async sample(session: Session): Promise<StatItem[]> {
+  async sample(session: Session): Promise<StatsSample> {
     const report = await session.pc.getStats();
     const now: Sample = { t: performance.now() };
     let pair: RTCIceCandidatePairStats | undefined;
@@ -32,7 +46,7 @@ export class StatsSampler {
     this.last = now;
     const v = now.video as (RTCInboundRtpStreamStats & Record<string, number>) | undefined;
     const pv = prev?.video as (RTCInboundRtpStreamStats & Record<string, number>) | undefined;
-    if (!v) return [];
+    if (!v) return { items: [], numbers: {} };
 
     const delta = (key: string) => (pv ? (v[key] ?? 0) - (pv[key] ?? 0) : 0);
     const dt = prev ? (now.t - prev.t) / 1000 : 0;
@@ -49,7 +63,21 @@ export class StatsSampler {
     const estimate = inputRtt + 8 + 2 + (jitterMs || 0) + (decodeMs || 0) + 8;
     const lost = (v.packetsLost ?? 0) + (now.audio?.packetsLost ?? 0);
 
-    return [
+    const p95 = percentile(session.inputRtts, 95);
+    const numbers: ClientStats = {
+      estimate_ms: estimate,
+      input_rtt_p50_ms: inputRtt,
+      input_rtt_p95_ms: p95,
+      net_rtt_ms: netRtt,
+      jitter_ms: jitterMs,
+      decode_ms: decodeMs,
+      width: v.frameWidth,
+      height: v.frameHeight,
+      fps: v.framesPerSecond,
+      kbps,
+      packets_lost: lost,
+    };
+    const items = [
       { label: "Estimated button→pixel", value: fmt(estimate, " ms") },
       { label: "Input round trip", value: fmt(inputRtt, " ms") },
       { label: "Network RTT", value: fmt(netRtt, " ms", 1) },
@@ -59,5 +87,6 @@ export class StatsSampler {
       { label: "Bitrate", value: fmt(kbps, " kbps") },
       { label: "Packets lost", value: String(lost) },
     ];
+    return { items, numbers };
   }
 }

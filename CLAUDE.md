@@ -81,7 +81,7 @@ instead (as Sovereign's server takes its SPA).
   `bootstrapConfig` query (never hard-code a sign-in path in an app). Roles are `viewer` and `admin` (`users.role`), checked on every
   request.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
-  `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, ack `0x81`),
+  `SovEmu.Web/src/lib/protocol.ts` (input `0x01`, hotkeys `0x02`, analog `0x03`, stats `0x04`, ack `0x81`),
   each tested against the same byte vectors. Change both in
   the same PR, and bump `INPUT_VERSION` if an old client would misread the new format.
 - **Controllers are described once, in [docs/CONTROLLERS.md](docs/CONTROLLERS.md)**: their IDs
