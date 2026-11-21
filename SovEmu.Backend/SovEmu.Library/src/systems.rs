@@ -38,7 +38,18 @@ impl System {
     pub fn run_ahead(&self) -> bool {
         !self.needs_gpu
     }
+
+    /// The frames its games run ahead when neither the environment nor an admin says:
+    /// [`DEFAULT_RUN_AHEAD`] where it can run ahead, else 0.
+    pub fn default_run_ahead(&self) -> u32 {
+        if self.run_ahead() { DEFAULT_RUN_AHEAD } else { 0 }
+    }
 }
+
+/// Run-ahead's default on the systems that support it. One frame hides most of the games' own
+/// lag, and the worker runs fewer if a core cannot keep up (or none if it cannot save its state),
+/// so it is safe to have on. Two would hide more in some games but skips ahead visibly in others.
+const DEFAULT_RUN_AHEAD: u32 = 1;
 
 pub const SYSTEMS: &[System] = &[
     System {

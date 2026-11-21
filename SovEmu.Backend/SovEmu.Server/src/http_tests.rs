@@ -1103,7 +1103,7 @@ async fn admins_change_emulator_settings() {
 }
 
 #[tokio::test]
-async fn admins_turn_run_ahead_on_and_the_environment_locks_it() {
+async fn run_ahead_is_on_by_default_admins_change_it_and_the_environment_locks_it() {
     let mut h = Harness::new("runahead", true).await;
     h.sign_up_admin().await;
     let get = "query($s: ID!) { emulatorSettings(system: $s) {
@@ -1111,34 +1111,38 @@ async fn admins_turn_run_ahead_on_and_the_environment_locks_it() {
     let set = "mutation($s: ID!, $f: Int) { setRunAhead(system: $s, frames: $f) {
         environment runAhead { frames source } } }";
 
-    // Off until someone turns it on.
+    // One frame until someone changes it.
     let body = h.ok(get, json!({"s": "nes"})).await["emulatorSettings"].clone();
     assert_eq!(
         body["runAhead"],
-        json!({"frames": 0, "max": 4, "source": "SOVEMU", "supported": true})
+        json!({"frames": 1, "max": 4, "source": "SOVEMU", "supported": true})
     );
 
-    // On, offered as an environment line, refused where it cannot go, and back off.
+    // Changed, offered as an environment line, refused where it cannot go, turned off, and
+    // back to the default.
     let body = h.ok(set, json!({"s": "nes", "f": 2})).await["setRunAhead"].clone();
     assert_eq!(body["runAhead"], json!({"frames": 2, "source": "ADMIN"}));
     assert_eq!(body["environment"], json!(["SOVEMU_SYSTEMS__nes__RUN_AHEAD=2"]));
     assert_eq!(h.err(set, json!({"s": "nes", "f": 5})).await.0, "BAD_REQUEST");
     assert_eq!(h.err(set, json!({"s": "nes", "f": -1})).await.0, "BAD_REQUEST");
     assert_eq!(h.err(set, json!({"s": "n64", "f": 1})).await.0, "BAD_REQUEST");
+    let body = h.ok(set, json!({"s": "nes", "f": 0})).await["setRunAhead"].clone();
+    assert_eq!(body["runAhead"], json!({"frames": 0, "source": "ADMIN"}));
+    assert_eq!(body["environment"], json!(["SOVEMU_SYSTEMS__nes__RUN_AHEAD=0"]));
     let body = h.ok(set, json!({"s": "nes", "f": null})).await["setRunAhead"].clone();
-    assert_eq!(body["runAhead"], json!({"frames": 0, "source": "SOVEMU"}));
+    assert_eq!(body["runAhead"], json!({"frames": 1, "source": "SOVEMU"}));
     assert_eq!(body["environment"], json!([]));
 
     // The environment wins and is locked.
     let mut config = (*h.state.config).clone();
     config.systems = crate::structured::systems(&[(
         "SOVEMU_SYSTEMS__nes__RUN_AHEAD".to_owned(),
-        "1".to_owned(),
+        "3".to_owned(),
     )])
     .unwrap();
     h.state.config = std::sync::Arc::new(config);
     let body = h.ok(get, json!({"s": "nes"})).await["emulatorSettings"].clone();
-    assert_eq!(body["runAhead"]["frames"], 1);
+    assert_eq!(body["runAhead"]["frames"], 3);
     assert_eq!(body["runAhead"]["source"], "ENVIRONMENT");
     assert_eq!(h.err(set, json!({"s": "nes", "f": 2})).await.0, "CONFLICT");
 }
