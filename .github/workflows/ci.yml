@@ -87,7 +87,7 @@ jobs:
         # Linux's on a private repository, so CI checks it only when run by hand.
         os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
     # The matrix keeps GitHub's labels so the check names do not change; only Linux moves.
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && vars.LARGE_RUNNER || matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && (vars.MEDIUM_RUNNER || vars.LARGE_RUNNER) || matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
