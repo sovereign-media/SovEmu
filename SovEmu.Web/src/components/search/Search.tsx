@@ -2,9 +2,11 @@
 // pad's on-screen keyboard) searches after a pause; down or Enter goes into the results, up from
 // their top row comes back to the field; A opens a game's panel on its system's page. The query
 // is kept in the URL, so coming back from that page shows the same results.
+
 import { Search as SearchIcon, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type Game, type SystemSummary } from "../../lib/api";
+import { go } from "../../lib/go";
 import { listenNav } from "../../lib/nav";
 import { FIELD, moveSearch, SEARCH_DELAY_MS, SEARCH_LIMIT } from "../../lib/search";
 import HintBar from "../HintBar";
@@ -12,7 +14,7 @@ import { GameCard } from "../home/Row";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 
-const browse = (g: Game) => (location.href = `/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
+const browse = (g: Game) => go(`/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
 
 /** Results laid out per row, read from the page (the grid fills the width it has). */
 function columnsOf(grid: HTMLElement | null): number {
@@ -85,7 +87,7 @@ function SearchScreen() {
       }
       if (action === "back") {
         if (at !== FIELD) return setAt(FIELD);
-        return void (location.href = "/");
+        return void go("/");
       }
       setAt(moveSearch(at, action, found.length, columnsOf(grid.current)));
     });

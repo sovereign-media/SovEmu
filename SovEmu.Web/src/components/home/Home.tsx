@@ -1,9 +1,11 @@
 // Home: a hero of featured games over rows (continue playing, systems, recently added), laid out
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
 // (left/right); A plays or opens; X (or /) searches every system; Start rescans.
+
 import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
+import { go } from "../../lib/go";
 import { type Focus, moveFocus, type RowShape, startFocus } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
 import HintBar from "../HintBar";
@@ -21,12 +23,12 @@ const ADDED = 4;
 /** Each collection's row follows, in name order. */
 const COLLECTIONS = 5;
 
-const play = (g: Game) => (location.href = `/play/?game=${g.id}`);
+const play = (g: Game) => go(`/play/?game=${g.id}`);
 /** Opens the game's system with its side panel open (its own URL). */
-const browse = (g: Game) => (location.href = `/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
+const browse = (g: Game) => go(`/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
 /** Opens the game's system. */
-const browseSystem = (g: Game) => (location.href = `/system/?id=${encodeURIComponent(g.system)}`);
-const openSystem = (s: SystemSummary) => (location.href = `/system/?id=${encodeURIComponent(s.id)}`);
+const browseSystem = (g: Game) => go(`/system/?id=${encodeURIComponent(g.system)}`);
+const openSystem = (s: SystemSummary) => go(`/system/?id=${encodeURIComponent(s.id)}`);
 
 function HomeScreen() {
   const toast = useToast();
@@ -92,7 +94,7 @@ function HomeScreen() {
     const nav = listenNav(async (action) => {
       const { focus, rows, accept } = latest.current;
       if (action === "accept") return accept(focus);
-      if (action === "search") return void (location.href = "/search/");
+      if (action === "search") return void go("/search/");
       if (action === "menu") {
         toast("Rescanning the library…");
         try {

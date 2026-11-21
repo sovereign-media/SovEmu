@@ -35,7 +35,7 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `sovemu-worker serve`: `str0m` peer on one UDP port, VP8 and Opus tracks, unordered
       no-retransmit input DataChannel, playout-delay hint, real-time loop on the `Pacer`;
       emulation pauses while no client is connected
-- [x] `SovEmu.Web`, the first client: Astro + Tailwind, built to static files served by the same
+- [x] `SovEmu.Web`, the first client: Astro + Tailwind (now Vite + TanStack Router), built to static files served by the same
       Rust process as `/api/offer`; keyboard and Gamepad API input, pixelated scaling, live
       latency stats (input round trip, network RTT, jitter buffer, decode)
 - [x] End-to-end test: a str0m client receives and decodes VP8 and Opus from `serve` over UDP and

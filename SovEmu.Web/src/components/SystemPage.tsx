@@ -6,6 +6,7 @@
 // Pad and keyboard: the d-pad moves through the grid, A opens the panel (and in it plays), B
 // closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
 // The list logic is src/lib/games.ts.
+
 import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +27,7 @@ import {
   sortGames,
   urlWithGame,
 } from "../lib/games";
+import { go } from "../lib/go";
 import { listenNav } from "../lib/nav";
 import { FilterDrawer } from "./browse/FilterDrawer";
 import { GamePanel } from "./browse/GamePanel";
@@ -171,7 +173,7 @@ function Games() {
 
   useEffect(() => {
     api.system(systemId).then((s) => {
-      if (!s) return location.replace("/");
+      if (!s) return go("/", { replace: true });
       const { games, ...system } = s;
       document.title = `${system.name} · SovEmu`;
       setSystem(system);
@@ -234,7 +236,7 @@ function Games() {
     }
   };
   const play = (g: Game | null, start: "continue" | "new") => {
-    if (g) location.href = `/play/?game=${g.id}&start=${start}`;
+    if (g) go(`/play/?game=${g.id}&start=${start}`);
   };
   const changeSort = (s: GameSort) => {
     setSort(s);
@@ -297,7 +299,7 @@ function Games() {
         return;
       }
       if (action === "menu") return setFiltersOpen(true);
-      if (action === "back") return open ? h.closePanel() : void (location.href = "/");
+      if (action === "back") return open ? h.closePanel() : void go("/");
       if (action === "accept") {
         if (open) return play(open, slots.some((s) => s.slot === AUTO_SLOT) ? "continue" : "new");
         if (shown[focus]) h.openGame(shown[focus].id);

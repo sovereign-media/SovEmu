@@ -1,8 +1,10 @@
 // Finishes signing in: exchanges the code the server sent back for tokens, then goes on to the
 // page the sign-in started from.
+
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { finishSignIn, signIn } from "../lib/auth";
+import { go } from "../lib/go";
 import { Button } from "./ui/button";
 
 export default function AuthCallback() {
@@ -10,7 +12,7 @@ export default function AuthCallback() {
 
   useEffect(() => {
     finishSignIn()
-      .then((next) => location.replace(next))
+      .then((next) => go(next, { replace: true }))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Signing in failed."));
   }, []);
 

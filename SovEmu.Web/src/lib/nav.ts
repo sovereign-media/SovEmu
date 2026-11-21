@@ -120,7 +120,8 @@ export function listenNav(handler: (action: NavAction) => void): { stop: () => v
   };
   addEventListener("keydown", down);
   addEventListener("keyup", up);
-  addEventListener("blur", () => keys.clear());
+  const blur = () => keys.clear();
+  addEventListener("blur", blur);
 
   let raf = 0;
   const tick = (now: number) => {
@@ -136,6 +137,7 @@ export function listenNav(handler: (action: NavAction) => void): { stop: () => v
     cancelAnimationFrame(raf);
     removeEventListener("keydown", down);
     removeEventListener("keyup", up);
+    removeEventListener("blur", blur);
   };
   return control;
 }

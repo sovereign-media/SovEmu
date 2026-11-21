@@ -1,8 +1,10 @@
 // Library administration: where games come from (direct / cache / mirror), the mirror's sync,
 // rescans, and fetching game information from metadata services.
+
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
+import { go } from "../../lib/go";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
@@ -67,7 +69,7 @@ function Library() {
   }, []);
 
   useEffect(() => {
-    api.viewer().then((s) => !s.user?.isAdmin && location.replace("/"));
+    api.viewer().then((s) => !s.user?.isAdmin && go("/", { replace: true }));
     void refresh();
     const t = setInterval(refresh, 2000);
     return () => clearInterval(t);

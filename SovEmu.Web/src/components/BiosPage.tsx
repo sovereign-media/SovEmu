@@ -1,10 +1,12 @@
 // The BIOS check, reached from the Systems menu: for each system that uses a BIOS, its folder
 // (`bios/<system>/`, named like its ROM folder) and each file it reads, checked on the server
 // by name and MD5. `?id=psx` scrolls to one system. B goes home.
+
 import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, Microchip, RefreshCw, TriangleAlert } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api, type BiosGroup, type BiosSystem, formatSize, type SystemBios } from "../lib/api";
 import { FILE_STATES, fileHint, fileTone, IMPORTANCE, STATES, summary, type Tone, withBios } from "../lib/bios";
+import { go } from "../lib/go";
 import { listenNav } from "../lib/nav";
 import HintBar from "./HintBar";
 import Shell from "./Shell";
@@ -124,7 +126,7 @@ function Bios() {
   useEffect(() => {
     void check();
     const nav = listenNav((action) => {
-      if (action === "back") location.href = "/";
+      if (action === "back") go("/");
     });
     return () => nav.stop();
   }, [check]);

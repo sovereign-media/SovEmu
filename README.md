@@ -15,7 +15,7 @@ and iOS clients.
 | `docs/` | [Architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) |
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
 | `charts/sovemu/` | The Helm chart |
-| `SovEmu.Web/` | The web client: Astro + Tailwind, React with Radix UI and Lucide icons, served by the Rust server |
+| `SovEmu.Web/` | The web client: Vite + React + TanStack Router, Tailwind, Radix UI and Lucide icons, served by the Rust server |
 | `SovEmu.Android/`, `SovEmu.iOS/` | Native clients, as submodules (`git submodule update --init --remote`) |
 
 ## Container

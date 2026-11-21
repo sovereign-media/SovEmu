@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "SovEmu web client: Astro + Tailwind, served as static files by the SovEmu Rust server",
+  "description": "SovEmu web client: Vite + React + TanStack Router + Tailwind, served as static files by the SovEmu Rust server",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro check && astro build",
-    "preview": "astro preview",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "lint": "biome ci .",
     "format": "biome check --write .",
@@ -15,10 +15,9 @@
     "codegen:check": "graphql-codegen --config codegen.ts --check"
   },
   "dependencies": {
-    "@astrojs/react": "^7.1.9",
     "@graphql-typed-document-node/core": "^3.2.0",
     "@tailwindcss/vite": "^4.3.5",
-    "astro": "^7.4.12",
+    "@tanstack/react-router": "^1.170.46",
     "lucide-react": "^1.73.0",
     "oidc-client-ts": "^3.5.0",
     "radix-ui": "^1.8.1",
@@ -27,14 +26,15 @@
     "tailwindcss": "^4.3.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.12",
     "@biomejs/biome": "2.6.8",
     "@graphql-codegen/cli": "^8.0.0",
     "@graphql-codegen/client-preset": "^7.0.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "typescript": "^6.0.3",
+    "vite": "^8.3.8",
     "vitest": "^5.1.0"
   }
 }

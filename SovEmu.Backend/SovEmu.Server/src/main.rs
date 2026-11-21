@@ -50,7 +50,7 @@ use clap::Parser;
 use sovemu_library::{bios, cache, decorations, mirror};
 use sovemu_sessions::{gpu, workers};
 use sqlx::SqlitePool;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 use sovemu_sessions::workers::{WorkerConfig, Workers};
 
@@ -775,18 +775,23 @@ pub fn router(state: AppState) -> Router {
         .merge(state.identity.router())
         .route_layer(middleware::from_fn(telemetry::trace_request))
         .route_layer(middleware::from_fn_with_state(state.clone(), client_ip::remember));
+    // The web client is one page (`index.html`) that routes its screens itself, so every other
+    // path is answered with it; its fingerprinted assets are served as files, a missing one 404.
     if let Some(dir) = &state.config.web_dir {
-        app = app.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true));
+        let page = ServeFile::new(dir.join("index.html"));
+        app = app.nest_service("/assets", ServeDir::new(dir.join("assets"))).fallback_service(
+            ServeDir::new(dir).append_index_html_on_directories(true).fallback(page),
+        );
     }
     app.layer(middleware::from_fn(cache_headers))
         .layer(middleware::from_fn(ops::security_headers))
         .layer(ops::compression())
 }
 
-/// Astro fingerprints everything under `/_astro/`, so those are immutable; pages and the API
+/// Vite fingerprints everything under `/assets/`, so those are immutable; the page and the API
 /// must always revalidate.
 async fn cache_headers(request: Request, next: Next) -> Response {
-    let immutable = request.uri().path().starts_with("/_astro/");
+    let immutable = request.uri().path().starts_with("/assets/");
     let mut response = next.run(request).await;
     let value = if immutable { "public, max-age=31536000, immutable" } else { "no-cache" };
     response.headers_mut().entry(CACHE_CONTROL).or_insert(HeaderValue::from_static(value));
