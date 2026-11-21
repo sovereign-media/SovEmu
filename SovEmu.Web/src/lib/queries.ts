@@ -1,7 +1,8 @@
-// Every GraphQL operation the web client sends. `npm run codegen` types them (src/graphql/).
-import { graphql } from "../graphql";
+// Every GraphQL operation the web client sends, typed from the schema by gql.tada (`gql.ts`).
+// A fragment spread (`...GameFields`) passes its fragment as the second argument.
+import { graphql } from "./gql";
 
-graphql(`
+export const GameFields = graphql(`
   fragment GameFields on Game {
     id
     system
@@ -30,7 +31,7 @@ graphql(`
   }
 `);
 
-graphql(`
+export const SystemFields = graphql(`
   fragment SystemFields on System {
     id
     name
@@ -46,7 +47,7 @@ graphql(`
   }
 `);
 
-graphql(`
+export const SaveFields = graphql(`
   fragment SaveFields on SaveSlot {
     slot
     savedAt
@@ -54,7 +55,7 @@ graphql(`
   }
 `);
 
-graphql(`
+export const SessionFields = graphql(`
   fragment SessionFields on GameSession {
     id
     gameId
@@ -70,7 +71,7 @@ graphql(`
   }
 `);
 
-graphql(`
+export const SettingsFields = graphql(`
   fragment SettingsFields on EmulatorSettings {
     system
     core
@@ -101,7 +102,7 @@ graphql(`
   }
 `);
 
-graphql(`
+export const MetadataFields = graphql(`
   fragment MetadataFields on MetadataStatus {
     running
     total
@@ -163,7 +164,8 @@ export const ClientConfigQuery = graphql(`
   }
 `);
 
-export const HomeQuery = graphql(`
+export const HomeQuery = graphql(
+  `
   query Home {
     home {
       featured {
@@ -183,7 +185,9 @@ export const HomeQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [GameFields, SaveFields],
+);
 
 export const PatchesQuery = graphql(`
   query Patches($id: Int!) {
@@ -204,15 +208,19 @@ export const SetPatchMutation = graphql(`
   }
 `);
 
-export const SearchQuery = graphql(`
+export const SearchQuery = graphql(
+  `
   query Search($text: String!) {
     search(text: $text) {
       ...GameFields
     }
   }
-`);
+`,
+  [GameFields],
+);
 
-export const CollectionsQuery = graphql(`
+export const CollectionsQuery = graphql(
+  `
   query Collections {
     collections {
       id
@@ -223,7 +231,9 @@ export const CollectionsQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [GameFields],
+);
 
 export const CollectionIdsQuery = graphql(`
   query CollectionIds($id: Int!) {
@@ -262,15 +272,19 @@ export const SetInCollectionMutation = graphql(`
   }
 `);
 
-export const SystemsQuery = graphql(`
+export const SystemsQuery = graphql(
+  `
   query Systems {
     systems {
       ...SystemFields
     }
   }
-`);
+`,
+  [SystemFields],
+);
 
-export const BiosQuery = graphql(`
+export const BiosQuery = graphql(
+  `
   query Bios {
     systems {
       ...SystemFields
@@ -295,9 +309,12 @@ export const BiosQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [SystemFields],
+);
 
-export const SystemGamesQuery = graphql(`
+export const SystemGamesQuery = graphql(
+  `
   query SystemGames($id: ID!) {
     system(id: $id) {
       ...SystemFields
@@ -306,9 +323,12 @@ export const SystemGamesQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [SystemFields, GameFields],
+);
 
-export const GameQuery = graphql(`
+export const GameQuery = graphql(
+  `
   query Game($id: Int!) {
     game(id: $id) {
       ...GameFields
@@ -326,9 +346,12 @@ export const GameQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [GameFields, SaveFields],
+);
 
-export const SavesQuery = graphql(`
+export const SavesQuery = graphql(
+  `
   query Saves($id: Int!) {
     game(id: $id) {
       id
@@ -337,7 +360,9 @@ export const SavesQuery = graphql(`
       }
     }
   }
-`);
+`,
+  [SaveFields],
+);
 
 export const CheatsQuery = graphql(`
   query Cheats($id: Int!) {
@@ -424,7 +449,8 @@ export const PadLayoutFields = graphql(`
   }
 `);
 
-export const SystemControlsQuery = graphql(`
+export const SystemControlsQuery = graphql(
+  `
   query SystemControls($id: ID!) {
     system(id: $id) {
       id
@@ -442,15 +468,20 @@ export const SystemControlsQuery = graphql(`
       ...PadLayoutFields
     }
   }
-`);
+`,
+  [PadLayoutFields],
+);
 
-export const ControllerLayoutsQuery = graphql(`
+export const ControllerLayoutsQuery = graphql(
+  `
   query ControllerLayouts {
     controllerLayouts {
       ...PadLayoutFields
     }
   }
-`);
+`,
+  [PadLayoutFields],
+);
 
 export const ControllerDefaultsQuery = graphql(`
   query ControllerDefaults {
@@ -490,13 +521,16 @@ export const ResetControllerMappingMutation = graphql(`
   }
 `);
 
-export const StartSessionMutation = graphql(`
+export const StartSessionMutation = graphql(
+  `
   mutation StartSession($gameId: Int!, $startId: String) {
     startSession(gameId: $gameId, startId: $startId) {
       ...SessionFields
     }
   }
-`);
+`,
+  [SessionFields],
+);
 
 export const StartProgressQuery = graphql(`
   query StartProgress($startId: String!) {
@@ -563,7 +597,8 @@ export const SyncLibraryMutation = graphql(`
   }
 `);
 
-export const AdminStatusQuery = graphql(`
+export const AdminStatusQuery = graphql(
+  `
   query AdminStatus {
     libraryStatus {
       mode
@@ -585,23 +620,31 @@ export const AdminStatusQuery = graphql(`
       ...MetadataFields
     }
   }
-`);
+`,
+  [MetadataFields],
+);
 
-export const FetchMetadataMutation = graphql(`
+export const FetchMetadataMutation = graphql(
+  `
   mutation FetchMetadata($system: ID, $force: Boolean!) {
     fetchMetadata(system: $system, force: $force) {
       ...MetadataFields
     }
   }
-`);
+`,
+  [MetadataFields],
+);
 
-export const EmulatorSettingsQuery = graphql(`
+export const EmulatorSettingsQuery = graphql(
+  `
   query EmulatorSettings($system: ID!) {
     emulatorSettings(system: $system) {
       ...SettingsFields
     }
   }
-`);
+`,
+  [SettingsFields],
+);
 
 export const ReportClientEventsMutation = graphql(`
   mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {
@@ -609,18 +652,24 @@ export const ReportClientEventsMutation = graphql(`
   }
 `);
 
-export const SetRunAheadMutation = graphql(`
+export const SetRunAheadMutation = graphql(
+  `
   mutation SetRunAhead($system: ID!, $frames: Int) {
     setRunAhead(system: $system, frames: $frames) {
       ...SettingsFields
     }
   }
-`);
+`,
+  [SettingsFields],
+);
 
-export const ChangeEmulatorSettingsMutation = graphql(`
+export const ChangeEmulatorSettingsMutation = graphql(
+  `
   mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {
     changeEmulatorSettings(system: $system, changes: $changes) {
       ...SettingsFields
     }
   }
-`);
+`,
+  [SettingsFields],
+);

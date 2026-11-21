@@ -1,26 +1,7 @@
 // The SovEmu API (GraphQL), as the pages use it: one function per operation, returning the
-// types codegen derived from the documents in queries.ts. Signed out, a call goes to sign-in.
+// types gql.tada infers from the documents in queries.ts. Signed out, a call goes to sign-in.
 // Signing in and out is auth.ts (OpenID Connect), not the API.
-import type {
-  AdminStatusQuery,
-  BiosQuery as BiosQueryResult,
-  CheatsQuery,
-  CollectionsQuery,
-  ControllerDefaultsQuery,
-  EmulatorSettingsQuery,
-  GameFieldsFragment,
-  SettingSource as GqlSettingSource,
-  HomeQuery,
-  PadButton,
-  PadLayoutFieldsFragment,
-  PatchesQuery,
-  SaveFieldsFragment,
-  SessionFieldsFragment,
-  StartProgressQuery,
-  SystemControlsQuery as SystemControlsData,
-  SystemFieldsFragment,
-  ViewerQuery,
-} from "../graphql/graphql";
+import type { Enum, ResultOf } from "./gql";
 import { onUnload, request } from "./graphql";
 import {
   AddCheatMutation,
@@ -38,19 +19,23 @@ import {
   DeleteCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
   FetchMetadataMutation,
+  type GameFields,
   GameQuery,
   HomeQuery as HomeDocument,
   LoadStateMutation,
+  type PadLayoutFields,
   PatchesQuery as PatchesDocument,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
+  type SaveFields,
   SaveStateMutation,
   SavesQuery,
   ScanLibraryMutation,
   SearchQuery,
+  type SessionFields,
   SessionOfferMutation,
   SetCheatMutation,
   SetDiscMutation,
@@ -64,11 +49,32 @@ import {
   StopSessionMutation,
   SyncLibraryMutation,
   SystemControlsQuery,
+  type SystemFields,
   SystemGamesQuery,
   SystemsQuery,
   UsersQuery,
   ViewerQuery as ViewerDocument,
 } from "./queries";
+
+// What each document answers (gql.tada infers it from the schema).
+type AdminStatusQuery = ResultOf<typeof AdminStatusDocument>;
+type BiosQueryResult = ResultOf<typeof BiosQuery>;
+type CheatsQuery = ResultOf<typeof CheatsDocument>;
+type CollectionsQuery = ResultOf<typeof CollectionsDocument>;
+type ControllerDefaultsQuery = ResultOf<typeof ControllerDefaultsDocument>;
+type EmulatorSettingsQuery = ResultOf<typeof EmulatorSettingsDocument>;
+type HomeQuery = ResultOf<typeof HomeDocument>;
+type PatchesQuery = ResultOf<typeof PatchesDocument>;
+type StartProgressQuery = ResultOf<typeof StartProgressDocument>;
+type SystemControlsData = ResultOf<typeof SystemControlsQuery>;
+type ViewerQuery = ResultOf<typeof ViewerDocument>;
+type GameFieldsFragment = ResultOf<typeof GameFields>;
+type PadLayoutFieldsFragment = ResultOf<typeof PadLayoutFields>;
+type SaveFieldsFragment = ResultOf<typeof SaveFields>;
+type SessionFieldsFragment = ResultOf<typeof SessionFields>;
+type SystemFieldsFragment = ResultOf<typeof SystemFields>;
+type GqlSettingSource = Enum<"SettingSource">;
+type PadButton = Enum<"PadButton">;
 
 export { ApiError } from "./graphql";
 

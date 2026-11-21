@@ -467,8 +467,8 @@ target/release/sovemu-server --data-dir ../data --cores-dir ../cores --web-dir .
 Turn on the pre-push hook once per clone: `git config core.hooksPath .githooks`. Before a push
 leaves your machine, it runs the checks for whatever the push changes:
 - **`SovEmu.Backend/`:** `cargo fmt --check`, clippy with `-D warnings`, and the tests.
-- **`SovEmu.Web/`, or the server's `schema.graphql`:** the codegen check, the tests and the
-  build.
+- **`SovEmu.Web/`, or the server's `schema.graphql`:** the schema types check, lint, the
+  tests and the build (which checks every GraphQL document against the schema).
 - **Docs, CI or the chart:** nothing.
 
 On a failure it names the step and gives the command to rerun it. `git push --no-verify` skips

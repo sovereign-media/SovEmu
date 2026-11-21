@@ -2,7 +2,10 @@
 // `client event` beside the game's own lines). Events are batched for a moment and sent only
 // while signed in; a report that fails is dropped, never retried, and never shown.
 
-import type { ClientEventKind } from "../graphql/graphql";
+import type { Enum } from "./gql";
+
+type ClientEventKind = Enum<"ClientEventKind">;
+
 import { quietly } from "./graphql";
 import { ReportClientEventsMutation } from "./queries";
 

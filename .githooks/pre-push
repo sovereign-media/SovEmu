@@ -3,7 +3,7 @@
 # formatting, clippy or the tests on the developer's own platform:
 #
 #   SovEmu.Backend/  cargo fmt --check, clippy -D warnings, cargo test --workspace
-#   SovEmu.Web/      npm run codegen:check, npm run lint, npm test, npm run build
+#   SovEmu.Web/      npm run schema:check, npm run lint, npm test, npm run build
 #                    (also when the server's schema.graphql changes)
 #
 # Anything else (docs, CI, charts) runs nothing. The checks run on the commit being pushed: in
@@ -107,7 +107,7 @@ for commit in $commits; do
       fi
     fi
     w="$dir/SovEmu.Web"
-    step "$commit" "$w" "GraphQL codegen matches the schema" npm run --silent codegen:check
+    step "$commit" "$w" "GraphQL schema types match the schema" npm run --silent schema:check
     step "$commit" "$w" "lint and format (Biome)" npm run --silent lint
     step "$commit" "$w" "npm test" npm test --silent
     step "$commit" "$w" "npm run build" npm run --silent build

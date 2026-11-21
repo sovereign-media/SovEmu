@@ -32,9 +32,12 @@ ARG NODE_VERSION=24
 
 ## ---- web: the web client (Vite) -------------------------------------------------------------
 FROM node:${NODE_VERSION}-${DEBIAN_RELEASE}-slim AS web
-WORKDIR /web
+# Laid out as in the repository: the build checks every GraphQL document against the server's
+# schema (gql.tada), which it reads at ../SovEmu.Backend/SovEmu.Server/schema.graphql.
+WORKDIR /src/SovEmu.Web
 COPY SovEmu.Web/package.json SovEmu.Web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY SovEmu.Backend/SovEmu.Server/schema.graphql /src/SovEmu.Backend/SovEmu.Server/schema.graphql
 COPY SovEmu.Web/ ./
 RUN npm test && npm run build
 
@@ -125,7 +128,7 @@ RUN apt-get update \
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
 COPY --from=build /out/sovemu-worker /out/sovemu-server /usr/local/bin/
-COPY --from=web /web/dist/ /opt/sovemu/web/
+COPY --from=web /src/SovEmu.Web/dist/ /opt/sovemu/web/
 
 ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
     SOVEMU_WEB_DIR=/opt/sovemu/web \

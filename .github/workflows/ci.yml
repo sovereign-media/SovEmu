@@ -59,7 +59,7 @@ jobs:
             web:
               - .github/workflows/ci.yml
               - SovEmu.Web/**
-              # The web client's typed documents are generated from it (codegen:check).
+              # The web client's GraphQL types come from it (schema:check, gql.tada check).
               - SovEmu.Backend/SovEmu.Server/schema.graphql
             # What the image is built from: the Dockerfile's COPY lines, and what reaches the
             # build context (.dockerignore).
@@ -144,8 +144,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Generated GraphQL types match the schema
-        run: npm run codegen:check
+      - name: GraphQL schema types match the schema
+        run: npm run schema:check
 
       - name: Lint and format (Biome)
         run: npm run lint

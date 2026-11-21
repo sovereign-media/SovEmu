@@ -13,8 +13,13 @@ paths:
 - **Same origin.** The page and the API share an origin, so use relative paths (`/graphql`,
   the `/media/…` URLs the API returns), never an absolute URL or a configured host.
   `npm run dev` proxies `/graphql` and `/media` to a local server.
-- **GraphQL, typed.** Every operation is written once in `src/lib/queries.ts` and typed by
-  codegen into `src/graphql/` (`npm run codegen`; committed; CI runs `codegen:check`). Pages
+- **GraphQL, typed by gql.tada** (`src/lib/gql.ts`). Every operation is written once in
+  `src/lib/queries.ts` with `graphql(...)`; TypeScript infers its result and variables from
+  `src/graphql-env.d.ts`, which `npm run schema` writes from the server's `schema.graphql`
+  (committed; CI and the pre-push hook run `schema:check`). A fragment spread passes its
+  fragment: `graphql(\`...\`, [GameFields])`. Types are `ResultOf<typeof Doc>`, enums
+  `Enum<"SettingSource">`. `npm run build` runs `gql.tada check`, which fails on a field the
+  schema lacks (`tsc` alone does not). Pages
   call `api.*` in `src/lib/api.ts`, never `fetch`. Errors are `ApiError` with the server's
   `code`; `UNAUTHENTICATED` sends the page to sign-in.
 - **Reads go through TanStack Query** (`src/lib/data.ts`): one key and fetch per read in `q`,
@@ -57,7 +62,7 @@ paths:
   scaled with `image-rendering: pixelated` (the `.pixelated` class), never smoothed.
 - **Biome lints and formats** (`biome.jsonc`): `npm run format` rewrites, `npm run lint`
   (`biome ci`) checks, in CI and the pre-push hook. Warnings (effect dependencies, some a11y
-  rules for the pad-driven screens) are worth a look but do not fail; errors do. Never format
-  `src/graphql/` by hand: codegen writes it.
+  rules for the pad-driven screens) are worth a look but do not fail; errors do. Never edit
+  `src/graphql-env.d.ts` by hand: `npm run schema` writes it.
 - Before a PR: `npm run lint`, `npm test` and `npm run build` (which runs `tsc` first) from
   `SovEmu.Web/`.
