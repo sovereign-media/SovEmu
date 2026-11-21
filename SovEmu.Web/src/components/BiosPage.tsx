@@ -2,9 +2,9 @@
 // (`bios/<system>/`, named like its ROM folder) and each file it reads, checked on the server
 // by name and MD5. `?id=psx` scrolls to one system. B goes home.
 import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, Microchip, RefreshCw, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, formatSize, type BiosGroup, type BiosSystem, type SystemBios } from "../lib/api";
-import { FILE_STATES, IMPORTANCE, STATES, fileHint, fileTone, summary, withBios, type Tone } from "../lib/bios";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { api, type BiosGroup, type BiosSystem, formatSize, type SystemBios } from "../lib/api";
+import { FILE_STATES, fileHint, fileTone, IMPORTANCE, STATES, summary, type Tone, withBios } from "../lib/bios";
 import { listenNav } from "../lib/nav";
 import HintBar from "./HintBar";
 import Shell from "./Shell";
@@ -30,7 +30,11 @@ const ICON: Record<Tone, ReactNode> = {
 };
 
 function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return <span className={cn("rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap", PILL[tone])}>{children}</span>;
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap", PILL[tone])}>
+      {children}
+    </span>
+  );
 }
 
 function Group({ group, folder }: { group: BiosGroup; folder: string }) {
@@ -49,7 +53,10 @@ function Group({ group, folder }: { group: BiosGroup; folder: string }) {
           const tone = fileTone(f, group);
           const hint = fileHint(f, folder);
           return (
-            <li key={`${f.name}:${f.foundAt}`} className={cn("flex items-start gap-3 text-sm", tone === "quiet" && "opacity-60")}>
+            <li
+              key={`${f.name}:${f.foundAt}`}
+              className={cn("flex items-start gap-3 text-sm", tone === "quiet" && "opacity-60")}
+            >
               <span className="mt-0.5 [&_svg]:size-4">{ICON[tone]}</span>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-baseline gap-x-2">
@@ -124,7 +131,8 @@ function Bios() {
 
   // The system the link asked for, once it is shown.
   useEffect(() => {
-    if (systems && wanted.current) document.getElementById(`bios-${wanted.current}`)?.scrollIntoView({ block: "start" });
+    if (systems && wanted.current)
+      document.getElementById(`bios-${wanted.current}`)?.scrollIntoView({ block: "start" });
   }, [systems]);
 
   if (!systems) return null;
@@ -141,10 +149,10 @@ function Bios() {
           </Button>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">
-          Each system has its own folder in the server's BIOS folder (<code>SOVEMU_BIOS_DIR</code>, <code>bios/</code> in
-          the data folder by default), named like its folder of games: <code>bios/psx/</code>, <code>bios/ps2/</code>,{" "}
-          <code>bios/dreamcast/</code>. Files are checked by name, which is case-sensitive, and by MD5 against libretro's
-          list of known dumps. Systems not listed need no BIOS.
+          Each system has its own folder in the server's BIOS folder (<code>SOVEMU_BIOS_DIR</code>, <code>bios/</code>{" "}
+          in the data folder by default), named like its folder of games: <code>bios/psx/</code>, <code>bios/ps2/</code>
+          , <code>bios/dreamcast/</code>. Files are checked by name, which is case-sensitive, and by MD5 against
+          libretro's list of known dumps. Systems not listed need no BIOS.
         </p>
         <p className="mt-3 text-sm font-semibold">{summary(shown)}</p>
       </section>

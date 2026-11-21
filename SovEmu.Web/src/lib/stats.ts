@@ -83,7 +83,10 @@ export class StatsSampler {
       { label: "Network RTT", value: fmt(netRtt, " ms", 1) },
       { label: "Jitter buffer", value: fmt(jitterMs, " ms", 1) },
       { label: "Decode", value: fmt(decodeMs, " ms", 1) },
-      { label: "Video", value: `${v.frameWidth ?? "?"}×${v.frameHeight ?? "?"} @ ${fmt(v.framesPerSecond ?? NaN)} fps` },
+      {
+        label: "Video",
+        value: `${v.frameWidth ?? "?"}×${v.frameHeight ?? "?"} @ ${fmt(v.framesPerSecond ?? NaN)} fps`,
+      },
       { label: "Bitrate", value: fmt(kbps, " kbps") },
       { label: "Packets lost", value: String(lost) },
     ];

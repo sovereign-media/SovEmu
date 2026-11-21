@@ -29,5 +29,10 @@ export function shouldFrame(screenWidth: number, screenHeight: number, aspect: n
 /** The window, as percentages of the image, for absolutely positioning the picture in it. */
 export function windowInsets(d: Decoration): { top: string; left: string; bottom: string; right: string } {
   const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(4)}%`;
-  return { top: pct(d.top, d.height), left: pct(d.left, d.width), bottom: pct(d.bottom, d.height), right: pct(d.right, d.width) };
+  return {
+    top: pct(d.top, d.height),
+    left: pct(d.left, d.width),
+    bottom: pct(d.bottom, d.height),
+    right: pct(d.right, d.width),
+  };
 }

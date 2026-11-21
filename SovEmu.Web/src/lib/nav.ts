@@ -4,21 +4,50 @@
 // fire once per press. Gamepads are polled every animation frame (the Gamepad API has no
 // events for buttons), keyboards via events.
 
-export type NavAction = "up" | "down" | "left" | "right" | "accept" | "back" | "menu" | "pageUp" | "pageDown" | "search";
+export type NavAction =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "accept"
+  | "back"
+  | "menu"
+  | "pageUp"
+  | "pageDown"
+  | "search";
 
 const KEY_ACTIONS: Record<string, NavAction> = {
-  ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
-  Enter: "accept", KeyX: "accept", " ": "accept", Space: "accept",
-  Escape: "back", Backspace: "back", KeyZ: "back",
-  Tab: "menu", PageUp: "pageUp", PageDown: "pageDown", Slash: "search",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  Enter: "accept",
+  KeyX: "accept",
+  " ": "accept",
+  Space: "accept",
+  Escape: "back",
+  Backspace: "back",
+  KeyZ: "back",
+  Tab: "menu",
+  PageUp: "pageUp",
+  PageDown: "pageDown",
+  Slash: "search",
 };
 
 // W3C standard gamepad: 0 = bottom face (RetroPad B), 1 = right face (RetroPad A).
 // Console menus confirm with the right face button and go back with the bottom one; the top one
 // (RetroPad X) searches.
 const PAD_ACTIONS: Record<number, NavAction> = {
-  1: "accept", 0: "back", 3: "search", 9: "menu", 4: "pageUp", 5: "pageDown",
-  12: "up", 13: "down", 14: "left", 15: "right",
+  1: "accept",
+  0: "back",
+  3: "search",
+  9: "menu",
+  4: "pageUp",
+  5: "pageDown",
+  12: "up",
+  13: "down",
+  14: "left",
+  15: "right",
 };
 
 const REPEATABLE = new Set<NavAction>(["up", "down", "left", "right", "pageUp", "pageDown"]);
@@ -37,7 +66,11 @@ export class Repeater {
       if (!state) {
         this.since.set(action, { start: now, last: now });
         fired.push(action);
-      } else if (REPEATABLE.has(action) && now - state.start >= REPEAT_DELAY_MS && now - state.last >= REPEAT_INTERVAL_MS) {
+      } else if (
+        REPEATABLE.has(action) &&
+        now - state.start >= REPEAT_DELAY_MS &&
+        now - state.last >= REPEAT_INTERVAL_MS
+      ) {
         state.last = now;
         fired.push(action);
       }

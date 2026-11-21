@@ -23,7 +23,10 @@ export interface GameFilters {
 
 /** A game's genres: the metadata lists them comma-separated ("Platform, Action"). */
 export const genresOf = (g: Pick<Game, "genre">) =>
-  (g.genre ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  (g.genre ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 /** The most players a game takes, from "1-2", "2", "1 to 4" …, or null when unknown. */
 export function maxPlayers(players: string | null): number | null {
@@ -32,7 +35,11 @@ export function maxPlayers(players: string | null): number | null {
 }
 
 /** Folds case and accents, so "pokemon" finds "Pokémon". */
-const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
 
 /** Games matching every word of `query` (in the title, file name, genre, maker or tags) and
  *  every filter. */
@@ -55,9 +62,10 @@ export function filterGames(games: Game[], query: string, filters: GameFilters):
 
 /** Sorted by `sort`; ties (and the title sort itself) go by title. */
 export function sortGames(games: Game[], sort: GameSort): Game[] {
-  const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
+  const byTitle = (a: Game, b: Game) =>
+    a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
   const year = (g: Game) => Number(g.releaseDate?.slice(0, 4)) || 0;
-  const played = (g: Game) => (g.lastPlayedAt ? Date.parse(g.lastPlayedAt.replace(" ", "T") + "Z") : 0);
+  const played = (g: Game) => (g.lastPlayedAt ? Date.parse(`${g.lastPlayedAt.replace(" ", "T")}Z`) : 0);
   const key: Record<GameSort, (a: Game, b: Game) => number> = {
     title: () => 0,
     recent: (a, b) => played(b) - played(a),
@@ -110,7 +118,14 @@ export const activeFilters = (f: GameFilters) =>
  *  shoulders three rows. Stops at the ends. */
 export function gridMove(index: number, action: string, cols: number, count: number): number {
   if (count <= 0) return -1;
-  const step: Record<string, number> = { left: -1, right: 1, up: -cols, down: cols, pageUp: -3 * cols, pageDown: 3 * cols };
+  const step: Record<string, number> = {
+    left: -1,
+    right: 1,
+    up: -cols,
+    down: cols,
+    pageUp: -3 * cols,
+    pageDown: 3 * cols,
+  };
   const delta = step[action];
   if (delta === undefined) return index;
   const next = index + delta;

@@ -3,8 +3,18 @@ import type { SystemSummary } from "./api";
 import { groupByMaker, initials, systemBadge } from "./systems";
 
 const sys = (over: Partial<SystemSummary>): SystemSummary => ({
-  id: "n64", name: "Nintendo 64", short: "N64", manufacturer: "Nintendo", year: 1996, color: "#000",
-  gameCount: 1, playable: true, needsGpu: false, rendering: null, biosMissing: false, ...over,
+  id: "n64",
+  name: "Nintendo 64",
+  short: "N64",
+  manufacturer: "Nintendo",
+  year: 1996,
+  color: "#000",
+  gameCount: 1,
+  playable: true,
+  needsGpu: false,
+  rendering: null,
+  biosMissing: false,
+  ...over,
 });
 
 describe("system badges", () => {

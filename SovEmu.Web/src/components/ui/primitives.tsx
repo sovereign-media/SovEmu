@@ -1,16 +1,17 @@
 // SovEmu's look over Radix UI primitives: dialogs, selects, progress bars, menus, tooltips,
 // scroll areas and labels. Pages compose these; none hand-roll their own.
+
+import { Check, ChevronDown, X } from "lucide-react";
 import {
   AlertDialog as AlertPrimitive,
   Dialog as DialogPrimitive,
-  DropdownMenu as MenuPrimitive,
   Label as LabelPrimitive,
+  DropdownMenu as MenuPrimitive,
   Progress as ProgressPrimitive,
   ScrollArea as ScrollPrimitive,
   Select as SelectPrimitive,
   Tooltip as TooltipPrimitive,
 } from "radix-ui";
-import { Check, ChevronDown, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "./cn";
 
@@ -52,15 +53,22 @@ export function Dialog({
           {...contentProps}
         >
           <div className="flex items-center gap-2 px-3 pt-1 pb-2">
-            <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-normal text-slate-400">{title}</DialogPrimitive.Title>
+            <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-normal text-slate-400">
+              {title}
+            </DialogPrimitive.Title>
             {closeButton && onOpenChange && (
-              <DialogPrimitive.Close aria-label="Close" className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-white">
+              <DialogPrimitive.Close
+                aria-label="Close"
+                className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-white"
+              >
                 <X className="size-4" />
               </DialogPrimitive.Close>
             )}
           </div>
           {description ? (
-            <DialogPrimitive.Description className="px-3 pb-2 text-sm text-slate-400">{description}</DialogPrimitive.Description>
+            <DialogPrimitive.Description className="px-3 pb-2 text-sm text-slate-400">
+              {description}
+            </DialogPrimitive.Description>
           ) : (
             <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
           )}
@@ -95,8 +103,13 @@ export function Confirm({
           <AlertPrimitive.Title className="text-lg font-bold">{title}</AlertPrimitive.Title>
           <AlertPrimitive.Description className="text-sm text-slate-400">{description}</AlertPrimitive.Description>
           <div className="mt-2 flex justify-end gap-2">
-            <AlertPrimitive.Cancel className="h-9 rounded-md border border-edge px-3 text-sm hover:bg-white/10">Cancel</AlertPrimitive.Cancel>
-            <AlertPrimitive.Action onClick={onAction} className="h-9 rounded-md bg-accent px-3 text-sm font-semibold hover:brightness-110">
+            <AlertPrimitive.Cancel className="h-9 rounded-md border border-edge px-3 text-sm hover:bg-white/10">
+              Cancel
+            </AlertPrimitive.Cancel>
+            <AlertPrimitive.Action
+              onClick={onAction}
+              className="h-9 rounded-md bg-accent px-3 text-sm font-semibold hover:brightness-110"
+            >
               {action}
             </AlertPrimitive.Action>
           </div>
@@ -172,9 +185,23 @@ export function Select({
 // --- Progress -------------------------------------------------------------------------------
 
 /** `value` is 0 to 100; `color` overrides the accent (a system's colour). */
-export function Progress({ value, color, className, label }: { value: number; color?: string; className?: string; label?: string }) {
+export function Progress({
+  value,
+  color,
+  className,
+  label,
+}: {
+  value: number;
+  color?: string;
+  className?: string;
+  label?: string;
+}) {
   return (
-    <ProgressPrimitive.Root value={value} aria-label={label} className={cn("h-2 overflow-hidden rounded-full bg-black/40", className)}>
+    <ProgressPrimitive.Root
+      value={value}
+      aria-label={label}
+      className={cn("h-2 overflow-hidden rounded-full bg-black/40", className)}
+    >
       <ProgressPrimitive.Indicator
         className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
         style={{ width: `${value}%`, background: color }}
@@ -227,7 +254,10 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
     <TooltipPrimitive.Root delayDuration={300}>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Content sideOffset={6} className="z-50 max-w-72 rounded-md bg-black px-2.5 py-1.5 text-xs text-slate-200 shadow-xl">
+        <TooltipPrimitive.Content
+          sideOffset={6}
+          className="z-50 max-w-72 rounded-md bg-black px-2.5 py-1.5 text-xs text-slate-200 shadow-xl"
+        >
           {content}
           <TooltipPrimitive.Arrow className="fill-black" />
         </TooltipPrimitive.Content>
@@ -256,10 +286,7 @@ export function ScrollArea({
       </ScrollPrimitive.Viewport>
       <ScrollPrimitive.Scrollbar
         orientation={orientation}
-        className={cn(
-          "flex touch-none p-0.5 select-none",
-          orientation === "vertical" ? "w-2" : "h-2 flex-col",
-        )}
+        className={cn("flex touch-none p-0.5 select-none", orientation === "vertical" ? "w-2" : "h-2 flex-col")}
       >
         <ScrollPrimitive.Thumb className="relative flex-1 rounded-full bg-white/25" />
       </ScrollPrimitive.Scrollbar>
@@ -278,5 +305,4 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export const inputClass =
-  "rounded-md border border-edge bg-surface px-3 py-2 outline-none focus:border-accent";
+export const inputClass = "rounded-md border border-edge bg-surface px-3 py-2 outline-none focus:border-accent";

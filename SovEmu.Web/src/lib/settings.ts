@@ -31,22 +31,26 @@ const GUESSES: { title: string; info: string; pattern: RegExp }[] = [
   {
     title: "Input",
     info: "Controllers, light guns, mice and how buttons behave.",
-    pattern: /input|controller|joypad|gamepad|analog|mouse|light.?gun|\bgun\b|crosshair|turbo|rumble|button|keyboard|dead.?zone|multitap|\bstick\b|touch/,
+    pattern:
+      /input|controller|joypad|gamepad|analog|mouse|light.?gun|\bgun\b|crosshair|turbo|rumble|button|keyboard|dead.?zone|multitap|\bstick\b|touch/,
   },
   {
     title: "Video",
     info: "Resolution, aspect ratio, filtering and what is drawn.",
-    pattern: /video|render|resolution|aspect|crop|overscan|palette|colou?r|shader|filter|scal|texture|widescreen|graphic|gfx|display|screen|blend|scanline|ntsc|frame.?skip|sprite|layer|bilinear|alias|msaa|vsync|gamma|brightness|interlac|pixel|dither|\bfog\b|mipmap|anisotrop|framebuffer|\bhud\b/,
+    pattern:
+      /video|render|resolution|aspect|crop|overscan|palette|colou?r|shader|filter|scal|texture|widescreen|graphic|gfx|display|screen|blend|scanline|ntsc|frame.?skip|sprite|layer|bilinear|alias|msaa|vsync|gamma|brightness|interlac|pixel|dither|\bfog\b|mipmap|anisotrop|framebuffer|\bhud\b/,
   },
   {
     title: "Performance and hacks",
     info: "Speed, accuracy and workarounds for particular games.",
-    pattern: /hack|speed|fast|accura|dynarec|recompil|\bjit\b|thread|cache|timing|latency|run.?ahead|cycle|overclock|underclock/,
+    pattern:
+      /hack|speed|fast|accura|dynarec|recompil|\bjit\b|thread|cache|timing|latency|run.?ahead|cycle|overclock|underclock/,
   },
   {
     title: "System",
     info: "The emulated console: region, BIOS, memory and hardware model.",
-    pattern: /region|bios|system|model|hardware|\bcpu\b|clock|memory|\bram\b|boot|language|console|cart|dis[ck]|\bcd\b|save|\brtc\b|date|time/,
+    pattern:
+      /region|bios|system|model|hardware|\bcpu\b|clock|memory|\bram\b|boot|language|console|cart|dis[ck]|\bcd\b|save|\brtc\b|date|time/,
   },
 ];
 const OTHER = { title: "Other", info: "Settings that fit no other group." };
@@ -80,7 +84,8 @@ export function groupSettings(settings: CoreSetting[], categories: CoreCategory[
     }
     const title = guessGroup(s);
     const guess = [...GUESSES, OTHER].find((g) => g.title === title)!;
-    const target = byTitle.get(title.toLowerCase()) ?? add(`guess-${title.toLowerCase().replace(/\W+/g, "-")}`, title, guess.info);
+    const target =
+      byTitle.get(title.toLowerCase()) ?? add(`guess-${title.toLowerCase().replace(/\W+/g, "-")}`, title, guess.info);
     target.settings.push(s);
   }
   // The same order on every system: System, Video, Audio, Input (the core's or SovEmu's), then

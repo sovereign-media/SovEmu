@@ -17,7 +17,10 @@ export interface RowShape {
 }
 
 export const startFocus = (rows: RowShape[]): Focus => ({
-  row: Math.max(0, rows.findIndex((r) => r.length > 0)),
+  row: Math.max(
+    0,
+    rows.findIndex((r) => r.length > 0),
+  ),
   cols: rows.map(() => 0),
 });
 
@@ -35,7 +38,9 @@ export function moveFocus(focus: Focus, action: NavAction, rows: RowShape[]): Fo
   if ((action === "left" || action === "right") && shape?.length) {
     const dir = action === "left" ? -1 : 1;
     const next = cols[focus.row] + dir;
-    cols[focus.row] = shape.wraps ? (next + shape.length) % shape.length : Math.min(Math.max(next, 0), shape.length - 1);
+    cols[focus.row] = shape.wraps
+      ? (next + shape.length) % shape.length
+      : Math.min(Math.max(next, 0), shape.length - 1);
   }
   return { row: focus.row, cols };
 }

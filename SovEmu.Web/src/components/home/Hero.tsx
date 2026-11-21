@@ -52,7 +52,8 @@ export function Hero({
           <Gamepad2 className="size-12 text-slate-600" />
           {empty ? (
             <p>
-              No games yet. Add ROMs to the library (one folder per system: <code>nes/</code>, <code>snes/</code>, …) and rescan.
+              No games yet. Add ROMs to the library (one folder per system: <code>nes/</code>, <code>snes/</code>, …)
+              and rescan.
             </p>
           ) : (
             <p>No artwork yet: fetch game information on the Library page to fill this space.</p>
@@ -88,7 +89,10 @@ export function Hero({
           <div
             key={g.id}
             aria-hidden={i !== index}
-            className={cn("absolute inset-0 transition-opacity duration-700", i === index ? "opacity-100" : "opacity-0")}
+            className={cn(
+              "absolute inset-0 transition-opacity duration-700",
+              i === index ? "opacity-100" : "opacity-0",
+            )}
             style={{ background: `linear-gradient(135deg, ${c}, color-mix(in srgb, ${c} 25%, black))` }}
           >
             {art && (
@@ -115,7 +119,10 @@ export function Hero({
       <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-surface to-transparent" />
 
       <div className="absolute bottom-0 left-0 max-w-2xl p-6 pr-12 pb-14 sm:p-12 sm:pb-16">
-        <span className="rounded-md px-2 py-0.5 text-xs font-black text-white" style={{ background: color(game.system) }}>
+        <span
+          className="rounded-md px-2 py-0.5 text-xs font-black text-white"
+          style={{ background: color(game.system) }}
+        >
           {short(game.system)}
         </span>
         <h2 className="mt-3 text-3xl leading-tight font-black text-white sm:text-5xl">{game.title}</h2>
@@ -124,7 +131,12 @@ export function Hero({
           <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-slate-300 sm:line-clamp-3">{game.description}</p>
         )}
         <div className="mt-5 flex gap-2">
-          <Button size="lg" variant="light" onClick={() => onPlay(game)} className={cn(focused && "ring-4 ring-white/60")}>
+          <Button
+            size="lg"
+            variant="light"
+            onClick={() => onPlay(game)}
+            className={cn(focused && "ring-4 ring-white/60")}
+          >
             <Play className="fill-current" /> Play
           </Button>
           <Button size="lg" variant="glass" onClick={() => onBrowse(game)}>

@@ -25,7 +25,10 @@ function Disc({ stop, distance, onClick }: { stop: string; distance: number; onC
       tabIndex={-1}
       onClick={onClick}
       aria-label={`Go to ${stop}`}
-      className={cn(DISTANCE[distance], "size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-lg font-bold text-white hover:bg-white/10")}
+      className={cn(
+        DISTANCE[distance],
+        "size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-lg font-bold text-white hover:bg-white/10",
+      )}
     >
       {stop}
     </button>
@@ -58,7 +61,12 @@ export function JumpStrip({
         >
           <Dialog.Title className="sr-only">Jump to letter</Dialog.Title>
           <Dialog.Description className="sr-only">Left and right choose a letter; Enter goes there.</Dialog.Description>
-          <button type="button" aria-label="Previous letter" onClick={() => onIndex(Math.max(0, index - 1))} className={cn(arrow, !before.length && "invisible")}>
+          <button
+            type="button"
+            aria-label="Previous letter"
+            onClick={() => onIndex(Math.max(0, index - 1))}
+            className={cn(arrow, !before.length && "invisible")}
+          >
             <ChevronLeft className="size-5" />
           </button>
           <div className="flex w-[9.5rem] justify-end gap-1 sm:w-[14.5rem]">
@@ -79,7 +87,12 @@ export function JumpStrip({
               <Disc key={stop} stop={stop} distance={i + 1} onClick={() => onIndex(stops.indexOf(stop))} />
             ))}
           </div>
-          <button type="button" aria-label="Next letter" onClick={() => onIndex(Math.min(stops.length - 1, index + 1))} className={cn(arrow, !after.length && "invisible")}>
+          <button
+            type="button"
+            aria-label="Next letter"
+            onClick={() => onIndex(Math.min(stops.length - 1, index + 1))}
+            className={cn(arrow, !after.length && "invisible")}
+          >
             <ChevronRight className="size-5" />
           </button>
           <span aria-live="polite" className="sr-only">

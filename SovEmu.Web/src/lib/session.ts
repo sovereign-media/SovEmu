@@ -1,19 +1,19 @@
 // One WebRTC connection to a game session: receive-only video and audio, plus the unordered,
 // no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
 // the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
-import { InputState } from "./input";
+import type { InputState } from "./input";
 import {
   type Analog,
+  analogEqual,
   CENTRED,
   type ClientStats,
-  INPUT_CHANNEL,
-  analogEqual,
   decodeAck,
   encodeAnalog,
   encodeHotkeys,
   encodeInput,
   encodeStats,
   hotkeyBits,
+  INPUT_CHANNEL,
 } from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
@@ -69,8 +69,16 @@ export class Session {
     this.pc.ontrack = (e) => {
       // Ask for the smallest jitter buffer the browser allows: latency over smoothness.
       const receiver = e.receiver as RTCRtpReceiver & { jitterBufferTarget?: number; playoutDelayHint?: number };
-      try { receiver.jitterBufferTarget = 0; } catch { /* unsupported */ }
-      try { receiver.playoutDelayHint = 0; } catch { /* unsupported */ }
+      try {
+        receiver.jitterBufferTarget = 0;
+      } catch {
+        /* unsupported */
+      }
+      try {
+        receiver.playoutDelayHint = 0;
+      } catch {
+        /* unsupported */
+      }
       stream.addTrack(e.track);
     };
     this.pc.onconnectionstatechange = () => this.events.onState?.(this.pc.connectionState);
@@ -81,7 +89,9 @@ export class Session {
     await this.iceGathered();
     const answer = await this.signal(this.pc.localDescription?.sdp ?? "");
     await this.pc.setRemoteDescription({ type: "answer", sdp: answer });
-    this.video.play().catch(() => { /* needs a user gesture; Connect is one */ });
+    this.video.play().catch(() => {
+      /* needs a user gesture; Connect is one */
+    });
     this.raf = requestAnimationFrame(this.pump);
   }
 

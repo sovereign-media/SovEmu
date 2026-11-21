@@ -29,9 +29,22 @@ export function PadDiagram({
   const y1 = Math.min(layout.height, Math.max(...shapes.map((s) => s.y + s.h)) + pad);
   return (
     <figure className={cn("grid gap-1", className)}>
-      <svg viewBox={shapes.length ? `${x0} ${y0} ${x1 - x0} ${y1 - y0}` : `0 0 ${layout.width} ${layout.height}`} role="img" aria-label={caption ?? layout.name} className="mx-auto max-h-56 w-full">
+      <svg
+        viewBox={shapes.length ? `${x0} ${y0} ${x1 - x0} ${y1 - y0}` : `0 0 ${layout.width} ${layout.height}`}
+        role="img"
+        aria-label={caption ?? layout.name}
+        className="mx-auto max-h-56 w-full"
+      >
         {layout.body.map((s, i) => (
-          <rect key={i} x={s.x} y={s.y} width={s.w} height={s.h} rx={s.r} className={s.tone ? "fill-black/45" : "fill-slate-700"} />
+          <rect
+            key={i}
+            x={s.x}
+            y={s.y}
+            width={s.w}
+            height={s.h}
+            rx={s.r}
+            className={s.tone ? "fill-black/45" : "fill-slate-700"}
+          />
         ))}
         {layout.keys.map((k) => {
           const on = lit.has(k.key);

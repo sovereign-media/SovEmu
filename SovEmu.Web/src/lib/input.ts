@@ -14,13 +14,13 @@ import {
   GUIDE,
   identify,
   KEYBOARD,
+  leftStickBound,
   type Mapping,
   PAD_INPUTS,
-  leftStickBound,
-  stickInputs,
   Players,
-  readHotkeys,
   RESERVED_KEYS,
+  readHotkeys,
+  stickInputs,
   toMapping,
 } from "./controllers";
 import { type Analog, bit, CENTRED, type Hotkeys, MAX_PORTS } from "./protocol";
@@ -126,7 +126,8 @@ export class InputState {
     if (!info) {
       this.known.set(gamepadId, (info = identify(gamepadId)));
       // A model docs/CONTROLLERS.md does not know yet: worth adding.
-      if (info.id.startsWith("pad:")) reportClientEvent("CONTROLLER_UNKNOWN", `${gamepadId} → ${info.id} (${info.family})`);
+      if (info.id.startsWith("pad:"))
+        reportClientEvent("CONTROLLER_UNKNOWN", `${gamepadId} → ${info.id} (${info.family})`);
     }
     return info;
   }
@@ -185,8 +186,12 @@ export class InputState {
         analogSet.add(port);
         const [lx = 0, ly = 0, rx = 0, ry = 0] = pad.axes;
         analog[port] = {
-          lx: axisToStick(lx), ly: axisToStick(ly), rx: axisToStick(rx), ry: axisToStick(ry),
-          l2: triggerValue(pad.buttons[PAD_L2]?.value ?? 0), r2: triggerValue(pad.buttons[PAD_R2]?.value ?? 0),
+          lx: axisToStick(lx),
+          ly: axisToStick(ly),
+          rx: axisToStick(rx),
+          ry: axisToStick(ry),
+          l2: triggerValue(pad.buttons[PAD_L2]?.value ?? 0),
+          r2: triggerValue(pad.buttons[PAD_R2]?.value ?? 0),
         };
       }
       const mapping = this.mapping(this.identify(pad.id).id);
@@ -222,7 +227,7 @@ const ESCAPE = "Escape";
 export function captureInput(device: string): Promise<string | null> {
   return new Promise((resolve) => {
     const index = device.startsWith("pad:") ? Number(device.slice(4)) : null;
-    const pad = () => (index === null ? null : navigator.getGamepads?.()[index] ?? null);
+    const pad = () => (index === null ? null : (navigator.getGamepads?.()[index] ?? null));
     const keys = new Set<string>();
     const held = (): Set<string> => {
       if (index === null) return new Set(keys);

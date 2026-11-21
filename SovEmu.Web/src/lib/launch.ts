@@ -45,10 +45,7 @@ export function describeStart(s: StartStatus): LaunchView {
   if (s.phase === "FAILED") return { label: p.label, detail: s.error ?? "", fraction: 0 };
   const read = s.read ?? null;
   const total = s.total ?? null;
-  const within =
-    total && total > 0 && read !== null
-      ? Math.min(1, read / total)
-      : 1 - Math.exp(-s.phaseMs / p.ease);
+  const within = total && total > 0 && read !== null ? Math.min(1, read / total) : 1 - Math.exp(-s.phaseMs / p.ease);
   const parts: string[] = [];
   if (s.phase === "CONTENT" && read !== null && read > 0) {
     parts.push(total ? `${mb(Math.min(read, total))} of ${mb(total)} MB` : `${mb(read)} MB read`);

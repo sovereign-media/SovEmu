@@ -1,6 +1,6 @@
 // A home screen row: a titled, horizontally scrolling strip of game or system cards.
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatAgo, type Game, type RecentGame, type SystemSummary } from "../../lib/api";
 import { cardArt, nextScroll } from "../../lib/home";
 import { systemBadge } from "../../lib/systems";
@@ -94,7 +94,10 @@ export function GameCard({
             src={art.url}
             alt=""
             loading="lazy"
-            className={cn("absolute inset-0 size-full", art.kind === "screenshot" ? "pixelated object-cover" : wide ? "object-cover" : "object-contain")}
+            className={cn(
+              "absolute inset-0 size-full",
+              art.kind === "screenshot" ? "pixelated object-cover" : wide ? "object-cover" : "object-contain",
+            )}
           />
         )}
         {wide && (
@@ -146,7 +149,9 @@ export function SystemCard({
       >
         {s.short}
         {badge && (
-          <span className="absolute right-3 bottom-2 rounded bg-black/60 px-2 py-0.5 text-[11px] font-semibold tracking-normal">{badge}</span>
+          <span className="absolute right-3 bottom-2 rounded bg-black/60 px-2 py-0.5 text-[11px] font-semibold tracking-normal">
+            {badge}
+          </span>
         )}
       </div>
       <div className="min-w-0 px-0.5">

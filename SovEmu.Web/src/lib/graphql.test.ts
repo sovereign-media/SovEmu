@@ -24,6 +24,7 @@ function session(token: string | null, renewed: string | null) {
     cached: () => token,
     signIn: vi.fn(),
   };
+  // biome-ignore lint/correctness/useHookAtTopLevel: installs the session; not a React hook.
   useSession(s);
   return s;
 }

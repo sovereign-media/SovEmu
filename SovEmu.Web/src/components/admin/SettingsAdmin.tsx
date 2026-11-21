@@ -28,7 +28,11 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
               <span
                 className={cn(
                   "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold",
-                  locked ? "bg-amber-500/20 text-amber-200" : s.source === "ADMIN" ? "bg-accent/25 text-blue-200" : "bg-white/10 text-slate-300",
+                  locked
+                    ? "bg-amber-500/20 text-amber-200"
+                    : s.source === "ADMIN"
+                      ? "bg-accent/25 text-blue-200"
+                      : "bg-white/10 text-slate-300",
                 )}
               >
                 {locked && <Lock className="size-3" />}
@@ -55,7 +59,12 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
         )}
         {s.source === "ADMIN" && (
           <Tooltip content="Go back to the default">
-            <Button variant="ghost" size="icon" aria-label={`Reset ${s.description}`} onClick={() => onChange(s.key, null)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Reset ${s.description}`}
+              onClick={() => onChange(s.key, null)}
+            >
               <RotateCcw />
             </Button>
           </Tooltip>
@@ -66,7 +75,13 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
 }
 
 /** Run-ahead: SovEmu's own setting, not the core's, so it sits above the core's groups. */
-function RunAheadPanel({ setting, onChange }: { setting: SystemSettings["runAhead"]; onChange: (frames: number | null) => void }) {
+function RunAheadPanel({
+  setting,
+  onChange,
+}: {
+  setting: SystemSettings["runAhead"];
+  onChange: (frames: number | null) => void;
+}) {
   const badge = setting.source === "SOVEMU" ? null : sourceBadge(setting.source);
   const locked = setting.source === "ENVIRONMENT";
   return (
@@ -152,7 +167,12 @@ function Settings() {
     if (!current) return;
     try {
       setLoaded(await api.changeSettings(current.id, { [key]: value }));
-      setMessage({ text: value === null ? "Back to the default. Applies to the next game started." : "Saved. Applies to the next game started." });
+      setMessage({
+        text:
+          value === null
+            ? "Back to the default. Applies to the next game started."
+            : "Saved. Applies to the next game started.",
+      });
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
@@ -162,7 +182,9 @@ function Settings() {
     if (!current) return;
     try {
       setLoaded(await api.setRunAhead(current.id, frames));
-      setMessage({ text: frames ? "Saved. Applies to the next game started." : "Run-ahead off. Applies to the next game started." });
+      setMessage({
+        text: frames ? "Saved. Applies to the next game started." : "Run-ahead off. Applies to the next game started.",
+      });
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
@@ -188,7 +210,9 @@ function Settings() {
             <h2 className="flex items-center gap-2 text-xl font-bold">
               <SlidersHorizontal className="size-5 text-slate-400" /> Emulator settings
             </h2>
-            <p className="mt-1 text-sm text-slate-400">Rendering, resolution, sound, controls and more. Changes apply to the next game started.</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Rendering, resolution, sound, controls and more. Changes apply to the next game started.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Select
@@ -227,7 +251,9 @@ function Settings() {
             )}
           </p>
         )}
-        {message && <p className={cn("mt-3 text-sm", message.error ? "text-red-300" : "text-emerald-300")}>{message.text}</p>}
+        {message && (
+          <p className={cn("mt-3 text-sm", message.error ? "text-red-300" : "text-emerald-300")}>{message.text}</p>
+        )}
       </section>
 
       {loaded && <RunAheadPanel setting={loaded.runAhead} onChange={changeRunAhead} />}
@@ -240,7 +266,9 @@ function Settings() {
             : "This emulator has no settings."}
         </p>
       )}
-      {loaded && loaded.settings.length > 0 && !groups.length && <p className="text-sm text-slate-400">No settings match "{query}".</p>}
+      {loaded && loaded.settings.length > 0 && !groups.length && (
+        <p className="text-sm text-slate-400">No settings match "{query}".</p>
+      )}
 
       {groups.length > 0 && (
         <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -291,10 +319,12 @@ function Settings() {
                   </Button>
                 </div>
                 <p className="mt-2 text-sm text-slate-400">
-                  The changes made here, as server settings. Put them in <code>.env</code> or the Helm values to make them part of
-                  the configuration; settings from the environment always win.
+                  The changes made here, as server settings. Put them in <code>.env</code> or the Helm values to make
+                  them part of the configuration; settings from the environment always win.
                 </p>
-                <pre className="mt-3 overflow-x-auto rounded-lg bg-black/40 p-3 text-xs">{loaded.environment.join("\n")}</pre>
+                <pre className="mt-3 overflow-x-auto rounded-lg bg-black/40 p-3 text-xs">
+                  {loaded.environment.join("\n")}
+                </pre>
               </section>
             )}
           </div>

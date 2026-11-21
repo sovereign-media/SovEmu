@@ -1,20 +1,36 @@
 // Library administration: where games come from (direct / cache / mirror), the mirror's sync,
 // rescans, and fetching game information from metadata services.
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
-import { Confirm, panel, Progress } from "../ui/primitives";
+import { Confirm, Progress, panel } from "../ui/primitives";
 
 const MODES: Record<LibraryStatus["mode"], [string, string]> = {
   DIRECT: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
-  CACHE: ["Cache", "The library is a remote share. Games and artwork are kept on local disk once used, so they start fast next time."],
-  MIRROR: ["Mirror", "A full local copy of the library is kept in sync in the background, and games are played from it."],
+  CACHE: [
+    "Cache",
+    "The library is a remote share. Games and artwork are kept on local disk once used, so they start fast next time.",
+  ],
+  MIRROR: [
+    "Mirror",
+    "A full local copy of the library is kept in sync in the background, and games are played from it.",
+  ],
 };
 
-function Card({ title, icon, actions, children }: { title: string; icon: ReactNode; actions?: ReactNode; children: ReactNode }) {
+function Card({
+  title,
+  icon,
+  actions,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className={panel}>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -106,7 +122,13 @@ function Library() {
           title="Mirror"
           icon={<FolderSync />}
           actions={
-            <Button onClick={async () => (await api.syncLibrary(), refresh())} disabled={m.running}>
+            <Button
+              onClick={async () => {
+                await api.syncLibrary();
+                refresh();
+              }}
+              disabled={m.running}
+            >
               <RefreshCw className={m.running ? "animate-spin" : ""} /> Sync now
             </Button>
           }
@@ -131,10 +153,10 @@ function Library() {
         }
       >
         <p className="mt-3 text-sm text-slate-400">
-          Titles, descriptions, release dates, developers, genres, ratings and box art. Arcade and Neo Geo names come from
-          FinalBurn Neo's own lists, and most games from the LaunchBox Games Database, which needs no account (its dump is
-          downloaded by the server). ScreenScraper and TheGamesDB fill the gaps and need credentials, set on the server (<code>SOVEMU_SCREENSCRAPER_*</code>
-          , <code>SOVEMU_THEGAMESDB_KEY</code>).
+          Titles, descriptions, release dates, developers, genres, ratings and box art. Arcade and Neo Geo names come
+          from FinalBurn Neo's own lists, and most games from the LaunchBox Games Database, which needs no account (its
+          dump is downloaded by the server). ScreenScraper and TheGamesDB fill the gaps and need credentials, set on the
+          server (<code>SOVEMU_SCREENSCRAPER_*</code>, <code>SOVEMU_THEGAMESDB_KEY</code>).
         </p>
         <p className="mt-3 text-sm">
           Sources: <span className="font-semibold">{metadata.sources.join(", ")}</span>

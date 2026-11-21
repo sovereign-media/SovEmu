@@ -1,7 +1,7 @@
 // The admin menu, as Sovereign's (`Sovereign.React/src/components/admin/adminNavItems.ts`): the gear
 // in the dock opens a cascade of groups, each a submenu of pages. One list drives the menu, the
 // page headings and the document titles, so a new page is one entry here.
-import { Gamepad, Gamepad2, Library, SlidersHorizontal, Users, UsersRound, type LucideIcon } from "lucide-react";
+import { Gamepad, Gamepad2, Library, type LucideIcon, SlidersHorizontal, Users, UsersRound } from "lucide-react";
 
 export interface AdminNavItem {
   /** The page (with its trailing slash, as Astro serves it). */

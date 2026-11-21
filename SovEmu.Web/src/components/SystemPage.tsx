@@ -7,14 +7,14 @@
 // closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
 // The list logic is src/lib/games.ts.
 import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
-import { PartIcon } from "./browse/PartIcon";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
+import { AUTO_SLOT, api, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
 import {
-  SORTS,
   activeFilters,
   filterGames,
+  type GameFilters,
+  type GameSort,
   gameFromUrl,
   gridMove,
   jumpStops,
@@ -22,15 +22,15 @@ import {
   letterOf,
   maxPlayers,
   partsLabel,
+  SORTS,
   sortGames,
   urlWithGame,
-  type GameFilters,
-  type GameSort,
 } from "../lib/games";
 import { listenNav } from "../lib/nav";
 import { FilterDrawer } from "./browse/FilterDrawer";
 import { GamePanel } from "./browse/GamePanel";
 import { JumpButton, JumpStrip } from "./browse/JumpStrip";
+import { PartIcon } from "./browse/PartIcon";
 import { CHIP, CHIP_ON, TabStrip, TabStripDivider } from "./browse/TabStrip";
 import HintBar from "./HintBar";
 import Shell from "./Shell";
@@ -75,7 +75,9 @@ function GameCard({
               ? "ring-2 ring-accent"
               : "group-hover:scale-[1.03] group-focus-visible:ring-2 group-focus-visible:ring-white/60",
         )}
-        style={{ background: `linear-gradient(145deg, ${system.color}, color-mix(in srgb, ${system.color} 30%, black))` }}
+        style={{
+          background: `linear-gradient(145deg, ${system.color}, color-mix(in srgb, ${system.color} 30%, black))`,
+        }}
       >
         <span className="px-3 text-center text-sm font-bold text-white/80">{game.title}</span>
         {art && <img src={art} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
@@ -83,6 +85,7 @@ function GameCard({
           <span
             className="absolute top-2 left-2 flex h-6 items-center gap-1 rounded-full bg-black/70 px-2 text-xs font-semibold text-white tabular-nums"
             title={partsLabel(game.discs, game.partKind)}
+            role="img"
             aria-label={partsLabel(game.discs, game.partKind)}
           >
             <PartIcon kind={game.partKind} className="size-3.5" />
@@ -90,7 +93,10 @@ function GameCard({
           </span>
         )}
         {!!game.playCount && (
-          <span className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-white" title="Played">
+          <span
+            className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-white"
+            title="Played"
+          >
             <CircleCheck className="size-4" />
           </span>
         )}
@@ -119,7 +125,11 @@ function SortChip({ sort, onSort }: { sort: GameSort; onSort: (s: GameSort) => v
         <ArrowDownAZ /> {label}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content sideOffset={8} align="start" className="z-50 min-w-44 rounded-xl border border-edge bg-panel p-1 shadow-2xl">
+        <DropdownMenu.Content
+          sideOffset={8}
+          align="start"
+          className="z-50 min-w-44 rounded-xl border border-edge bg-panel p-1 shadow-2xl"
+        >
           <DropdownMenu.RadioGroup value={sort} onValueChange={(v) => onSort(v as GameSort)}>
             {SORTS.map((s) => (
               <DropdownMenu.RadioItem
@@ -192,7 +202,14 @@ function Games() {
   useEffect(() => {
     setSlots([]);
     if (openId === null) return;
-    const t = setTimeout(() => api.saves(openId).then(setSlots).catch(() => {}), 150);
+    const t = setTimeout(
+      () =>
+        api
+          .saves(openId)
+          .then(setSlots)
+          .catch(() => {}),
+      150,
+    );
     return () => clearTimeout(t);
   }, [openId, openPatch]);
 
@@ -316,14 +333,19 @@ function Games() {
     <>
       <div
         className="fixed inset-0 -z-10"
-        style={{ background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${system.color} 25%, transparent), #0b0d12 55%)` }}
+        style={{
+          background: `radial-gradient(ellipse at 0% 0%, color-mix(in srgb, ${system.color} 25%, transparent), #0b0d12 55%)`,
+        }}
       />
       {/* The panel floats over the grid; the grid never reflows for it. */}
       <main className="px-4 pt-10 pb-24 sm:px-8">
         {/* The header: the system, and the chips beside it where there is room. */}
         <div className="mb-6 flex flex-col gap-4 pt-4 lg:flex-row lg:items-center lg:justify-between">
           <h1 className="flex flex-wrap items-baseline gap-3 text-3xl font-bold tracking-tight">
-            <span className="self-center rounded-lg px-2.5 py-1 text-sm font-black" style={{ background: system.color }}>
+            <span
+              className="self-center rounded-lg px-2.5 py-1 text-sm font-black"
+              style={{ background: system.color }}
+            >
               {system.short}
             </span>
             {system.name}
@@ -385,7 +407,9 @@ function Games() {
         slots={slots}
         onClose={closePanel}
         onPlay={(start) => play(open, start)}
-        onFavourite={(favourite) => open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, favourite } : g)))}
+        onFavourite={(favourite) =>
+          open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, favourite } : g)))
+        }
         onPatch={(patch) => open && setGames((all) => all.map((g) => (g.id === open.id ? { ...g, patch } : g)))}
       />
       <FilterDrawer

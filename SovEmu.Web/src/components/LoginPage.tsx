@@ -7,8 +7,8 @@
 // it), which signs the browser in and continues; a wrong password comes back here with `error`.
 // Opened directly, the page starts signing the web client in, which brings it back here.
 import { CircleAlert, Gamepad2, LogIn, UserPlus } from "lucide-react";
-import { useEffect, useState, type SubmitEvent } from "react";
-import { api, ApiError } from "../lib/api";
+import { type SubmitEvent, useEffect, useState } from "react";
+import { ApiError, api } from "../lib/api";
 import { signIn } from "../lib/auth";
 import { Button } from "./ui/button";
 import { Field, inputClass } from "./ui/primitives";
@@ -67,7 +67,9 @@ export default function LoginPage() {
               Sov<span className="text-accent">Emu</span>
             </span>
           </h1>
-          <p className="mt-1 text-sm text-muted">{setup ? "First run: create the admin account." : "Sign in to play."}</p>
+          <p className="mt-1 text-sm text-muted">
+            {setup ? "First run: create the admin account." : "Sign in to play."}
+          </p>
         </div>
         {next && <input type="hidden" name="continue" value={next} />}
         <Field label="Username">

@@ -6,13 +6,14 @@
 // src/lib/; this component sets them up once and renders their state.
 import {
   Activity,
-  Disc3,
   ArrowLeft,
   CircleAlert,
+  Disc3,
   FolderOpen,
   Gamepad2,
   Keyboard,
   LogOut,
+  type LucideIcon,
   MonitorCog,
   Play,
   Plus,
@@ -23,21 +24,40 @@ import {
   Undo2,
   Users,
   Wand2,
-  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useReducer, useRef, useState, type SubmitEvent } from "react";
-import { AUTO_SLOT, api, type ControllerMappingList, type Game, type PadLayout, type SaveSlot, type SessionInfo, type SystemControls, type SystemSummary } from "../../lib/api";
-import { parseAspect, shouldFrame, windowInsets, type Decoration } from "../../lib/decoration";
-import { FILTERS, VideoFilter, type FilterMode } from "../../lib/filter";
-import { defaultMapping, diagramKey, inputLabel, KEYBOARD, type Mapping, PAD_BUTTONS, rebind, toBindings, toMapping } from "../../lib/controllers";
+import { type SubmitEvent, useEffect, useReducer, useRef, useState } from "react";
+import {
+  AUTO_SLOT,
+  api,
+  type ControllerMappingList,
+  type Game,
+  type PadLayout,
+  type SaveSlot,
+  type SessionInfo,
+  type SystemControls,
+  type SystemSummary,
+} from "../../lib/api";
+import { reportClientEvent } from "../../lib/clientEvents";
+import {
+  defaultMapping,
+  diagramKey,
+  inputLabel,
+  KEYBOARD,
+  type Mapping,
+  PAD_BUTTONS,
+  rebind,
+  toBindings,
+  toMapping,
+} from "../../lib/controllers";
+import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../lib/decoration";
+import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { captureInput, InputState } from "../../lib/input";
-import { ForwardOnly, describeStart, newStartId, type StartStatus } from "../../lib/launch";
-import { MenuStack, type Menu, type MenuItem } from "../../lib/menu";
+import { describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
+import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
 import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
-import { StatsSampler, type StatItem } from "../../lib/stats";
-import { reportClientEvent } from "../../lib/clientEvents";
+import { type StatItem, StatsSampler } from "../../lib/stats";
 import { PadDiagram } from "../PadDiagram";
 import Shell from "../Shell";
 import { Button } from "../ui/button";
@@ -108,7 +128,9 @@ function Player() {
 
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [status, setStatus] = useState("Starting…");
-  const [progress, setProgress] = useState<{ label: string; detail: string; percent: number; failed: boolean } | null>(null);
+  const [progress, setProgress] = useState<{ label: string; detail: string; percent: number; failed: boolean } | null>(
+    null,
+  );
   const [splash, setSplash] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [aspect, setAspect] = useState("4 / 3");
@@ -160,7 +182,13 @@ function Player() {
         api.controllerMappings(null).catch(() => []),
         api.systemControls(game.system).catch(() => null),
       ]);
-      pads = { system: game.system, short: systems.find((s) => s.id === game.system)?.short ?? game.system, controls: controls?.controls ?? null, layouts: controls?.layouts ?? [], everywhere };
+      pads = {
+        system: game.system,
+        short: systems.find((s) => s.id === game.system)?.short ?? game.system,
+        controls: controls?.controls ?? null,
+        layouts: controls?.layouts ?? [],
+        everywhere,
+      };
       const system = systems.find((s) => s.id === game.system);
       document.title = `${game.title} · SovEmu`;
       setLoaded({ game, system, decoration: game.decoration ?? null });
@@ -177,7 +205,12 @@ function Player() {
       const bar = new ForwardOnly();
       const showProgress = (p: StartStatus) => {
         const view = describeStart(p);
-        setProgress({ label: view.label, detail: view.detail, percent: Math.round(bar.next(view.fraction) * 100), failed: p.phase === "FAILED" });
+        setProgress({
+          label: view.label,
+          detail: view.detail,
+          percent: Math.round(bar.next(view.fraction) * 100),
+          failed: p.phase === "FAILED",
+        });
       };
       void (async () => {
         while (polling) {
@@ -226,7 +259,9 @@ function Player() {
               if (state === "connected") {
                 everConnected = true;
                 filter.start();
-                toast("Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind");
+                toast(
+                  "Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind",
+                );
               }
               if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
             },
@@ -247,7 +282,12 @@ function Player() {
       }
 
       // --- Menus
-      const slotItems = (slots: SaveSlot[], numbers: number[], onPick: (slot: number) => void, emptyEnabled: boolean): MenuItem[] =>
+      const slotItems = (
+        slots: SaveSlot[],
+        numbers: number[],
+        onPick: (slot: number) => void,
+        emptyEnabled: boolean,
+      ): MenuItem[] =>
         numbers.map((n) => {
           const s = slots.find((x) => x.slot === n);
           return {
@@ -263,16 +303,21 @@ function Player() {
         const slots = await api.saves(gameId);
         stack.push({
           title: "Save state",
-          items: slotItems(slots, SLOTS, async (slot) => {
-            if (!info) return;
-            try {
-              await api.saveState(info.id, slot);
-              stack.close();
-              toast(`Saved to slot ${slot}`);
-            } catch (e) {
-              toast(`Save failed: ${(e as Error).message}`);
-            }
-          }, true),
+          items: slotItems(
+            slots,
+            SLOTS,
+            async (slot) => {
+              if (!info) return;
+              try {
+                await api.saveState(info.id, slot);
+                stack.close();
+                toast(`Saved to slot ${slot}`);
+              } catch (e) {
+                toast(`Save failed: ${(e as Error).message}`);
+              }
+            },
+            true,
+          ),
         });
       }
 
@@ -280,16 +325,21 @@ function Player() {
         const slots = await api.saves(gameId);
         stack.push({
           title: "Load state",
-          items: slotItems(slots, [AUTO_SLOT, ...SLOTS], async (slot) => {
-            if (!info) return;
-            try {
-              await api.loadState(info.id, slot);
-              stack.close();
-              toast(slot === AUTO_SLOT ? "Loaded the auto save" : `Loaded slot ${slot}`);
-            } catch (e) {
-              toast(`Load failed: ${(e as Error).message}`);
-            }
-          }, false),
+          items: slotItems(
+            slots,
+            [AUTO_SLOT, ...SLOTS],
+            async (slot) => {
+              if (!info) return;
+              try {
+                await api.loadState(info.id, slot);
+                stack.close();
+                toast(slot === AUTO_SLOT ? "Loaded the auto save" : `Loaded slot ${slot}`);
+              } catch (e) {
+                toast(`Load failed: ${(e as Error).message}`);
+              }
+            },
+            false,
+          ),
         });
       }
 
@@ -327,7 +377,10 @@ function Player() {
       const deviceMenu = (key: string): Menu => {
         const device = input.devices().find((d) => d.key === key);
         if (!device) {
-          return { title: "That controller is no longer connected", items: [{ label: "Back", icon: "back", run: () => stack.pop() }] };
+          return {
+            title: "That controller is no longer connected",
+            items: [{ label: "Back", icon: "back", run: () => stack.pop() }],
+          };
         }
         const { id, name, family } = device.info;
         const keyboard = key === KEYBOARD;
@@ -338,10 +391,15 @@ function Player() {
         // The mapping being edited: in force on this system, or the every-system one.
         const current = onSystem ? input.inForce(id) : (pads.everywhere.find(forSystem) ?? null);
         const mapping: Mapping = current ? toMapping(current.bindings) : defaultMapping(id);
-        const where =
-          !current ? "Built-in default"
-          : current.source !== "USER" ? (current.system ? `Default for ${pads.short}` : "Default")
-          : current.system ? `Yours for ${pads.short}` : "Yours for all systems";
+        const where = !current
+          ? "Built-in default"
+          : current.source !== "USER"
+            ? current.system
+              ? `Default for ${pads.short}`
+              : "Default"
+            : current.system
+              ? `Yours for ${pads.short}`
+              : "Yours for all systems";
         const refresh = async () => {
           const [here, all] = await Promise.all([api.controllerMappings(pads.system), api.controllerMappings(null)]);
           input.setMappings(here);
@@ -383,7 +441,9 @@ function Player() {
               },
             },
             ...buttons.map(([button, label]) => {
-              const inputs = Object.entries(mapping).filter(([, b]) => b === button).map(([i]) => i);
+              const inputs = Object.entries(mapping)
+                .filter(([, b]) => b === button)
+                .map(([i]) => i);
               return {
                 label,
                 icon: "button",
@@ -391,7 +451,9 @@ function Player() {
                 highlight: { system: [button], controller: inputs.map(diagramKey) },
                 run: async () => {
                   capturing = true;
-                  toast(`Press ${keyboard ? "a key" : `a button on ${name}`} for ${label} · tap ${keyboard ? "Escape" : "Back"} to cancel, hold it to bind it`);
+                  toast(
+                    `Press ${keyboard ? "a key" : `a button on ${name}`} for ${label} · tap ${keyboard ? "Escape" : "Back"} to cancel, hold it to bind it`,
+                  );
                   const pressed = await captureInput(key);
                   // Let the press that bound the button finish before menus react again.
                   setTimeout(() => (capturing = false), 250);
@@ -407,7 +469,9 @@ function Player() {
               run: async () => {
                 await save(null);
                 stack.replace(deviceMenu(key));
-                toast(`${name}: ${onSystem ? `${pads.short} back to your controls for all systems, or the default` : "back to the default"}`);
+                toast(
+                  `${name}: ${onSystem ? `${pads.short} back to your controls for all systems, or the default` : "back to the default"}`,
+                );
               },
             },
           ],
@@ -478,11 +542,23 @@ function Player() {
           { label: "Save state", icon: "save", run: saveMenu },
           { label: "Load state", icon: "load", run: loadMenu },
           ...((info?.discs ?? 1) > 1
-            ? [{ label: "Change disc", icon: "disc", detail: `Disc ${info?.disc} of ${info?.discs}`, run: () => stack.push(discMenu()) }]
+            ? [
+                {
+                  label: "Change disc",
+                  icon: "disc",
+                  detail: `Disc ${info?.disc} of ${info?.discs}`,
+                  run: () => stack.push(discMenu()),
+                },
+              ]
             : []),
           { label: "Cheats", icon: "cheats", run: () => cheatsMenu() },
           { label: "Controls", icon: "controls", run: () => stack.push(controlsMenu()) },
-          { label: "Display filter", icon: "display", detail: FILTERS.find((f) => f.mode === filterMode)?.label, run: filterMenu },
+          {
+            label: "Display filter",
+            icon: "display",
+            detail: FILTERS.find((f) => f.mode === filterMode)?.label,
+            run: filterMenu,
+          },
           {
             label: "Reset",
             icon: "reset",
@@ -609,10 +685,12 @@ function Player() {
 
   const stack = menus.current;
   const top = stack.current;
-  const diagrams = top?.menu.diagrams && (top.menu.diagrams.system || top.menu.diagrams.controller) ? top.menu.diagrams : null;
+  const diagrams =
+    top?.menu.diagrams && (top.menu.diagrams.system || top.menu.diagrams.controller) ? top.menu.diagrams : null;
   const lit = top?.menu.items[top.index]?.highlight;
   const color = loaded?.system?.color ?? "#4169e1";
-  const frame = loaded?.decoration && shouldFrame(screen.width, screen.height, parseAspect(aspect)) ? loaded.decoration : null;
+  const frame =
+    loaded?.decoration && shouldFrame(screen.width, screen.height, parseAspect(aspect)) ? loaded.decoration : null;
   const submitCheat = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
@@ -627,17 +705,35 @@ function Player() {
         // artwork drawn over the picture's edges.
         <div
           className="relative"
-          style={{ aspectRatio: `${frame.width} / ${frame.height}`, width: `min(100vw, calc(100dvh * ${frame.width} / ${frame.height}))` }}
+          style={{
+            aspectRatio: `${frame.width} / ${frame.height}`,
+            width: `min(100vw, calc(100dvh * ${frame.width} / ${frame.height}))`,
+          }}
         >
           <div className="absolute" style={windowInsets(frame)}>
-            <video ref={video} autoPlay playsInline className={cn("pixelated absolute inset-0 size-full object-contain", filtered && "opacity-0")} />
+            <video
+              ref={video}
+              autoPlay
+              playsInline
+              className={cn("pixelated absolute inset-0 size-full object-contain", filtered && "opacity-0")}
+            />
             <canvas ref={canvas} className={cn("absolute inset-0 size-full object-contain", !filtered && "hidden")} />
           </div>
-          <img src={frame.url} alt="" draggable={false} className="pointer-events-none absolute inset-0 size-full select-none" />
+          <img
+            src={frame.url}
+            alt=""
+            draggable={false}
+            className="pointer-events-none absolute inset-0 size-full select-none"
+          />
         </div>
       ) : (
         <div className="relative h-full max-h-dvh w-auto max-w-full" style={{ aspectRatio: aspect }}>
-          <video ref={video} autoPlay playsInline className={cn("pixelated absolute inset-0 size-full object-fill", filtered && "opacity-0")} />
+          <video
+            ref={video}
+            autoPlay
+            playsInline
+            className={cn("pixelated absolute inset-0 size-full object-fill", filtered && "opacity-0")}
+          />
           <canvas ref={canvas} className={cn("absolute inset-0 size-full", !filtered && "hidden")} />
         </div>
       )}
@@ -645,7 +741,9 @@ function Player() {
       {splash && (
         <section
           className="absolute inset-0 grid content-start justify-items-center bg-surface pt-[12vh]"
-          style={{ background: `radial-gradient(ellipse at 50% 40%, color-mix(in srgb, ${color} 40%, transparent), #0b0d12 70%)` }}
+          style={{
+            background: `radial-gradient(ellipse at 50% 40%, color-mix(in srgb, ${color} 40%, transparent), #0b0d12 70%)`,
+          }}
         >
           <div className="grid justify-items-center gap-3 text-center">
             {loaded && (
@@ -660,7 +758,12 @@ function Player() {
           {progress && (
             <div className="absolute inset-x-0 bottom-10 mx-auto grid w-[28rem] max-w-[86vw] gap-2">
               <div className="flex items-baseline justify-between gap-4 text-sm">
-                <span className={cn("flex items-center gap-1.5 font-semibold", progress.failed ? "text-red-300" : "text-slate-200")}>
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5 font-semibold",
+                    progress.failed ? "text-red-300" : "text-slate-200",
+                  )}
+                >
                   {progress.failed && <CircleAlert className="size-4" />}
                   {progress.label}
                 </span>
@@ -686,53 +789,83 @@ function Player() {
         }}
       >
         <div className={cn(diagrams && "grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
-        <ul className="grid max-h-[70vh] content-start gap-1 overflow-y-auto" role="listbox" aria-label={top?.menu.title}>
-          {top?.menu.items.map((item, i) => {
-            const Icon = item.icon ? ICONS[item.icon] : null;
-            const on = i === top.index;
-            return (
-              <li
-                key={`${item.label}-${i}`}
-                role="option"
-                aria-selected={on}
-                aria-disabled={item.disabled}
-                onClick={() => stack.activate(i)}
-                className={cn("flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5", item.disabled && "cursor-default opacity-40", !on && "hover:bg-white/5")}
-                style={on ? { background: color } : undefined}
-              >
-                {item.image !== undefined ? (
-                  <div className="pixelated grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded bg-black/50 text-xs text-slate-500">
-                    {item.image ? <img src={item.image} alt="" className="pixelated size-full object-cover" /> : "—"}
+          <ul
+            className="grid max-h-[70vh] content-start gap-1 overflow-y-auto"
+            role="listbox"
+            aria-label={top?.menu.title}
+          >
+            {top?.menu.items.map((item, i) => {
+              const Icon = item.icon ? ICONS[item.icon] : null;
+              const on = i === top.index;
+              return (
+                <li
+                  key={`${item.label}-${i}`}
+                  role="option"
+                  aria-selected={on}
+                  aria-disabled={item.disabled}
+                  onClick={() => stack.activate(i)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5",
+                    item.disabled && "cursor-default opacity-40",
+                    !on && "hover:bg-white/5",
+                  )}
+                  style={on ? { background: color } : undefined}
+                >
+                  {item.image !== undefined ? (
+                    <div className="pixelated grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded bg-black/50 text-xs text-slate-500">
+                      {item.image ? <img src={item.image} alt="" className="pixelated size-full object-cover" /> : "—"}
+                    </div>
+                  ) : (
+                    Icon && <Icon className="size-5 shrink-0 opacity-80" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate text-lg">{item.label}</div>
+                    {item.detail && <div className="truncate text-xs text-slate-300">{item.detail}</div>}
                   </div>
-                ) : (
-                  Icon && <Icon className="size-5 shrink-0 opacity-80" />
-                )}
-                <div className="min-w-0">
-                  <div className="truncate text-lg">{item.label}</div>
-                  {item.detail && <div className="truncate text-xs text-slate-300">{item.detail}</div>}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        {/* The console's pad and the player's controller, the selected button lit on both. */}
-        {diagrams && (
-          <div className="hidden content-start gap-3 md:grid" aria-hidden>
-            {diagrams.system && (
-              <PadDiagram layout={diagrams.system} highlight={lit?.system} color={color} caption={`${loaded?.system?.short ?? ""} pad`} />
-            )}
-            {diagrams.controller && (
-              <PadDiagram layout={diagrams.controller} highlight={lit?.controller} color={color} caption="Your controller" />
-            )}
-          </div>
-        )}
+                </li>
+              );
+            })}
+          </ul>
+          {/* The console's pad and the player's controller, the selected button lit on both. */}
+          {diagrams && (
+            <div className="hidden content-start gap-3 md:grid" aria-hidden>
+              {diagrams.system && (
+                <PadDiagram
+                  layout={diagrams.system}
+                  highlight={lit?.system}
+                  color={color}
+                  caption={`${loaded?.system?.short ?? ""} pad`}
+                />
+              )}
+              {diagrams.controller && (
+                <PadDiagram
+                  layout={diagrams.controller}
+                  highlight={lit?.controller}
+                  color={color}
+                  caption="Your controller"
+                />
+              )}
+            </div>
+          )}
         </div>
       </Dialog>
 
-      <Dialog open={!!cheatForm} onOpenChange={(open) => !open && setCheatForm(null)} title="Add a cheat" className="w-[28rem] p-5">
+      <Dialog
+        open={!!cheatForm}
+        onOpenChange={(open) => !open && setCheatForm(null)}
+        title="Add a cheat"
+        className="w-[28rem] p-5"
+      >
         <form onSubmit={submitCheat} className="grid gap-4 px-3 pb-2">
           <Field label="Cheat code">
-            <input name="code" required autoFocus autoComplete="off" spellCheck={false} className={cn(inputClass, "font-mono")} />
+            <input
+              name="code"
+              required
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              className={cn(inputClass, "font-mono")}
+            />
           </Field>
           <Field label="What does it do? (optional)">
             <input name="description" autoComplete="off" className={inputClass} />
