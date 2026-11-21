@@ -77,6 +77,8 @@ pub(crate) const WORKER_ENV: &[&str] = &[
     "HOME",
     "TMPDIR",
     "LANG",
+    // The time zone, so a worker's log lines carry the same local times as the server's.
+    "TZ",
     "RUST_LOG",
     "RUST_BACKTRACE",
     // Mesa's own knobs (driver choice, llvmpipe threads): tuning, never secrets.

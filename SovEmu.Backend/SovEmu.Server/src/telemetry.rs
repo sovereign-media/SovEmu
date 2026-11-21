@@ -85,9 +85,12 @@ impl Telemetry {
 /// Installs the log subscriber, and the OpenTelemetry exporters when `otel_endpoint` is set.
 pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Telemetry> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // Timestamps in the server's own time zone (`TZ`; UTC without one), with its offset.
+    let local = || tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
     let logs = match format {
-        LogFormat::Text => tracing_subscriber::fmt::layer().boxed(),
+        LogFormat::Text => tracing_subscriber::fmt::layer().with_timer(local()).boxed(),
         LogFormat::Json => tracing_subscriber::fmt::layer()
+            .with_timer(local())
             .json()
             .flatten_event(true)
             .with_current_span(true)

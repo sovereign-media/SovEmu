@@ -1,5 +1,6 @@
 image:
   tag: test
+timezone: America/Chicago
 settings:
   LIBRARY_MODE: cache
   CACHE_GB: 50

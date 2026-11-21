@@ -16,6 +16,10 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# The time zone for log timestamps, an IANA name (America/Chicago), set as `TZ`. Empty: the
+# image's UTC, or whatever a cluster injector (k8tz) sets.
+timezone: ""
+
 # Settings as plain environment variables, without the SOVEMU_ prefix, e.g.
 #   LIBRARY_MODE: cache
 #   CACHE_GB: "50"
