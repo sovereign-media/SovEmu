@@ -21,8 +21,10 @@ use sovemu_media::{OpusDecoder, Vp8Decoder};
 use sovemu_protocol::{Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
 use str0m::change::SdpAnswer;
 use str0m::channel::{ChannelConfig, Reliability};
+use str0m::media::MediaTime;
 use str0m::media::{Direction, MediaKind};
 use str0m::net::{Protocol, Receive};
+use str0m::rtp::Extension;
 use str0m::{Candidate, Event, Input, Output, RtcConfig};
 
 /// Builds the test core and returns the path of its shared library (see the RetroHost tests).
@@ -185,6 +187,10 @@ fn rejects_bad_offers_and_explains_a_missing_web_client() {
     assert_eq!(worker.request("GET", "/nope", "").0, 404);
 }
 
+/// The id the test client offers playout delay at, unlike the worker's own, so the answer shows
+/// that the worker took the client's.
+const PLAYOUT_DELAY_ID: u8 = 9;
+
 #[test]
 fn streams_video_and_audio_and_acknowledges_input() {
     str0m::crypto::from_feature_flags().install_process_default();
@@ -192,7 +198,10 @@ fn streams_video_and_audio_and_acknowledges_input() {
 
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let local = socket.local_addr().unwrap();
-    let mut rtc = RtcConfig::new().build(Instant::now());
+    // Offers playout delay as libwebrtc does (Android, iOS, browsers), at an id of its own.
+    let mut rtc = RtcConfig::new()
+        .set_extension(PLAYOUT_DELAY_ID, Extension::PlayoutDelay)
+        .build(Instant::now());
     rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
 
     let mut api = rtc.sdp_api();
@@ -228,11 +237,17 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert_eq!(answer.kind, SdpKind::Answer);
     assert!(answer.sdp.contains("VP8"), "answer negotiates VP8");
     assert!(answer.sdp.to_lowercase().contains("opus"), "answer negotiates Opus");
+    let playout_delay = format!(
+        "a=extmap:{PLAYOUT_DELAY_ID} http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+    );
+    assert!(answer.sdp.contains(&playout_delay), "answer takes the offered playout delay id");
     rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
 
     let mut vp8 = Vp8Decoder::new().unwrap();
     let mut opus = OpusDecoder::new().unwrap();
     let (mut video_frames, mut decoded, mut audio_packets, mut audio_samples) = (0, 0, 0, 0);
+    // Video packets that ask to be shown at once (playout delay 0/0), so no jitter buffer.
+    let mut zero_delay_frames = 0;
     let mut picture_size = None;
     let mut channel_open = false;
     let mut acks: Vec<InputAck> = Vec::new();
@@ -308,6 +323,12 @@ fn streams_video_and_audio_and_acknowledges_input() {
                     Event::ChannelOpen(id, _) if id == input => channel_open = true,
                     Event::MediaData(data) if data.mid == video_mid => {
                         video_frames += 1;
+                        let zero = Some(MediaTime::from_millis(0));
+                        if data.ext_vals.play_delay_min == zero
+                            && data.ext_vals.play_delay_max == zero
+                        {
+                            zero_delay_frames += 1;
+                        }
                         if let Ok(Some(pic)) = vp8.decode(&data.data) {
                             decoded += 1;
                             picture_size = Some((pic.width, pic.height));
@@ -348,6 +369,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
 
     assert!(video_frames >= 90, "received {video_frames} video frames");
     assert!(decoded >= 60, "decoded {decoded} of {video_frames} video frames");
+    assert_eq!(zero_delay_frames, video_frames, "every video frame asks for no playout delay");
     let (w, h) = picture_size.expect("a decoded picture");
     eprintln!(
         "decoded {decoded}/{video_frames} video frames at {w}x{h}, {audio_packets} audio packets, {} acks",
