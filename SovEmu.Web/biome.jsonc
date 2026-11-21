@@ -4,7 +4,7 @@
   // format` rewrites. Generated code (src/graphql) and the build are left alone.
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!src/graphql", "!dist"]
+    "includes": ["**", "!src/graphql-env.d.ts", "!dist"]
   },
   "formatter": {
     "enabled": true,

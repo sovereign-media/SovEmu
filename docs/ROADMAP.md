@@ -227,7 +227,7 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Cores prebuilt from the libretro stable release (1.22.2, pinned by SHA-256) instead of
       compiled from source; the image is x86_64 only
 - [x] The API is GraphQL only (async-graphql; `schema.graphql` checked in; the web client typed
-      by codegen; Android and iOS moved to it); files stay plain HTTP under `/media/`
+      by codegen, now gql.tada; Android and iOS moved to it); files stay plain HTTP under `/media/`
 - [x] Games as a grid of covers in Sovereign's style: Sort, Filters (a drawer) and Jump (a letter
       carousel) in a chip strip, and a side panel per game with its own URL (`?game=`)
 - [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend)

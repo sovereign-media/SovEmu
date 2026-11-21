@@ -1,8 +1,9 @@
 // Sends GraphQL operations to the server (`POST /graphql`, same origin) with the signed-in user's
 // access token. Typed by the documents in queries.ts: the result and variables follow the
 // operation.
-import type { TypedDocumentString } from "../graphql/graphql";
+import { print } from "@0no-co/graphql.web";
 import * as auth from "./auth";
+import type { TadaDocumentNode } from "./gql";
 
 /** How requests are signed in: the browser's sign-in (`auth.ts`), replaced in tests. */
 export interface Session {
@@ -50,8 +51,17 @@ export function firstError(errors: GraphQLResponse<unknown>["errors"]): ApiError
 }
 
 /** The JSON body for an operation. */
-export const body = (query: TypedDocumentString<unknown, unknown>, variables?: unknown) =>
-  JSON.stringify({ query: query.toString(), variables: variables ?? {} });
+/** A typed document (`queries.ts`), printed once per document. */
+type Document<TData = unknown, TVariables = unknown> = TadaDocumentNode<TData, TVariables>;
+const printed = new WeakMap<object, string>();
+const text = (query: Document) => {
+  let t = printed.get(query);
+  if (t === undefined) printed.set(query, (t = print(query)));
+  return t;
+};
+
+export const body = (query: Document, variables?: unknown) =>
+  JSON.stringify({ query: text(query), variables: variables ?? {} });
 
 const headers = (token: string | null): Record<string, string> =>
   token
@@ -78,10 +88,10 @@ async function send<TData>(json: string, token: string | null): Promise<GraphQLR
 const signInPage = () => location.pathname.startsWith("/login") || location.pathname.startsWith("/auth/");
 
 export async function request<TData, TVariables>(
-  query: TypedDocumentString<TData, TVariables>,
+  query: Document<TData, TVariables>,
   ...[variables]: TVariables extends Record<string, never> ? [] | [TVariables] : [TVariables]
 ): Promise<TData> {
-  const json = body(query as TypedDocumentString<unknown, unknown>, variables);
+  const json = body(query as Document, variables);
   const token = await session.token();
   let response = await send<TData>(json, token);
   let error = firstError(response.errors);
@@ -105,23 +115,23 @@ export async function request<TData, TVariables>(
  * Sends a mutation only if signed in already, without renewing the token or going to sign in,
  * and ignores the answer: for reports that must never get in the player's way.
  */
-export function quietly<TData, TVariables>(query: TypedDocumentString<TData, TVariables>, variables: TVariables) {
+export function quietly<TData, TVariables>(query: Document<TData, TVariables>, variables: TVariables) {
   const token = session.cached();
   if (!token) return;
   void fetch("/graphql", {
     method: "POST",
     headers: headers(token),
-    body: body(query as TypedDocumentString<unknown, unknown>, variables),
+    body: body(query as Document, variables),
     keepalive: true,
   }).catch(() => {});
 }
 
 /** Sends a mutation as the page goes away: `keepalive` lets the request outlive the page. */
-export function onUnload<TData, TVariables>(query: TypedDocumentString<TData, TVariables>, variables: TVariables) {
+export function onUnload<TData, TVariables>(query: Document<TData, TVariables>, variables: TVariables) {
   void fetch("/graphql", {
     method: "POST",
     headers: headers(session.cached()),
-    body: body(query as TypedDocumentString<unknown, unknown>, variables),
+    body: body(query as Document, variables),
     keepalive: true,
   }).catch(() => {});
 }

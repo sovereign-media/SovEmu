@@ -67,9 +67,10 @@ instead (as Sovereign's server takes its SPA).
   (`user(ctx)`, `admin(ctx)`) and call plain functions in the other modules; errors carry
   `extensions.code`. `Int` is 32-bit, so byte counts and Unix times are `Float`. The schema is
   checked in as `SovEmu.Server/schema.graphql` (a test fails when it drifts:
-  `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`), and the web client's typed
-  documents are generated from it (`npm run codegen` in `SovEmu.Web`, committed in
-  `src/graphql/`). A schema change updates all three clients in the same change.
+  `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`), and the web client's documents
+  are typed from it by gql.tada (`npm run schema` in `SovEmu.Web` writes `src/graphql-env.d.ts`,
+  committed; the build checks every document against it). A schema change updates all three
+  clients in the same change.
 - **Sign-in is `SovEmu.Identity`**, built on the `oauth-as` crate (an OAuth 2.1 authorization
   server) with OpenID Connect added over it. Never hand-roll protocol logic that oauth-as owns
   (codes, PKCE, refresh rotation and reuse detection, revocation, the device grant): extend it
@@ -237,7 +238,7 @@ For web development, `npm run dev` in `SovEmu.Web` proxies `/graphql` and `/medi
 - Rules load from `.claude/rules/`: `git-branching.md` always, `rust.md` for backend code,
   `web.md` for `SovEmu.Web`.
 - The pre-push hook (`.githooks/pre-push`; once per clone, `git config core.hooksPath .githooks`)
-  runs the backend's fmt, clippy and tests, and the web client's codegen check, tests and build,
+  runs the backend's fmt, clippy and tests, and the web client's schema check, lint, tests and build,
   for whatever a push changes, and stops the push on a failure. CI's macOS backend job runs only
   by hand because of it.
 - Trunk-based on `main`: branch from a freshly fetched `origin/main` as `feat/`, `fix/`,

@@ -6,19 +6,20 @@
   "description": "SovEmu web client: Vite + React + TanStack Router + Tailwind, served as static files by the SovEmu Rust server",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && gql.tada check && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "biome ci .",
     "format": "biome check --write .",
-    "codegen": "graphql-codegen --config codegen.ts",
-    "codegen:check": "graphql-codegen --config codegen.ts --check"
+    "schema": "gql.tada generate-output",
+    "schema:check": "gql.tada generate-output && git diff --exit-code -- src/graphql-env.d.ts"
   },
   "dependencies": {
-    "@graphql-typed-document-node/core": "^3.2.0",
+    "@0no-co/graphql.web": "^1.3.4",
     "@tailwindcss/vite": "^4.3.5",
     "@tanstack/react-query": "^5.108.2",
     "@tanstack/react-router": "^1.170.46",
+    "gql.tada": "^1.11.5",
     "lucide-react": "^1.73.0",
     "oidc-client-ts": "^3.5.0",
     "radix-ui": "^1.8.1",
@@ -28,8 +29,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.8",
-    "@graphql-codegen/cli": "^8.0.0",
-    "@graphql-codegen/client-preset": "^7.0.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

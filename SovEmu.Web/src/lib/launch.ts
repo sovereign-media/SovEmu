@@ -5,7 +5,9 @@
 // is exact; when the core reads a disc itself it is not, and the bar eases towards the end of
 // that phase instead (always moving, never arriving) while the megabytes read count up.
 
-import type { StartPhase } from "../graphql/graphql";
+import type { Enum } from "./gql";
+
+type StartPhase = Enum<"StartPhase">;
 
 export type { StartPhase };
 
