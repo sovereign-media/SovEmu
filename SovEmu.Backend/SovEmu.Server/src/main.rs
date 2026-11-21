@@ -9,6 +9,7 @@ mod api;
 mod assets;
 mod auth;
 mod cheats;
+mod client_events;
 mod client_ip;
 mod collections;
 mod controllers;
@@ -228,6 +229,11 @@ pub struct Config {
     /// beside signing in with a code shown on the screen (the device grant).
     #[arg(long, env = "SOVEMU_PASSWORD_SIGN_IN", default_value_t = true, action = clap::ArgAction::Set)]
     pub password_sign_in: bool,
+
+    /// Whether what goes wrong on a client (a connection that failed, a stalled picture, a
+    /// screen that crashed), sent with `reportClientEvents`, is logged. Off, they are dropped.
+    #[arg(long, env = "SOVEMU_CLIENT_EVENTS", default_value_t = true, action = clap::ArgAction::Set)]
+    pub client_events: bool,
 
     /// How long an app's access token lasts, in minutes, before it refreshes it. Signing out
     /// and role changes apply at once regardless: every request checks its token.
@@ -578,6 +584,7 @@ impl Config {
                 self.refresh_retry_seconds,
                 self.password_sign_in
             ),
+            format!("client_events={}", self.client_events),
             format!(
                 "log_format={} otel_endpoint={}",
                 self.log_format.as_arg(),
@@ -720,6 +727,8 @@ pub struct AppState {
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
     /// Accounts and sign-in (`sovemu_identity`).
     pub identity: sovemu_identity::Identity,
+    /// Each user's allowance of client events (`client_events`).
+    pub(crate) client_events: Arc<client_events::ClientEvents>,
 }
 
 impl AppState {
@@ -946,6 +955,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
         assets,
         identity,
+        client_events: Arc::default(),
     })
 }
 

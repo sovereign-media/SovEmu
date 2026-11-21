@@ -1144,6 +1144,25 @@ async fn admins_turn_run_ahead_on_and_the_environment_locks_it() {
 }
 
 #[tokio::test]
+async fn client_events_are_logged_for_signed_in_users_within_their_allowance() {
+    const REPORT: &str = "mutation($c: String!, $e: [ClientEventInput!]!) {
+        reportClientEvents(client: $c, events: $e) }";
+    let mut h = Harness::new("client-events", false).await;
+    let one = json!([{"kind": "CONNECTION_FAILED", "message": "ICE failed", "sessionId": "abc", "at": 1.5e9}]);
+    assert_eq!(h.err(REPORT, json!({"c": "web", "e": one})).await.0, "UNAUTHENTICATED");
+    h.sign_up_admin().await;
+    assert_eq!(h.ok(REPORT, json!({"c": "web", "e": one})).await["reportClientEvents"], 1);
+    let many: Vec<Value> = (0..30).map(|_| json!({"kind": "OTHER", "message": "x"})).collect();
+    assert_eq!(h.ok(REPORT, json!({"c": "web", "e": many})).await["reportClientEvents"], 20);
+
+    // Off, they are accepted and dropped: clients need no special case.
+    let mut config = (*h.state.config).clone();
+    config.client_events = false;
+    h.state.config = std::sync::Arc::new(config);
+    assert_eq!(h.ok(REPORT, json!({"c": "web", "e": one})).await["reportClientEvents"], 0);
+}
+
+#[tokio::test]
 async fn controller_mappings_are_kept_per_user_and_model() {
     const LIST: &str = "{ controllerMappings { controller name bindings { input button } } }";
     const SAVE: &str = "mutation($c: String!, $n: String!, $b: [BindingInput!]!) {

@@ -6,6 +6,7 @@
 // uses the defaults. Hotkeys follow console frontends: on a keyboard, hold Tab to fast-forward
 // and Backspace to rewind; on a gamepad, hold SELECT with R (fast-forward) or L (rewind), read
 // after mapping, and those buttons are kept from the game while the combo is held.
+import { reportClientEvent } from "./clientEvents";
 import {
   Capture,
   type ControllerInfo,
@@ -122,7 +123,11 @@ export class InputState {
   /** A gamepad's model, from its `Gamepad.id` (cached: read() runs every frame). */
   private identify(gamepadId: string): ControllerInfo {
     let info = this.known.get(gamepadId);
-    if (!info) this.known.set(gamepadId, (info = identify(gamepadId)));
+    if (!info) {
+      this.known.set(gamepadId, (info = identify(gamepadId)));
+      // A model docs/CONTROLLERS.md does not know yet: worth adding.
+      if (info.id.startsWith("pad:")) reportClientEvent("CONTROLLER_UNKNOWN", `${gamepadId} → ${info.id} (${info.family})`);
+    }
     return info;
   }
 

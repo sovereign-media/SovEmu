@@ -41,6 +41,34 @@ export type BiosState =
   /** Playable, but a file is unverified or misplaced. */
   | 'WARNING';
 
+/** One thing that went wrong on a client. */
+export type ClientEventInput = {
+  /** When, in seconds since the Unix epoch on the client's clock. */
+  at?: number | null | undefined;
+  kind: ClientEventKind;
+  /** What happened, in a line (kept to 500 characters). */
+  message: string;
+  /** The game session it happened in, if any. */
+  sessionId?: string | number | null | undefined;
+};
+
+/**
+ * Where a 3D system renders on this server.
+ * What went wrong on a client (`reportClientEvents`).
+ */
+export type ClientEventKind =
+  /** WebRTC could not connect. */
+  | 'CONNECTION_FAILED'
+  /** A connected stream dropped. */
+  | 'CONNECTION_LOST'
+  /** A controller the client has no layout for. */
+  | 'CONTROLLER_UNKNOWN'
+  | 'OTHER'
+  /** A screen or the app failed. */
+  | 'SCREEN_ERROR'
+  /** No new picture for a while during play. */
+  | 'STREAM_STALLED';
+
 /** How the library is read. */
 export type LibraryMode =
   /** From the library, keeping local copies of what is used. */
@@ -91,7 +119,6 @@ export type PartKind =
   /** Cassette tapes. */
   | 'TAPE';
 
-/** Where a 3D system renders on this server. */
 export type Rendering =
   | 'GPU'
   | 'OFF'
@@ -448,6 +475,14 @@ export type EmulatorSettingsQueryVariables = Exact<{
 
 
 export type EmulatorSettingsQuery = { emulatorSettings: { system: string, core: string, needsGame: boolean, environment: Array<string>, runAhead: { frames: number, max: number, source: SettingSource, supported: boolean }, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
+
+export type ReportClientEventsMutationVariables = Exact<{
+  client: string;
+  events: Array<ClientEventInput> | ClientEventInput;
+}>;
+
+
+export type ReportClientEventsMutation = { reportClientEvents: number };
 
 export type SetRunAheadMutationVariables = Exact<{
   system: string | number;
@@ -1336,6 +1371,11 @@ export const EmulatorSettingsDocument = new TypedDocumentString(`
     source
   }
 }`) as unknown as TypedDocumentString<EmulatorSettingsQuery, EmulatorSettingsQueryVariables>;
+export const ReportClientEventsDocument = new TypedDocumentString(`
+    mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {
+  reportClientEvents(client: $client, events: $events)
+}
+    `) as unknown as TypedDocumentString<ReportClientEventsMutation, ReportClientEventsMutationVariables>;
 export const SetRunAheadDocument = new TypedDocumentString(`
     mutation SetRunAhead($system: ID!, $frames: Int) {
   setRunAhead(system: $system, frames: $frames) {
