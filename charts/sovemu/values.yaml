@@ -55,11 +55,14 @@ users: []
 # Delete accounts that are not declared above at startup, so these values are the whole list.
 pruneUsers: false
 
-# Per-system overrides (SOVEMU_SYSTEMS__<id>__*): `core`, `enabled`, `options` (core options).
+# Per-system overrides (SOVEMU_SYSTEMS__<id>__*): `core`, `enabled`, `options` (core options),
+# `runAhead` (frames the picture runs ahead, hiding the game's input lag; 0-4, 2D systems only).
 systems: {}
 #  psx:
 #    options:
 #      pcsx_rearmed_cd_readahead: "512"
+#  snes:
+#    runAhead: 1
 #  gamegear:
 #    enabled: false
 

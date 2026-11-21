@@ -19,6 +19,7 @@ mod patch;
 mod persist;
 mod probe;
 mod rewind;
+mod runahead;
 mod schedule;
 mod serve;
 mod session;
@@ -171,6 +172,11 @@ struct SessionArgs {
     #[arg(long, default_value_t = 4)]
     fast_forward: u32,
 
+    /// Frames to run ahead of the one shown, hiding the game's own input lag (0 turns it off;
+    /// at most 4). Each costs a frame of emulation and a save state, so keep it to 2D systems.
+    #[arg(long, default_value_t = 0)]
+    run_ahead: u32,
+
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
@@ -245,6 +251,11 @@ struct ServeArgs {
     #[arg(long, default_value_t = 4)]
     fast_forward: u32,
 
+    /// Frames to run ahead of the one shown, hiding the game's own input lag (0 turns it off;
+    /// at most 4). Each costs a frame of emulation and a save state, so keep it to 2D systems.
+    #[arg(long, default_value_t = 0)]
+    run_ahead: u32,
+
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
@@ -291,6 +302,11 @@ struct HeadlessArgs {
     /// Pace frames at the core's real frame rate instead of running as fast as possible.
     #[arg(long)]
     realtime: bool,
+
+    /// Frames to run ahead of the one shown (as in a session): the PNGs and the timings are
+    /// then the run-ahead picture and its cost; the audio stays the real timeline's.
+    #[arg(long, default_value_t = 0)]
+    run_ahead: u32,
 
     /// Set a core option, e.g. `--var snes9x_overclock=disabled`. Repeatable.
     #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_key_value)]

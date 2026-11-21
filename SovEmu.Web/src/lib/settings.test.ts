@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CoreSetting } from "./api";
-import { choiceLabel, filterSettings, groupSettings, guessGroup, sourceBadge } from "./settings";
+import { choiceLabel, filterSettings, groupSettings, guessGroup, runAheadChoices, sourceBadge } from "./settings";
 
 const s = (key: string, description: string, over: Partial<CoreSetting> = {}): CoreSetting => ({
   key, description, info: "", category: null, value: "off", default: "off", choices: ["off", "on"], labels: ["Off", "On"],
@@ -88,5 +88,15 @@ describe("grouping", () => {
   it("guesses everything for a core without categories", () => {
     const groups = groupSettings([s("x_volume", "Volume"), s("x_res", "Internal Resolution")], []);
     expect(groups.map((g) => g.title)).toEqual(["Video", "Audio"]);
+  });
+});
+
+describe("runAheadChoices", () => {
+  it("offers off, then each frame with the lag it hides", () => {
+    expect(runAheadChoices(2)).toEqual([
+      { value: "0", label: "Off" },
+      { value: "1", label: "1 frame (~17 ms)" },
+      { value: "2", label: "2 frames (~33 ms)" },
+    ]);
   });
 });

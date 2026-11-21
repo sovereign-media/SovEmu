@@ -118,3 +118,14 @@ export function choiceLabel(s: Pick<CoreSetting, "choices" | "labels" | "default
   const label = (i >= 0 ? s.labels?.[i] : undefined) || choice;
   return choice === s.default ? `${label} (default)` : label;
 }
+
+/**
+ * The run-ahead choices, 0 (off) to `max` frames, each with the input lag it hides at 60 fps.
+ * Run-ahead shows the picture that many frames ahead of the game, so a press answers sooner.
+ */
+export function runAheadChoices(max: number): { value: string; label: string }[] {
+  return Array.from({ length: max + 1 }, (_, frames) => ({
+    value: String(frames),
+    label: frames === 0 ? "Off" : `${frames} frame${frames > 1 ? "s" : ""} (~${Math.round((frames * 1000) / 60)} ms)`,
+  }));
+}

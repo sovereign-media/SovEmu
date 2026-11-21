@@ -31,6 +31,15 @@ pub struct System {
     pub needs_gpu: bool,
 }
 
+impl System {
+    /// Whether its games can run ahead (`SOVEMU_SYSTEMS__<id>__RUN_AHEAD`): each frame shown
+    /// then costs several emulated frames and a save state, which only the systems that render
+    /// in software can afford.
+    pub fn run_ahead(&self) -> bool {
+        !self.needs_gpu
+    }
+}
+
 pub const SYSTEMS: &[System] = &[
     System {
         id: "nes",

@@ -35,6 +35,7 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig}
 use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
+use crate::runahead::RunAhead;
 
 /// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
 /// Every client resends what is held at least every 100 ms, so a release that never arrives (the
@@ -99,6 +100,8 @@ pub(crate) struct SessionConfig {
     pub rewind_seconds: u32,
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
+    /// Frames the picture runs ahead of the game (0: off).
+    pub run_ahead: u32,
     pub keyframe_interval: u32,
     /// The GPU for OpenGL cores; `None` refuses them.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
@@ -130,6 +133,7 @@ pub(crate) struct Session {
     rewind: Rewind,
     /// Frames emulated per tick while fast-forward is held.
     fast_forward: u32,
+    run_ahead: RunAhead,
     /// The configured (maximum) video bitrate; adaptation stays at or below it.
     max_video_kbps: u32,
     audio_kbps: u32,
@@ -224,6 +228,7 @@ impl Session {
                     as usize,
             ),
             fast_forward: config.fast_forward.max(1),
+            run_ahead: RunAhead::new(config.run_ahead, av.fps),
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
@@ -697,9 +702,36 @@ impl Session {
             self.fps = av.fps;
         }
 
+        let mut picture = None;
         if out.video_updated && out.video.width > 0 {
             out.video.write_rgba8(&mut self.rgba);
-            let (w, h) = (out.video.width, out.video.height);
+            picture = Some((out.video.width, out.video.height));
+        }
+
+        // The sound is always the real timeline's. Rewinding plays silence (the browser fills
+        // the gap).
+        let audio: &[i16] = if hotkeys.rewind { &[] } else { out.audio };
+        for packet in self.audio.push(audio)? {
+            if let Some((mid, pt)) = p.audio
+                && let Some(writer) = p.rtc.writer(mid)
+            {
+                let rtp_time = MediaTime::new(self.audio_samples, Frequency::FORTY_EIGHT_KHZ);
+                writer.write(pt, now, rtp_time, packet)?;
+            }
+            self.audio_samples += sovemu_media::audio::PACKET_FRAMES as u64;
+        }
+
+        // The picture runs ahead of the real frame, hiding the game's own input lag; not while
+        // rewinding or fast-forwarding, whose pictures are meant to be elsewhere in time.
+        if !hotkeys.rewind
+            && !hotkeys.fast_forward
+            && let Some(ahead) =
+                self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.rgba)?
+        {
+            picture = Some(ahead);
+        }
+
+        if let Some((w, h)) = picture {
             self.shot_size = (w, h);
             if let (Some(encoded), Some((mid, pt))) =
                 (self.video.encode(&self.rgba, w, h)?, p.video)
@@ -713,18 +745,6 @@ impl Session {
                     encoded.data,
                 )?;
             }
-        }
-
-        // Rewinding plays silence (the browser fills the gap).
-        let audio: &[i16] = if hotkeys.rewind { &[] } else { out.audio };
-        for packet in self.audio.push(audio)? {
-            if let Some((mid, pt)) = p.audio
-                && let Some(writer) = p.rtc.writer(mid)
-            {
-                let rtp_time = MediaTime::new(self.audio_samples, Frequency::FORTY_EIGHT_KHZ);
-                writer.write(pt, now, rtp_time, packet)?;
-            }
-            self.audio_samples += sovemu_media::audio::PACKET_FRAMES as u64;
         }
 
         if let (Some((seq, client_time_ms)), Some(id)) = (self.pending_ack.take(), p.input)

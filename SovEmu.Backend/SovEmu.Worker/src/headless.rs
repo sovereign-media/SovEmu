@@ -12,10 +12,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use sovemu_retro_host::{Core, CoreOptions, VideoFrame};
+use sovemu_retro_host::{Core, CoreOptions};
 
 use crate::HeadlessArgs;
 use crate::pacing::Pacer;
+use crate::runahead::RunAhead;
 use crate::schedule::buttons_at;
 
 #[derive(Debug, Serialize)]
@@ -134,15 +135,16 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     let mut duped = 0u64;
     let mut frames_run = 0u64;
     let mut rgba = Vec::new();
-    let mut last_frame = VideoFrame::default();
+    // The picture in `rgba` that the last frame showed, by its size.
+    let mut last_picture = None;
     let started = Instant::now();
     let mut pacer = args.realtime.then(|| Pacer::new(av.fps, started));
+    let mut run_ahead = RunAhead::new(args.run_ahead, av.fps);
 
     for n in 0..args.frames {
         let buttons = buttons_at(&args.holds, n);
         let t = Instant::now();
         let out = core.run_frame(&[buttons])?;
-        timings.push(t.elapsed());
         frames_run += 1;
 
         if out.av_changed.is_some() {
@@ -156,12 +158,22 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         }
         stereo_frames += out.audio.len() as u64 / 2;
 
-        if args.png_every > 0 && n % args.png_every == 0 && out.video.width > 0 {
+        let png = args.png_every > 0 && n % args.png_every == 0;
+        let last = n + 1 == args.frames;
+        let mut picture = None;
+        if (png || last) && out.video.width > 0 {
             out.video.write_rgba8(&mut rgba);
-            write_png(&args.out.join(format!("frame_{n:06}.png")), out.video, &rgba)?;
+            picture = Some((out.video.width, out.video.height));
         }
-        if n + 1 == args.frames {
-            last_frame = out.video.clone();
+        if let Some(ahead) = run_ahead.picture(&mut core, &[buttons], &mut rgba)? {
+            picture = Some(ahead);
+        }
+        timings.push(t.elapsed());
+        if let (true, Some((width, height))) = (png, picture) {
+            write_png(&args.out.join(format!("frame_{n:06}.png")), width, height, &rgba)?;
+        }
+        if last {
+            last_picture = picture;
         }
 
         if core.shutdown_requested() {
@@ -175,9 +187,8 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     let wall = started.elapsed().as_secs_f64();
     wav.finalize()?;
 
-    if last_frame.width > 0 {
-        last_frame.write_rgba8(&mut rgba);
-        write_png(&args.out.join("last.png"), &last_frame, &rgba)?;
+    if let Some((width, height)) = last_picture {
+        write_png(&args.out.join("last.png"), width, height, &rgba)?;
     }
 
     let summary = Summary {
@@ -217,9 +228,9 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     Ok(())
 }
 
-fn write_png(path: &Path, frame: &VideoFrame, rgba: &[u8]) -> Result<()> {
+fn write_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
     let file = BufWriter::new(File::create(path)?);
-    let mut encoder = png::Encoder::new(file, frame.width, frame.height);
+    let mut encoder = png::Encoder::new(file, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header()?.write_image_data(rgba)?;

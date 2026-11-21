@@ -37,6 +37,8 @@ pub struct SystemSpec {
     pub options: BTreeMap<String, String>,
     /// The decoration set its games are framed with (`none`: no frame).
     pub decoration: Option<String>,
+    /// Frames its games' pictures run ahead, hiding their own input lag (0: off).
+    pub run_ahead: Option<u32>,
 }
 
 /// Groups `PREFIX__<key>__<rest>=value` into key → (rest → value).
@@ -144,14 +146,32 @@ pub(crate) fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, Syst
                     "DECORATION" => {
                         spec.decoration = Some(value.trim().to_owned()).filter(|d| !d.is_empty())
                     }
+                    "RUN_AHEAD" => spec.run_ahead = Some(parse_run_ahead(&var, &id, &value)?),
                     other => bail!(
-                        "{var}: unknown setting {other:?} (CORE, ENABLED, DECORATION or OPTIONS__<name>)"
+                        "{var}: unknown setting {other:?} (CORE, ENABLED, DECORATION, RUN_AHEAD or OPTIONS__<name>)"
                     ),
                 }
             }
         }
     }
     Ok(out)
+}
+
+/// Frames of run-ahead for `system`: 0 to [`MAX_RUN_AHEAD`], and only where it can keep up.
+fn parse_run_ahead(var: &str, system: &str, value: &str) -> Result<u32> {
+    use sovemu_protocol::ipc::MAX_RUN_AHEAD;
+    let frames: u32 = value
+        .trim()
+        .parse()
+        .with_context(|| format!("{var}: a number of frames, 0 (off) to {MAX_RUN_AHEAD}"))?;
+    if frames > MAX_RUN_AHEAD {
+        bail!("{var}: at most {MAX_RUN_AHEAD} frames (got {frames})");
+    }
+    let supported = sovemu_library::systems::by_id(system).is_some_and(|s| s.run_ahead());
+    if frames > 0 && !supported {
+        bail!("{var}: run-ahead is for the 2D systems; {system} is too costly to run ahead");
+    }
+    Ok(frames)
 }
 
 /// Default controller mappings from `SOVEMU_CONTROLLERS__<n>__…`, ordered by index. A list
@@ -307,6 +327,21 @@ mod tests {
             systems(&vars(&[("SOVEMU_SYSTEMS__nes__COLOUR", "red")])).is_err(),
             "unknown setting"
         );
+    }
+
+    #[test]
+    fn run_ahead_is_a_few_frames_on_a_2d_system() {
+        let s = systems(&vars(&[("SOVEMU_SYSTEMS__snes__RUN_AHEAD", "2")])).unwrap();
+        assert_eq!(s["snes"].run_ahead, Some(2));
+        let s = systems(&vars(&[("SOVEMU_SYSTEMS__n64__RUN_AHEAD", "0")])).unwrap();
+        assert_eq!(s["n64"].run_ahead, Some(0), "off is fine anywhere");
+        for (var, value, why) in [
+            ("SOVEMU_SYSTEMS__nes__RUN_AHEAD", "5", "more than the maximum"),
+            ("SOVEMU_SYSTEMS__nes__RUN_AHEAD", "on", "not a number"),
+            ("SOVEMU_SYSTEMS__n64__RUN_AHEAD", "1", "a 3D system"),
+        ] {
+            assert!(systems(&vars(&[(var, value)])).is_err(), "{why}");
+        }
     }
 
     #[test]

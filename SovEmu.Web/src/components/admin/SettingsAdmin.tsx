@@ -4,10 +4,10 @@
 // apply to the next game started. Options set in the server's environment win and are shown
 // locked; the admin's changes can be copied out as environment lines, so the configuration
 // stays reproducible without this page.
-import { Check, Copy, Cpu, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
+import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
-import { choiceLabel, filterSettings, groupSettings, sourceBadge } from "../../lib/settings";
+import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadge } from "../../lib/settings";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
@@ -65,6 +65,58 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
   );
 }
 
+/** Run-ahead: SovEmu's own setting, not the core's, so it sits above the core's groups. */
+function RunAheadPanel({ setting, onChange }: { setting: SystemSettings["runAhead"]; onChange: (frames: number | null) => void }) {
+  const badge = setting.source === "SOVEMU" ? null : sourceBadge(setting.source);
+  const locked = setting.source === "ENVIRONMENT";
+  return (
+    <section className={cn(panel, "grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start")}>
+      <div className="min-w-0">
+        <h3 className="flex flex-wrap items-center gap-2 text-lg font-bold">
+          <Gauge className="size-5 text-slate-400" /> Run-ahead
+          {badge && (
+            <Tooltip content={badge.title}>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold",
+                  locked ? "bg-amber-500/20 text-amber-200" : "bg-accent/25 text-blue-200",
+                )}
+              >
+                {locked && <Lock className="size-3" />}
+                {badge.text}
+              </span>
+            </Tooltip>
+          )}
+        </h3>
+        <p className="mt-1 max-w-prose text-sm leading-relaxed text-slate-400">
+          {setting.supported
+            ? "Hides the game's own input lag: the picture is shown a few frames ahead, so a press shows up that much sooner. Most games need 1 or 2; too many and the game visibly skips ahead. Each frame costs another frame of emulation."
+            : "Not for this system: running its games ahead would cost more than a frame allows."}
+        </p>
+      </div>
+      {setting.supported && (
+        <div className="flex items-center gap-2 sm:justify-end">
+          <Select
+            label="Run-ahead"
+            value={String(setting.frames)}
+            disabled={locked}
+            options={runAheadChoices(setting.max)}
+            onChange={(v) => onChange(Number(v))}
+            className="w-56 max-w-full"
+          />
+          {setting.source === "ADMIN" && (
+            <Tooltip content="Turn run-ahead off">
+              <Button variant="ghost" size="icon" aria-label="Reset run-ahead" onClick={() => onChange(null)}>
+                <RotateCcw />
+              </Button>
+            </Tooltip>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Settings() {
   const [systems, setSystems] = useState<SystemSummary[]>([]);
   const [current, setCurrent] = useState<SystemSummary | null>(null);
@@ -101,6 +153,16 @@ function Settings() {
     try {
       setLoaded(await api.changeSettings(current.id, { [key]: value }));
       setMessage({ text: value === null ? "Back to the default. Applies to the next game started." : "Saved. Applies to the next game started." });
+    } catch (e) {
+      setMessage({ text: (e as Error).message, error: true });
+    }
+  };
+
+  const changeRunAhead = async (frames: number | null) => {
+    if (!current) return;
+    try {
+      setLoaded(await api.setRunAhead(current.id, frames));
+      setMessage({ text: frames ? "Saved. Applies to the next game started." : "Run-ahead off. Applies to the next game started." });
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
@@ -167,6 +229,8 @@ function Settings() {
         )}
         {message && <p className={cn("mt-3 text-sm", message.error ? "text-red-300" : "text-emerald-300")}>{message.text}</p>}
       </section>
+
+      {loaded && <RunAheadPanel setting={loaded.runAhead} onChange={changeRunAhead} />}
 
       {loaded && !loaded.settings.length && (
         <p className={cn(panel, "flex items-start gap-3 text-sm text-slate-300")}>

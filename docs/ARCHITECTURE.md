@@ -232,7 +232,7 @@ exited workers are reaped.
 
 ### Latency target
 
-The target is under ~80 ms from button press to photon on a good network. The largest variable costs are frame alignment (up to 16.7 ms), encoding (1–3 ms at native resolution), the client's jitter buffer (reduce it with `playoutDelayHint` on the web and the equivalent native settings on mobile), and the network round trip. Libretro run-ahead is an option later.
+The target is under ~80 ms from button press to photon on a good network. The largest variable costs are frame alignment (up to 16.7 ms), encoding (1–3 ms at native resolution), the client's jitter buffer (reduce it with `playoutDelayHint` on the web and the equivalent native settings on mobile), and the network round trip. Run-ahead (single-instance, per system, `SOVEMU_SYSTEMS__<id>__RUN_AHEAD`) hides the games' own input lag on the 2D systems.
 
 ## Open questions
 

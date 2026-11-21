@@ -129,6 +129,8 @@ pub struct Launch {
     pub patch: Option<(PathBuf, String)>,
     /// Core options (`key`, `value`).
     pub variables: Vec<(String, String)>,
+    /// Frames the picture runs ahead of the game, hiding its own input lag (0: off).
+    pub run_ahead: u32,
     /// Run once the worker has exited (for example, to cache a large disc image only after the
     /// session that streamed it, so the copy does not compete with the game for the network).
     pub after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
@@ -434,6 +436,9 @@ impl Workers {
         for (key, value) in &launch.variables {
             command.arg("--var").arg(format!("{key}={value}"));
         }
+        if launch.run_ahead > 0 {
+            command.arg("--run-ahead").arg(launch.run_ahead.to_string());
+        }
         if let Some(ip) = self.config.advertise_ip {
             command.arg("--advertise-ip").arg(ip.to_string());
         }
@@ -675,6 +680,7 @@ done
             state_dir: dir.join("states"),
             patch: None,
             variables: Vec::new(),
+            run_ahead: 0,
             after_exit: None,
             start_id: None,
         }
@@ -718,6 +724,20 @@ done
         assert!(args.contains(&format!("--session-id {}", session.id)), "{args}");
         assert!(args.contains("--log-format text"), "{args}");
         workers.stop_all().await;
+    }
+
+    #[tokio::test]
+    async fn run_ahead_reaches_the_worker_only_when_on() {
+        let dir = dir("runahead");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        workers.start(Launch { run_ahead: 2, ..launch(&dir, 1, 1) }).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains("--run-ahead 2"), "{args}");
+        workers.start(launch(&dir, 1, 2)).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(!args.contains("--run-ahead"), "off is the worker's default: {args}");
+        workers.stop_all().await;
+        settle(&workers, 2).await;
     }
 
     #[tokio::test]

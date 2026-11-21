@@ -76,6 +76,12 @@ graphql(`
     core
     needsGame
     environment
+    runAhead {
+      frames
+      max
+      source
+      supported
+    }
     categories {
       key
       description
@@ -592,6 +598,14 @@ export const FetchMetadataMutation = graphql(`
 export const EmulatorSettingsQuery = graphql(`
   query EmulatorSettings($system: ID!) {
     emulatorSettings(system: $system) {
+      ...SettingsFields
+    }
+  }
+`);
+
+export const SetRunAheadMutation = graphql(`
+  mutation SetRunAhead($system: ID!, $frames: Int) {
+    setRunAhead(system: $system, frames: $frames) {
       ...SettingsFields
     }
   }

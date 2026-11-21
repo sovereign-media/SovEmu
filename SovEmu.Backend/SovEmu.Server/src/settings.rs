@@ -220,6 +220,97 @@ pub(crate) struct SystemSettings {
     pub(crate) needs_game: bool,
     /// The admin's choices as environment lines, to make them part of the configuration.
     pub(crate) environment: Vec<String>,
+    pub(crate) run_ahead: RunAhead,
+}
+
+/// How many frames a system's pictures run ahead of its games, hiding their own input lag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub(crate) struct RunAhead {
+    /// 0: off.
+    pub(crate) frames: u32,
+    /// `Sovemu` when nothing sets it (off), else the admin or the environment (locked).
+    pub(crate) source: Source,
+    /// Whether the system can run ahead at all (the 2D systems).
+    pub(crate) supported: bool,
+}
+
+/// The run-ahead a game of `system` starts with: the environment's, else the admin's, else off.
+pub(crate) fn layered_run_ahead(
+    system: &System,
+    admin: Option<u32>,
+    environment: Option<u32>,
+) -> RunAhead {
+    let supported = system.run_ahead();
+    let (frames, source) = match (environment, admin) {
+        (Some(frames), _) => (frames, Source::Environment),
+        (None, Some(frames)) => (frames, Source::Admin),
+        (None, None) => (0, Source::Sovemu),
+    };
+    RunAhead { frames: if supported { frames } else { 0 }, source, supported }
+}
+
+async fn admin_run_ahead(db: &SqlitePool, system: &str) -> sqlx::Result<Option<u32>> {
+    let frames: Option<i64> =
+        sqlx::query_scalar("SELECT frames FROM system_run_ahead WHERE system = ?")
+            .bind(system)
+            .fetch_optional(db)
+            .await?;
+    Ok(frames.map(|f| f.clamp(0, i64::from(sovemu_protocol::ipc::MAX_RUN_AHEAD)) as u32))
+}
+
+fn environment_run_ahead(state: &AppState, system: &System) -> Option<u32> {
+    state.config.systems.get(system.id).and_then(|s| s.run_ahead)
+}
+
+/// The frames a game of `system` runs ahead (0: off).
+pub(crate) async fn run_ahead_for_launch(state: &AppState, system: &System) -> ApiResult<u32> {
+    let admin = admin_run_ahead(&state.db, system.id).await?;
+    Ok(layered_run_ahead(system, admin, environment_run_ahead(state, system)).frames)
+}
+
+/// Sets how many frames `id`'s games run ahead, or with `None` goes back to off.
+pub(crate) async fn set_run_ahead(
+    state: &AppState,
+    id: &str,
+    frames: Option<u32>,
+) -> ApiResult<SystemSettings> {
+    let system = system(id)?;
+    if environment_run_ahead(state, system).is_some() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            format!("run-ahead is set by SOVEMU_SYSTEMS__{}__RUN_AHEAD", system.id),
+        ));
+    }
+    match frames {
+        Some(frames) => {
+            let max = sovemu_protocol::ipc::MAX_RUN_AHEAD;
+            if frames > max {
+                return Err(ApiError::bad_request(format!("run-ahead: at most {max} frames")));
+            }
+            if frames > 0 && !system.run_ahead() {
+                return Err(ApiError::bad_request(format!(
+                    "{} is too costly to run ahead",
+                    system.name
+                )));
+            }
+            sqlx::query(
+                "INSERT INTO system_run_ahead (system, frames) VALUES (?, ?)
+                 ON CONFLICT(system) DO UPDATE SET frames = excluded.frames,
+                   updated_at = datetime('now')",
+            )
+            .bind(system.id)
+            .bind(i64::from(frames))
+            .execute(&state.db)
+            .await?;
+        }
+        None => {
+            sqlx::query("DELETE FROM system_run_ahead WHERE system = ?")
+                .bind(system.id)
+                .execute(&state.db)
+                .await?;
+        }
+    }
+    describe(state, system).await
 }
 
 async fn describe(state: &AppState, system: &'static System) -> ApiResult<SystemSettings> {
@@ -273,10 +364,16 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
         value,
         source,
     }));
-    let environment = admin
+    let admin_run_ahead = admin_run_ahead(&state.db, system.id).await?;
+    let run_ahead =
+        layered_run_ahead(system, admin_run_ahead, environment_run_ahead(state, system));
+    let mut environment: Vec<String> = admin
         .iter()
         .map(|(k, v)| format!("SOVEMU_SYSTEMS__{}__OPTIONS__{k}={v}", system.id))
         .collect();
+    if let (Some(frames), Source::Admin) = (admin_run_ahead, run_ahead.source) {
+        environment.push(format!("SOVEMU_SYSTEMS__{}__RUN_AHEAD={frames}", system.id));
+    }
     let core = [info.name.clone(), info.version.clone()].into_iter().flatten().collect::<Vec<_>>();
     Ok(SystemSettings {
         system: system.id.to_owned(),
@@ -285,6 +382,7 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
         categories,
         needs_game,
         environment,
+        run_ahead,
     })
 }
 
@@ -396,6 +494,20 @@ mod tests {
         // Neither yet: start a game first.
         let (o, _, needs) = offered(&probe(Vec::new()), None);
         assert!(o.is_empty() && needs);
+    }
+
+    #[test]
+    fn run_ahead_comes_from_the_environment_then_the_admin_else_is_off() {
+        let snes = sovemu_library::systems::by_id("snes").unwrap();
+        let off = layered_run_ahead(snes, None, None);
+        assert_eq!((off.frames, off.source, off.supported), (0, Source::Sovemu, true));
+        let admin = layered_run_ahead(snes, Some(2), None);
+        assert_eq!((admin.frames, admin.source), (2, Source::Admin));
+        let env = layered_run_ahead(snes, Some(2), Some(1));
+        assert_eq!((env.frames, env.source), (1, Source::Environment));
+        let n64 = sovemu_library::systems::by_id("n64").unwrap();
+        let n64 = layered_run_ahead(n64, Some(2), None);
+        assert_eq!((n64.frames, n64.supported), (0, false), "never on a 3D system");
     }
 
     #[test]
