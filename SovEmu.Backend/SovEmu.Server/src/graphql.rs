@@ -997,6 +997,21 @@ struct EmulatorSetting {
     source: SettingSource,
 }
 
+/// How many frames a system's pictures run ahead of its games, hiding the games' own input lag:
+/// a press shows up that many frames sooner. Each frame costs that many more emulated frames.
+#[derive(SimpleObject)]
+struct RunAheadSetting {
+    /// 0: off.
+    frames: i32,
+    /// The most a system may run ahead.
+    max: i32,
+    /// `SOVEMU` when nothing sets it (off); `ENVIRONMENT` is
+    /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD`, which always wins (locked).
+    source: SettingSource,
+    /// Whether the system can run ahead at all (the 2D systems).
+    supported: bool,
+}
+
 /// A group of settings the emulator declares ("Video", "Audio" …).
 #[derive(SimpleObject)]
 struct SettingCategory {
@@ -1017,11 +1032,23 @@ struct EmulatorSettings {
     needs_game: bool,
     /// The admin's changes as `SOVEMU_SYSTEMS__…` lines, to move into configuration.
     environment: Vec<String>,
+    run_ahead: RunAheadSetting,
+}
+
+impl From<crate::settings::Source> for SettingSource {
+    fn from(source: crate::settings::Source) -> Self {
+        use crate::settings::Source;
+        match source {
+            Source::Core => SettingSource::Core,
+            Source::Sovemu => SettingSource::Sovemu,
+            Source::Admin => SettingSource::Admin,
+            Source::Environment => SettingSource::Environment,
+        }
+    }
 }
 
 impl From<crate::settings::SystemSettings> for EmulatorSettings {
     fn from(s: crate::settings::SystemSettings) -> Self {
-        use crate::settings::Source;
         Self {
             system: s.system,
             core: s.core,
@@ -1037,12 +1064,7 @@ impl From<crate::settings::SystemSettings> for EmulatorSettings {
                     labels: x.labels,
                     default: x.default,
                     value: x.value,
-                    source: match x.source {
-                        Source::Core => SettingSource::Core,
-                        Source::Sovemu => SettingSource::Sovemu,
-                        Source::Admin => SettingSource::Admin,
-                        Source::Environment => SettingSource::Environment,
-                    },
+                    source: x.source.into(),
                 })
                 .collect(),
             categories: s
@@ -1052,6 +1074,12 @@ impl From<crate::settings::SystemSettings> for EmulatorSettings {
                 .collect(),
             needs_game: s.needs_game,
             environment: s.environment,
+            run_ahead: RunAheadSetting {
+                frames: s.run_ahead.frames as i32,
+                max: sovemu_protocol::ipc::MAX_RUN_AHEAD as i32,
+                source: s.run_ahead.source.into(),
+                supported: s.run_ahead.supported,
+            },
         }
     }
 }
@@ -1373,6 +1401,25 @@ impl Mutation {
         let changes: BTreeMap<String, Option<String>> =
             changes.into_iter().map(|c| (c.key, c.value)).collect();
         crate::settings::put_settings(state(ctx), &system, changes).await.api().map(Into::into)
+    }
+
+    /// Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
+    /// `frames` back to off. Applies to the next game started. Refused while
+    /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` sets it.
+    async fn set_run_ahead(
+        &self,
+        ctx: &Context<'_>,
+        system: ID,
+        frames: Option<i32>,
+    ) -> Result<EmulatorSettings> {
+        admin(ctx).await?;
+        let frames = match frames {
+            Some(f) if f < 0 => {
+                return Err(crate::error::ApiError::bad_request("frames cannot be negative")).api();
+            }
+            f => f.map(|f| f as u32),
+        };
+        crate::settings::set_run_ahead(state(ctx), &system, frames).await.api().map(Into::into)
     }
 
     /// Starts a game (ending this user's running one first) and returns once it is ready to

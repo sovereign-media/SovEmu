@@ -143,7 +143,7 @@ export type SaveFieldsFragment = { slot: number, savedAt: number, screenshotUrl:
 
 export type SessionFieldsFragment = { id: string, gameId: number, system: string, title: string, core: string, width: number, height: number, fps: number, connected: boolean, discs: number, disc: number };
 
-export type SettingsFieldsFragment = { system: string, core: string, needsGame: boolean, environment: Array<string>, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> };
+export type SettingsFieldsFragment = { system: string, core: string, needsGame: boolean, environment: Array<string>, runAhead: { frames: number, max: number, source: SettingSource, supported: boolean }, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> };
 
 export type MetadataFieldsFragment = { running: boolean, total: number, done: number, found: number, notFound: number, failed: number, sources: Array<string>, notes: Array<string>, artwork: { running: boolean, total: number, done: number, downloaded: number, failed: number } };
 
@@ -447,7 +447,15 @@ export type EmulatorSettingsQueryVariables = Exact<{
 }>;
 
 
-export type EmulatorSettingsQuery = { emulatorSettings: { system: string, core: string, needsGame: boolean, environment: Array<string>, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
+export type EmulatorSettingsQuery = { emulatorSettings: { system: string, core: string, needsGame: boolean, environment: Array<string>, runAhead: { frames: number, max: number, source: SettingSource, supported: boolean }, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
+
+export type SetRunAheadMutationVariables = Exact<{
+  system: string | number;
+  frames?: number | null | undefined;
+}>;
+
+
+export type SetRunAheadMutation = { setRunAhead: { system: string, core: string, needsGame: boolean, environment: Array<string>, runAhead: { frames: number, max: number, source: SettingSource, supported: boolean }, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
 
 export type ChangeEmulatorSettingsMutationVariables = Exact<{
   system: string | number;
@@ -455,7 +463,7 @@ export type ChangeEmulatorSettingsMutationVariables = Exact<{
 }>;
 
 
-export type ChangeEmulatorSettingsMutation = { changeEmulatorSettings: { system: string, core: string, needsGame: boolean, environment: Array<string>, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
+export type ChangeEmulatorSettingsMutation = { changeEmulatorSettings: { system: string, core: string, needsGame: boolean, environment: Array<string>, runAhead: { frames: number, max: number, source: SettingSource, supported: boolean }, categories: Array<{ key: string, description: string, info: string }>, settings: Array<{ key: string, description: string, info: string, category: string | null, choices: Array<string>, labels: Array<string>, default: string, value: string, source: SettingSource }> } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -546,6 +554,12 @@ export const SettingsFieldsFragmentDoc = new TypedDocumentString(`
   core
   needsGame
   environment
+  runAhead {
+    frames
+    max
+    source
+    supported
+  }
   categories {
     key
     description
@@ -1299,6 +1313,12 @@ export const EmulatorSettingsDocument = new TypedDocumentString(`
   core
   needsGame
   environment
+  runAhead {
+    frames
+    max
+    source
+    supported
+  }
   categories {
     key
     description
@@ -1316,6 +1336,40 @@ export const EmulatorSettingsDocument = new TypedDocumentString(`
     source
   }
 }`) as unknown as TypedDocumentString<EmulatorSettingsQuery, EmulatorSettingsQueryVariables>;
+export const SetRunAheadDocument = new TypedDocumentString(`
+    mutation SetRunAhead($system: ID!, $frames: Int) {
+  setRunAhead(system: $system, frames: $frames) {
+    ...SettingsFields
+  }
+}
+    fragment SettingsFields on EmulatorSettings {
+  system
+  core
+  needsGame
+  environment
+  runAhead {
+    frames
+    max
+    source
+    supported
+  }
+  categories {
+    key
+    description
+    info
+  }
+  settings {
+    key
+    description
+    info
+    category
+    choices
+    labels
+    default
+    value
+    source
+  }
+}`) as unknown as TypedDocumentString<SetRunAheadMutation, SetRunAheadMutationVariables>;
 export const ChangeEmulatorSettingsDocument = new TypedDocumentString(`
     mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {
   changeEmulatorSettings(system: $system, changes: $changes) {
@@ -1327,6 +1381,12 @@ export const ChangeEmulatorSettingsDocument = new TypedDocumentString(`
   core
   needsGame
   environment
+  runAhead {
+    frames
+    max
+    source
+    supported
+  }
   categories {
     key
     description

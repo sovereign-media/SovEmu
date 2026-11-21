@@ -84,6 +84,52 @@ fn headless_run_writes_frames_audio_and_summary() {
     std::fs::remove_dir_all(&out).ok();
 }
 
+/// The red of the test core's top-left pixel: its frame number, mod 256.
+fn frame_shown(png: &std::path::Path) -> u8 {
+    let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(png).unwrap()));
+    let mut reader = decoder.read_info().unwrap();
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    reader.next_frame(&mut buf).unwrap();
+    buf[0]
+}
+
+#[test]
+fn run_ahead_shows_frames_ahead_and_keeps_the_real_timeline() {
+    let out = std::env::temp_dir().join(format!("sovemu-runahead-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let output = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
+        .arg("headless")
+        .arg("--core")
+        .arg(test_core())
+        .arg("--out")
+        .arg(&out)
+        .arg("--system-dir")
+        .arg(out.join("system"))
+        .args(["--frames", "10", "--png-every", "1", "--run-ahead", "2"])
+        .output()
+        .expect("run sovemu-worker");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    // Real frame n draws frame n; two frames ahead, the picture is frame n + 2's.
+    for n in [0u8, 5, 9] {
+        assert_eq!(frame_shown(&out.join(format!("frame_{n:06}.png"))), n + 2, "frame {n}");
+    }
+    // Each picture is one frame on from the last: the state was put back after every look
+    // ahead, or the game would race ahead by three frames a tick.
+    for n in 1..10u8 {
+        let (before, now) = (
+            frame_shown(&out.join(format!("frame_{:06}.png", n - 1))),
+            frame_shown(&out.join(format!("frame_{n:06}.png"))),
+        );
+        assert_eq!(now, before + 1, "frame {n}");
+    }
+    let summary: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("summary.json")).unwrap()).unwrap();
+    assert_eq!(summary["frames_run"], 10);
+    // The sound is the real frames' only: the ones run ahead add none.
+    assert_eq!(summary["audio"]["stereo_frames"], 10 * 800);
+    std::fs::remove_dir_all(&out).ok();
+}
+
 #[test]
 fn probe_reports_cores_and_fails_on_a_bad_one() {
     let core = test_core();

@@ -36,6 +36,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             rewind_seconds: args.rewind_seconds,
             rewind_max_mb: args.rewind_max_mb,
             fast_forward: args.fast_forward,
+            run_ahead: args.run_ahead,
             keyframe_interval: args.keyframe_interval,
             gpu: args.gpu.0.clone(),
             state_dir: Some(args.save_dir.join("states")),

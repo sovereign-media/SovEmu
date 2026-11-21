@@ -326,6 +326,7 @@ async fn launch(
                 (state.config.roms_dir.join(&p.path), crate::patches::file_label(&p.name))
             }),
             variables: crate::settings::for_launch(&state, system).await?,
+            run_ahead: crate::settings::run_ahead_for_launch(&state, system).await?,
             after_exit,
             start_id,
         })

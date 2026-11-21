@@ -29,6 +29,8 @@ systems:
       pcsx_rearmed_cd_readahead: 512
   gamegear:
     enabled: false
+  snes:
+    runAhead: 1
 iceServers:
   - urls: turn:turn.example.com:3478
     username: sovemu

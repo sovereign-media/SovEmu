@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::SessionDescription;
 
+/// The most frames a session's picture may run ahead of the game (`sovemu-worker session
+/// --run-ahead`): beyond it, games visibly skip ahead. The server refuses more; the worker clamps.
+pub const MAX_RUN_AHEAD: u32 = 4;
+
 /// Server → worker.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

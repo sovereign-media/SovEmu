@@ -26,6 +26,7 @@ import {
   AdminStatusQuery as AdminStatusDocument,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
+  SetRunAheadMutation,
   ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerLayoutsQuery,
   ControllerMappingsQuery,
@@ -187,6 +188,9 @@ export const api = {
         changes: Object.entries(changes).map(([key, value]) => ({ key, value })),
       })
     ).changeEmulatorSettings,
+  /** Frames a system's pictures run ahead of its games; null goes back to off. */
+  setRunAhead: async (system: string, frames: number | null) =>
+    (await request(SetRunAheadMutation, { system, frames })).setRunAhead,
 };
 
 /** Human-readable file size. */

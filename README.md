@@ -129,6 +129,16 @@ lists the admin's changes as environment variables to copy into `.env` or the He
 the configuration never depends on the page. In the API: the `emulatorSettings` query and the
 `changeEmulatorSettings` mutation (admin).
 
+**Run-ahead**, on the same page, hides a game's own input lag. Most games act on a button a
+frame or more after reading it; with run-ahead the worker runs each frame, saves its state,
+runs N more frames with the same input, shows the last one's picture and puts the state back.
+A press then shows up N frames (about 17 ms each at 60 fps) sooner, while the game's real
+timeline and its sound are untouched. Most games need 1 or 2; too many and the game visibly
+skips ahead. Each frame costs N more emulated frames and a save state, so it is only for the
+systems that render in software (not N64, Dreamcast, GameCube or PS2), and a worker that
+cannot keep up runs fewer frames ahead by itself. It is off until set, per system, by
+`SOVEMU_SYSTEMS__<id>__RUN_AHEAD` (0 to 4, which wins) or by an admin (`setRunAhead`).
+
 ## Loading progress
 
 Starting a game can take a while on a slow library, so the player shows a loading bar. It
@@ -310,7 +320,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
 | `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
 | `SOVEMU_COPY_THREADS` | `4` | Files copied at once (mirror sync, artwork cache) |
-| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__DECORATION`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, decoration set, core options (see below) |
+| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__DECORATION`, `__RUN_AHEAD`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), core options (see below) |
 | `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
@@ -380,6 +390,7 @@ SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core op
 SOVEMU_SYSTEMS__nes__CORE=nestopia                  # use this core (if installed)
 SOVEMU_SYSTEMS__gamegear__ENABLED=false             # hide a system
 SOVEMU_SYSTEMS__gba__DECORATION=none                # no frame around GBA games
+SOVEMU_SYSTEMS__snes__RUN_AHEAD=1                   # hide a frame of the games' input lag
 ```
 
 Declared accounts are created at startup and kept in step: a changed password signs that user

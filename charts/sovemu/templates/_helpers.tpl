@@ -73,6 +73,9 @@ values, with `settings` on top.
 {{- range $k, $v := $s.options }}
 {{- $_ := set $env (printf "SOVEMU_SYSTEMS__%s__OPTIONS__%s" $id $k) (toString $v) }}
 {{- end }}
+{{- if hasKey $s "runAhead" }}
+{{- $_ := set $env (printf "SOVEMU_SYSTEMS__%s__RUN_AHEAD" $id) (toString (int $s.runAhead)) }}
+{{- end }}
 {{- end }}
 {{- range $k, $v := .Values.settings }}
 {{- $_ := set $env (printf "SOVEMU_%s" (trimPrefix "SOVEMU_" $k)) (toString $v) }}
