@@ -60,3 +60,6 @@ gpu:
   mode: /dev/dri/renderD128
   resources:
     amd.com/gpu: 1
+annotations:
+  keel.sh/policy: glob:bleeding-*
+  keel.sh/trigger: poll

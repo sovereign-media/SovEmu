@@ -4,9 +4,11 @@
 # the UI afterwards.
 
 image:
-  # SovEmu.Backend/Dockerfile, built and pushed to your registry (no public image yet).
+  # SovEmu.Backend/Dockerfile, pushed by CI on every merge to main (a private package: give
+  # imagePullSecrets a token with read:packages).
   repository: ghcr.io/sovereign-media/sovemu
-  # Defaults to the chart's appVersion.
+  # `bleeding` follows main; `bleeding-<UTC yyyymmddHHMMSS>` pins one build and sorts by time
+  # (Keel: `glob:bleeding-*`). Defaults to the chart's appVersion, which is not published yet.
   tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
@@ -173,6 +175,10 @@ securityContext:
 # /dev/shm for the game workers: Dolphin (GameCube) maps its emulated memory there.
 shmSize: 1Gi
 
+# Annotations on the Deployment itself, where image updaters look, e.g. Keel:
+#   keel.sh/policy: glob:bleeding-*
+#   keel.sh/trigger: poll
+annotations: {}
 podAnnotations: {}
 podLabels: {}
 # The image is x86_64 only (its cores come from libretro's stable x86_64 release), so pods stay
