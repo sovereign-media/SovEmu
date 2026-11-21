@@ -20,7 +20,50 @@ use std::time::Duration;
 /// Told when sessions start and end. Every method does nothing by default.
 pub trait Observer: Send + Sync + std::fmt::Debug {
     fn session_started(&self, _system: &str) {}
-    fn session_ended(&self, _system: &str, _ran: Duration) {}
+    fn session_ended(&self, _ended: &Ended<'_>) {}
+}
+
+/// A session that has ended: its system and core, why, and how long it ran.
+#[derive(Debug, Clone, Copy)]
+pub struct Ended<'a> {
+    pub system: &'a str,
+    /// The core's file name without its extension (`snes9x_libretro`).
+    pub core: &'a str,
+    pub reason: EndReason,
+    pub ran: Duration,
+}
+
+/// Why a worker exited: what it said as it went, or what the server saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    /// Asked to (a player quit, the server stopping).
+    Stopped,
+    /// No client for its idle timeout.
+    Idle,
+    /// Its stdin closed under it.
+    ControllerGone,
+    /// It failed and said so (`exiting` with `error`, or a non-zero exit, a failed load included).
+    Error,
+    /// Killed by a signal nobody here sent: a crash, most often in the core.
+    Crashed,
+    /// Killed by the server: it did not stop when asked, or its start timed out.
+    Killed,
+    /// Exited cleanly without saying why.
+    Exited,
+}
+
+impl EndReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stopped => "stopped",
+            Self::Idle => "idle",
+            Self::ControllerGone => "controller_gone",
+            Self::Error => "error",
+            Self::Crashed => "crashed",
+            Self::Killed => "killed",
+            Self::Exited => "exited",
+        }
+    }
 }
 
 /// Nobody listening (tests).

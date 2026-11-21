@@ -17,8 +17,8 @@ use crate::loading::{self, Report};
 use crate::sysdir::SystemDir;
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
-use sovemu_protocol::ipc::Request;
 use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
+use sovemu_protocol::ipc::{ExitReason, Request};
 use sovemu_protocol::{
     ClientMessage, ClientStats, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
@@ -401,7 +401,7 @@ fn payload_type(rtc: &mut Rtc, mid: Mid, codec: Codec) -> Option<Pt> {
 }
 
 /// Runs the session until the command channel closes, a `Shutdown` arrives, or no client has been
-/// connected for `idle_timeout`.
+/// connected for `idle_timeout`, and says which.
 pub(crate) fn run(
     mut session: Session,
     socket: UdpSocket,
@@ -409,7 +409,7 @@ pub(crate) fn run(
     commands: Receiver<Command>,
     on_event: &mut dyn FnMut(StreamEvent),
     idle_timeout: Option<Duration>,
-) -> Result<()> {
+) -> Result<ExitReason> {
     // Tag every datagram with the advertised address; see `advertised_addr`.
     let local = advertised;
     let mut buf = vec![0u8; 2048];
@@ -448,13 +448,13 @@ pub(crate) fn run(
                     let _ = reply.send(result.map(|_| ()));
                     if stop {
                         tracing::info!("shutting down on request");
-                        return Ok(());
+                        return Ok(ExitReason::Stopped);
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     tracing::info!("controller went away; shutting down");
-                    return Ok(());
+                    return Ok(ExitReason::ControllerGone);
                 }
             }
         }
@@ -501,7 +501,7 @@ pub(crate) fn run(
                     idle_s = idle_timeout.unwrap_or_default().as_secs(),
                     "no client for the idle timeout; exiting"
                 );
-                return Ok(());
+                return Ok(ExitReason::Idle);
             }
         }
         if running && pacer.is_none() {

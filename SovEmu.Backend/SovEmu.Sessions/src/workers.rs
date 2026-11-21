@@ -22,14 +22,14 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use sovemu_protocol::SessionDescription;
 use sovemu_protocol::ipc::{CoreCategory, CoreOption};
-use sovemu_protocol::ipc::{Reply, Request};
+use sovemu_protocol::ipc::{ExitReason, Reply, Request};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, watch};
 use tracing::Instrument;
 
 use crate::starts::{Phase, Starts};
-use crate::{Error, Observer};
+use crate::{EndReason, Ended, Error, Observer};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -174,6 +174,89 @@ impl std::fmt::Debug for Session {
     }
 }
 
+/// What the reaper needs to say why a worker ended.
+struct Exit {
+    system: String,
+    core: String,
+    /// What the worker said as it went ([`Reply::Exiting`]), if it did.
+    reported: Arc<Mutex<Option<ExitReason>>>,
+    last_words: LastWords,
+}
+
+/// Why a worker ended: the server's own kill first, then what the worker said, then how the
+/// process ended.
+fn end_reason(
+    we_killed: bool,
+    reported: Option<ExitReason>,
+    signal: Option<i32>,
+    code: Option<i32>,
+) -> EndReason {
+    if we_killed {
+        return EndReason::Killed;
+    }
+    match reported {
+        Some(ExitReason::Stopped) => EndReason::Stopped,
+        Some(ExitReason::Idle) => EndReason::Idle,
+        Some(ExitReason::ControllerGone) => EndReason::ControllerGone,
+        Some(ExitReason::Error) => EndReason::Error,
+        None if signal.is_some() => EndReason::Crashed,
+        None if code.is_some_and(|c| c != 0) => EndReason::Error,
+        None => EndReason::Exited,
+    }
+}
+
+#[cfg(unix)]
+fn signal_of(status: &std::process::ExitStatus) -> Option<i32> {
+    std::os::unix::process::ExitStatusExt::signal(status)
+}
+
+#[cfg(not(unix))]
+fn signal_of(_: &std::process::ExitStatus) -> Option<i32> {
+    None
+}
+
+/// `snes9x_libretro` for `/opt/sovemu/cores/snes9x_libretro.so`: the metric's core label.
+fn core_name(core: &std::path::Path) -> String {
+    core.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned())
+}
+
+/// The worker's stderr (its log), passed through to the server's own and its last lines kept,
+/// so a crash's log line carries what the worker (and its core) said just before.
+struct LastWords {
+    lines: Arc<Mutex<std::collections::VecDeque<String>>>,
+    reader: tokio::task::JoinHandle<()>,
+}
+
+/// Lines kept for a crash's log line.
+const LAST_WORDS: usize = 20;
+
+impl LastWords {
+    fn follow(stderr: tokio::process::ChildStderr) -> Self {
+        let lines = Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(LAST_WORDS)));
+        let kept = lines.clone();
+        let reader = tokio::spawn(async move {
+            let mut stderr = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = stderr.next_line().await {
+                // Still in the container's log, as when the worker wrote to it directly.
+                eprintln!("{line}");
+                let mut kept = kept.lock().unwrap_or_else(|e| e.into_inner());
+                if kept.len() == LAST_WORDS {
+                    kept.pop_front();
+                }
+                kept.push_back(line);
+            }
+        });
+        Self { lines, reader }
+    }
+
+    /// The last lines, once the worker's stderr has closed (or after a second, if a child of
+    /// its keeps it open).
+    async fn finish(self) -> Vec<String> {
+        let _ = tokio::time::timeout(Duration::from_secs(1), self.reader).await;
+        self.lines.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
+    }
+}
+
 /// A handle on a worker process, whose reaper task owns the [`Child`].
 struct Process {
     pid: Option<u32>,
@@ -185,7 +268,8 @@ struct Process {
 }
 
 impl Process {
-    /// Starts the reaper for `child`, which returns `port` and runs `after_exit` once it exits.
+    /// Starts the reaper for `child`, which returns `port` and runs `after_exit` once it exits,
+    /// and logs why it did.
     fn reap(
         mut child: Child,
         id: String,
@@ -193,7 +277,7 @@ impl Process {
         workers: Arc<Workers>,
         after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
         span: tracing::Span,
-        system: String,
+        exit: Exit,
     ) -> Self {
         let pid = child.id();
         let started = Instant::now();
@@ -201,16 +285,47 @@ impl Process {
         let (exit_tx, exited) = watch::channel(false);
         tokio::spawn(
             async move {
+                let mut we_killed = false;
                 let status = tokio::select! {
                     status = child.wait() => status,
                     Ok(()) = &mut killed => {
+                        we_killed = true;
                         let _ = child.start_kill();
                         child.wait().await
                     }
                 };
                 let ran = started.elapsed();
-                tracing::info!(?status, duration_s = ran.as_secs(), "session ended");
-                workers.config.observer.session_ended(&system, ran);
+                // Its last lines (on stderr, after its exit) come in a moment after the exit.
+                let last_words = exit.last_words.finish().await;
+                let reported = *exit.reported.lock().unwrap_or_else(|e| e.into_inner());
+                let signal = status.as_ref().ok().and_then(signal_of);
+                let code = status.as_ref().ok().and_then(std::process::ExitStatus::code);
+                let reason = end_reason(we_killed, reported, signal, code);
+                if matches!(reason, EndReason::Crashed | EndReason::Killed) {
+                    tracing::warn!(
+                        reason = reason.as_str(),
+                        signal,
+                        code,
+                        core = %exit.core,
+                        duration_s = ran.as_secs(),
+                        last_lines = %last_words.join("\n"),
+                        "session ended"
+                    );
+                } else {
+                    tracing::info!(
+                        reason = reason.as_str(),
+                        code,
+                        core = %exit.core,
+                        duration_s = ran.as_secs(),
+                        "session ended"
+                    );
+                }
+                workers.config.observer.session_ended(&Ended {
+                    system: &exit.system,
+                    core: &exit.core,
+                    reason,
+                    ran,
+                });
                 let _ = exit_tx.send(true);
                 workers.forget(&id, port);
                 if let Some(after) = after_exit {
@@ -465,7 +580,7 @@ impl Workers {
         let spawned = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| Error::Spawn(self.config.worker_bin.clone(), e));
         let mut child = match spawned {
@@ -477,6 +592,8 @@ impl Workers {
         };
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
+        let reported = Arc::new(Mutex::new(None));
+        let last_words = LastWords::follow(child.stderr.take().expect("piped"));
         let process = Process::reap(
             child,
             id.clone(),
@@ -484,7 +601,12 @@ impl Workers {
             self.clone(),
             after_exit,
             span.clone(),
-            launch.system.clone(),
+            Exit {
+                system: launch.system.clone(),
+                core: core_name(&launch.core),
+                reported: reported.clone(),
+                last_words,
+            },
         );
 
         let mut declared = None;
@@ -592,6 +714,9 @@ impl Workers {
             while let Ok(Some(line)) = lines.next_line().await {
                 let Ok(reply) = serde_json::from_str::<Reply>(&line) else { continue };
                 match reply {
+                    Reply::Exiting { reason } => {
+                        *reported.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
+                    }
                     Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
                     Reply::ClientDisconnected => reader.connected.store(false, Ordering::Relaxed),
                     Reply::Answer { id, .. } | Reply::Done { id } | Reply::Error { id, .. } => {
@@ -703,8 +828,41 @@ done
     }
 
     fn workers(dir: &Path, then: &str, stop_timeout: Duration) -> Arc<Workers> {
+        workers_with(dir, &WORKER.replace("THEN", then), stop_timeout, Arc::new(()))
+    }
+
+    /// Remembers why each session ended, and its core.
+    #[derive(Debug, Default)]
+    struct Recorder(Mutex<Vec<(EndReason, String)>>);
+
+    impl Observer for Recorder {
+        fn session_ended(&self, ended: &Ended<'_>) {
+            self.0.lock().unwrap().push((ended.reason, ended.core.to_owned()));
+        }
+    }
+
+    impl Recorder {
+        /// The reasons recorded, once `n` sessions have ended.
+        async fn ended(&self, n: usize) -> Vec<EndReason> {
+            for _ in 0..200 {
+                let ended = self.0.lock().unwrap().clone();
+                if ended.len() >= n {
+                    return ended.into_iter().map(|(reason, _)| reason).collect();
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            panic!("{n} session(s) did not end: {:?}", self.0.lock().unwrap());
+        }
+    }
+
+    fn workers_with(
+        dir: &Path,
+        script: &str,
+        stop_timeout: Duration,
+        observer: Arc<dyn Observer>,
+    ) -> Arc<Workers> {
         let bin = dir.join("worker.sh");
-        write_script(&bin, &WORKER.replace("THEN", then));
+        write_script(&bin, script);
         Workers::new(WorkerConfig {
             worker_bin: bin,
             ports: (40000, 40001),
@@ -723,7 +881,7 @@ done
             health_interval_secs: 10,
             gpu: "off".into(),
             log_format: "text",
-            observer: Arc::new(()),
+            observer,
         })
     }
 
@@ -797,6 +955,60 @@ done
         assert!(!args.contains("--run-ahead"), "off is the worker's default: {args}");
         workers.stop_all().await;
         settle(&workers, 2).await;
+    }
+
+    #[test]
+    fn why_a_worker_ended() {
+        use EndReason as R;
+        assert_eq!(end_reason(true, Some(ExitReason::Stopped), None, Some(0)), R::Killed);
+        assert_eq!(end_reason(false, Some(ExitReason::Idle), None, Some(0)), R::Idle);
+        assert_eq!(end_reason(false, Some(ExitReason::Error), None, Some(1)), R::Error);
+        assert_eq!(end_reason(false, None, Some(11), None), R::Crashed, "a segfault");
+        assert_eq!(end_reason(false, None, None, Some(1)), R::Error, "a failed load");
+        assert_eq!(end_reason(false, None, None, Some(0)), R::Exited);
+    }
+
+    #[tokio::test]
+    async fn a_worker_that_says_why_it_stops_is_recorded_so() {
+        let dir = dir("exiting");
+        let recorder = Arc::new(Recorder::default());
+        let then = r#"echo '{"type":"exiting","reason":"stopped"}'; exit 0"#;
+        let workers = workers_with(
+            &dir,
+            &WORKER.replace("THEN", then),
+            Duration::from_secs(5),
+            recorder.clone(),
+        );
+        workers.start(launch(&dir, 1, 1)).await.unwrap();
+        workers.stop_all().await;
+        assert_eq!(recorder.ended(1).await, [EndReason::Stopped]);
+        assert_eq!(recorder.0.lock().unwrap()[0].1, "core", "the core's file name");
+    }
+
+    #[tokio::test]
+    async fn a_worker_killed_by_a_signal_is_a_crash() {
+        let dir = dir("crash");
+        let recorder = Arc::new(Recorder::default());
+        let crash = r#"#!/bin/sh
+echo '{"type":"ready","udp_port":1,"core":"fake","width":320,"height":240,"fps":60.0}'
+echo "the core's last words" >&2
+kill -SEGV $$
+"#;
+        let workers = workers_with(&dir, crash, Duration::from_secs(5), recorder.clone());
+        workers.start(launch(&dir, 1, 1)).await.unwrap();
+        assert_eq!(recorder.ended(1).await, [EndReason::Crashed]);
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_worker_the_server_kills_is_recorded_as_killed() {
+        let dir = dir("killed");
+        let recorder = Arc::new(Recorder::default());
+        let script = WORKER.replace("THEN", "exec sleep 600");
+        let workers = workers_with(&dir, &script, Duration::from_millis(300), recorder.clone());
+        workers.start(launch(&dir, 1, 1)).await.unwrap();
+        workers.stop_all().await;
+        assert_eq!(recorder.ended(1).await, [EndReason::Killed]);
     }
 
     #[tokio::test]

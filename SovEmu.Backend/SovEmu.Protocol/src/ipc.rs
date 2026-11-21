@@ -140,6 +140,25 @@ pub enum Reply {
     },
     ClientConnected,
     ClientDisconnected,
+    /// The worker is about to exit, its saves written, and why. A worker that crashes (or is
+    /// killed) never sends it, which is how the server tells those apart.
+    Exiting {
+        reason: ExitReason,
+    },
+}
+
+/// Why a worker stopped on its own terms, in [`Reply::Exiting`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExitReason {
+    /// The server asked it to (`shutdown`).
+    Stopped,
+    /// No client was connected for its idle timeout.
+    Idle,
+    /// Its stdin closed: the server went away.
+    ControllerGone,
+    /// The stream loop failed.
+    Error,
 }
 
 #[cfg(test)]
