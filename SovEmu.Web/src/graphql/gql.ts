@@ -65,6 +65,7 @@ type Documents = {
     "\n  query AdminStatus {\n    libraryStatus {\n      mode\n      games\n      cacheBytes\n      mirror {\n        running\n        filesTotal\n        filesDone\n        bytesTotal\n        bytesDone\n        removed\n        failed\n        finishedAt\n        error\n      }\n    }\n    metadataStatus {\n      ...MetadataFields\n    }\n  }\n": typeof types.AdminStatusDocument,
     "\n  mutation FetchMetadata($system: ID, $force: Boolean!) {\n    fetchMetadata(system: $system, force: $force) {\n      ...MetadataFields\n    }\n  }\n": typeof types.FetchMetadataDocument,
     "\n  query EmulatorSettings($system: ID!) {\n    emulatorSettings(system: $system) {\n      ...SettingsFields\n    }\n  }\n": typeof types.EmulatorSettingsDocument,
+    "\n  mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {\n    reportClientEvents(client: $client, events: $events)\n  }\n": typeof types.ReportClientEventsDocument,
     "\n  mutation SetRunAhead($system: ID!, $frames: Int) {\n    setRunAhead(system: $system, frames: $frames) {\n      ...SettingsFields\n    }\n  }\n": typeof types.SetRunAheadDocument,
     "\n  mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {\n    changeEmulatorSettings(system: $system, changes: $changes) {\n      ...SettingsFields\n    }\n  }\n": typeof types.ChangeEmulatorSettingsDocument,
 };
@@ -119,6 +120,7 @@ const documents: Documents = {
     "\n  query AdminStatus {\n    libraryStatus {\n      mode\n      games\n      cacheBytes\n      mirror {\n        running\n        filesTotal\n        filesDone\n        bytesTotal\n        bytesDone\n        removed\n        failed\n        finishedAt\n        error\n      }\n    }\n    metadataStatus {\n      ...MetadataFields\n    }\n  }\n": types.AdminStatusDocument,
     "\n  mutation FetchMetadata($system: ID, $force: Boolean!) {\n    fetchMetadata(system: $system, force: $force) {\n      ...MetadataFields\n    }\n  }\n": types.FetchMetadataDocument,
     "\n  query EmulatorSettings($system: ID!) {\n    emulatorSettings(system: $system) {\n      ...SettingsFields\n    }\n  }\n": types.EmulatorSettingsDocument,
+    "\n  mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {\n    reportClientEvents(client: $client, events: $events)\n  }\n": types.ReportClientEventsDocument,
     "\n  mutation SetRunAhead($system: ID!, $frames: Int) {\n    setRunAhead(system: $system, frames: $frames) {\n      ...SettingsFields\n    }\n  }\n": types.SetRunAheadDocument,
     "\n  mutation ChangeEmulatorSettings($system: ID!, $changes: [SettingChange!]!) {\n    changeEmulatorSettings(system: $system, changes: $changes) {\n      ...SettingsFields\n    }\n  }\n": types.ChangeEmulatorSettingsDocument,
 };
@@ -323,6 +325,10 @@ export function graphql(source: "\n  mutation FetchMetadata($system: ID, $force:
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query EmulatorSettings($system: ID!) {\n    emulatorSettings(system: $system) {\n      ...SettingsFields\n    }\n  }\n"): typeof import('./graphql').EmulatorSettingsDocument;
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {\n    reportClientEvents(client: $client, events: $events)\n  }\n"): typeof import('./graphql').ReportClientEventsDocument;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

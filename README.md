@@ -304,6 +304,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_REFRESH_RETRY_SECONDS` | `30` | How long a just-used refresh token is honoured again (two tabs refreshing at once); after that, presenting it ends the sign-in. 0: strictly once |
 | `SOVEMU_PUBLIC_URL` | `localhost`, `127.0.0.1` and `SOVEMU_ADVERTISE_IP` on the HTTP port | The addresses people reach the server at, comma-separated (`https://games.example.com,http://192.168.1.10:8080`). Each issues sign-in tokens; signing in elsewhere is refused. Set it when you use a hostname or a proxy |
 | `SOVEMU_PASSWORD_SIGN_IN` | `true` | Whether the apps may sign in with a username and password, as well as with a code shown on the screen |
+| `SOVEMU_CLIENT_EVENTS` | `true` | Whether what goes wrong on a client (a failed connection, a stalled picture, a screen error) is logged as `client event`. Off, clients' reports are dropped. Nothing is stored |
 | `SOVEMU_TOKEN_KEY` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret: `_FILE` works |
 | `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
 | `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |

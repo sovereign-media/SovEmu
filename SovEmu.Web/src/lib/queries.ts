@@ -603,6 +603,12 @@ export const EmulatorSettingsQuery = graphql(`
   }
 `);
 
+export const ReportClientEventsMutation = graphql(`
+  mutation ReportClientEvents($client: String!, $events: [ClientEventInput!]!) {
+    reportClientEvents(client: $client, events: $events)
+  }
+`);
+
 export const SetRunAheadMutation = graphql(`
   mutation SetRunAhead($system: ID!, $frames: Int) {
     setRunAhead(system: $system, frames: $frames) {

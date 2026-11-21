@@ -316,6 +316,49 @@ struct ClientConfig {
 }
 
 /// Where a 3D system renders on this server.
+/// What went wrong on a client (`reportClientEvents`).
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum ClientEventKind {
+    /// WebRTC could not connect.
+    ConnectionFailed,
+    /// A connected stream dropped.
+    ConnectionLost,
+    /// No new picture for a while during play.
+    StreamStalled,
+    /// A controller the client has no layout for.
+    ControllerUnknown,
+    /// A screen or the app failed.
+    ScreenError,
+    Other,
+}
+
+/// One thing that went wrong on a client.
+#[derive(InputObject)]
+struct ClientEventInput {
+    kind: ClientEventKind,
+    /// What happened, in a line (kept to 500 characters).
+    message: String,
+    /// The game session it happened in, if any.
+    session_id: Option<ID>,
+    /// When, in seconds since the Unix epoch on the client's clock.
+    at: Option<f64>,
+}
+
+impl From<ClientEventInput> for crate::client_events::Event {
+    fn from(e: ClientEventInput) -> Self {
+        use crate::client_events::Kind;
+        let kind = match e.kind {
+            ClientEventKind::ConnectionFailed => Kind::ConnectionFailed,
+            ClientEventKind::ConnectionLost => Kind::ConnectionLost,
+            ClientEventKind::StreamStalled => Kind::StreamStalled,
+            ClientEventKind::ControllerUnknown => Kind::ControllerUnknown,
+            ClientEventKind::ScreenError => Kind::ScreenError,
+            ClientEventKind::Other => Kind::Other,
+        };
+        Self { kind, message: e.message, session_id: e.session_id.map(|id| id.0), at: e.at }
+    }
+}
+
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 enum Rendering {
     Gpu,
@@ -1516,6 +1559,28 @@ impl Mutation {
         let changes: BTreeMap<String, Option<String>> =
             changes.into_iter().map(|c| (c.key, c.value)).collect();
         crate::settings::put_settings(state(ctx), &system, changes).await.api().map(Into::into)
+    }
+
+    /// Signed-in users: what went wrong on this client (a connection that failed, a stalled
+    /// picture, a screen that crashed), for the server's log beside the session's own lines.
+    /// `client` names it and its version (`android 0.1.0 (MiTV-AFMU1, Android 11)`). At most
+    /// 20 events a call and 60 a minute per user; the rest are dropped. Returns how many were
+    /// logged (0 when `SOVEMU_CLIENT_EVENTS` is off). Nothing is stored.
+    async fn report_client_events(
+        &self,
+        ctx: &Context<'_>,
+        client: String,
+        events: Vec<ClientEventInput>,
+    ) -> Result<i32> {
+        let user = user(ctx).await?;
+        let state = state(ctx);
+        if !state.config.client_events {
+            return Ok(0);
+        }
+        let events: Vec<crate::client_events::Event> = events.into_iter().map(Into::into).collect();
+        let logged =
+            state.client_events.report(user.id, &client, &events, std::time::Instant::now());
+        Ok(logged as i32)
     }
 
     /// Admins: how many frames a system's pictures run ahead of its games (0: off), or with no

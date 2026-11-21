@@ -37,6 +37,7 @@ import { listenNav } from "../../lib/nav";
 import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { StatsSampler, type StatItem } from "../../lib/stats";
+import { reportClientEvent } from "../../lib/clientEvents";
 import { PadDiagram } from "../PadDiagram";
 import Shell from "../Shell";
 import { Button } from "../ui/button";
@@ -126,6 +127,9 @@ function Player() {
     let capturing = false;
     let statsOn = false;
     let polling = true;
+    let everConnected = false;
+    let lastFrames = 0;
+    let stalledFor = 0;
     const input = new InputState();
     const sampler = new StatsSampler();
     const filter = new VideoFilter(video.current!, canvas.current!);
@@ -215,7 +219,12 @@ function Player() {
           input,
           {
             onState: (state) => {
+              if (state === "failed" || state === "disconnected") {
+                const lost = everConnected ? "CONNECTION_LOST" : "CONNECTION_FAILED";
+                reportClientEvent(lost, `WebRTC ${state}`, s.id);
+              }
               if (state === "connected") {
+                everConnected = true;
                 filter.start();
                 toast("Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind");
               }
@@ -561,7 +570,16 @@ function Player() {
 
       timers.push(
         window.setInterval(async () => {
-          if (!session || !statsOn) return;
+          if (!session) return;
+          // A picture that stops while playing (not paused in the menu) is worth a report.
+          const frames = video.current?.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+          const stalled = everConnected && !stack.open && frames === lastFrames;
+          stalledFor = stalled ? stalledFor + 1 : 0;
+          lastFrames = frames;
+          if (stalledFor === STALL_SECONDS && info) {
+            reportClientEvent("STREAM_STALLED", `no new picture for ${STALL_SECONDS} s`, info.id);
+          }
+          if (!statsOn) return;
           const { items, numbers } = await sampler.sample(session);
           setStats(items);
           // Logged by the worker beside its own health lines, for reading back later.
@@ -747,6 +765,9 @@ function Player() {
 
 /** Shown where stats are turned on and on the overlay: they cost a little every second. */
 const STATS_WARNING = "Stats are logged while shown, and can affect game performance.";
+
+/** Seconds without a new video frame, while playing, before it is reported as a stall. */
+const STALL_SECONDS = 3;
 
 export default function PlayPage() {
   return (

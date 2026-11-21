@@ -91,6 +91,21 @@ export async function request<TData, TVariables>(
   return response.data as TData;
 }
 
+/**
+ * Sends a mutation only if signed in already, without renewing the token or going to sign in,
+ * and ignores the answer: for reports that must never get in the player's way.
+ */
+export function quietly<TData, TVariables>(query: TypedDocumentString<TData, TVariables>, variables: TVariables) {
+  const token = session.cached();
+  if (!token) return;
+  void fetch("/graphql", {
+    method: "POST",
+    headers: headers(token),
+    body: body(query as TypedDocumentString<unknown, unknown>, variables),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 /** Sends a mutation as the page goes away: `keepalive` lets the request outlive the page. */
 export function onUnload<TData, TVariables>(query: TypedDocumentString<TData, TVariables>, variables: TVariables) {
   void fetch("/graphql", {
