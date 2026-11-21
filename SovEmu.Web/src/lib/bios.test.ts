@@ -3,10 +3,22 @@ import type { BiosFile, BiosGroup, SystemBios } from "./api";
 import { fileHint, fileTone, summary } from "./bios";
 
 const file = (over: Partial<BiosFile>): BiosFile => ({
-  name: "scph5501.bin", label: "SCPH-5501 (USA)", state: "OK", foundAt: "psx/scph5501.bin", md5: null, size: 524288, ...over,
+  name: "scph5501.bin",
+  label: "SCPH-5501 (USA)",
+  state: "OK",
+  foundAt: "psx/scph5501.bin",
+  md5: null,
+  size: 524288,
+  ...over,
 });
 const group = (over: Partial<BiosGroup>): BiosGroup => ({
-  label: "BIOS", importance: "RECOMMENDED", help: "", anyOne: true, satisfied: false, files: [], ...over,
+  label: "BIOS",
+  importance: "RECOMMENDED",
+  help: "",
+  anyOne: true,
+  satisfied: false,
+  files: [],
+  ...over,
 });
 const bios = (state: SystemBios["state"]) => ({ bios: { state, folder: "x", groups: [] } });
 

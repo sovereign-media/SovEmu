@@ -30,7 +30,10 @@ export function useSession(s: Session) {
 /** A failed operation: the server's `extensions.code` (`UNAUTHENTICATED`, `NOT_FOUND`,
  *  `BAD_REQUEST` …) and its message, which is written for people. */
 export class ApiError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -51,12 +54,19 @@ export const body = (query: TypedDocumentString<unknown, unknown>, variables?: u
   JSON.stringify({ query: query.toString(), variables: variables ?? {} });
 
 const headers = (token: string | null): Record<string, string> =>
-  token ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` } : { "Content-Type": "application/json" };
+  token
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+    : { "Content-Type": "application/json" };
 
 async function send<TData>(json: string, token: string | null): Promise<GraphQLResponse<TData>> {
   // Same-origin credentials so the browser keeps the cookie `setup` sets (the browser's sign-in
   // at the server, which /oauth/authorize reads). The API itself ignores cookies.
-  const res = await fetch("/graphql", { method: "POST", headers: headers(token), body: json, credentials: "same-origin" });
+  const res = await fetch("/graphql", {
+    method: "POST",
+    headers: headers(token),
+    body: json,
+    credentials: "same-origin",
+  });
   try {
     return await res.json();
   } catch {

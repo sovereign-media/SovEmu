@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MenuStack, type MenuItem } from "./menu";
+import { type MenuItem, MenuStack } from "./menu";
 
 const item = (label: string, extra: Partial<MenuItem> = {}): MenuItem => ({ label, run: vi.fn(), ...extra });
 

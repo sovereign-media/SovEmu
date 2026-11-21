@@ -54,7 +54,7 @@ export async function renew(): Promise<string | null> {
 
 /** Where a page may send the browser back to after signing in: a path on this site. */
 export function safeReturn(path: string | null | undefined): string {
-  return path && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/auth/") ? path : "/";
+  return path?.startsWith("/") && !path.startsWith("//") && !path.startsWith("/auth/") ? path : "/";
 }
 
 /** Starts signing in (through the server's sign-in page if the browser is not signed in there),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { REPEAT_DELAY_MS, REPEAT_INTERVAL_MS, Repeater, type NavAction } from "./nav";
 import { formatAgo, formatSize } from "./api";
+import { type NavAction, REPEAT_DELAY_MS, REPEAT_INTERVAL_MS, Repeater } from "./nav";
 
 const held = (...a: NavAction[]) => new Set<NavAction>(a);
 

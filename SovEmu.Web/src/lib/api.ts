@@ -4,52 +4,61 @@
 import type {
   AdminStatusQuery,
   BiosQuery as BiosQueryResult,
-  ControllerDefaultsQuery,
   CheatsQuery,
   CollectionsQuery,
+  ControllerDefaultsQuery,
   EmulatorSettingsQuery,
   GameFieldsFragment,
+  SettingSource as GqlSettingSource,
+  HomeQuery,
   PadButton,
   PadLayoutFieldsFragment,
-  SystemControlsQuery as SystemControlsData,
-  HomeQuery,
+  PatchesQuery,
   SaveFieldsFragment,
   SessionFieldsFragment,
-  SettingSource as GqlSettingSource,
   StartProgressQuery,
+  SystemControlsQuery as SystemControlsData,
   SystemFieldsFragment,
   ViewerQuery,
-  PatchesQuery,
 } from "../graphql/graphql";
+import { onUnload, request } from "./graphql";
 import {
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
-  SetRunAheadMutation,
+  CheatsQuery as CheatsDocument,
+  ClientConfigQuery,
+  CollectionIdsQuery,
+  CollectionsQuery as CollectionsDocument,
   ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerLayoutsQuery,
   ControllerMappingsQuery,
-  CheatsQuery as CheatsDocument,
-  ClientConfigQuery,
+  CreateCollectionMutation,
+  DeleteCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
   FetchMetadataMutation,
   GameQuery,
   HomeQuery as HomeDocument,
   LoadStateMutation,
+  PatchesQuery as PatchesDocument,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
   SaveStateMutation,
-  SetDiscMutation,
   SavesQuery,
   ScanLibraryMutation,
+  SearchQuery,
   SessionOfferMutation,
   SetCheatMutation,
+  SetDiscMutation,
+  SetFavouriteMutation,
+  SetInCollectionMutation,
+  SetPatchMutation,
+  SetRunAheadMutation,
   SetupMutation,
-  UsersQuery,
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
   StopSessionMutation,
@@ -57,18 +66,9 @@ import {
   SystemControlsQuery,
   SystemGamesQuery,
   SystemsQuery,
+  UsersQuery,
   ViewerQuery as ViewerDocument,
-  CollectionsQuery as CollectionsDocument,
-  CollectionIdsQuery,
-  PatchesQuery as PatchesDocument,
-  SearchQuery,
-  SetPatchMutation,
-  SetFavouriteMutation,
-  CreateCollectionMutation,
-  DeleteCollectionMutation,
-  SetInCollectionMutation,
 } from "./queries";
-import { onUnload, request } from "./graphql";
 
 export { ApiError } from "./graphql";
 
@@ -203,7 +203,7 @@ export function formatSize(bytes: number): string {
 /** "3 days ago" style, from an SQLite UTC timestamp ("2026-11-13 23:00:00"). */
 export function formatAgo(sqliteUtc: string | null, now = Date.now()): string {
   if (!sqliteUtc) return "never";
-  const then = Date.parse(sqliteUtc.replace(" ", "T") + "Z");
+  const then = Date.parse(`${sqliteUtc.replace(" ", "T")}Z`);
   const minutes = Math.round((now - then) / 60000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;

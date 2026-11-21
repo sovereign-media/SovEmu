@@ -3,9 +3,9 @@
 // players and genres.
 import { Check, Search, SlidersHorizontal, X } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { useMemo, type ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import type { Game } from "../../lib/api";
-import { activeFilters, genreCounts, knowsPlayers, type GameFilters } from "../../lib/games";
+import { activeFilters, type GameFilters, genreCounts, knowsPlayers } from "../../lib/games";
 import { cn } from "../ui/cn";
 
 function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
@@ -78,7 +78,10 @@ export function FilterDrawer({
             <SlidersHorizontal className="size-5 text-white" aria-hidden />
             <Dialog.Title className="text-lg font-semibold">Filters</Dialog.Title>
             {n > 0 && <span className="rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold">{n} on</span>}
-            <Dialog.Close aria-label="Close" className="ml-auto grid size-9 place-items-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white">
+            <Dialog.Close
+              aria-label="Close"
+              className="ml-auto grid size-9 place-items-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white"
+            >
               <X className="size-5" />
             </Dialog.Close>
           </div>
@@ -98,19 +101,33 @@ export function FilterDrawer({
               />
             </label>
             <Section title="Played">
-              <Toggle on={filters.played === "played"} onClick={() => onFilters({ ...filters, played: filters.played === "played" ? undefined : "played" })}>
+              <Toggle
+                on={filters.played === "played"}
+                onClick={() => onFilters({ ...filters, played: filters.played === "played" ? undefined : "played" })}
+              >
                 Played before
               </Toggle>
-              <Toggle on={filters.played === "unplayed"} onClick={() => onFilters({ ...filters, played: filters.played === "unplayed" ? undefined : "unplayed" })}>
+              <Toggle
+                on={filters.played === "unplayed"}
+                onClick={() =>
+                  onFilters({ ...filters, played: filters.played === "unplayed" ? undefined : "unplayed" })
+                }
+              >
                 Not played yet
               </Toggle>
-              <Toggle on={!!filters.favourites} onClick={() => onFilters({ ...filters, favourites: !filters.favourites || undefined })}>
+              <Toggle
+                on={!!filters.favourites}
+                onClick={() => onFilters({ ...filters, favourites: !filters.favourites || undefined })}
+              >
                 Favourites
               </Toggle>
             </Section>
             {players && (
               <Section title="Players">
-                <Toggle on={!!filters.multiplayer} onClick={() => onFilters({ ...filters, multiplayer: !filters.multiplayer || undefined })}>
+                <Toggle
+                  on={!!filters.multiplayer}
+                  onClick={() => onFilters({ ...filters, multiplayer: !filters.multiplayer || undefined })}
+                >
                   2 players or more
                 </Toggle>
               </Section>

@@ -4,7 +4,7 @@
 import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
-import { moveFocus, startFocus, type Focus, type RowShape } from "../../lib/home";
+import { type Focus, moveFocus, type RowShape, startFocus } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
 import HintBar from "../HintBar";
 import Shell from "../Shell";
@@ -176,7 +176,14 @@ function HomeScreen() {
         {systems.length > 0 && (
           <Row title="Systems" icon={<Gamepad2 />}>
             {systems.map((s, i) => (
-              <SystemCard key={s.id} system={s} row={SYSTEMS} col={i} focused={focused(SYSTEMS, i)} onOpen={() => openSystem(s)} />
+              <SystemCard
+                key={s.id}
+                system={s}
+                row={SYSTEMS}
+                col={i}
+                focused={focused(SYSTEMS, i)}
+                onOpen={() => openSystem(s)}
+              />
             ))}
           </Row>
         )}

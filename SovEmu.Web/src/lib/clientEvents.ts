@@ -1,9 +1,10 @@
 // What goes wrong in the browser, for the server's log (`reportClientEvents`, logged as
 // `client event` beside the game's own lines). Events are batched for a moment and sent only
 // while signed in; a report that fails is dropped, never retried, and never shown.
+
+import type { ClientEventKind } from "../graphql/graphql";
 import { quietly } from "./graphql";
 import { ReportClientEventsMutation } from "./queries";
-import type { ClientEventKind } from "../graphql/graphql";
 
 export interface ClientEvent {
   kind: ClientEventKind;

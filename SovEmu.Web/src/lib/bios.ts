@@ -7,7 +7,11 @@ export type Tone = "good" | "warn" | "info" | "bad" | "quiet";
 export const STATES: Record<SystemBios["state"], { text: string; tone: Tone; help: string }> = {
   READY: { text: "Ready", tone: "good", help: "Everything it needs is there and verified." },
   WARNING: { text: "Check", tone: "warn", help: "Playable, but a file is not a known dump or is in the wrong place." },
-  INCOMPLETE: { text: "Incomplete", tone: "info", help: "Playable on the core's built-in BIOS, which some games dislike." },
+  INCOMPLETE: {
+    text: "Incomplete",
+    tone: "info",
+    help: "Playable on the core's built-in BIOS, which some games dislike.",
+  },
   MISSING: { text: "Missing", tone: "bad", help: "Games will not start until a required file is added." },
 };
 

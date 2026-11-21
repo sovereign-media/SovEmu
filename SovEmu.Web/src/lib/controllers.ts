@@ -2,17 +2,40 @@
 // model a gamepad is (its ID, the key for the user's saved mapping), its family (for button
 // labels), the positional input names, the default mappings, hotkeys and player slots. Plain
 // TypeScript, no DOM, so Vitest covers it.
-import { bit, type ButtonName, MAX_PORTS } from "./protocol";
+import { type ButtonName, bit, MAX_PORTS } from "./protocol";
 
 /** A controller's inputs by position: the W3C standard gamepad's buttons 0-15, in order. */
 export const PAD_INPUTS = [
-  "south", "east", "west", "north", "l1", "r1", "l2", "r2",
-  "select", "start", "l3", "r3", "up", "down", "left", "right",
+  "south",
+  "east",
+  "west",
+  "north",
+  "l1",
+  "r1",
+  "l2",
+  "r2",
+  "select",
+  "start",
+  "l3",
+  "r3",
+  "up",
+  "down",
+  "left",
+  "right",
 ] as const;
 export type PadInput = (typeof PAD_INPUTS)[number];
 
 /** A controller's stick directions: a stick pushed past half-way, bindable like buttons. */
-export const STICK_INPUTS = ["ls_up", "ls_down", "ls_left", "ls_right", "rs_up", "rs_down", "rs_left", "rs_right"] as const;
+export const STICK_INPUTS = [
+  "ls_up",
+  "ls_down",
+  "ls_left",
+  "ls_right",
+  "rs_up",
+  "rs_down",
+  "rs_left",
+  "rs_right",
+] as const;
 export type StickInput = (typeof STICK_INPUTS)[number];
 const ARROWS = { up: "↑", down: "↓", left: "←", right: "→" } as const;
 
@@ -34,7 +57,8 @@ export function stickInputs(lx: number, ly: number, rx: number, ry: number, thre
 }
 
 /** The diagram key an input lights: a stick direction lights its stick. */
-export const diagramKey = (input: string): string => (input.startsWith("ls_") ? "l3" : input.startsWith("rs_") ? "r3" : input);
+export const diagramKey = (input: string): string =>
+  input.startsWith("ls_") ? "l3" : input.startsWith("rs_") ? "r3" : input;
 
 export type Family = "xbox" | "playstation" | "nintendo" | "generic";
 
@@ -46,25 +70,68 @@ export const KEYBOARD = "keyboard";
 export const RESERVED_KEYS = ["Tab", "Backspace"];
 
 export const DEFAULT_PAD: Mapping = {
-  south: "B", east: "A", west: "Y", north: "X", l1: "L", r1: "R", l2: "L2", r2: "R2",
-  select: "SELECT", start: "START", l3: "L3", r3: "R3", up: "UP", down: "DOWN", left: "LEFT", right: "RIGHT",
+  south: "B",
+  east: "A",
+  west: "Y",
+  north: "X",
+  l1: "L",
+  r1: "R",
+  l2: "L2",
+  r2: "R2",
+  select: "SELECT",
+  start: "START",
+  l3: "L3",
+  r3: "R3",
+  up: "UP",
+  down: "DOWN",
+  left: "LEFT",
+  right: "RIGHT",
 };
 
 export const DEFAULT_KEYS: Mapping = {
-  ArrowUp: "UP", ArrowDown: "DOWN", ArrowLeft: "LEFT", ArrowRight: "RIGHT",
-  KeyZ: "B", KeyX: "A", KeyA: "Y", KeyS: "X", KeyQ: "L", KeyW: "R",
-  Enter: "START", ShiftLeft: "SELECT", ShiftRight: "SELECT",
+  ArrowUp: "UP",
+  ArrowDown: "DOWN",
+  ArrowLeft: "LEFT",
+  ArrowRight: "RIGHT",
+  KeyZ: "B",
+  KeyX: "A",
+  KeyA: "Y",
+  KeyS: "X",
+  KeyQ: "L",
+  KeyW: "R",
+  Enter: "START",
+  ShiftLeft: "SELECT",
+  ShiftRight: "SELECT",
 };
 
-export const defaultMapping = (controller: string): Mapping =>
-  ({ ...(controller === KEYBOARD ? DEFAULT_KEYS : DEFAULT_PAD) });
+export const defaultMapping = (controller: string): Mapping => ({
+  ...(controller === KEYBOARD ? DEFAULT_KEYS : DEFAULT_PAD),
+});
 
 // --- Recognising a controller -----------------------------------------------------------------
 
 const MODELS: { id: string; name: string; family: Family; ids: string[] }[] = [
   {
-    id: "xbox", name: "Xbox Controller", family: "xbox",
-    ids: ["028e", "0291", "0719", "02d1", "02dd", "02e0", "02e3", "02ea", "02fd", "0b00", "0b05", "0b12", "0b13", "0b20", "0b22"].map((p) => `045e:${p}`),
+    id: "xbox",
+    name: "Xbox Controller",
+    family: "xbox",
+    ids: [
+      "028e",
+      "0291",
+      "0719",
+      "02d1",
+      "02dd",
+      "02e0",
+      "02e3",
+      "02ea",
+      "02fd",
+      "0b00",
+      "0b05",
+      "0b12",
+      "0b13",
+      "0b20",
+      "0b22",
+    ].map((p) => `045e:${p}`),
   },
   { id: "dualsense", name: "DualSense", family: "playstation", ids: ["054c:0ce6", "054c:0df2"] },
   { id: "dualshock4", name: "DualShock 4", family: "playstation", ids: ["054c:05c4", "054c:09cc", "054c:0ba0"] },
@@ -88,14 +155,30 @@ export function familyOf(id: string): Family {
 
 /** The console's buttons (libretro's RetroPad), in the order menus list them, with names. */
 export const PAD_BUTTONS: [ButtonName, string][] = [
-  ["UP", "Up"], ["DOWN", "Down"], ["LEFT", "Left"], ["RIGHT", "Right"],
-  ["A", "A"], ["B", "B"], ["X", "X"], ["Y", "Y"], ["L", "L"], ["R", "R"], ["L2", "L2"], ["R2", "R2"],
-  ["L3", "L3 (left stick)"], ["R3", "R3 (right stick)"], ["START", "Start"], ["SELECT", "Select"],
+  ["UP", "Up"],
+  ["DOWN", "Down"],
+  ["LEFT", "Left"],
+  ["RIGHT", "Right"],
+  ["A", "A"],
+  ["B", "B"],
+  ["X", "X"],
+  ["Y", "Y"],
+  ["L", "L"],
+  ["R", "R"],
+  ["L2", "L2"],
+  ["R2", "R2"],
+  ["L3", "L3 (left stick)"],
+  ["R3", "R3 (right stick)"],
+  ["START", "Start"],
+  ["SELECT", "Select"],
 ];
 
 /** Where each face button sits, since labels differ between makers. */
 export const POSITIONS: Partial<Record<PadInput, string>> = {
-  south: "bottom", east: "right", west: "left", north: "top",
+  south: "bottom",
+  east: "right",
+  west: "left",
+  north: "top",
 };
 
 export interface ControllerInfo {
@@ -108,7 +191,12 @@ export interface ControllerInfo {
 
 /** A name as an ID part: lowercase, other runs a `-`, at most 48 characters. */
 export const slug = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "");
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
+    .replace(/-+$/, "");
 
 const hex4 = (s: string) => s.toLowerCase().padStart(4, "0");
 
@@ -137,31 +225,79 @@ export function identify(gamepadId: string): ControllerInfo {
   const ids = vendor && product ? `${vendor}:${product}` : null;
   const byIds = ids ? MODELS.find((m) => m.ids.includes(ids)) : undefined;
   const byName =
-    xinput || /xbox/.test(lower) ? MODELS[0]
-    : /dualsense/.test(lower) ? MODELS[1]
-    : /dualshock 4/.test(lower) || (vendor === "054c" && /wireless controller/.test(lower)) ? MODELS[2]
-    : vendor === "057e" && /pro controller/.test(lower) ? MODELS[3]
-    : undefined;
+    xinput || /xbox/.test(lower)
+      ? MODELS[0]
+      : /dualsense/.test(lower)
+        ? MODELS[1]
+        : /dualshock 4/.test(lower) || (vendor === "054c" && /wireless controller/.test(lower))
+          ? MODELS[2]
+          : vendor === "057e" && /pro controller/.test(lower)
+            ? MODELS[3]
+            : undefined;
   // Known IDs win; a name only names the model when the IDs are unknown or missing.
   const model = byIds ?? (ids && VENDOR_FAMILY[vendor!] === undefined ? undefined : byName);
   if (model) return { id: model.id, name, family: model.family };
   const family: Family =
     (vendor && VENDOR_FAMILY[vendor]) ||
-    (/playstation|dualshock|ps[345]/.test(lower) ? "playstation" : /nintendo|switch|joy-con/.test(lower) ? "nintendo" : "generic");
+    (/playstation|dualshock|ps[345]/.test(lower)
+      ? "playstation"
+      : /nintendo|switch|joy-con/.test(lower)
+        ? "nintendo"
+        : "generic");
   return { id: ids ? `pad:${ids}` : `pad:name:${slug(name) || "unknown"}`, name, family };
 }
 
 // --- Labels -----------------------------------------------------------------------------------
 
 const XBOX: Record<PadInput, string> = {
-  south: "A", east: "B", west: "X", north: "Y", l1: "LB", r1: "RB", l2: "LT", r2: "RT",
-  select: "View", start: "Menu", l3: "LS", r3: "RS", up: "D-pad ↑", down: "D-pad ↓", left: "D-pad ←", right: "D-pad →",
+  south: "A",
+  east: "B",
+  west: "X",
+  north: "Y",
+  l1: "LB",
+  r1: "RB",
+  l2: "LT",
+  r2: "RT",
+  select: "View",
+  start: "Menu",
+  l3: "LS",
+  r3: "RS",
+  up: "D-pad ↑",
+  down: "D-pad ↓",
+  left: "D-pad ←",
+  right: "D-pad →",
 };
 const LABELS: Record<Family, Record<PadInput, string>> = {
   xbox: XBOX,
   generic: XBOX,
-  playstation: { ...XBOX, south: "✕", east: "○", west: "□", north: "△", l1: "L1", r1: "R1", l2: "L2", r2: "R2", select: "Create", start: "Options", l3: "L3", r3: "R3" },
-  nintendo: { ...XBOX, south: "B", east: "A", west: "Y", north: "X", l1: "L", r1: "R", l2: "ZL", r2: "ZR", select: "−", start: "+" },
+  playstation: {
+    ...XBOX,
+    south: "✕",
+    east: "○",
+    west: "□",
+    north: "△",
+    l1: "L1",
+    r1: "R1",
+    l2: "L2",
+    r2: "R2",
+    select: "Create",
+    start: "Options",
+    l3: "L3",
+    r3: "R3",
+  },
+  nintendo: {
+    ...XBOX,
+    south: "B",
+    east: "A",
+    west: "Y",
+    north: "X",
+    l1: "L",
+    r1: "R",
+    l2: "ZL",
+    r2: "ZR",
+    select: "−",
+    start: "+",
+  },
 };
 
 /** An input as its controller labels it ("✕", "LB"), or a key as a person would name it. */
@@ -178,7 +314,9 @@ export function inputLabel(input: string, family: Family | null): string {
 
 /** The inputs bound to `button`, labelled. */
 export function boundTo(mapping: Mapping, button: ButtonName, family: Family | null): string[] {
-  return Object.entries(mapping).filter(([, b]) => b === button).map(([input]) => inputLabel(input, family));
+  return Object.entries(mapping)
+    .filter(([, b]) => b === button)
+    .map(([input]) => inputLabel(input, family));
 }
 
 /**
@@ -196,7 +334,9 @@ export const toMapping = (bindings: { input: string; button: string }[]): Mappin
 
 /** A mapping as the API's binding list, in a stable order. */
 export const toBindings = (m: Mapping) =>
-  Object.entries(m).sort(([a], [b]) => a.localeCompare(b)).map(([input, button]) => ({ input, button }));
+  Object.entries(m)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([input, button]) => ({ input, button }));
 
 // --- Hotkeys ----------------------------------------------------------------------------------
 

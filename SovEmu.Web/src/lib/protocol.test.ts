@@ -19,7 +19,9 @@ describe("input protocol", () => {
     expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: true }))]).toEqual([0x02, 1, 0b11]);
     expect([...new Uint8Array(encodeHotkeys({ fastForward: true, rewind: false }))]).toEqual([0x02, 1, 0b01]);
     expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: true }))]).toEqual([0x02, 1, 0b10]);
-    expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: false, pause: true }))]).toEqual([0x02, 1, 0b100]);
+    expect([...new Uint8Array(encodeHotkeys({ fastForward: false, rewind: false, pause: true }))]).toEqual([
+      0x02, 1, 0b100,
+    ]);
   });
 
   it("encodes analog state exactly like the Rust reference", () => {
@@ -29,7 +31,9 @@ describe("input protocol", () => {
     );
     expect([...bytes]).toEqual([0x03, 1, 1, 2, 3, 4, 1, 0x00, 0x80, 0xff, 0x7f, 1, 0, 0xfe, 0xff, 0, 0, 0x34, 0x12]);
     // Out-of-range values clamp rather than wrap.
-    const clamped = new DataView(encodeAnalog({ seq: 0, ports: [{ lx: 40000, ly: -40000, rx: 0, ry: 0, l2: 0, r2: 0 }] }));
+    const clamped = new DataView(
+      encodeAnalog({ seq: 0, ports: [{ lx: 40000, ly: -40000, rx: 0, ry: 0, l2: 0, r2: 0 }] }),
+    );
     expect([clamped.getInt16(7, true), clamped.getInt16(9, true)]).toEqual([32767, -32768]);
   });
 

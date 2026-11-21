@@ -49,7 +49,10 @@ export class VideoFilter {
   private mode: FilterMode = "sharp";
   private running = false;
 
-  constructor(private readonly video: HTMLVideoElement, private readonly canvas: HTMLCanvasElement) {
+  constructor(
+    private readonly video: HTMLVideoElement,
+    private readonly canvas: HTMLCanvasElement,
+  ) {
     this.gl = canvas.getContext("webgl", { alpha: false, antialias: false, desynchronized: true });
     if (this.gl) this.setup(this.gl);
   }
@@ -99,6 +102,7 @@ export class VideoFilter {
     gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT));
     gl.linkProgram(program);
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL's useProgram, not a React hook.
     gl.useProgram(program);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);

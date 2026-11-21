@@ -1,7 +1,7 @@
 // Short notices ("Saved to slot 2") on Radix Toast: `useToast()(text)` from anywhere under
 // <Toasts>.
 import { Toast } from "radix-ui";
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useState } from "react";
 
 const Context = createContext<(text: string) => void>(() => {});
 
@@ -9,7 +9,10 @@ export const useToast = () => useContext(Context);
 
 export function Toasts({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<{ id: number; text: string }[]>([]);
-  const show = useCallback((text: string) => setNotes((n) => [...n.slice(-2), { id: Date.now() + Math.random(), text }]), []);
+  const show = useCallback(
+    (text: string) => setNotes((n) => [...n.slice(-2), { id: Date.now() + Math.random(), text }]),
+    [],
+  );
   return (
     <Context.Provider value={show}>
       <Toast.Provider duration={2500} swipeDirection="down">

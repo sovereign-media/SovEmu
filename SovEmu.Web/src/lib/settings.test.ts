@@ -3,8 +3,16 @@ import type { CoreSetting } from "./api";
 import { choiceLabel, filterSettings, groupSettings, guessGroup, runAheadChoices, sourceBadge } from "./settings";
 
 const s = (key: string, description: string, over: Partial<CoreSetting> = {}): CoreSetting => ({
-  key, description, info: "", category: null, value: "off", default: "off", choices: ["off", "on"], labels: ["Off", "On"],
-  source: "CORE", ...over,
+  key,
+  description,
+  info: "",
+  category: null,
+  value: "off",
+  default: "off",
+  choices: ["off", "on"],
+  labels: ["Off", "On"],
+  source: "CORE",
+  ...over,
 });
 
 describe("emulator settings", () => {
@@ -76,7 +84,12 @@ describe("grouping", () => {
 
   it("puts the core's other categories after the main four, then SovEmu's other guesses", () => {
     const groups = groupSettings(
-      [s("h", "Hack", { category: "hacks" }), s("r", "Region"), s("o", "Overclock"), s("l", "Light gun", { category: "gun" })],
+      [
+        s("h", "Hack", { category: "hacks" }),
+        s("r", "Region"),
+        s("o", "Overclock"),
+        s("l", "Light gun", { category: "gun" }),
+      ],
       [
         { key: "hacks", description: "Emulation Hacks", info: "" },
         { key: "gun", description: "Light Gun", info: "" },

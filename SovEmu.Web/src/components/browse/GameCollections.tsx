@@ -2,8 +2,8 @@
 // collections to put it in or take it out of, with "New collection…" (named in a dialog).
 import { Check, FolderPlus, Heart, ListPlus } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { useEffect, useState, type SubmitEvent } from "react";
-import { api, ApiError, type Game } from "../../lib/api";
+import { type SubmitEvent, useEffect, useState } from "react";
+import { ApiError, api, type Game } from "../../lib/api";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Dialog, Field, inputClass } from "../ui/primitives";
@@ -71,7 +71,9 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
     try {
       const made = await api.createCollection(name);
       await api.setInCollection(made.id, game.id, true);
-      setCollections((list) => [...(list ?? []), { id: made.id, name: made.name }].sort((a, b) => a.name.localeCompare(b.name)));
+      setCollections((list) =>
+        [...(list ?? []), { id: made.id, name: made.name }].sort((a, b) => a.name.localeCompare(b.name)),
+      );
       setMember((m) => new Set(m).add(made.id));
       setNaming(false);
       toast(`Added to ${made.name}`);
@@ -99,7 +101,11 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
-          <DropdownMenu.Content sideOffset={8} align="start" className="z-[60] min-w-52 rounded-xl border border-edge bg-panel p-1 shadow-2xl">
+          <DropdownMenu.Content
+            sideOffset={8}
+            align="start"
+            className="z-[60] min-w-52 rounded-xl border border-edge bg-panel p-1 shadow-2xl"
+          >
             <DropdownMenu.Label className="px-3 pt-1.5 pb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">
               Collections
             </DropdownMenu.Label>
@@ -128,7 +134,12 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      <Dialog open={naming} onOpenChange={setNaming} title="New collection" description={`It starts with ${game.title}.`}>
+      <Dialog
+        open={naming}
+        onOpenChange={setNaming}
+        title="New collection"
+        description={`It starts with ${game.title}.`}
+      >
         <form onSubmit={create} className="grid gap-3 p-2">
           <Field label="Name">
             <input name="name" required maxLength={64} autoFocus placeholder="Co-op night" className={inputClass} />

@@ -13,8 +13,22 @@ const TYPE_ACK = 0x81;
 
 /** RetroPad button ids (libretro RETRO_DEVICE_ID_JOYPAD_*): bit n of a port's state. */
 export const Button = {
-  B: 0, Y: 1, SELECT: 2, START: 3, UP: 4, DOWN: 5, LEFT: 6, RIGHT: 7,
-  A: 8, X: 9, L: 10, R: 11, L2: 12, R2: 13, L3: 14, R3: 15,
+  B: 0,
+  Y: 1,
+  SELECT: 2,
+  START: 3,
+  UP: 4,
+  DOWN: 5,
+  LEFT: 6,
+  RIGHT: 7,
+  A: 8,
+  X: 9,
+  L: 10,
+  R: 11,
+  L2: 12,
+  R2: 13,
+  L3: 14,
+  R3: 15,
 } as const;
 export type ButtonName = keyof typeof Button;
 
@@ -43,7 +57,9 @@ export function encodeInput(packet: InputPacket): ArrayBuffer {
   view.setUint32(2, packet.seq >>> 0, true);
   view.setUint32(6, packet.clientTimeMs >>> 0, true);
   view.setUint8(10, ports.length);
-  ports.forEach((state, i) => view.setUint16(11 + 2 * i, state & 0xffff, true));
+  ports.forEach((state, i) => {
+    view.setUint16(11 + 2 * i, state & 0xffff, true);
+  });
   return buf;
 }
 
@@ -63,7 +79,12 @@ export function encodeHotkeys(h: Hotkeys): ArrayBuffer {
 
 /** One port's analog controls: sticks −32768..32767 (x right, y down), triggers 0..32767. */
 export interface Analog {
-  lx: number; ly: number; rx: number; ry: number; l2: number; r2: number;
+  lx: number;
+  ly: number;
+  rx: number;
+  ry: number;
+  l2: number;
+  r2: number;
 }
 
 export const CENTRED: Analog = { lx: 0, ly: 0, rx: 0, ry: 0, l2: 0, r2: 0 };
@@ -110,8 +131,20 @@ export interface ClientStats {
 }
 
 const STATS_KEYS: (keyof ClientStats)[] = [
-  "client", "estimate_ms", "input_rtt_p50_ms", "input_rtt_p95_ms", "net_rtt_ms", "jitter_ms", "decode_ms",
-  "width", "height", "fps", "kbps", "packets_lost", "game_mode", "wifi_lock",
+  "client",
+  "estimate_ms",
+  "input_rtt_p50_ms",
+  "input_rtt_p95_ms",
+  "net_rtt_ms",
+  "jitter_ms",
+  "decode_ms",
+  "width",
+  "height",
+  "fps",
+  "kbps",
+  "packets_lost",
+  "game_mode",
+  "wifi_lock",
 ];
 
 /** `0x04`, the version, then the known values as a JSON object (unknown and non-finite ones left out). */

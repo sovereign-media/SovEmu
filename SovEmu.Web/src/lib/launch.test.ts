@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ForwardOnly, describeStart, newStartId } from "./launch";
+import { describeStart, ForwardOnly, newStartId } from "./launch";
 
-const status = (over: object) => ({ phase: "CONTENT", elapsedMs: 0, phaseMs: 0, ...over }) as Parameters<typeof describeStart>[0];
+const status = (over: object) =>
+  ({ phase: "CONTENT", elapsedMs: 0, phaseMs: 0, ...over }) as Parameters<typeof describeStart>[0];
 
 describe("the loading bar", () => {
   it("is exact when the total is known", () => {

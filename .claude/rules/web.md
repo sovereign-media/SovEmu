@@ -41,4 +41,9 @@ paths:
 - **Latency first.** Receivers ask for `jitterBufferTarget = 0`; the input channel is unordered
   with no retransmits and carries full state on every change plus a 100 ms heartbeat; video is
   scaled with `image-rendering: pixelated` (the `.pixelated` class), never smoothed.
-- Before a PR: `npm test` and `npm run build` (which runs `astro check`) from `SovEmu.Web/`.
+- **Biome lints and formats** (`biome.jsonc`): `npm run format` rewrites, `npm run lint`
+  (`biome ci`) checks, in CI and the pre-push hook. Warnings (effect dependencies, some a11y
+  rules for the pad-driven screens) are worth a look but do not fail; errors do. Never format
+  `src/graphql/` by hand: codegen writes it.
+- Before a PR: `npm run lint`, `npm test` and `npm run build` (which runs `astro check`) from
+  `SovEmu.Web/`.

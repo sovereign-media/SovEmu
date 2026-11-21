@@ -4,7 +4,7 @@
 // stays usable, and choosing another card switches the panel to it.
 import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { AUTO_SLOT, formatAgo, formatSize, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
 import { maxPlayers } from "../../lib/games";
 import { Button } from "../ui/button";
@@ -31,7 +31,12 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
     >
       <span>{short}</span>
       {still && (
-        <img key={game.id} src={still} alt="" className={cn("absolute inset-0 size-full", game.image ? "object-cover" : "object-contain")} />
+        <img
+          key={game.id}
+          src={still}
+          alt=""
+          className={cn("absolute inset-0 size-full", game.image ? "object-cover" : "object-contain")}
+        />
       )}
       {video && game.video && (
         <video
@@ -62,7 +67,6 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 }
 
 const ago = (unix: number) => formatAgo(new Date(unix * 1000).toISOString().replace("T", " ").slice(0, 19));
-
 
 /** Stops the wheel and touch from scrolling the page through the dimming. React's own wheel
  *  and touch listeners are passive, so they could not cancel it. */
@@ -148,9 +152,13 @@ export function GamePanel({
                   {shown.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{shown.tags.join(" · ")}</p>}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                     {year && <Fact icon={<CalendarDays />}>{year}</Fact>}
-                    {(shown.developer || shown.publisher) && <Fact icon={<Building2 />}>{shown.developer ?? shown.publisher}</Fact>}
+                    {(shown.developer || shown.publisher) && (
+                      <Fact icon={<Building2 />}>{shown.developer ?? shown.publisher}</Fact>
+                    )}
                     {shown.genre && <Fact icon={<Tag />}>{shown.genre}</Fact>}
-                    {players !== null && <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>}
+                    {players !== null && (
+                      <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -177,7 +185,10 @@ export function GamePanel({
                     <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Saves</p>
                     <div className="flex flex-wrap gap-2">
                       {slots.map((s) => (
-                        <Tooltip key={s.slot} content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.savedAt)}`}>
+                        <Tooltip
+                          key={s.slot}
+                          content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.savedAt)}`}
+                        >
                           <span className="pixelated grid h-12 w-16 place-items-center overflow-hidden rounded border border-white/10 bg-black/50 text-[10px] text-slate-400">
                             {s.screenshotUrl ? (
                               <img src={s.screenshotUrl} alt="" className="pixelated size-full object-cover" />
@@ -193,7 +204,9 @@ export function GamePanel({
                   </div>
                 )}
                 <p className="border-t border-white/10 pt-3 text-xs text-slate-500">
-                  {shown.playCount ? `Played ${shown.playCount}× · last ${formatAgo(shown.lastPlayedAt)}` : "Not played yet"}
+                  {shown.playCount
+                    ? `Played ${shown.playCount}× · last ${formatAgo(shown.lastPlayedAt)}`
+                    : "Not played yet"}
                   {" · "}
                   <span className="font-mono break-all">{shown.path}</span> · {formatSize(shown.size)}
                 </p>

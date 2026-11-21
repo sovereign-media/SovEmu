@@ -33,7 +33,14 @@ function SearchScreen() {
   const field = useRef<HTMLInputElement>(null);
   const grid = useRef<HTMLDivElement>(null);
 
-  useEffect(() => void api.systems().then(setSystems).catch(() => {}), []);
+  useEffect(
+    () =>
+      void api
+        .systems()
+        .then(setSystems)
+        .catch(() => {}),
+    [],
+  );
 
   // Ask after a pause in typing; a later answer replaces an earlier one, never the reverse.
   useEffect(() => {
@@ -152,7 +159,13 @@ function SearchScreen() {
           />
         ))}
       </div>
-      <HintBar hints={[{ button: "dpad", label: "Choose" }, { button: "a", label: "Open" }, { button: "b", label: at === FIELD ? "Home" : "Search" }]} />
+      <HintBar
+        hints={[
+          { button: "dpad", label: "Choose" },
+          { button: "a", label: "Open" },
+          { button: "b", label: at === FIELD ? "Home" : "Search" },
+        ]}
+      />
     </main>
   );
 }

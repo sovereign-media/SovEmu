@@ -6,9 +6,9 @@
 // Menus are Radix DropdownMenus.
 import { ChevronRight, Gamepad2, House, LogOut, Microchip, Search, Settings } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ADMIN_NAV_GROUPS, type AdminNavItem, findAdminNavGroup, findAdminNavItem } from "../lib/adminNav";
 import { api, type SystemSummary, type User } from "../lib/api";
-import { ADMIN_NAV_GROUPS, findAdminNavGroup, findAdminNavItem, type AdminNavItem } from "../lib/adminNav";
 import { signOut as endSignIn } from "../lib/auth";
 import { groupByMaker, initials, systemBadge } from "../lib/systems";
 import { cn } from "./ui/cn";
@@ -24,7 +24,8 @@ const HEADING = "border-b border-edge px-4 pt-1.5 pb-2 text-xs font-semibold tra
 // One dock entry: a 44px disc at rest, widening to a labelled pill when the dock opens.
 const ENTRY =
   "flex h-11 w-11 cursor-pointer items-center overflow-hidden rounded-full outline-none transition-[width,background-color] duration-200 group-data-[open=true]/dock:w-48 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-inset";
-const IDLE = "text-slate-400 hover:bg-white/10 hover:text-white data-[state=open]:bg-white/10 data-[state=open]:text-white";
+const IDLE =
+  "text-slate-400 hover:bg-white/10 hover:text-white data-[state=open]:bg-white/10 data-[state=open]:text-white";
 const CURRENT = "bg-accent text-white";
 const GLYPH = "grid h-11 w-11 shrink-0 place-items-center [&_svg]:size-5";
 const LABEL =
@@ -81,7 +82,11 @@ function SystemsByMaker({
             <DropdownMenu.SubTrigger className={ROW}>
               <span className="flex -space-x-1">
                 {systems.slice(0, 3).map((s) => (
-                  <span key={s.id} className="size-2.5 rounded-full ring-2 ring-panel" style={{ background: s.color }} />
+                  <span
+                    key={s.id}
+                    className="size-2.5 rounded-full ring-2 ring-panel"
+                    style={{ background: s.color }}
+                  />
                 ))}
               </span>
               <span className="flex-1">{maker}</span>
@@ -190,9 +195,20 @@ function Entries({
     <>
       {link("/", "Home", <House />, section === "home")}
       {link("/search/", "Search", <Search />, section === "search")}
-      <MenuEntry icon={<Gamepad2 />} label="Systems" heading="Systems" current={section === "systems"} shape={shape} onOpenChange={onMenu}>
+      <MenuEntry
+        icon={<Gamepad2 />}
+        label="Systems"
+        heading="Systems"
+        current={section === "systems"}
+        shape={shape}
+        onOpenChange={onMenu}
+      >
         {withGames.length ? (
-          <SystemsByMaker systems={withGames} flat={shape === "bar"} href={(s) => `/system/?id=${encodeURIComponent(s.id)}`} />
+          <SystemsByMaker
+            systems={withGames}
+            flat={shape === "bar"}
+            href={(s) => `/system/?id=${encodeURIComponent(s.id)}`}
+          />
         ) : (
           <p className="px-4 py-2 text-sm text-slate-500">No games yet.</p>
         )}
@@ -225,7 +241,14 @@ function Entries({
         </MenuEntry>
       )}
       {user?.isAdmin && (
-        <MenuEntry icon={<Settings />} label="Admin" heading="Admin" current={section === "admin"} shape={shape} onOpenChange={onMenu}>
+        <MenuEntry
+          icon={<Settings />}
+          label="Admin"
+          heading="Admin"
+          current={section === "admin"}
+          shape={shape}
+          onOpenChange={onMenu}
+        >
           <AdminMenu shape={shape} />
         </MenuEntry>
       )}
@@ -263,7 +286,10 @@ function AdminMenu({ shape }: { shape: "dock" | "bar" }) {
     const Icon = group.icon;
     return (
       <DropdownMenu.Sub key={group.id}>
-        <DropdownMenu.SubTrigger className={cn(ROW, group.id === current && "text-white")} data-current={group.id === current}>
+        <DropdownMenu.SubTrigger
+          className={cn(ROW, group.id === current && "text-white")}
+          data-current={group.id === current}
+        >
           <Icon />
           <span className="flex-1">{group.label}</span>
           <ChevronRight className="text-slate-500" />
@@ -291,7 +317,10 @@ export default function SideNav({ section }: { section: Section }) {
 
   useEffect(() => {
     api.viewer().then((s) => setUser(s.user));
-    api.systems().then(setSystems).catch(() => {});
+    api
+      .systems()
+      .then(setSystems)
+      .catch(() => {});
   }, []);
 
   // Stays open while one of its menus is.

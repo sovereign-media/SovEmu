@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { boundTo, Capture, DEFAULT_KEYS, DEFAULT_PAD, defaultMapping, diagramKey, familyOf, identify, inputLabel, leftStickBound, Players, readHotkeys, rebind, slug, stickInputs, toBindings } from "./controllers";
+import {
+  boundTo,
+  Capture,
+  DEFAULT_KEYS,
+  DEFAULT_PAD,
+  defaultMapping,
+  diagramKey,
+  familyOf,
+  identify,
+  inputLabel,
+  leftStickBound,
+  Players,
+  readHotkeys,
+  rebind,
+  slug,
+  stickInputs,
+  toBindings,
+} from "./controllers";
 import { bit } from "./protocol";
 
 describe("recognising a controller (docs/CONTROLLERS.md)", () => {
@@ -7,25 +24,40 @@ describe("recognising a controller (docs/CONTROLLERS.md)", () => {
     const chrome = identify("Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)");
     const firefox = identify("045e-0b13-Xbox Wireless Controller");
     const safari = identify("45e-b13-Xbox Wireless Controller");
-    for (const c of [chrome, firefox, safari]) expect(c).toEqual({ id: "xbox", name: "Xbox Wireless Controller", family: "xbox" });
+    for (const c of [chrome, firefox, safari])
+      expect(c).toEqual({ id: "xbox", name: "Xbox Wireless Controller", family: "xbox" });
   });
 
   it("knows the popular models by IDs, or by name when there are none", () => {
-    expect(identify("DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)").id).toBe("dualsense");
+    expect(identify("DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)").id).toBe(
+      "dualsense",
+    );
     expect(identify("054c-09cc-Wireless Controller")).toMatchObject({ id: "dualshock4", family: "playstation" });
     expect(identify("057e-2009-Pro Controller")).toMatchObject({ id: "switch-pro", family: "nintendo" });
     // Chrome on Windows gives XInput pads no IDs.
-    expect(identify("Xbox 360 Controller (XInput STANDARD GAMEPAD)")).toEqual({ id: "xbox", name: "Xbox 360 Controller", family: "xbox" });
+    expect(identify("Xbox 360 Controller (XInput STANDARD GAMEPAD)")).toEqual({
+      id: "xbox",
+      name: "Xbox 360 Controller",
+      family: "xbox",
+    });
     expect(identify("DualSense Wireless Controller")).toMatchObject({ id: "dualsense" });
   });
 
   it("keys any other pad by its IDs, else by its name", () => {
     expect(identify("8BitDo Pro 2 (STANDARD GAMEPAD Vendor: 2dc8 Product: 6006)")).toEqual({
-      id: "pad:2dc8:6006", name: "8BitDo Pro 2", family: "generic",
+      id: "pad:2dc8:6006",
+      name: "8BitDo Pro 2",
+      family: "generic",
     });
     // An unlisted product from a known maker keeps that maker's labels.
-    expect(identify("054c-0268-PLAYSTATION(R)3 Controller")).toMatchObject({ id: "pad:054c:0268", family: "playstation" });
-    expect(identify("Generic   USB Joystick!")).toMatchObject({ id: "pad:name:generic-usb-joystick", family: "generic" });
+    expect(identify("054c-0268-PLAYSTATION(R)3 Controller")).toMatchObject({
+      id: "pad:054c:0268",
+      family: "playstation",
+    });
+    expect(identify("Generic   USB Joystick!")).toMatchObject({
+      id: "pad:name:generic-usb-joystick",
+      family: "generic",
+    });
     expect(slug("--Ünïcode Pad--")).toBe("n-code-pad");
     expect(slug("x".repeat(60))).toHaveLength(48);
   });
@@ -80,7 +112,11 @@ describe("hotkeys", () => {
     const ff = readHotkeys(bit("SELECT") | bit("R") | bit("B"));
     expect(ff).toEqual({ state: bit("B"), fastForward: true, rewind: false });
     expect(readHotkeys(bit("SELECT") | bit("L")).rewind).toBe(true);
-    expect(readHotkeys(bit("SELECT") | bit("START"))).toEqual({ state: bit("SELECT") | bit("START"), fastForward: false, rewind: false });
+    expect(readHotkeys(bit("SELECT") | bit("START"))).toEqual({
+      state: bit("SELECT") | bit("START"),
+      fastForward: false,
+      rewind: false,
+    });
   });
 });
 

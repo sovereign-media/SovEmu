@@ -1,11 +1,33 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { byline, cardArt, heroArt, moveFocus, nextScroll, startFocus, type RowShape } from "./home";
+import { byline, cardArt, heroArt, moveFocus, nextScroll, type RowShape, startFocus } from "./home";
 
 const game = (over: Partial<Game> = {}): Game => ({
-  id: 7, system: "snes", title: "A Game", tags: [], path: "a.sfc", size: 1, lastPlayedAt: null, playCount: 0,
-  image: null, thumb: null, video: null, fileTitle: null, description: null, releaseDate: null, developer: null,
-  publisher: null, genre: null, players: null, rating: null, favourite: false, release: null, patch: null, discs: 1, partKind: null, ...over,
+  id: 7,
+  system: "snes",
+  title: "A Game",
+  tags: [],
+  path: "a.sfc",
+  size: 1,
+  lastPlayedAt: null,
+  playCount: 0,
+  image: null,
+  thumb: null,
+  video: null,
+  fileTitle: null,
+  description: null,
+  releaseDate: null,
+  developer: null,
+  publisher: null,
+  genre: null,
+  players: null,
+  rating: null,
+  favourite: false,
+  release: null,
+  patch: null,
+  discs: 1,
+  partKind: null,
+  ...over,
 });
 
 describe("home focus", () => {
@@ -49,7 +71,9 @@ describe("home focus", () => {
 
 describe("home art", () => {
   it("prefers the image, then box art", () => {
-    expect(heroArt(game({ thumb: "/media/games/7/thumb", image: "/media/games/7/image" }))).toBe("/media/games/7/image");
+    expect(heroArt(game({ thumb: "/media/games/7/thumb", image: "/media/games/7/image" }))).toBe(
+      "/media/games/7/image",
+    );
     expect(heroArt(game({ thumb: "/media/games/7/thumb" }))).toBe("/media/games/7/thumb");
     expect(heroArt(game())).toBeNull();
   });
@@ -66,7 +90,9 @@ describe("home art", () => {
   });
 
   it("builds a byline from what is known", () => {
-    expect(byline(game({ releaseDate: "1996-06-23", developer: "Nintendo", genre: "Platform" }))).toBe("1996 · Nintendo · Platform");
+    expect(byline(game({ releaseDate: "1996-06-23", developer: "Nintendo", genre: "Platform" }))).toBe(
+      "1996 · Nintendo · Platform",
+    );
     expect(byline(game({ publisher: "Capcom" }))).toBe("Capcom");
     expect(byline(game())).toBe("");
   });
