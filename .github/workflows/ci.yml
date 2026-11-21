@@ -147,6 +147,9 @@ jobs:
       - name: Generated GraphQL types match the schema
         run: npm run codegen:check
 
+      - name: Lint and format (Biome)
+        run: npm run lint
+
       - name: Test
         run: npm test
 

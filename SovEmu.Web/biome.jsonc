@@ -1,0 +1,49 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  // Lint and format in one tool: `npm run lint` checks (CI and the pre-push hook), `npm run
+  // format` rewrites. Generated code (src/graphql) and the build are left alone.
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**", "!src/graphql", "!dist", "!.astro", "!**/*.astro"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "double", "semicolons": "always", "trailingCommas": "all" }
+  },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        // Refs and elements known to exist once mounted: `video.current!` says so.
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        // `cache ?? (cache = make())` and `while ((m = re.exec(s)))` are deliberate here.
+        "noAssignInExpressions": "off",
+        "noArrayIndexKey": "warn"
+      },
+      "correctness": {
+        // Effects that must run once (a session, a nav listener) list fewer dependencies on
+        // purpose; each is worth a look, so these warn rather than fail.
+        "useExhaustiveDependencies": "warn"
+      },
+      "a11y": {
+        // A console-style screen driven by a pad and a remote: its own focus and keys.
+        "noAutofocus": "off",
+        "useMediaCaption": "off",
+        "noNoninteractiveTabindex": "warn",
+        "useKeyWithClickEvents": "warn",
+        "useFocusableInteractive": "warn",
+        "noNoninteractiveElementToInteractiveRole": "warn"
+      }
+    }
+  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+}
