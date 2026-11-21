@@ -37,7 +37,8 @@ jobs:
   # everything it changes.
   changes:
     name: Changes
-    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    # A quick job, without Docker: the small runners (2Gi), leaving the 9Gi ones to builds.
+    runs-on: ${{ vars.SMALL_RUNNER || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read
@@ -124,7 +125,8 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
     name: Web client (Vite)
-    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    # A quick job, without Docker: the small runners (2Gi), leaving the 9Gi ones to builds.
+    runs-on: ${{ vars.SMALL_RUNNER || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: SovEmu.Web
@@ -281,7 +283,8 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.chart == 'true'
     name: Helm chart
-    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    # A quick job, without Docker: the small runners (2Gi), leaving the 9Gi ones to builds.
+    runs-on: ${{ vars.SMALL_RUNNER || vars.LINUX_RUNNER || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: charts/sovemu
