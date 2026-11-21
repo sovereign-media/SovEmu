@@ -28,6 +28,8 @@ services:
         required: false
     environment:
       SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
+      # Log lines in your own time (an IANA name, America/Chicago); UTC without one.
+      TZ: ${TZ:-UTC}
     ports:
       - "8080:8080/tcp"
       - "50000-50009:50000-50009/udp"

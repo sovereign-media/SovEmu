@@ -360,6 +360,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
 | `SOVEMU_ASSET_KEY` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret: `_FILE` works. Changing it invalidates URLs already handed out |
 | `SOVEMU_ASSET_URL_HOURS` | `24` | How long a signed file URL is valid (rounded to the hour, so URLs stay cacheable) |
+| `TZ` | `UTC` | The time zone of log timestamps, an IANA name (`America/Chicago`); workers follow it. The standard variable, not a `SOVEMU_` one, so container tools and cluster injectors (k8tz) that set it just work. The chart's `timezone` sets it |
 | `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
 | `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
 | `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |

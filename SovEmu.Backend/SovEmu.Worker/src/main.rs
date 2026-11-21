@@ -67,7 +67,11 @@ enum LogFormat {
 /// Logs to stderr (stdout is the server's channel), as text or JSON lines.
 fn init_logs(format: LogFormat) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_writer(std::io::stderr);
+    // Timestamps in the local time zone (`TZ`, which the server passes on), as the server's.
+    let builder = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::rfc_3339());
     match format {
         LogFormat::Text => builder.init(),
         LogFormat::Json => {

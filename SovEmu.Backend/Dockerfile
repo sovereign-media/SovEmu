@@ -106,14 +106,15 @@ FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # libstdc++6, libgomp1: the C++ cores (and flycast's OpenMP). libxi6, libusb-1.0-0: linked by
 # the release's Dolphin (for input devices SovEmu never gives it). libvpx9, libopus0: VP8 and Opus
 # encoding. tini: PID 1, so the per-session workers are reaped. libpng, zstd, xz: the 3D cores'
-# texture and disc-image formats.
+# texture and disc-image formats. tzdata: the time zones, so `TZ` (America/Chicago) gives log lines
+# local times.
 # GPU rendering: libglvnd (libegl1, libgl1, libgles2) dispatches to a vendor. Mesa's is here
 # (libegl-mesa0, libgl1-mesa-dri: AMD radeonsi, Intel iris/crocus, nouveau, and llvmpipe, the
 # software renderer used without a GPU). NVIDIA's is added by the NVIDIA container toolkit when
 # the host has one. Mesa's Vulkan drivers (mesa-vulkan-drivers, ~80 MB) are left out until a
 # shipped core renders with Vulkan.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 ca-certificates tini libstdc++6 libgomp1 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 ca-certificates tini tzdata libstdc++6 libgomp1 \
         libxi6 libusb-1.0-0 \
         libvpx9 libopus0 libpng16-16t64 libzstd1 liblzma5 \
         libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
@@ -127,7 +128,10 @@ COPY --from=cores /out/cores/ /opt/sovemu/cores/
 COPY --from=build /out/sovemu-worker /out/sovemu-server /usr/local/bin/
 COPY --from=web /web/dist/ /opt/sovemu/web/
 
-ENV SOVEMU_CORES_DIR=/opt/sovemu/cores \
+# UTC unless the container is given its own (`-e TZ=Europe/London`, compose's TZ, the chart's
+# `timezone`, or a cluster's injector such as k8tz).
+ENV TZ=UTC \
+    SOVEMU_CORES_DIR=/opt/sovemu/cores \
     SOVEMU_WEB_DIR=/opt/sovemu/web \
     SOVEMU_DECORATIONS_BUILTIN=/opt/sovemu/decorations \
     SOVEMU_WORKER=/usr/local/bin/sovemu-worker \

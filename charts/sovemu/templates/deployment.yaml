@@ -73,6 +73,10 @@ spec:
                 name: {{ . }}
             {{- end }}
           env:
+            {{- with .Values.timezone }}
+            - name: TZ
+              value: {{ . | quote }}
+            {{- end }}
             {{- if and .Values.media.hostNetwork (not (include "sovemu.advertiseIP" .)) }}
             - name: SOVEMU_ADVERTISE_IP
               valueFrom:
