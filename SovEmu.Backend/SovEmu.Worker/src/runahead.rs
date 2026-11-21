@@ -35,9 +35,14 @@ impl RunAhead {
         let frames = frames.min(MAX_FRAMES);
         let budget = Duration::from_secs_f64(BUDGET / fps.clamp(1.0, 1000.0));
         if frames > 0 {
-            tracing::info!(frames, "run-ahead on");
+            tracing::info!(frames, budget_ms = budget.as_secs_f64() * 1000.0, "run-ahead on");
         }
         Self { frames, budget, slow_ticks: 0 }
+    }
+
+    /// Frames it is running ahead now (it runs fewer if it cannot keep up).
+    pub(crate) fn frames(&self) -> u32 {
+        self.frames
     }
 
     /// From the real frame the core has just run, runs ahead with the same `input`, writes the

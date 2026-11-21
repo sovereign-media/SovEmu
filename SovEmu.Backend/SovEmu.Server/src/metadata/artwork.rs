@@ -82,7 +82,7 @@ pub(crate) async fn run_claimed(state: AppState) {
         if queue.is_empty() {
             break;
         }
-        tracing::info!("metadata: downloading box art for {} game(s)", queue.len());
+        tracing::info!(count = queue.len(), "box art download started");
         update(&meta, |s| s.total += queue.len() as u64);
         let mut tasks = tokio::task::JoinSet::new();
         for item in queue {
@@ -102,7 +102,7 @@ pub(crate) async fn run_claimed(state: AppState) {
     update(&meta, |s| s.running = false);
     let s = meta.artwork_status();
     if s.total > 0 {
-        tracing::info!("metadata: box art done ({} downloaded, {} failed)", s.downloaded, s.failed);
+        tracing::info!(downloaded = s.downloaded, failed = s.failed, "box art download done");
     }
 }
 
@@ -130,7 +130,7 @@ async fn fetch(state: &AppState, item: &Wanted) -> bool {
         .await,
     };
     if let Err(e) = result {
-        tracing::warn!("metadata: cannot record box art for game {}: {e}", item.game_id);
+        tracing::warn!(game_id = item.game_id, error = %e, "cannot record box art");
     }
     file.is_some()
 }

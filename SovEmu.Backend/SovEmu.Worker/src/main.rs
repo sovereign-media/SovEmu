@@ -13,6 +13,7 @@
 
 mod gpu;
 mod headless;
+mod health;
 mod loading;
 mod pacing;
 mod patch;
@@ -51,6 +52,10 @@ struct Cli {
     /// The server's id for this game session, on every log line (in a `session` span).
     #[arg(long, global = true)]
     session_id: Option<String>,
+
+    /// The session's system (`snes`, `psx`), on every log line beside the session id.
+    #[arg(long, global = true)]
+    system: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -177,6 +182,11 @@ struct SessionArgs {
     #[arg(long, default_value_t = 0)]
     run_ahead: u32,
 
+    /// Seconds between `session health` log lines while a client is connected: frame rate,
+    /// overrun and late ticks, encode time, bitrate, input (0: none; the exit summary stays).
+    #[arg(long, default_value_t = 10)]
+    health_interval: u32,
+
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
@@ -255,6 +265,11 @@ struct ServeArgs {
     /// at most 4). Each costs a frame of emulation and a save state, so keep it to 2D systems.
     #[arg(long, default_value_t = 0)]
     run_ahead: u32,
+
+    /// Seconds between `session health` log lines while a client is connected: frame rate,
+    /// overrun and late ticks, encode time, bitrate, input (0: none; the exit summary stays).
+    #[arg(long, default_value_t = 10)]
+    health_interval: u32,
 
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
@@ -340,7 +355,10 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     init_logs(cli.log_format);
-    let span = cli.session_id.as_deref().map(|id| tracing::info_span!("session", session.id = %id));
+    let span = cli
+        .session_id
+        .as_deref()
+        .map(|id| tracing::info_span!("session", session.id = %id, system = cli.system.as_deref()));
     let _session = span.as_ref().map(tracing::Span::enter);
     let result = match cli.command {
         Command::Session(args) => session::run(args),

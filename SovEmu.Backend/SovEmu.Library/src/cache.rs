@@ -161,7 +161,7 @@ impl Cache {
                     });
                 }
             });
-            tracing::info!("prefetched {} file(s) for {name}", copied.into_inner());
+            tracing::info!(game = %name, count = copied.into_inner(), "prefetched files");
             cache.batches.lock().unwrap_or_else(|e| e.into_inner()).remove(&name);
         });
     }
@@ -173,7 +173,7 @@ impl Cache {
         let cache = self.clone();
         std::thread::spawn(move || {
             if let Err(e) = cache.copy(&original, &copy) {
-                tracing::warn!("caching {} failed: {e}", original.display());
+                tracing::warn!(path = %original.display(), error = %e, "caching failed");
             }
             cache.copying.lock().unwrap_or_else(|e| e.into_inner()).remove(&copy);
         });

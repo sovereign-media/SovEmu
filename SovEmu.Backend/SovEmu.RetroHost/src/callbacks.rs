@@ -238,7 +238,7 @@ impl HostState {
                     if let Some(msg) = read::<ffi::retro_message>(data)
                         && let Some(text) = read_str(msg.msg)
                     {
-                        tracing::info!(target: "core", "message: {text}");
+                        tracing::info!(target: "core", text = %text, "core message");
                     }
                     true
                 }
@@ -246,7 +246,7 @@ impl HostState {
                     if let Some(msg) = read::<ffi::retro_message_ext>(data)
                         && let Some(text) = read_str(msg.msg)
                     {
-                        tracing::info!(target: "core", "message: {text}");
+                        tracing::info!(target: "core", text = %text, "core message");
                     }
                     true
                 }
@@ -387,7 +387,7 @@ impl HostState {
                 // update-display callback, and callbacks we would never call.
                 _ => {
                     if self.unsupported_logged.insert(cmd) {
-                        tracing::debug!("unsupported environment command {cmd:#x}");
+                        tracing::debug!(command = %format!("{cmd:#x}"), "unsupported environment command");
                     }
                     false
                 }
@@ -412,7 +412,7 @@ impl HostState {
             | t::RETRO_HW_CONTEXT_OPENGLES3
             | t::RETRO_HW_CONTEXT_OPENGLES_VERSION => GlApi::Gles,
             other => {
-                tracing::info!("the core asked for GPU API {other}, which SovEmu does not offer");
+                tracing::info!(api = other, "the core asked for a GPU API SovEmu does not offer");
                 return false;
             }
         };
@@ -450,9 +450,10 @@ impl HostState {
                 Some(chosen) => {
                     if !d.options.contains(chosen) {
                         tracing::warn!(
-                            "core option {}={chosen} is not one of {:?}; using it anyway",
-                            d.key,
-                            d.options
+                            option = %d.key,
+                            value = %chosen,
+                            allowed = ?d.options,
+                            "core option value is not one of its choices; using it anyway"
                         );
                     }
                     chosen.clone()

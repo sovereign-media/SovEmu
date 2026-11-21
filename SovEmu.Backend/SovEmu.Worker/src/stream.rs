@@ -32,6 +32,7 @@ use str0m::net::{Protocol, Receive};
 use str0m::rtp::Extension;
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
+use crate::health::{self, Health};
 use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
@@ -102,6 +103,8 @@ pub(crate) struct SessionConfig {
     pub fast_forward: u32,
     /// Frames the picture runs ahead of the game (0: off).
     pub run_ahead: u32,
+    /// Seconds between `session health` log lines while a client is connected (0: none).
+    pub health_interval: u32,
     pub keyframe_interval: u32,
     /// The GPU for OpenGL cores; `None` refuses them.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
@@ -134,6 +137,9 @@ pub(crate) struct Session {
     /// Frames emulated per tick while fast-forward is held.
     fast_forward: u32,
     run_ahead: RunAhead,
+    health: Health,
+    /// The last send-bandwidth estimate, for the health lines.
+    estimate_kbps: Option<u64>,
     /// The configured (maximum) video bitrate; adaptation stays at or below it.
     max_video_kbps: u32,
     audio_kbps: u32,
@@ -159,7 +165,7 @@ impl Session {
     pub(crate) fn open(config: &SessionConfig, report: Report<'_>) -> Result<Self> {
         // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
         if let Err(e) = std::fs::create_dir_all(&config.system_dir) {
-            tracing::debug!("system dir {}: {e}", config.system_dir.display());
+            tracing::debug!(path = %config.system_dir.display(), error = %e, "cannot create the system folder");
         }
         std::fs::create_dir_all(&config.save_dir)?;
         let bios = config
@@ -195,13 +201,13 @@ impl Session {
             Persist::new(&config.save_dir, save_name.as_deref(), config.state_dir.clone());
         persist.restore(&mut core);
         tracing::info!(
-            "{} {}: {}x{} @ {:.4} fps, audio {} Hz",
-            core.system_info().library_name,
-            core.system_info().library_version,
-            av.base_width,
-            av.base_height,
-            av.fps,
-            av.sample_rate
+            core.name = %core.system_info().library_name,
+            core.version = %core.system_info().library_version,
+            width = av.base_width,
+            height = av.base_height,
+            fps = av.fps,
+            sample_rate = av.sample_rate,
+            "game loaded"
         );
         Ok(Self {
             _system_dir: system_dir,
@@ -229,6 +235,8 @@ impl Session {
             ),
             fast_forward: config.fast_forward.max(1),
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
+            health: Health::new(config.health_interval, av.fps),
+            estimate_kbps: None,
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
@@ -247,17 +255,28 @@ impl Session {
         if std::mem::replace(&mut self.finished, true) {
             return;
         }
+        let at = self.health_now();
+        self.health.summary(Instant::now(), &at);
         let (width, height) = self.shot_size;
         let shot = Screenshot { rgba: &self.rgba, width, height };
         self.persist.finish(&mut self.core, self.frame > 0, Some(shot));
     }
 
-    /// The core's name and the content's geometry and timing.
+    /// What the health lines report beside their counts.
+    fn health_now(&self) -> health::Now {
+        health::Now {
+            video_kbps_target: self.video.config().bitrate_kbps,
+            estimate_kbps: self.estimate_kbps,
+            run_ahead: self.run_ahead.frames(),
+        }
+    }
+
     /// The options the core has declared now that its game is loaded.
     pub(crate) fn options(&self) -> (Vec<CoreOption>, Vec<CoreCategory>) {
         declared_options(&self.core)
     }
 
+    /// The core's name and the content's geometry and timing.
     pub(crate) fn describe(&self) -> (String, AvInfo) {
         let av = *self.core.av_info().expect("a game is loaded");
         (self.core.system_info().library_name.clone(), av)
@@ -281,7 +300,7 @@ impl Session {
                 // The game reads the new disc from here on: rewinding across the swap would
                 // restore states from the old one.
                 self.rewind.clear();
-                tracing::info!("changed to disc {}", disc + 1);
+                tracing::info!(disc = disc + 1, "changed disc");
                 Ok(false)
             }
             Request::SetCheats { codes, .. } => {
@@ -289,7 +308,7 @@ impl Session {
                 for (i, code) in codes.iter().enumerate() {
                     self.core.set_cheat(i as u32, true, code);
                 }
-                tracing::info!("{} cheat(s) active", codes.len());
+                tracing::info!(count = codes.len(), "cheats set");
                 Ok(false)
             }
             Request::Shutdown { .. } => {
@@ -405,6 +424,7 @@ pub(crate) fn run(
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {
                                 tracing::info!("new client replaces the current one");
+                                session.health.suspend(Instant::now());
                                 on_event(StreamEvent::ClientDisconnected);
                             }
                             peer = Some(new_peer);
@@ -412,7 +432,7 @@ pub(crate) fn run(
                             Ok(answer)
                         }
                         Err(e) => {
-                            tracing::warn!("rejected offer: {e:#}");
+                            tracing::warn!(error = %format!("{e:#}"), "rejected offer");
                             Err(format!("{e:#}"))
                         }
                     };
@@ -448,6 +468,7 @@ pub(crate) fn run(
                 }
                 Ok(None) => {
                     tracing::info!("client disconnected; pausing");
+                    session.health.suspend(Instant::now());
                     if was_connected {
                         on_event(StreamEvent::ClientDisconnected);
                     }
@@ -455,7 +476,8 @@ pub(crate) fn run(
                     pacer = None;
                 }
                 Err(e) => {
-                    tracing::warn!("peer failed: {e:#}; dropping it");
+                    tracing::warn!(error = %format!("{e:#}"), "peer failed; dropping it");
+                    session.health.suspend(Instant::now());
                     if was_connected {
                         on_event(StreamEvent::ClientDisconnected);
                     }
@@ -471,7 +493,10 @@ pub(crate) fn run(
         } else {
             let since = *idle_since.get_or_insert_with(Instant::now);
             if idle_timeout.is_some_and(|limit| since.elapsed() >= limit) {
-                tracing::info!("no client for {:?}; exiting", idle_timeout.unwrap_or_default());
+                tracing::info!(
+                    idle_s = idle_timeout.unwrap_or_default().as_secs(),
+                    "no client for the idle timeout; exiting"
+                );
                 return Ok(());
             }
         }
@@ -479,6 +504,7 @@ pub(crate) fn run(
             let now = Instant::now();
             pacer = Some(Pacer::new(session.fps, now));
             next_frame = now;
+            session.health.resume(now);
             session.video.request_keyframe();
         }
         let deadline = if running { rtc_deadline.min(next_frame) } else { rtc_deadline };
@@ -503,7 +529,7 @@ pub(crate) fn run(
                 }
                 Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
                 // An ICMP error from an earlier send to a client that went away.
-                Err(e) => tracing::debug!("UDP receive: {e}"),
+                Err(e) => tracing::debug!(error = %e, "UDP receive failed"),
             }
         }
         if let Some(p) = &mut peer {
@@ -515,7 +541,8 @@ pub(crate) fn run(
             && p.connected
             && Instant::now() >= next_frame
         {
-            session.step(p)?;
+            let behind = Instant::now().saturating_duration_since(next_frame);
+            session.step(p, behind)?;
             next_frame = pacer.next_deadline(Instant::now());
         }
     }
@@ -531,7 +558,7 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
             Output::Timeout(t) => return Ok(Some(t)),
             Output::Transmit(t) => {
                 if let Err(e) = socket.send_to(&t.contents, t.destination) {
-                    tracing::debug!("UDP send to {}: {e}", t.destination);
+                    tracing::debug!(destination = %t.destination, error = %e, "UDP send failed");
                 }
             }
             Output::Event(event) => match event {
@@ -548,7 +575,11 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     match (m.kind, pt) {
                         (MediaKind::Video, Some(pt)) => p.video = Some((m.mid, pt)),
                         (MediaKind::Audio, Some(pt)) => p.audio = Some((m.mid, pt)),
-                        (kind, None) => tracing::warn!("client offered {kind:?} without {codec:?}"),
+                        (kind, None) => tracing::warn!(
+                            kind = ?kind,
+                            codec = ?codec,
+                            "client offered media without the codec"
+                        ),
                     }
                 }
                 Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => p.input = Some(id),
@@ -605,7 +636,7 @@ impl Session {
                 return;
             }
             Err(e) => {
-                tracing::debug!("bad input message: {e}");
+                tracing::debug!(error = %e, "bad input message");
                 return;
             }
         };
@@ -616,6 +647,7 @@ impl Session {
         self.buttons = packet.ports.iter().map(|&b| JoypadButtons(b)).collect();
         self.buttons_at = Instant::now();
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
+        self.health.input();
     }
 
     /// Lets go of every button and stick (the client stopped saying what it holds). Hotkeys
@@ -645,19 +677,23 @@ impl Session {
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
         let target = target_video_kbps(estimate_bps, self.audio_kbps, self.max_video_kbps);
         let current = self.video.config().bitrate_kbps;
+        self.estimate_kbps = Some(estimate_bps / 1000);
         if target.abs_diff(current) * 10 > current {
             tracing::debug!(
-                "video bitrate {current} -> {target} kbit/s (estimate {estimate_bps} bit/s)"
+                from_kbps = current,
+                to_kbps = target,
+                estimate_bps,
+                "video bitrate changed"
             );
             if let Err(e) = self.video.set_bitrate(target) {
-                tracing::warn!("cannot change the bitrate: {e}");
+                tracing::warn!(error = %e, "cannot change the bitrate");
             }
         }
     }
 
     /// Runs one tick (one frame; several when fast-forwarding; a step back when rewinding) and
-    /// sends its video, audio and any input ack to the peer.
-    fn step(&mut self, p: &mut Peer) -> Result<()> {
+    /// sends its video, audio and any input ack to the peer. `behind`: how late it started.
+    fn step(&mut self, p: &mut Peer, behind: Duration) -> Result<()> {
         let now = Instant::now();
         self.lapse_input(now);
         let hotkeys = if now.duration_since(self.hotkeys_at) < INPUT_LAPSE {
@@ -668,6 +704,9 @@ impl Session {
         // The client's menu is open: hold the game where it is. The last frame stays on the
         // client's screen and its audio goes quiet; a lapsed flag (client gone) lets go.
         if hotkeys.pause {
+            self.health.paused();
+            let at = self.health_now();
+            self.health.report_if_due(now, &at);
             return Ok(());
         }
         if hotkeys.rewind {
@@ -690,16 +729,17 @@ impl Session {
 
         if let Some(av) = out.av_changed {
             tracing::info!(
-                "core changed to {}x{} @ {:.4} fps, {} Hz",
-                av.base_width,
-                av.base_height,
-                av.fps,
-                av.sample_rate
+                width = av.base_width,
+                height = av.base_height,
+                fps = av.fps,
+                sample_rate = av.sample_rate,
+                "core changed its geometry or timing"
             );
             if (av.sample_rate - self.audio.input_rate()).abs() > 0.01 {
                 self.audio.set_input_rate(av.sample_rate)?;
             }
             self.fps = av.fps;
+            self.health.set_fps(av.fps);
         }
 
         let mut picture = None;
@@ -733,8 +773,12 @@ impl Session {
 
         if let Some((w, h)) = picture {
             self.shot_size = (w, h);
-            if let (Some(encoded), Some((mid, pt))) =
-                (self.video.encode(&self.rgba, w, h)?, p.video)
+            let encode_from = Instant::now();
+            let encoded = self.video.encode(&self.rgba, w, h)?;
+            if let Some(encoded) = &encoded {
+                self.health.encoded(encode_from.elapsed(), encoded.data.len());
+            }
+            if let (Some(encoded), Some((mid, pt))) = (encoded, p.video)
                 && let Some(writer) = p.rtc.writer(mid)
             {
                 let rtp_time = MediaTime::from_90khz((tick as f64 * 90_000.0 / self.fps) as u64);
@@ -758,6 +802,9 @@ impl Session {
             self.rewind.record(|| core.serialize());
         }
         self.persist.tick(&mut self.core, now);
+        self.health.ticked(behind, now.elapsed());
+        let at = self.health_now();
+        self.health.report_if_due(Instant::now(), &at);
         Ok(())
     }
 }

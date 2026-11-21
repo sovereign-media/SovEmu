@@ -79,18 +79,20 @@ impl Persist {
             Ok(bytes) => {
                 if bytes.len() != ram.len() {
                     tracing::warn!(
-                        "{} is {} bytes but the game has {}; loading what fits",
-                        path.display(),
-                        bytes.len(),
-                        ram.len()
+                        path = %path.display(),
+                        bytes = bytes.len(),
+                        expected_bytes = ram.len(),
+                        "battery save size differs from the game's; loading what fits"
                     );
                 }
                 let n = bytes.len().min(ram.len());
                 ram[..n].copy_from_slice(&bytes[..n]);
-                tracing::info!("restored battery save {}", path.display());
+                tracing::info!(path = %path.display(), "restored battery save");
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => tracing::warn!("cannot read {}: {e}", path.display()),
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "cannot read battery save")
+            }
         }
         self.written = ram.to_vec();
     }
@@ -103,7 +105,7 @@ impl Persist {
         }
         write_atomic(path, ram)?;
         self.written = ram.to_vec();
-        tracing::debug!("wrote battery save {}", path.display());
+        tracing::debug!(path = %path.display(), "wrote battery save");
         Ok(true)
     }
 
@@ -114,7 +116,7 @@ impl Persist {
         }
         self.next_check = now + FLUSH_INTERVAL;
         if let Err(e) = self.flush(core) {
-            tracing::warn!("battery save failed: {e:#}");
+            tracing::warn!(error = %format!("{e:#}"), "battery save failed");
         }
     }
 
@@ -141,7 +143,7 @@ impl Persist {
                 let _ = std::fs::remove_file(&png);
             }
         }
-        tracing::info!("saved state to slot {slot}");
+        tracing::info!(slot, "saved state");
         Ok(())
     }
 
@@ -149,20 +151,20 @@ impl Persist {
         let (state, _) = self.slot_paths(slot)?;
         let bytes = std::fs::read(&state).with_context(|| format!("slot {slot} is empty"))?;
         core.unserialize(&bytes).context("the core rejected the state")?;
-        tracing::info!("loaded state from slot {slot}");
+        tracing::info!(slot, "loaded state");
         Ok(())
     }
 
     /// End of session: battery RAM, then the auto state (if the game was played at all).
     pub(crate) fn finish(&mut self, core: &mut Core, played: bool, shot: Option<Screenshot<'_>>) {
         if let Err(e) = self.flush(core) {
-            tracing::warn!("battery save failed: {e:#}");
+            tracing::warn!(error = %format!("{e:#}"), "battery save failed");
         }
         if played
             && self.state_dir.is_some()
             && let Err(e) = self.save_state(core, AUTO_SLOT, shot)
         {
-            tracing::warn!("auto state failed: {e:#}");
+            tracing::warn!(error = %format!("{e:#}"), "auto state failed");
         }
     }
 }

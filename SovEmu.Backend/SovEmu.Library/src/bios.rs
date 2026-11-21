@@ -466,7 +466,7 @@ pub fn core_path(system: &str) -> &'static str {
 pub fn prepare(bios_dir: &Path) {
     for s in crate::systems::SYSTEMS {
         if let Err(e) = std::fs::create_dir_all(bios_dir.join(s.id)) {
-            tracing::warn!("BIOS folder {}: {e}", bios_dir.join(s.id).display());
+            tracing::warn!(path = %bios_dir.join(s.id).display(), error = %e, "cannot create BIOS folder");
             return;
         }
     }

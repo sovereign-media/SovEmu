@@ -350,6 +350,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
 | `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
 | `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
+| `SOVEMU_SESSION_HEALTH_SECS` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays) |
 | `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |
 | `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added) |
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |

@@ -359,10 +359,10 @@ impl LaunchBox {
         };
         if due {
             match self.download().await {
-                Ok(true) => tracing::info!("metadata: downloaded the LaunchBox dump"),
-                Ok(false) => tracing::debug!("metadata: the LaunchBox dump is up to date"),
+                Ok(true) => tracing::info!("LaunchBox dump downloaded"),
+                Ok(false) => tracing::debug!("LaunchBox dump up to date"),
                 Err(e) if zip.is_file() => {
-                    tracing::warn!("metadata: cannot refresh the LaunchBox dump (keeping it): {e}")
+                    tracing::warn!(error = %e, "cannot refresh the LaunchBox dump (keeping it)")
                 }
                 Err(e) => return Err(e),
             }
@@ -380,9 +380,9 @@ impl LaunchBox {
             .await
             .map_err(|e| e.to_string())??;
         tracing::info!(
-            "metadata: read {} LaunchBox games in {:.1}s",
-            index.len(),
-            started.elapsed().as_secs_f64()
+            count = index.len(),
+            secs = started.elapsed().as_secs_f64(),
+            "LaunchBox games read"
         );
         let index = Arc::new(index);
         *loaded = Some((mtime, index.clone()));

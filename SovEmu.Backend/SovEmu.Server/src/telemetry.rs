@@ -300,6 +300,9 @@ pub(crate) async fn trace_request(request: Request, next: Next) -> Response {
         http.route = %route,
         http.response.status_code = Empty,
         graphql.operation.name = Empty,
+        graphql.operation.type = Empty,
+        user.id = Empty,
+        error.type = Empty,
         otel.status_code = Empty,
         client.address = Empty,
     );

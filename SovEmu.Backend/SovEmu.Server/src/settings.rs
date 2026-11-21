@@ -99,7 +99,7 @@ pub(crate) async fn remember(
     .execute(db)
     .await;
     if let Err(e) = result {
-        tracing::warn!("remembering {}'s options: {e}", core.display());
+        tracing::warn!(core = %core.display(), error = %e, "remembering core options failed");
     }
 }
 
