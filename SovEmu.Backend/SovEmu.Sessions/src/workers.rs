@@ -627,10 +627,21 @@ done
         dir
     }
 
+    /// Writes an executable script. Tests run in parallel and spawn processes, and a child forked
+    /// while this process holds the script open for writing keeps that handle until it execs;
+    /// running the script meanwhile fails with ETXTBSY ("Text file busy"). So `cp` writes it: the
+    /// handle only ever exists in cp's process, which no test's child can inherit.
+    fn write_script(path: &Path, contents: &str) {
+        let source = path.with_extension("src");
+        std::fs::write(&source, contents).unwrap();
+        let copied = std::process::Command::new("cp").arg(&source).arg(path).status().unwrap();
+        assert!(copied.success(), "cp {} {}", source.display(), path.display());
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     fn workers(dir: &Path, then: &str, stop_timeout: Duration) -> Arc<Workers> {
         let bin = dir.join("worker.sh");
-        std::fs::write(&bin, WORKER.replace("THEN", then)).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&bin, &WORKER.replace("THEN", then));
         Workers::new(WorkerConfig {
             worker_bin: bin,
             ports: (40000, 40001),
@@ -745,8 +756,7 @@ done
         let workers = workers(&dir, "exit 0", Duration::from_secs(5));
         // Cancel a start while it waits for the worker (as when the browser leaves the page).
         let slow = dir.join("slow.sh");
-        std::fs::write(&slow, "#!/bin/sh\nsleep 0.3\nexec \"$0.real\" \"$@\"\n").unwrap();
-        std::fs::set_permissions(&slow, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&slow, "#!/bin/sh\nsleep 0.3\nexec \"$0.real\" \"$@\"\n");
         std::fs::rename(dir.join("worker.sh"), dir.join("slow.sh.real")).unwrap();
         let workers = Workers::new(WorkerConfig { worker_bin: slow, ..workers.config.clone() });
         let start = workers.start(launch(&dir, 1, 1));
