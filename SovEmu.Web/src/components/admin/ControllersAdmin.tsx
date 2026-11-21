@@ -5,8 +5,10 @@
 // (labelled as it prints them, so no controller needs to be connected) or, for the keyboard,
 // by pressing the key. Defaults from the server's environment win and are shown locked; the
 // admin's can be copied out as environment lines.
+
+import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Gamepad2, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type ControllerDefaults, type PadLayout, type SystemControls, type SystemSummary } from "../../lib/api";
 import {
   defaultMapping,
@@ -25,6 +27,7 @@ import {
   toBindings,
   toMapping,
 } from "../../lib/controllers";
+import { invalidate, q } from "../../lib/data";
 import { captureInput } from "../../lib/input";
 import type { ButtonName } from "../../lib/protocol";
 import { PadDiagram } from "../PadDiagram";
@@ -138,45 +141,23 @@ function ButtonRow({
 }
 
 function Controllers() {
-  const [defaults, setDefaults] = useState<ControllerDefaults | null>(null);
+  const read = useQuery(q.controllerDefaults());
+  const defaults: ControllerDefaults | null = read.data ?? null;
   const [controller, setController] = useState(KEYBOARD);
   /** The system the default is for, or "" for every system. */
   const [system, setSystem] = useState("");
-  const [systems, setSystems] = useState<SystemSummary[]>([]);
-  const [controls, setControls] = useState<SystemControls | null>(null);
-  const [layouts, setLayouts] = useState<PadLayout[]>([]);
+  const systems: SystemSummary[] = useQuery(q.systems()).data ?? [];
+  const controls: SystemControls | null =
+    useQuery({ ...q.systemControls(system), enabled: !!system }).data?.controls ?? null;
+  const layouts: PadLayout[] = useQuery(q.controllerLayouts()).data ?? [];
   const [lit, setLit] = useState<ButtonName | null>(null);
   const [draft, setDraft] = useState<Mapping | null>(null);
-  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const [said, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  // What a change said, else why the defaults could not be read.
+  const message = said ?? (read.error ? { text: read.error.message, error: true } : null);
   const [copied, setCopied] = useState(false);
   const choices = useChoices(defaults);
-
-  const load = useCallback(async () => {
-    try {
-      setDefaults(await api.controllerDefaults());
-    } catch (e) {
-      setMessage({ text: (e as Error).message, error: true });
-    }
-  }, []);
-  useEffect(() => void load(), [load]);
-  useEffect(() => {
-    api
-      .systems()
-      .then(setSystems)
-      .catch(() => {});
-    api
-      .controllerLayouts()
-      .then(setLayouts)
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    setControls(null);
-    if (system)
-      api
-        .systemControls(system)
-        .then((c) => setControls(c.controls))
-        .catch(() => {});
-  }, [system]);
+  const load = () => invalidate(["admin", "controllerDefaults"]);
 
   const scoped = (m: { controller: string; system?: string | null }, on: string) =>
     m.controller === controller && (m.system ?? "") === on;

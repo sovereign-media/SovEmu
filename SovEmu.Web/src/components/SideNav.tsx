@@ -4,12 +4,15 @@
 // maker (Nintendo ▸ NES, SNES …), then the BIOS check; the account (sign out); and for admins
 // the gear, the admin menu: groups cascading into their pages, as Sovereign's (`lib/adminNav.ts`).
 // Menus are Radix DropdownMenus.
+
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Gamepad2, House, LogOut, Microchip, Search, Settings } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { ADMIN_NAV_GROUPS, type AdminNavItem, findAdminNavGroup, findAdminNavItem } from "../lib/adminNav";
-import { api, type SystemSummary, type User } from "../lib/api";
+import type { SystemSummary, User } from "../lib/api";
 import { signOut as endSignIn } from "../lib/auth";
+import { q } from "../lib/data";
 import { groupByMaker, initials, systemBadge } from "../lib/systems";
 import { cn } from "./ui/cn";
 
@@ -308,20 +311,12 @@ function AdminMenu({ shape }: { shape: "dock" | "bar" }) {
 const HOVER_INTENT_MS = 120;
 
 export default function SideNav({ section }: { section: Section }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [systems, setSystems] = useState<SystemSummary[]>([]);
+  const user = useQuery(q.viewer()).data?.user ?? null;
+  const systems = useQuery(q.systems()).data ?? [];
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [menus, setMenus] = useState(0);
   const intent = useRef(0);
-
-  useEffect(() => {
-    api.viewer().then((s) => setUser(s.user));
-    api
-      .systems()
-      .then(setSystems)
-      .catch(() => {});
-  }, []);
 
   // Stays open while one of its menus is.
   const onMenu = (open: boolean) => setMenus((n) => Math.max(0, n + (open ? 1 : -1)));

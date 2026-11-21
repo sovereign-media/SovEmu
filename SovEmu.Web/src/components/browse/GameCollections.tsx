@@ -1,9 +1,12 @@
 // A game's place in this user's lists, on its panel: a heart for favourites, and a menu of
 // collections to put it in or take it out of, with "New collection…" (named in a dialog).
+
+import { useQuery } from "@tanstack/react-query";
 import { Check, FolderPlus, Heart, ListPlus } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { type SubmitEvent, useEffect, useState } from "react";
+import { type SubmitEvent, useMemo, useState } from "react";
 import { ApiError, api, type Game } from "../../lib/api";
+import { invalidate, q, queryClient } from "../../lib/data";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Dialog, Field, inputClass } from "../ui/primitives";
@@ -19,31 +22,25 @@ const ITEM =
 
 export function GameCollections({ game, onFavourite }: { game: Game; onFavourite: (favourite: boolean) => void }) {
   const toast = useToast();
-  const [collections, setCollections] = useState<CollectionChoice[] | null>(null);
-  const [member, setMember] = useState<Set<number>>(new Set());
-  const [naming, setNaming] = useState(false);
-
   // Its collections are asked for when its panel opens (never for a whole list of games).
-  useEffect(() => {
-    setCollections(null);
-    let gone = false;
-    Promise.all([api.collections(), api.collectionIds(game.id)])
-      .then(([all, ids]) => {
-        if (gone) return;
-        setCollections(all.map(({ id, name }) => ({ id, name })));
-        setMember(new Set(ids));
-      })
-      .catch(() => {});
-    return () => {
-      gone = true;
-    };
-  }, [game.id]);
+  const all = useQuery(q.collections());
+  const ids = useQuery(q.collectionIds(game.id));
+  const collections: CollectionChoice[] | null = useMemo(
+    () => (all.data && ids.data ? all.data.map(({ id, name }) => ({ id, name })) : null),
+    [all.data, ids.data],
+  );
+  const member = useMemo(() => new Set(ids.data ?? []), [ids.data]);
+  const idsKey = q.collectionIds(game.id).queryKey;
+  /** Shows the game in or out of collections at once; the server's answer follows. */
+  const setMember = (next: Set<number>) => queryClient.setQueryData(idsKey, [...next]);
+  const [naming, setNaming] = useState(false);
 
   const toggleFavourite = async () => {
     const next = !game.favourite;
     onFavourite(next);
     try {
       await api.setFavourite(game.id, next);
+      void invalidate(["home"], ["system", game.system]);
     } catch (e) {
       onFavourite(!next);
       toast(`Could not change favourites: ${(e as Error).message}`);
@@ -58,6 +55,7 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
     setMember(next);
     try {
       await api.setInCollection(c.id, game.id, now);
+      void invalidate(["collections"], ["home"]);
       toast(now ? `Added to ${c.name}` : `Taken out of ${c.name}`);
     } catch (e) {
       setMember(member);
@@ -71,10 +69,8 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
     try {
       const made = await api.createCollection(name);
       await api.setInCollection(made.id, game.id, true);
-      setCollections((list) =>
-        [...(list ?? []), { id: made.id, name: made.name }].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setMember((m) => new Set(m).add(made.id));
+      setMember(new Set(member).add(made.id));
+      await invalidate(["collections"], ["home"]);
       setNaming(false);
       toast(`Added to ${made.name}`);
     } catch (err) {
