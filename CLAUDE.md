@@ -12,7 +12,7 @@ under `SovEmu.Backend/`, and each client is a separate project at the root. The 
 their own repositories, checked out as **unpinned submodules** (`branch = main`, `ignore = all`;
 update with `git submodule update --remote`): `SovEmu.Android` (Kotlin + Compose) and
 `SovEmu.iOS` (SwiftUI + XcodeGen). Each has its own README, `.claude/rules/`, CI and PRs.
-`SovEmu.Web` (Astro + Tailwind, React islands) stays in-tree for now because the image builds it from source;
+`SovEmu.Web` (Vite + React + TanStack Router, Tailwind) stays in-tree for now because the image builds it from source;
 it is self-contained so it can move to its own repository once the image takes a released build
 instead (as Sovereign's server takes its SPA).
 
@@ -52,8 +52,9 @@ instead (as Sovereign's server takes its SPA).
 - **Never write a migration's SQL into Rust.** Schema changes are a new numbered file in
   `SovEmu.Server/migrations/`; never edit one that has shipped.
 - **The web client is served by the Rust process that serves the API**: `SovEmu.Web` builds to
-  static files (`output: "static"`, no Astro server runtime, no Node in the image), and the Rust
-  side serves them next to `/graphql`. Never add a Node server or an SSR adapter.
+  static files (one `index.html` and its assets, no Node in the image), and the Rust side serves
+  them next to `/graphql`, answering every other page path with `index.html` for the client's
+  router. Never add a Node server or server-side rendering.
 - **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
@@ -148,7 +149,7 @@ cargo test --workspace
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
 | `SovEmu.Sessions` | `sovemu-sessions` | Game sessions: `Workers` starts one `sovemu-worker session` per game with a UDP port from a pool and the allow-listed environment, drives it over JSON lines (`SovEmu.Protocol::ipc`), and stops it so saves are written; `starts` (loading progress) and `gpu` (what `sovemu-worker gpu` reports). Reports sessions to an `Observer` (the server's metrics). Never links a core or a codec. |
 | `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); accounts and sign-in through `SovEmu.Identity` (mounting its routes; GraphQL asks it who a bearer token is); the library's tables, kept in step with what `SovEmu.Library` finds; game sessions through `SovEmu.Sessions`. |
-| `SovEmu.Web` | (npm `sovemu-web`) | The web client: Astro + Tailwind v4 with React islands on Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; Biome lints and formats; `astro check` in the build. |
+| `SovEmu.Web` | (npm `sovemu-web`) | The web client: a Vite single-page app, React with TanStack Router, Tailwind v4, Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; Biome lints and formats; `tsc` in the build. |
 
 ```
 LibretroFfi  (root — no workspace references)        Media     (no workspace references)

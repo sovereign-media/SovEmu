@@ -4,7 +4,7 @@
 import { Gamepad, Gamepad2, Library, type LucideIcon, SlidersHorizontal, Users, UsersRound } from "lucide-react";
 
 export interface AdminNavItem {
-  /** The page (with its trailing slash, as Astro serves it). */
+  /** The page (with its trailing slash, as the router's paths have it). */
   href: string;
   label: string;
   /** What the page is for, as its tooltip. */

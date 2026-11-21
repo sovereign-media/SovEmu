@@ -23,14 +23,14 @@
 # scripts/cores.list (`cores` stage). The final stage runs `sovemu-worker probe` over every
 # core, so a core that cannot be loaded fails the image build rather than a player's session.
 #
-# The web client (SovEmu.Web, Astro + React) is built in the `web` stage and served as static
+# The web client (SovEmu.Web, Vite + React) is built in the `web` stage and served as static
 # files by the same Rust process that serves the API.
 
 ARG DEBIAN_RELEASE=trixie
 ARG RUST_VERSION=1.100
 ARG NODE_VERSION=24
 
-## ---- web: the Astro web client ---------------------------------------------------------------
+## ---- web: the web client (Vite) -------------------------------------------------------------
 FROM node:${NODE_VERSION}-${DEBIAN_RELEASE}-slim AS web
 WORKDIR /web
 COPY SovEmu.Web/package.json SovEmu.Web/package-lock.json ./

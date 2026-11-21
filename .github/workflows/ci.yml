@@ -123,7 +123,7 @@ jobs:
   web:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
-    name: Web client (Astro)
+    name: Web client (Vite)
     runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
     defaults:
       run:

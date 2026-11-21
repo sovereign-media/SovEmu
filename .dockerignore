@@ -18,7 +18,6 @@ docs
 # The web client is built inside the image from its sources; never send local build output.
 SovEmu.Web/node_modules
 SovEmu.Web/dist
-SovEmu.Web/.astro
 
 # The native clients never feed the server image.
 SovEmu.Android

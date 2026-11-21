@@ -4,9 +4,11 @@
 // apply to the next game started. Options set in the server's environment win and are shown
 // locked; the admin's changes can be copied out as environment lines, so the configuration
 // stays reproducible without this page.
+
 import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
+import { go } from "../../lib/go";
 import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadge } from "../../lib/settings";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
@@ -153,7 +155,7 @@ function Settings() {
   }, []);
 
   useEffect(() => {
-    api.viewer().then((s) => !s.user?.isAdmin && location.replace("/"));
+    api.viewer().then((s) => !s.user?.isAdmin && go("/", { replace: true }));
     api.systems().then((all) => {
       const offered = all.filter((s) => s.playable || s.needsGpu);
       setSystems(offered);

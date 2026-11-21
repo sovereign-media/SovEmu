@@ -161,14 +161,15 @@ impl Drop for Worker {
 #[test]
 fn serves_the_web_client() {
     let site = std::env::temp_dir().join(format!("sovemu-site-{}", std::process::id()));
-    std::fs::create_dir_all(site.join("_astro")).unwrap();
+    std::fs::create_dir_all(site.join("assets")).unwrap();
     std::fs::write(site.join("index.html"), "<title>Play · SovEmu</title>").unwrap();
-    std::fs::write(site.join("_astro/app.123.js"), "export {}").unwrap();
+    std::fs::write(site.join("assets/app.123.js"), "export {}").unwrap();
     let mut worker = Worker::start_with(&["--web-dir".as_ref(), site.as_os_str()]);
 
     let (status, body) = worker.request("GET", "/", "");
     assert_eq!((status, body.as_str()), (200, "<title>Play · SovEmu</title>"));
-    assert_eq!(worker.request("GET", "/_astro/app.123.js", "").0, 200);
+    assert_eq!(worker.request("GET", "/assets/app.123.js", "").0, 200);
+    assert_eq!(worker.request("GET", "/play/", "").0, 200, "a screen gets the one page");
     assert_eq!(worker.request("GET", "/../Cargo.toml", "").0, 404);
     assert_eq!(worker.request("GET", "/api/nope", "").0, 404);
     std::fs::remove_dir_all(&site).ok();

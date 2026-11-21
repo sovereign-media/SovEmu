@@ -2020,3 +2020,48 @@ async fn app_tokens_revoke_and_follow_role_changes() {
         .await;
     assert_eq!(body["error"], "unsupported_grant_type");
 }
+
+#[tokio::test]
+async fn every_page_path_gets_the_web_client_and_its_assets_are_files() {
+    let mut h = Harness::new("spa", false).await;
+    let web = h.dir.join("web");
+    std::fs::create_dir_all(web.join("assets")).unwrap();
+    std::fs::write(web.join("index.html"), "<!doctype html><div id=root></div>").unwrap();
+    std::fs::write(web.join("assets/index-abc.js"), "console.log(1)").unwrap();
+    std::fs::write(web.join("favicon.svg"), "<svg/>").unwrap();
+    let mut config = (*h.state.config).clone();
+    config.web_dir = Some(web);
+    h.state.config = std::sync::Arc::new(config);
+
+    let get = |path: &str| Request::builder().uri(path).body(Body::empty()).unwrap();
+    for path in
+        ["/", "/system/?id=snes&game=7", "/play/?game=1", "/auth/callback/?code=x", "/admin/users/"]
+    {
+        let response = router(h.state.clone()).oneshot(get(path)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            response.headers()[axum::http::header::CACHE_CONTROL],
+            "no-cache",
+            "{path}: the page always revalidates"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(body.starts_with(b"<!doctype html>"), "{path}: the web client");
+    }
+    let asset = router(h.state.clone()).oneshot(get("/assets/index-abc.js")).await.unwrap();
+    assert_eq!(asset.status(), StatusCode::OK);
+    assert_eq!(
+        asset.headers()[axum::http::header::CACHE_CONTROL],
+        "public, max-age=31536000, immutable"
+    );
+    let gone = router(h.state.clone()).oneshot(get("/assets/index-old.js")).await.unwrap();
+    assert_eq!(
+        gone.status(),
+        StatusCode::NOT_FOUND,
+        "an old build's script is missing, not the page"
+    );
+    let icon = router(h.state.clone()).oneshot(get("/favicon.svg")).await.unwrap();
+    assert_eq!(icon.status(), StatusCode::OK);
+    // The API's own routes still answer for themselves.
+    let health = router(h.state.clone()).oneshot(get("/health")).await.unwrap();
+    assert_eq!(health.status(), StatusCode::OK);
+}

@@ -4,6 +4,7 @@
 //
 // The session, input, display filter and menu stack are the framework-free classes in
 // src/lib/; this component sets them up once and renders their state.
+
 import {
   Activity,
   ArrowLeft,
@@ -51,6 +52,7 @@ import {
 } from "../../lib/controllers";
 import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../lib/decoration";
 import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
+import { go } from "../../lib/go";
 import { captureInput, InputState } from "../../lib/input";
 import { describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
@@ -158,6 +160,13 @@ function Player() {
     let filterMode = (localStorage.getItem(FILTER_KEY) as FilterMode) || "sharp";
     const timers: number[] = [];
     let stopped = false;
+    /** The server's session has been asked to stop (Quit, or leaving the screen): once only. */
+    let ended = false;
+    const end = () => {
+      if (ended || !info) return;
+      ended = true;
+      void api.stopSession(info.id).catch(() => {});
+    };
     let cleanup = () => {};
     /** This game's system, its buttons and pad, the controllers' pads, and the every-system mappings. */
     let pads: {
@@ -175,6 +184,7 @@ function Player() {
         api.saves(gameId),
         api.iceServers(),
       ]);
+      if (stopped) return;
       // The mappings in force on this system (and on every system, for the controls menu), and
       // the pads to draw there.
       const [mappings, everywhere, controls] = await Promise.all([
@@ -182,6 +192,7 @@ function Player() {
         api.controllerMappings(null).catch(() => []),
         api.systemControls(game.system).catch(() => null),
       ]);
+      if (stopped) return;
       pads = {
         system: game.system,
         short: systems.find((s) => s.id === game.system)?.short ?? game.system,
@@ -225,6 +236,8 @@ function Player() {
         showProgress({ phase: "READY", elapsedMs: 0, phaseMs: 0 });
         timers.push(window.setTimeout(() => setProgress(null), 600));
         info = s;
+        // The player left while the game was loading: it is not wanted any more.
+        if (stopped) end();
         setAspect(["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
         setStatus(`${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`);
         return s;
@@ -243,6 +256,7 @@ function Player() {
           setStatus(`Could not start: ${(e as Error).message}`);
           return;
         }
+        if (stopped) return;
         if (slot !== null) await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
         stack.close();
         setSplash(false);
@@ -274,11 +288,12 @@ function Player() {
 
       async function quit() {
         session?.close();
-        if (info) {
+        if (info && !ended) {
+          ended = true;
           setStatus("Saving…");
           await api.stopSession(info.id).catch(() => {});
         }
-        location.href = `/system/?id=${encodeURIComponent(game.system)}`;
+        go(`/system/?id=${encodeURIComponent(game.system)}`);
       }
 
       // --- Menus
@@ -665,21 +680,32 @@ function Player() {
 
       // Leaving the page ends the session (which writes the auto save) rather than waiting for
       // the idle timeout.
-      addEventListener("pagehide", () => {
-        if (info) api.stopSessionOnUnload(info.id);
-      });
+      const onPageHide = () => {
+        if (info && !ended) {
+          ended = true;
+          api.stopSessionOnUnload(info.id);
+        }
+      };
+      addEventListener("pagehide", onPageHide);
 
       cleanup = () => {
         nav.stop();
         removeEventListener("keydown", onKey);
+        removeEventListener("pagehide", onPageHide);
       };
     })();
 
+    // Leaving the screen (Back, a link) ends the game as closing the page would: the stream, the
+    // listeners, and the server's session, which writes the auto save.
     return () => {
       stopped = true;
       polling = false;
       timers.forEach(clearTimeout);
       cleanup();
+      session?.close();
+      filter.stop();
+      input.dispose();
+      end();
     };
   }, []);
 

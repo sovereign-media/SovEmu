@@ -5,10 +5,11 @@ paths:
 
 # Web client (SovEmu.Web)
 
-- **Astro + Tailwind v4, static output only.** `astro build` writes `dist/`, which the Rust
-  server serves next to `/graphql` (in the image, from `/opt/sovemu/web`). No SSR adapter, no
-  Astro server endpoints, no Node at runtime. Anything dynamic is client-side TypeScript talking
-  to the GraphQL API and WebRTC.
+- **Vite + React + TanStack Router, one static page.** `vite build` writes `dist/`
+  (`index.html` and fingerprinted `assets/`), which the Rust server serves next to `/graphql` (in
+  the image, from `/opt/sovemu/web`), answering every other page path with `index.html`. No SSR,
+  no Node at runtime. Anything dynamic is client-side TypeScript talking to the GraphQL API and
+  WebRTC.
 - **Same origin.** The page and the API share an origin, so use relative paths (`/graphql`,
   the `/media/…` URLs the API returns), never an absolute URL or a configured host.
   `npm run dev` proxies `/graphql` and `/media` to a local server.
@@ -19,15 +20,21 @@ paths:
 - **Tailwind v4 is CSS-first.** Theme tokens live in `@theme` in `src/styles/global.css`; there
   is no `tailwind.config.js`. A component `<style>` that uses `@apply` needs
   `@reference "../styles/global.css";` first.
-- **React islands, Radix UI, Lucide.** A page is a thin `.astro` file mounting one React
-  component with `client:only="react"` (no SSR: it still builds to static files). Controls come
+- **Screens are routes** in `src/router.tsx`: a path (trailing slash: `/system/`, as links,
+  bookmarks and the sign-in callback `/auth/callback/` expect), a title, a component (loaded on
+  first visit) and the URL parameters it keeps up to date itself. A screen is mounted afresh
+  when the URL changes, reads what it needs from the URL as it mounts, and must clean up after
+  itself on unmount (listeners, timers, streams, a game session): the page no longer unloads
+  between screens. Move between screens with `go()` (`src/lib/go.ts`) or a plain `<a href>`
+  (followed by the router, `src/lib/links.ts`); never set `location.href` for an in-app screen.
+- **Radix UI, Lucide.** Controls come
   from Radix UI (`radix-ui`), styled once in `src/components/ui/` (dialogs, confirm, select,
   progress, dropdown menu, tooltip, scroll area, toast, `Button`); never hand-roll a
   control Radix has, and never use `prompt()`/`confirm()`. Icons are `lucide-react`.
 - **The admin menu is one list**, `src/lib/adminNav.ts`, as Sovereign's `adminNavItems.ts`: the
   gear's groups and their pages, which also title each page (`adminDocumentTitle`). A new admin
-  page is an entry there, an `.astro` page under `src/pages/admin/`, and a component that sends a
-  non-admin home.
+  page is an entry there, a route in `src/router.tsx`, and a component that sends a non-admin
+  home.
 - **Pad and keyboard first.** Console-style screens are driven by `listenNav` (`src/lib/nav.ts`)
   with the focus logic in `src/lib/` (`home.ts`, `menu.ts`); Radix supplies the surfaces. Where
   both would see a key (Escape, Enter), make sure only one acts.
@@ -45,5 +52,5 @@ paths:
   (`biome ci`) checks, in CI and the pre-push hook. Warnings (effect dependencies, some a11y
   rules for the pad-driven screens) are worth a look but do not fail; errors do. Never format
   `src/graphql/` by hand: codegen writes it.
-- Before a PR: `npm run lint`, `npm test` and `npm run build` (which runs `astro check`) from
+- Before a PR: `npm run lint`, `npm test` and `npm run build` (which runs `tsc` first) from
   `SovEmu.Web/`.

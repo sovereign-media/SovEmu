@@ -94,14 +94,23 @@ export class InputState {
   private known = new Map<string, ControllerInfo>();
   private held = new Set<string>();
 
+  /** Removes the listeners: the player screen is gone, but the page (and window) stay. */
+  private listening = new AbortController();
+
   constructor(target: Window = window) {
-    target.addEventListener("keydown", (e) => this.onKey(e, true));
-    target.addEventListener("keyup", (e) => this.onKey(e, false));
-    target.addEventListener("blur", () => this.held.clear());
-    target.addEventListener("gamepadconnected", (e) => this.players.join(`pad:${e.gamepad.index}`));
-    target.addEventListener("gamepaddisconnected", (e) => this.players.leave(`pad:${e.gamepad.index}`));
+    const signal = this.listening.signal;
+    target.addEventListener("keydown", (e) => this.onKey(e, true), { signal });
+    target.addEventListener("keyup", (e) => this.onKey(e, false), { signal });
+    target.addEventListener("blur", () => this.held.clear(), { signal });
+    target.addEventListener("gamepadconnected", (e) => this.players.join(`pad:${e.gamepad.index}`), { signal });
+    target.addEventListener("gamepaddisconnected", (e) => this.players.leave(`pad:${e.gamepad.index}`), { signal });
     // Pads already connected (a reload) join in slot order.
     for (const pad of this.pads()) this.players.join(`pad:${pad.index}`);
+  }
+
+  /** Stops listening to the keyboard and gamepads. */
+  dispose() {
+    this.listening.abort();
   }
 
   /** The mappings in force on this game's system, as the server lists them. */

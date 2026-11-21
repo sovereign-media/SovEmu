@@ -1,10 +1,12 @@
 // Users: the accounts on this server and what each may do. Read-only for now; adding, changing
 // and removing accounts come later (the environment can already declare them all:
 // `SOVEMU_USERS__<n>__…`).
+
 import { Shield, User as UserIcon, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { adminDocumentTitle } from "../../lib/adminNav";
 import { api, type User } from "../../lib/api";
+import { go } from "../../lib/go";
 import { initials } from "../../lib/systems";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
@@ -36,7 +38,7 @@ function UsersList() {
   useEffect(() => {
     document.title = `${adminDocumentTitle(location.pathname)} · SovEmu`;
     api.viewer().then((s) => {
-      if (!s.user?.isAdmin) location.replace("/");
+      if (!s.user?.isAdmin) go("/", { replace: true });
       setMe(s.user);
     });
     api.users().then(setUsers, (e: Error) => setError(e.message));
