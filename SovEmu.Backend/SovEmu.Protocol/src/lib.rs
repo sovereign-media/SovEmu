@@ -13,7 +13,8 @@ pub mod ipc;
 pub mod signal;
 
 pub use input::{
-    Analog, AnalogPacket, ClientMessage, DecodeError, Hotkeys, InputAck, InputPacket, MAX_PORTS,
+    Analog, AnalogPacket, ClientMessage, ClientStats, DecodeError, Hotkeys, InputAck, InputPacket,
+    MAX_PORTS,
 };
 pub use signal::{SdpKind, SessionDescription};
 

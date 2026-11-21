@@ -8,6 +8,7 @@ export const MAX_PORTS = 4;
 const TYPE_INPUT = 0x01;
 const TYPE_HOTKEYS = 0x02;
 const TYPE_ANALOG = 0x03;
+const TYPE_STATS = 0x04;
 const TYPE_ACK = 0x81;
 
 /** RetroPad button ids (libretro RETRO_DEVICE_ID_JOYPAD_*): bit n of a port's state. */
@@ -84,6 +85,48 @@ export function encodeAnalog(packet: { seq: number; ports: Analog[] }): ArrayBuf
     });
   });
   return buf;
+}
+
+/**
+ * What the stats overlay shows, sent once a second while it is open so the worker logs the
+ * client's view beside its own (`client stats`). Times in ms, rates in kbit/s; every key is
+ * optional. The keys and their order are `ClientStats` in SovEmu.Protocol.
+ */
+export interface ClientStats {
+  client?: string;
+  estimate_ms?: number;
+  input_rtt_p50_ms?: number;
+  input_rtt_p95_ms?: number;
+  net_rtt_ms?: number;
+  jitter_ms?: number;
+  decode_ms?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  kbps?: number;
+  packets_lost?: number;
+  game_mode?: boolean;
+  wifi_lock?: boolean;
+}
+
+const STATS_KEYS: (keyof ClientStats)[] = [
+  "client", "estimate_ms", "input_rtt_p50_ms", "input_rtt_p95_ms", "net_rtt_ms", "jitter_ms", "decode_ms",
+  "width", "height", "fps", "kbps", "packets_lost", "game_mode", "wifi_lock",
+];
+
+/** `0x04`, the version, then the known values as a JSON object (unknown and non-finite ones left out). */
+export function encodeStats(stats: ClientStats): ArrayBuffer {
+  const known: Record<string, unknown> = {};
+  for (const key of STATS_KEYS) {
+    const v = stats[key];
+    if (v === undefined || v === null || (typeof v === "number" && !Number.isFinite(v))) continue;
+    known[key] = typeof v === "number" ? Math.round(v * 10) / 10 : v;
+  }
+  const body = new TextEncoder().encode(JSON.stringify(known));
+  const out = new Uint8Array(2 + body.length);
+  out.set([TYPE_STATS, INPUT_VERSION]);
+  out.set(body, 2);
+  return out.buffer;
 }
 
 /** Decodes an ack, or returns null for anything else. */

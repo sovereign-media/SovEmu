@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { bit, decodeAck, encodeAnalog, encodeHotkeys, encodeInput } from "./protocol";
+import { bit, decodeAck, encodeAnalog, encodeHotkeys, encodeInput, encodeStats } from "./protocol";
 
 // The same vectors as `input_layout_is_stable` in SovEmu.Protocol/src/input.rs.
 describe("input protocol", () => {
   it("encodes input exactly like the Rust reference", () => {
     const bytes = new Uint8Array(encodeInput({ seq: 0x04030201, clientTimeMs: 0x08070605, ports: [0x0a09] }));
     expect([...bytes]).toEqual([0x01, 1, 1, 2, 3, 4, 5, 6, 7, 8, 1, 0x09, 0x0a]);
+  });
+
+  it("encodes stats exactly like the Rust reference", () => {
+    // `stats_are_json_after_the_header`: only the values known, in the Rust struct's order.
+    const bytes = new Uint8Array(encodeStats({ packets_lost: 2, jitter_ms: 1.5, fps: NaN, kbps: undefined }));
+    expect([...bytes.slice(0, 2)]).toEqual([0x04, 1]);
+    expect(new TextDecoder().decode(bytes.slice(2))).toBe('{"jitter_ms":1.5,"packets_lost":2}');
   });
 
   it("encodes hotkeys exactly like the Rust reference", () => {

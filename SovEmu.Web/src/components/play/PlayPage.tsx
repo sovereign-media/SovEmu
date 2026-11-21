@@ -486,6 +486,7 @@ function Player() {
           {
             label: statsOn ? "Hide stats" : "Show stats",
             icon: "stats",
+            detail: STATS_WARNING,
             run: () => {
               statsOn = !statsOn;
               setStats(statsOn ? [] : null);
@@ -561,7 +562,10 @@ function Player() {
       timers.push(
         window.setInterval(async () => {
           if (!session || !statsOn) return;
-          setStats(await sampler.sample(session));
+          const { items, numbers } = await sampler.sample(session);
+          setStats(items);
+          // Logged by the worker beside its own health lines, for reading back later.
+          session.sendStats({ ...numbers, client: "web" });
         }, 1000),
       );
 
@@ -734,11 +738,15 @@ function Player() {
               <dd className="text-right tabular-nums">{value}</dd>
             </div>
           ))}
+          <p className="col-span-2 mt-1 max-w-56 font-sans text-[10px] text-slate-400">{STATS_WARNING}</p>
         </dl>
       )}
     </main>
   );
 }
+
+/** Shown where stats are turned on and on the overlay: they cost a little every second. */
+const STATS_WARNING = "Stats are logged while shown, and can affect game performance.";
 
 export default function PlayPage() {
   return (

@@ -44,6 +44,20 @@
 //! second). Added after version 1 without bumping it: clients that
 //! never send it leave the sticks centred, and workers that predate it ignore the type.
 //!
+//! ## Client → worker: [`ClientStats`]
+//!
+//! | Offset | Size | Field |
+//! |---|---|---|
+//! | 0 | 1 | message type, `0x04` |
+//! | 1 | 1 | version |
+//! | 2 | rest | a UTF-8 JSON object, at most [`MAX_STATS_LEN`] bytes in all |
+//!
+//! What the client's stats overlay shows, sent once a second while it is open, so the worker
+//! can log the client's view of the stream beside its own (`client stats`). Every key is
+//! optional and unknown keys are ignored, so clients can send what they measure. JSON rather
+//! than fixed fields because it is a diagnostic, not part of play: it can grow without a new
+//! layout. Added after version 1 without bumping it: workers that predate it drop the type.
+//!
 //! ## Worker → client: [`InputAck`]
 //!
 //! | Offset | Size | Field |
@@ -59,6 +73,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use crate::INPUT_VERSION;
 
 /// The most controller ports a packet can carry.
@@ -67,6 +83,7 @@ pub const MAX_PORTS: usize = 4;
 const TYPE_INPUT: u8 = 0x01;
 const TYPE_HOTKEYS: u8 = 0x02;
 const TYPE_ANALOG: u8 = 0x03;
+const TYPE_STATS: u8 = 0x04;
 const ANALOG_HEADER: usize = 7;
 const ANALOG_PORT: usize = 12;
 const TYPE_ACK: u8 = 0x81;
@@ -80,6 +97,8 @@ pub enum DecodeError {
     WrongType(u8),
     UnsupportedVersion(u8),
     BadPortCount(u8),
+    /// A stats message whose body is not a JSON object of the expected shape, or too long.
+    BadStats(String),
 }
 
 impl fmt::Display for DecodeError {
@@ -89,6 +108,7 @@ impl fmt::Display for DecodeError {
             Self::WrongType(t) => write!(f, "unexpected message type {t:#04x}"),
             Self::UnsupportedVersion(v) => write!(f, "unsupported input protocol version {v}"),
             Self::BadPortCount(n) => write!(f, "invalid port count {n}"),
+            Self::BadStats(e) => write!(f, "invalid stats message: {e}"),
         }
     }
 }
@@ -229,12 +249,72 @@ impl AnalogPacket {
     }
 }
 
+/// The longest stats message accepted, header included.
+pub const MAX_STATS_LEN: usize = 2048;
+
+/// What the client's stats overlay shows, for the worker's log. Times in milliseconds, rates
+/// in kbit/s; `None` where the client has no value (yet).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClientStats {
+    /// The client and its version, `android 1.4.0`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client: Option<String>,
+    /// Button to pixel, as the overlay estimates it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_rtt_p50_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_rtt_p95_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub net_rtt_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitter_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decode_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    /// Frames decoded per second.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kbps: Option<f64>,
+    /// Video and audio packets lost, since the stream began.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub packets_lost: Option<u64>,
+    /// TV game mode (ALLM) asked for, and the low-latency Wi-Fi lock held.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wifi_lock: Option<bool>,
+}
+
+impl ClientStats {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![TYPE_STATS, INPUT_VERSION];
+        serde_json::to_writer(&mut out, self).expect("stats serialize");
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        check_header(bytes, TYPE_STATS, 2)?;
+        if bytes.len() > MAX_STATS_LEN {
+            return Err(DecodeError::BadStats(format!("{} bytes", bytes.len())));
+        }
+        serde_json::from_slice(&bytes[2..]).map_err(|e| DecodeError::BadStats(e.to_string()))
+    }
+}
+
 /// A message from the client on the input channel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
     Input(InputPacket),
     Hotkeys(Hotkeys),
     Analog(AnalogPacket),
+    Stats(ClientStats),
 }
 
 impl ClientMessage {
@@ -242,6 +322,7 @@ impl ClientMessage {
         match bytes.first() {
             Some(&TYPE_HOTKEYS) => Hotkeys::decode(bytes).map(Self::Hotkeys),
             Some(&TYPE_ANALOG) => AnalogPacket::decode(bytes).map(Self::Analog),
+            Some(&TYPE_STATS) => ClientStats::decode(bytes).map(Self::Stats),
             _ => InputPacket::decode(bytes).map(Self::Input),
         }
     }
@@ -332,6 +413,8 @@ mod tests {
         assert_eq!(ClientMessage::decode(&both.encode()), Ok(ClientMessage::Hotkeys(both)));
         let input = InputPacket { seq: 1, client_time_ms: 2, ports: vec![3] };
         assert_eq!(ClientMessage::decode(&input.encode()), Ok(ClientMessage::Input(input)));
+        let stats = ClientStats { jitter_ms: Some(1.5), ..ClientStats::default() };
+        assert_eq!(ClientMessage::decode(&stats.encode()), Ok(ClientMessage::Stats(stats)));
         assert_eq!(Hotkeys::decode(&[0x02, 1]), Err(DecodeError::TooShort));
     }
 
@@ -386,5 +469,27 @@ mod tests {
         assert!(!packet(1).is_newer_than(2));
         assert!(packet(0).is_newer_than(u32::MAX));
         assert!(packet(5).is_newer_than(u32::MAX - 5));
+    }
+
+    /// The same bytes as `protocol.test.ts`: only the values known, in declaration order.
+    #[test]
+    fn stats_are_json_after_the_header() {
+        let stats =
+            ClientStats { jitter_ms: Some(1.5), packets_lost: Some(2), ..Default::default() };
+        let mut expected = vec![0x04, 1];
+        expected.extend_from_slice(br#"{"jitter_ms":1.5,"packets_lost":2}"#);
+        assert_eq!(stats.encode(), expected);
+        assert_eq!(ClientStats::decode(&expected), Ok(stats));
+    }
+
+    #[test]
+    fn stats_ignore_unknown_keys_and_refuse_what_is_not_an_object_or_too_long() {
+        let mut newer = vec![0x04, 1];
+        newer.extend_from_slice(br#"{"fps":59.9,"from_a_newer_client":true}"#);
+        assert_eq!(ClientStats::decode(&newer).unwrap().fps, Some(59.9));
+        assert!(matches!(ClientStats::decode(b"\x04\x01\"fast\""), Err(DecodeError::BadStats(_))));
+        let mut long = vec![0x04, 1, b'{'];
+        long.resize(MAX_STATS_LEN + 1, b' ');
+        assert!(matches!(ClientStats::decode(&long), Err(DecodeError::BadStats(_))));
     }
 }

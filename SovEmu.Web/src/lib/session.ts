@@ -2,7 +2,19 @@
 // no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
 // the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
 import { InputState } from "./input";
-import { type Analog, CENTRED, INPUT_CHANNEL, analogEqual, decodeAck, encodeAnalog, encodeHotkeys, encodeInput, hotkeyBits } from "./protocol";
+import {
+  type Analog,
+  CENTRED,
+  type ClientStats,
+  INPUT_CHANNEL,
+  analogEqual,
+  decodeAck,
+  encodeAnalog,
+  encodeHotkeys,
+  encodeInput,
+  encodeStats,
+  hotkeyBits,
+} from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
 const HEARTBEAT_MS = 100;
@@ -86,6 +98,11 @@ export class Session {
       });
       setTimeout(resolve, ICE_GATHER_TIMEOUT_MS);
     });
+  }
+
+  /** Sends the stats overlay's numbers for the worker's log (see `encodeStats`). */
+  sendStats(stats: ClientStats) {
+    if (this.channel.readyState === "open") this.channel.send(encodeStats(stats));
   }
 
   /** Every animation frame: send the input state if it changed or the heartbeat is due. */
