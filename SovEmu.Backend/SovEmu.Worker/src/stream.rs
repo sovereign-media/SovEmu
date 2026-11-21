@@ -29,6 +29,7 @@ use str0m::channel::ChannelId;
 use str0m::format::Codec;
 use str0m::media::{Frequency, MediaKind, MediaTime, Mid, Pt};
 use str0m::net::{Protocol, Receive};
+use str0m::rtp::Extension;
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
 use crate::pacing::Pacer;
@@ -57,6 +58,9 @@ pub(crate) fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u3
     let usable = (estimate_bps as f64 * 0.85 / 1000.0) as i64 - i64::from(audio_kbps);
     usable.clamp(i64::from(MIN_VIDEO_KBPS.min(max_kbps)), i64::from(max_kbps)) as u32
 }
+
+/// The RTP header extension id offered for playout delay: one str0m's standard map leaves free.
+const PLAYOUT_DELAY_EXT_ID: u8 = 5;
 
 /// How long the loop sleeps at most when idle, so new commands are picked up promptly.
 const IDLE_WAIT: Duration = Duration::from_millis(20);
@@ -340,6 +344,13 @@ fn accept_offer(
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
     let mut rtc = RtcConfig::new()
         .set_ice_lite(true)
+        // Playout delay is not in str0m's standard extensions, so without this the 0/0 delay
+        // `step` writes on every video packet is never negotiated and never sent. The receiver's
+        // WebRTC (Android, iOS, and browsers that ignore `jitterBufferTarget`) then buffers frames
+        // to smooth jitter, which costs 40 ms on a quiet network and hundreds of milliseconds
+        // over Wi-Fi. With it, frames are shown as soon as they are decoded. The id only matters
+        // if the client offers none: str0m takes the client's.
+        .set_extension(PLAYOUT_DELAY_EXT_ID, Extension::PlayoutDelay)
         .clear_codecs()
         .enable_vp8(true)
         .enable_opus(true, false)
