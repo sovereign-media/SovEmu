@@ -50,6 +50,7 @@ import {
   toBindings,
   toMapping,
 } from "../../lib/controllers";
+import { invalidate, q, queryClient } from "../../lib/data";
 import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../lib/decoration";
 import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
@@ -162,10 +163,15 @@ function Player() {
     let stopped = false;
     /** The server's session has been asked to stop (Quit, or leaving the screen): once only. */
     let ended = false;
+    /** After a game: its saves (the auto save), the home's recent row and its play count. */
+    const played = () => invalidate(["game", gameId], ["home"], ["system"]);
     const end = () => {
       if (ended || !info) return;
       ended = true;
-      void api.stopSession(info.id).catch(() => {});
+      void api
+        .stopSession(info.id)
+        .catch(() => {})
+        .then(played);
     };
     let cleanup = () => {};
     /** This game's system, its buttons and pad, the controllers' pads, and the every-system mappings. */
@@ -179,18 +185,19 @@ function Player() {
 
     void (async () => {
       const [game, systems, initialSlots, iceServers] = await Promise.all([
-        api.game(gameId),
-        api.systems(),
+        // Through the cache: coming from the games screen, most of this is already known.
+        queryClient.fetchQuery(q.game(gameId)),
+        queryClient.fetchQuery(q.systems()),
         api.saves(gameId),
-        api.iceServers(),
+        queryClient.fetchQuery(q.iceServers()),
       ]);
       if (stopped) return;
       // The mappings in force on this system (and on every system, for the controls menu), and
       // the pads to draw there.
       const [mappings, everywhere, controls] = await Promise.all([
-        api.controllerMappings(game.system).catch(() => []),
-        api.controllerMappings(null).catch(() => []),
-        api.systemControls(game.system).catch(() => null),
+        queryClient.fetchQuery(q.controllerMappings(game.system)).catch(() => []),
+        queryClient.fetchQuery(q.controllerMappings(null)).catch(() => []),
+        queryClient.fetchQuery(q.systemControls(game.system)).catch(() => null),
       ]);
       if (stopped) return;
       pads = {
@@ -292,6 +299,7 @@ function Player() {
           ended = true;
           setStatus("Saving…");
           await api.stopSession(info.id).catch(() => {});
+          void played();
         }
         go(`/system/?id=${encodeURIComponent(game.system)}`);
       }
@@ -325,6 +333,7 @@ function Player() {
               if (!info) return;
               try {
                 await api.saveState(info.id, slot);
+                void invalidate(["game", gameId, "saves"]);
                 stack.close();
                 toast(`Saved to slot ${slot}`);
               } catch (e) {
@@ -425,6 +434,7 @@ function Player() {
             const system = onSystem ? pads.system : null;
             if (next) await api.saveControllerMapping(id, system, name, toBindings(next));
             else await api.resetControllerMapping(id, system);
+            void invalidate(["controllerMappings"]);
             await refresh();
           } catch (e) {
             toast(`Not saved: ${(e as Error).message}`);

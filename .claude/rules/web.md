@@ -17,6 +17,13 @@ paths:
   codegen into `src/graphql/` (`npm run codegen`; committed; CI runs `codegen:check`). Pages
   call `api.*` in `src/lib/api.ts`, never `fetch`. Errors are `ApiError` with the server's
   `code`; `UNAUTHENTICATED` sends the page to sign-in.
+- **Reads go through TanStack Query** (`src/lib/data.ts`): one key and fetch per read in `q`,
+  used with `useQuery` (or `queryClient.fetchQuery` in imperative code such as the player),
+  never a `useEffect` that calls `api.*` into state. Its loading, error and cached states are
+  the screen's. A change marks what it made stale with `invalidate([...key])` (a game's reads
+  sit under `["game", id]`), or puts the server's answer in place with `setQueryData`. A
+  read made signed out (the sign-in screen's) stays a plain `api.*` call: it is not the
+  signed-in user's to cache.
 - **Tailwind v4 is CSS-first.** Theme tokens live in `@theme` in `src/styles/global.css`; there
   is no `tailwind.config.js`. A component `<style>` that uses `@apply` needs
   `@reference "../styles/global.css";` first.

@@ -5,9 +5,11 @@
 // locked; the admin's changes can be copied out as environment lines, so the configuration
 // stays reproducible without this page.
 
+import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
+import { q, queryClient } from "../../lib/data";
 import { go } from "../../lib/go";
 import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadge } from "../../lib/settings";
 import Shell from "../Shell";
@@ -135,40 +137,36 @@ function RunAheadPanel({
 }
 
 function Settings() {
-  const [systems, setSystems] = useState<SystemSummary[]>([]);
-  const [current, setCurrent] = useState<SystemSummary | null>(null);
-  const [loaded, setLoaded] = useState<SystemSettings | null>(null);
+  const all = useQuery(q.systems());
+  const systems: SystemSummary[] = useMemo(() => (all.data ?? []).filter((s) => s.playable || s.needsGpu), [all.data]);
+  const [chosen, setChosen] = useState(() => new URLSearchParams(location.search).get("id"));
+  const current = systems.find((s) => s.id === chosen) ?? systems[0] ?? null;
+  const settings = useQuery({ ...q.systemSettings(current?.id ?? ""), enabled: !!current });
+  const loaded: SystemSettings | null = settings.data ?? null;
   const [query, setQuery] = useState("");
-  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const [said, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
+  // What a change said, else why the settings could not be read.
+  const message = said ?? (settings.error ? { text: settings.error.message, error: true } : null);
 
-  const select = useCallback(async (s: SystemSummary) => {
-    setCurrent(s);
-    setLoaded(null);
+  const select = useCallback((s: SystemSummary) => {
+    setChosen(s.id);
     setMessage(null);
     history.replaceState(null, "", `?id=${encodeURIComponent(s.id)}`);
-    try {
-      setLoaded(await api.systemSettings(s.id));
-    } catch (e) {
-      setMessage({ text: (e as Error).message, error: true });
-    }
   }, []);
+  /** A change answers with the system's settings as they now are: those are shown. */
+  const saved = (system: string, now: SystemSettings) =>
+    queryClient.setQueryData(q.systemSettings(system).queryKey, now);
 
+  const viewer = useQuery(q.viewer());
   useEffect(() => {
-    api.viewer().then((s) => !s.user?.isAdmin && go("/", { replace: true }));
-    api.systems().then((all) => {
-      const offered = all.filter((s) => s.playable || s.needsGpu);
-      setSystems(offered);
-      const wanted = new URLSearchParams(location.search).get("id");
-      const first = offered.find((s) => s.id === wanted) ?? offered[0];
-      if (first) void select(first);
-    });
-  }, [select]);
+    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
+  }, [viewer.data]);
 
   const change = async (key: string, value: string | null) => {
     if (!current) return;
     try {
-      setLoaded(await api.changeSettings(current.id, { [key]: value }));
+      saved(current.id, await api.changeSettings(current.id, { [key]: value }));
       setMessage({
         text:
           value === null
@@ -183,7 +181,7 @@ function Settings() {
   const changeRunAhead = async (frames: number | null) => {
     if (!current) return;
     try {
-      setLoaded(await api.setRunAhead(current.id, frames));
+      saved(current.id, await api.setRunAhead(current.id, frames));
       setMessage({
         text: frames ? "Saved. Applies to the next game started." : "Run-ahead off. Applies to the next game started.",
       });

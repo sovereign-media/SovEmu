@@ -2,10 +2,12 @@
 // and removing accounts come later (the environment can already declare them all:
 // `SOVEMU_USERS__<n>__…`).
 
+import { useQuery } from "@tanstack/react-query";
 import { Shield, User as UserIcon, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { adminDocumentTitle } from "../../lib/adminNav";
-import { api, type User } from "../../lib/api";
+import type { api } from "../../lib/api";
+import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { initials } from "../../lib/systems";
 import Shell from "../Shell";
@@ -31,18 +33,18 @@ function RoleBadge({ role }: { role: Account["role"] }) {
 }
 
 function UsersList() {
-  const [me, setMe] = useState<User | null>(null);
-  const [users, setUsers] = useState<Account[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const viewer = useQuery(q.viewer());
+  const me = viewer.data?.user ?? null;
+  const listed = useQuery(q.users());
+  const users: Account[] | null = listed.data ?? null;
+  const error = listed.error?.message ?? null;
 
   useEffect(() => {
     document.title = `${adminDocumentTitle(location.pathname)} · SovEmu`;
-    api.viewer().then((s) => {
-      if (!s.user?.isAdmin) go("/", { replace: true });
-      setMe(s.user);
-    });
-    api.users().then(setUsers, (e: Error) => setError(e.message));
   }, []);
+  useEffect(() => {
+    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
+  }, [viewer.data]);
 
   return (
     <main className="mx-auto grid max-w-3xl gap-6 p-6">

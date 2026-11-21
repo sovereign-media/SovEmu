@@ -3,9 +3,11 @@
 // their top row comes back to the field; A opens a game's panel on its system's page. The query
 // is kept in the URL, so coming back from that page shows the same results.
 
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search as SearchIcon, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, type Game, type SystemSummary } from "../../lib/api";
+import type { Game, SystemSummary } from "../../lib/api";
+import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { listenNav } from "../../lib/nav";
 import { FIELD, moveSearch, SEARCH_DELAY_MS, SEARCH_LIMIT } from "../../lib/search";
@@ -28,43 +30,23 @@ function columnsOf(grid: HTMLElement | null): number {
 
 function SearchScreen() {
   const [text, setText] = useState(() => new URLSearchParams(location.search).get("q") ?? "");
-  const [results, setResults] = useState<Game[] | null>(null);
-  const [systems, setSystems] = useState<SystemSummary[]>([]);
+  const systems: SystemSummary[] = useQuery(q.systems()).data ?? [];
   const [at, setAt] = useState(FIELD);
-  const [error, setError] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const grid = useRef<HTMLDivElement>(null);
 
-  useEffect(
-    () =>
-      void api
-        .systems()
-        .then(setSystems)
-        .catch(() => {}),
-    [],
-  );
-
-  // Ask after a pause in typing; a later answer replaces an earlier one, never the reverse.
+  // Ask after a pause in typing. Each text is its own query, so an earlier answer never
+  // replaces a later one, and going back to a text shows its answer at once.
+  const [asked, setAsked] = useState(() => text.trim());
   useEffect(() => {
-    const q = text.trim();
-    history.replaceState(null, "", q ? `?q=${encodeURIComponent(q)}` : location.pathname);
-    if (!q) return void setResults(null);
-    let gone = false;
-    const timer = setTimeout(() => {
-      api
-        .search(q)
-        .then((found) => {
-          if (gone) return;
-          setResults(found);
-          setError(null);
-        })
-        .catch((e) => !gone && setError((e as Error).message));
-    }, SEARCH_DELAY_MS);
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-    };
+    const words = text.trim();
+    history.replaceState(null, "", words ? `?q=${encodeURIComponent(words)}` : location.pathname);
+    const timer = setTimeout(() => setAsked(words), words ? SEARCH_DELAY_MS : 0);
+    return () => clearTimeout(timer);
   }, [text]);
+  const answer = useQuery({ ...q.search(asked), enabled: asked !== "", placeholderData: keepPreviousData });
+  const results: Game[] | null = asked ? (answer.data ?? null) : null;
+  const error = answer.error?.message ?? null;
 
   // The field has the browser's focus while it is the focus; a result has the ring.
   useEffect(() => {

@@ -2,10 +2,12 @@
 // (`bios/<system>/`, named like its ROM folder) and each file it reads, checked on the server
 // by name and MD5. `?id=psx` scrolls to one system. B goes home.
 
+import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, Microchip, RefreshCw, TriangleAlert } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { api, type BiosGroup, type BiosSystem, formatSize, type SystemBios } from "../lib/api";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import { type BiosGroup, type BiosSystem, formatSize, type SystemBios } from "../lib/api";
 import { FILE_STATES, fileHint, fileTone, IMPORTANCE, STATES, summary, type Tone, withBios } from "../lib/bios";
+import { q } from "../lib/data";
 import { go } from "../lib/go";
 import { listenNav } from "../lib/nav";
 import HintBar from "./HintBar";
@@ -110,26 +112,18 @@ function SystemCard({ system, bios, current }: { system: BiosSystem; bios: Syste
 }
 
 function Bios() {
-  const [systems, setSystems] = useState<BiosSystem[] | null>(null);
-  const [checking, setChecking] = useState(false);
+  const bios = useQuery(q.bios());
+  const systems: BiosSystem[] | null = bios.data ?? null;
+  const checking = bios.isFetching;
   const wanted = useRef(new URLSearchParams(location.search).get("id"));
-
-  const check = useCallback(async () => {
-    setChecking(true);
-    try {
-      setSystems(await api.bios());
-    } finally {
-      setChecking(false);
-    }
-  }, []);
+  const check = useCallback(() => bios.refetch(), [bios.refetch]);
 
   useEffect(() => {
-    void check();
     const nav = listenNav((action) => {
       if (action === "back") go("/");
     });
     return () => nav.stop();
-  }, [check]);
+  }, []);
 
   // The system the link asked for, once it is shown.
   useEffect(() => {

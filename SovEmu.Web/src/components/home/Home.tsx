@@ -2,9 +2,11 @@
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
 // (left/right); A plays or opens; X (or /) searches every system; Start rescans.
 
+import { useQuery } from "@tanstack/react-query";
 import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
+import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { type Focus, moveFocus, type RowShape, startFocus } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
@@ -32,25 +34,21 @@ const openSystem = (s: SystemSummary) => go(`/system/?id=${encodeURIComponent(s.
 
 function HomeScreen() {
   const toast = useToast();
-  const [feed, setFeed] = useState<HomeFeed | null>(null);
-  const [systems, setSystems] = useState<SystemSummary[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
+  const home = useQuery(q.home());
+  const allSystems = useQuery(q.systems());
+  const lists = useQuery(q.collections());
+  const feed: HomeFeed | null = home.data ?? null;
+  const systems: SystemSummary[] = useMemo(
+    () => (allSystems.data ?? []).filter((s) => s.gameCount > 0),
+    [allSystems.data],
+  );
+  const collections: Collection[] = useMemo(() => (lists.data ?? []).filter((c) => c.games.length > 0), [lists.data]);
   const [focus, setFocus] = useState<Focus>({ row: 0, cols: [0, 0, 0, 0, 0] });
   // Focus rings show once a pad or the keyboard is used, not for the mouse.
   const [navigating, setNavigating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [home, all, lists] = await Promise.all([api.home(), api.systems(), api.collections().catch(() => [])]);
-      setFeed(home);
-      setSystems(all.filter((s) => s.gameCount > 0));
-      setCollections(lists.filter((c) => c.games.length > 0));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
-  useEffect(() => void load(), [load]);
+  // Collections are extra: the screen shows without them.
+  const error = (home.error ?? allSystems.error)?.message ?? null;
+  const load = useCallback(() => invalidate(["home"], ["systems"], ["collections"]), []);
 
   const rows: RowShape[] = useMemo(
     () => [

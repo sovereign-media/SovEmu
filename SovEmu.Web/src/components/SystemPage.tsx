@@ -7,10 +7,12 @@
 // closes the panel or goes home, Start (or "/") opens the filters, the shoulders move three rows.
 // The list logic is src/lib/games.ts.
 
+import { useQuery } from "@tanstack/react-query";
 import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AUTO_SLOT, api, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
+import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
+import { q } from "../lib/data";
 import {
   activeFilters,
   filterGames,
@@ -164,21 +166,25 @@ function Games() {
   // Focus rings show once a pad or the keyboard is used, not for the mouse.
   const [navigating, setNavigating] = useState(false);
   const [openId, setOpenId] = useState<number | null>(() => gameFromUrl(location.search));
-  const [slots, setSlots] = useState<SaveSlot[]>([]);
   const [jump, setJump] = useState<{ index: number; scrollY: number } | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   /** Whether this page pushed the panel's history entry (so closing it goes Back). */
   const pushed = useRef(false);
 
+  // The system and its games, cached: coming back from a game shows the list at once. Kept in
+  // state too, as the panel changes a game in place (favourite, patch) before the server says so.
+  const read = useQuery(q.system(systemId));
   useEffect(() => {
-    api.system(systemId).then((s) => {
-      if (!s) return go("/", { replace: true });
-      const { games, ...system } = s;
-      document.title = `${system.name} · SovEmu`;
-      setSystem(system);
-      setGames(games);
-    });
+    if (read.isSuccess && !read.data) return void go("/", { replace: true });
+    if (!read.data) return;
+    const { games, ...system } = read.data;
+    document.title = `${system.name} · SovEmu`;
+    setSystem(system);
+    setGames(games);
+  }, [read.isSuccess, read.data]);
+
+  useEffect(() => {
     const onPop = () => {
       pushed.current = false;
       setOpenId(gameFromUrl(location.search));
@@ -200,20 +206,14 @@ function Games() {
 
   // Its saves, after a pause (moving quickly through games does not ask for each). A patched
   // game's saves are its own: they change with the patch.
-  const openPatch = open?.patch ?? null;
+  const [savesFor, setSavesFor] = useState<number | null>(null);
   useEffect(() => {
-    setSlots([]);
+    setSavesFor(null);
     if (openId === null) return;
-    const t = setTimeout(
-      () =>
-        api
-          .saves(openId)
-          .then(setSlots)
-          .catch(() => {}),
-      150,
-    );
+    const t = setTimeout(() => setSavesFor(openId), 150);
     return () => clearTimeout(t);
-  }, [openId, openPatch]);
+  }, [openId]);
+  const slots: SaveSlot[] = useQuery({ ...q.saves(savesFor ?? 0), enabled: savesFor !== null }).data ?? [];
 
   /** Opens the panel on a game: a new history entry, or the same one when it is already open. */
   const openGame = (id: number) => {

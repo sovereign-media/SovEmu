@@ -1,9 +1,11 @@
 // Library administration: where games come from (direct / cache / mirror), the mirror's sync,
 // rescans, and fetching game information from metadata services.
 
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
+import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
@@ -57,30 +59,25 @@ function syncText(m: NonNullable<LibraryStatus["mirror"]>): string {
 }
 
 function Library() {
-  const [library, setLibrary] = useState<LibraryStatus | null>(null);
-  const [metadata, setMetadata] = useState<MetadataStatus | null>(null);
-  const [scanning, setScanning] = useState(false);
+  // Scans, syncs and lookups run on the server: their progress is read every 2 s.
+  const status = useQuery({ ...q.adminStatus(), refetchInterval: 2000 });
+  const library: LibraryStatus | null = status.data?.libraryStatus ?? null;
+  const metadata: MetadataStatus | null = status.data?.metadataStatus ?? null;
   const [confirm, setConfirm] = useState(false);
+  const refresh = useCallback(() => invalidate(["admin", "status"]), []);
 
-  const refresh = useCallback(async () => {
-    const status = await api.adminStatus();
-    setLibrary(status.libraryStatus);
-    setMetadata(status.metadataStatus);
-  }, []);
-
+  const viewer = useQuery(q.viewer());
   useEffect(() => {
-    api.viewer().then((s) => !s.user?.isAdmin && go("/", { replace: true }));
-    void refresh();
-    const t = setInterval(refresh, 2000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
+  }, [viewer.data]);
 
-  const scan = async () => {
-    setScanning(true);
-    await api.scan().catch(() => {});
-    setScanning(false);
-    await refresh();
-  };
+  // A rescan changes what every screen lists.
+  const scanning_ = useMutation({
+    mutationFn: () => api.scan(),
+    onSettled: () => invalidate(["admin", "status"], ["home"], ["systems"], ["system"], ["collections"]),
+  });
+  const scanning = scanning_.isPending;
+  const scan = () => scanning_.mutate();
   const fetchMetadata = async (force: boolean) => {
     await api.fetchMetadata(undefined, force);
     setTimeout(refresh, 300);
