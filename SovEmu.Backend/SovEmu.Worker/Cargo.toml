@@ -29,6 +29,7 @@ workspace = true
 hound = "3.5.1"
 png = "0.18.1"
 serde_json = "1.0.154"
+socket2 = "0.6"
 sovemu-media = { path = "../SovEmu.Media" }
 sovemu-protocol = { path = "../SovEmu.Protocol" }
 str0m = { version = "0.25.0", default-features = false, features = ["aws-lc-rs"] }

@@ -3751,6 +3751,7 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+ "socket2",
  "sovemu-media",
  "sovemu-protocol",
  "sovemu-retro-host",
