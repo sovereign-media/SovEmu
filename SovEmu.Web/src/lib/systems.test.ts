@@ -9,6 +9,7 @@ const sys = (over: Partial<SystemSummary>): SystemSummary => ({
   manufacturer: "Nintendo",
   year: 1996,
   color: "#000",
+  photoUrl: null,
   gameCount: 1,
   playable: true,
   needsGpu: false,

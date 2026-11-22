@@ -1,7 +1,8 @@
 // What every page's island sits in: the background, and Radix's tooltip and toast providers.
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { background } from "../lib/backgrounds";
 import { reportUncaughtErrors } from "../lib/clientEvents";
+import { q } from "../lib/data";
 import { TooltipProvider } from "./ui/primitives";
 import { Toasts } from "./ui/toast";
 
@@ -9,15 +10,21 @@ import { Toasts } from "./ui/toast";
 reportUncaughtErrors();
 
 export default function Shell({ children }: { children: ReactNode }) {
+  // The server's background (the admin's choice), once signed in: the sign-in screen has the
+  // surface colour alone, as asking signed out would send it to sign in.
+  const signedIn = !!useQuery(q.viewer()).data?.user;
+  const background = useQuery({ ...q.background(), enabled: signedIn }).data ?? null;
   return (
     <TooltipProvider>
-      {/* This visit's background, behind every screen; a screen that fills itself (the player) covers it. */}
-      <div
-        aria-hidden="true"
-        data-background={background.id}
-        className="pointer-events-none fixed inset-0 -z-10 bg-cover bg-center"
-        style={{ backgroundImage: `url("${background.url}")` }}
-      />
+      {/* Behind every screen; a screen that fills itself (the player) covers it. */}
+      {background && (
+        <div
+          aria-hidden="true"
+          data-background={background.id}
+          className="pointer-events-none fixed inset-0 -z-10 bg-cover bg-center"
+          style={{ backgroundImage: `url("${background.url}")` }}
+        />
+      )}
       <Toasts>{children}</Toasts>
     </TooltipProvider>
   );

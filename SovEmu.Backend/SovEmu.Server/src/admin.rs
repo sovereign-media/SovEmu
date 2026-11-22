@@ -15,6 +15,8 @@ use sovemu_library::mirror::{self, SyncStatus};
 pub(crate) async fn scan(state: AppState) -> anyhow::Result<ScanReport> {
     // Decoration sets may have been added beside the library: list them again too.
     state.reload_decorations();
+    // And backgrounds and system photos.
+    state.reload_appearance();
     let started = std::time::Instant::now();
     let r = library::scan(&state.db, &state.config.roms_dir).await?;
     state.game_counts.refresh(&state.db).await?;

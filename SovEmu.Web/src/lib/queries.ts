@@ -39,6 +39,7 @@ export const SystemFields = graphql(`
     manufacturer
     year
     color
+    photoUrl
     gameCount
     playable
     needsGpu
@@ -1071,5 +1072,37 @@ export const AboutQuery = graphql(`
         commit
       }
     }
+  }
+`);
+
+export const BackgroundQuery = graphql(`
+  query Background {
+    background {
+      id
+      name
+      url
+    }
+  }
+`);
+
+export const AppearanceQuery = graphql(`
+  query Appearance {
+    appearance {
+      chosen
+      fromEnvironment
+      environment
+      backgrounds {
+        id
+        name
+        url
+        builtin
+      }
+    }
+  }
+`);
+
+export const SetBackgroundMutation = graphql(`
+  mutation SetBackground($id: String!) {
+    setBackground(id: $id)
   }
 `);

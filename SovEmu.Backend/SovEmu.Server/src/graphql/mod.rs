@@ -32,6 +32,7 @@ use crate::auth::{Credentials, NewUser, User};
 use crate::error::ApiError;
 
 mod accounts;
+mod appearance;
 mod controllers;
 mod jobs;
 mod library;
@@ -43,6 +44,8 @@ mod settings;
 
 #[allow(unused_imports)]
 use accounts::*;
+#[allow(unused_imports)]
+use appearance::*;
 #[allow(unused_imports)]
 use controllers::*;
 #[allow(unused_imports)]
@@ -290,6 +293,7 @@ pub(crate) struct Query(
     resources::ResourcesQuery,
     settings::SettingsQuery,
     controllers::ControllersQuery,
+    appearance::AppearanceQuery,
 );
 
 // The mutation root: each area's mutations, in this order.
@@ -302,6 +306,7 @@ pub(crate) struct Mutation(
     jobs::JobsMutation,
     settings::SettingsMutation,
     controllers::ControllersMutation,
+    appearance::AppearanceMutation,
 );
 
 #[cfg(test)]

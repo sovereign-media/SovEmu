@@ -373,6 +373,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
 | `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
 | `SOVEMU_DECORATIONS_DIRS` | `/nas/decorations` with `compose.nas.yaml` | More decoration folders (Batocera layout), comma-separated, before `data/decorations` and the built-in one |
+| `SOVEMU_BACKGROUND` | unset (the admin's choice on the Appearance page, else `random`) | The background behind every screen, in every client: `dither`, `lattice`, `screens`, a file's name from the background folders, `random` (a different one each visit) or `none`. Set, it locks the Appearance page |
+| `SOVEMU_BACKGROUNDS_DIRS` | none | More background folders, comma-separated, before `data/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/systems/<system id>.webp` |
 | `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_DECORATIONS_BUILTIN` | set in the image | The built web client; the worker binary; the built-in decorations |
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |

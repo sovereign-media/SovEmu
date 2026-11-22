@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatAgo, type Game, type RecentGame, type SystemSummary } from "../../lib/api";
 import { cardArt, nextScroll } from "../../lib/home";
-import { systemPhoto } from "../../lib/systemPhotos";
 import { systemBadge } from "../../lib/systems";
 import { cn } from "../ui/cn";
 
@@ -136,7 +135,7 @@ export function SystemCard({
   onOpen: () => void;
 }) {
   const badge = systemBadge(s);
-  const photo = systemPhoto(s.id);
+  const photo = s.photoUrl;
   return (
     <button
       type="button"

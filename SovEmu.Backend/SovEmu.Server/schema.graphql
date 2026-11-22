@@ -77,6 +77,29 @@ type AdminPatch {
 }
 
 """
+The backgrounds there are, and the one chosen.
+"""
+type AppearanceSettings {
+	"""
+	The built-in ones, then the admin's own (from `<data>/backgrounds` and
+	`SOVEMU_BACKGROUNDS_DIRS`).
+	"""
+	backgrounds: [Background!]!
+	"""
+	A background's id, `random` (a different one each visit) or `none`.
+	"""
+	chosen: String!
+	"""
+	`SOVEMU_BACKGROUND` sets it: the page cannot change it.
+	"""
+	fromEnvironment: Boolean!
+	"""
+	The choice as the line that sets it, to move it into the environment.
+	"""
+	environment: String!
+}
+
+"""
 Box art being downloaded after a lookup, for the games that have no local thumb.
 """
 type ArtworkStatus {
@@ -121,6 +144,29 @@ type Attributions {
 	The FinalBurn Neo commit whose DAT files name arcade games.
 	"""
 	fbneoCommit: String!
+}
+
+"""
+A background clients draw behind every screen: a transparent image laid over the surface
+colour, scaled to cover the screen.
+"""
+type Background {
+	"""
+	Its name in settings (`SOVEMU_BACKGROUND`): `lattice`, or a file's name in the folders.
+	"""
+	id: String!
+	"""
+	As shown: "Lattice", "Sunset beach".
+	"""
+	name: String!
+	"""
+	The image (WebP, PNG or JPEG): a URL signed for this user.
+	"""
+	url: String!
+	"""
+	One SovEmu ships, rather than the admin's own.
+	"""
+	builtin: Boolean!
 }
 
 """
@@ -1368,6 +1414,11 @@ type Mutation {
 	Returns whether it had a mapping of the user's own.
 	"""
 	resetControllerMapping(controller: String!, system: ID): Boolean!
+	"""
+	Admins: the background for everyone: a background's id, `random` or `none`. `CONFLICT`
+	while `SOVEMU_BACKGROUND` sets it; `NOT_FOUND` for a background that is not there.
+	"""
+	setBackground(id: String!): Boolean!
 }
 
 """
@@ -1684,6 +1735,15 @@ type Query {
 	missing here uses the clients' built-in defaults.
 	"""
 	controllerMappings(system: ID): [ControllerMapping!]!
+	"""
+	The background to draw behind every screen now: the one chosen, or one at random each
+	time it is asked (`random`); null for none.
+	"""
+	background: Background
+	"""
+	Admins: every background, and the one chosen.
+	"""
+	appearance: AppearanceSettings!
 }
 
 enum Rendering {
@@ -2077,6 +2137,11 @@ type System {
 	The UI accent colour (CSS).
 	"""
 	color: String!
+	"""
+	A photo of its hardware for its card (a transparent cut-out): SovEmu's, or the admin's own
+	from `<data>/systems/<id>.webp`. A URL signed for this user; null when it has none.
+	"""
+	photoUrl: String
 	gameCount: Int!
 	"""
 	A core that plays it is installed (and, for a 3D system, there is a renderer).

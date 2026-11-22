@@ -13,6 +13,8 @@
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
+//!   backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
+//!   systems/              system photos of your own, `<system id>.webp`
 //!   metadata/             game information:
 //!   metadata/launchbox/   LaunchBox's database dump
 //!   metadata/fbneo/       FBNeo's DATs, by commit
@@ -92,6 +94,16 @@ impl DataPaths {
     /// Decoration sets of the admin's own.
     pub fn decorations(&self) -> PathBuf {
         self.root.join("decorations")
+    }
+
+    /// Backgrounds of the admin's own (`appearance`).
+    pub fn backgrounds(&self) -> PathBuf {
+        self.root.join("backgrounds")
+    }
+
+    /// System photos of the admin's own, `<system id>.webp` (`appearance`).
+    pub fn system_photos(&self) -> PathBuf {
+        self.root.join("systems")
     }
 
     /// Game information: the services' downloads and box art.

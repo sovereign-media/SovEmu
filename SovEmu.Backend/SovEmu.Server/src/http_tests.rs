@@ -172,6 +172,15 @@ impl Harness {
         self.login("admin", "password123").await.unwrap();
     }
 
+    /// A GET of a file (a signed `/media/…` URL): status, the body's bytes, and headers.
+    async fn get_raw(&self, uri: &str) -> (StatusCode, Vec<u8>, header::HeaderMap) {
+        let request = Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap();
+        let response = router(self.state.clone()).oneshot(request).await.unwrap();
+        let (status, headers) = (response.status(), response.headers().clone());
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, bytes.to_vec(), headers)
+    }
+
     /// A form post (the OAuth endpoints): status, JSON body (null if none) and headers.
     async fn form(
         &self,
@@ -1688,6 +1697,91 @@ async fn system_counts_follow_each_scan() {
 }
 
 #[tokio::test]
+async fn backgrounds_and_system_photos_are_served_and_the_admin_chooses() {
+    let mut h = Harness::new("appearance", false).await;
+    h.sign_up_admin().await;
+    let bg = "{ background { id name url builtin } }";
+
+    // Nothing chosen: one at random, each a built-in one.
+    let shown = h.ok(bg, json!({})).await["background"].clone();
+    assert!(["dither", "lattice", "screens"].contains(&shown["id"].as_str().unwrap()));
+    let settings = h
+        .ok("{ appearance { chosen fromEnvironment environment backgrounds { id } } }", json!({}))
+        .await["appearance"]
+        .clone();
+    assert_eq!(settings["chosen"], "random");
+    assert_eq!(settings["fromEnvironment"], false);
+    assert_eq!(settings["backgrounds"].as_array().unwrap().len(), 3);
+
+    // The admin's choice, for everyone, served from the binary.
+    h.ok("mutation { setBackground(id: \"lattice\") }", json!({})).await;
+    let shown = h.ok(bg, json!({})).await["background"].clone();
+    assert_eq!(
+        (shown["id"].clone(), shown["name"].clone(), shown["builtin"].clone()),
+        (json!("lattice"), json!("Lattice"), json!(true))
+    );
+    let (status, _, headers) = h.get_raw(shown["url"].as_str().unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "image/webp");
+    assert_eq!(
+        h.call("GET", "/media/backgrounds/lattice", None).await.0,
+        StatusCode::UNAUTHORIZED,
+        "unsigned"
+    );
+    assert_eq!(h.err("mutation { setBackground(id: \"nope\") }", json!({})).await.0, "NOT_FOUND");
+
+    // The admin's own, found by the next scan; `none` shows none.
+    std::fs::create_dir_all(h.dir.join("backgrounds")).unwrap();
+    std::fs::write(h.dir.join("backgrounds/sunset-beach.png"), b"\x89PNG not really").unwrap();
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+    h.ok("mutation { setBackground(id: \"sunset-beach\") }", json!({})).await;
+    let shown = h.ok(bg, json!({})).await["background"].clone();
+    assert_eq!(
+        (shown["name"].clone(), shown["builtin"].clone()),
+        (json!("Sunset beach"), json!(false))
+    );
+    let (_, _, headers) = h.get_raw(shown["url"].as_str().unwrap()).await;
+    assert_eq!(headers[header::CONTENT_TYPE], "image/png");
+    h.ok("mutation { setBackground(id: \"none\") }", json!({})).await;
+    assert_eq!(h.ok(bg, json!({})).await["background"], Value::Null);
+
+    // System photos: built in, or the admin's own by the system's id.
+    let photo =
+        |systems: &Value, id: &str| system(systems, id)["photoUrl"].as_str().map(str::to_owned);
+    let systems = h.ok("{ systems { id photoUrl } }", json!({})).await["systems"].clone();
+    let nes = photo(&systems, "nes").expect("nes has a built-in photo");
+    assert_eq!(h.get_raw(&nes).await.0, StatusCode::OK);
+    std::fs::create_dir_all(h.dir.join("systems")).unwrap();
+    std::fs::write(h.dir.join("systems/nes.jpg"), b"my nes").unwrap();
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+    let (_, body, headers) = h.get_raw(&nes).await;
+    assert_eq!(
+        (headers[header::CONTENT_TYPE].to_str().unwrap(), body.as_slice()),
+        ("image/jpeg", b"my nes".as_slice())
+    );
+
+    // A viewer sees the background, and cannot change it.
+    h.switch_to_new_viewer("kid").await;
+    assert_eq!(h.ok(bg, json!({})).await["background"], Value::Null, "the admin chose none");
+    assert_eq!(h.err("mutation { setBackground(id: \"dither\") }", json!({})).await.0, "FORBIDDEN");
+}
+
+#[tokio::test]
+async fn the_environment_locks_the_background() {
+    let mut h =
+        Harness::new_with("appearance-env", false, vec!["--background".into(), "screens".into()])
+            .await;
+    h.sign_up_admin().await;
+    let settings = h.ok("{ appearance { chosen fromEnvironment environment } }", json!({})).await["appearance"].clone();
+    assert_eq!(
+        settings,
+        json!({"chosen": "screens", "fromEnvironment": true, "environment": "SOVEMU_BACKGROUND=screens"})
+    );
+    assert_eq!(h.ok("{ background { id } }", json!({})).await["background"]["id"], "screens");
+    assert_eq!(h.err("mutation { setBackground(id: \"dither\") }", json!({})).await.0, "CONFLICT");
+}
+
+#[tokio::test]
 async fn soft_patches_apply_by_default_and_can_be_chosen() {
     let mut h = Harness::new("patches", true).await;
     h.sign_up_admin().await;
@@ -1878,6 +1972,8 @@ const ADMIN_ONLY: &[&str] = &[
     "mutation { clearCache }",
     "mutation { saveControllerDefault(controller: \"xbox\", bindings: []) { __typename } }",
     "mutation { resetControllerDefault(controller: \"xbox\") }",
+    "{ appearance { chosen } }",
+    "mutation { setBackground(id: \"random\") }",
 ];
 
 #[tokio::test]
@@ -1896,6 +1992,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
     let in_source: usize = [
         include_str!("graphql/mod.rs"),
         include_str!("graphql/accounts.rs"),
+        include_str!("graphql/appearance.rs"),
         include_str!("graphql/library.rs"),
         include_str!("graphql/sessions.rs"),
         include_str!("graphql/library_admin.rs"),

@@ -144,3 +144,31 @@ test("the About page names the build and credits what SovEmu uses", async ({ pag
   await expect(page.getByRole("listitem").filter({ hasText: "ScreenScraper" })).toContainText("CC BY-NC-SA 4.0");
   await expect(page.getByRole("listitem").filter({ hasText: "Mesa" })).toContainText("MIT");
 });
+
+test("the Appearance page chooses the background everyone sees", async ({ page }) => {
+  await page.goto("/admin/appearance/");
+  await expect(page.getByRole("heading", { name: "Appearance", level: 1 })).toBeVisible();
+  const lattice = page.getByRole("button", { name: "Lattice" });
+  await lattice.click();
+  await expect(lattice).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("SOVEMU_BACKGROUND=lattice")).toBeVisible();
+  // Every screen draws it, from the server.
+  await page.goto("/");
+  const background = page.locator("[data-background]");
+  await expect(background).toHaveAttribute("data-background", "lattice");
+  await expect(background).toHaveAttribute("style", /\/media\/backgrounds\/lattice\?Sov-/);
+  // Back to a different one each visit, as before.
+  await page.goto("/admin/appearance/");
+  await page.getByRole("button", { name: "A different one each visit" }).click();
+  await expect(page.getByRole("button", { name: "A different one each visit" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
+test("system cards show the server's photos", async ({ page }) => {
+  await page.goto("/");
+  const photo = page.locator('img[src*="/media/systems/nes?"]').first();
+  await expect(photo).toBeVisible();
+  expect(await photo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+});
