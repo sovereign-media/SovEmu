@@ -56,7 +56,7 @@ import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
 import { captureInput, InputState } from "../../lib/input";
 import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
-import { describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
+import { describeFirstPicture, describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
 import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
@@ -246,7 +246,7 @@ function Player() {
       const starting = api.startSession(gameId, startId).then((s) => {
         polling = false;
         showProgress({ phase: "READY", elapsedMs: 0, phaseMs: 0 });
-        timers.push(window.setTimeout(() => setProgress(null), 600));
+        // The bar stays for the last stretch: the game's first picture (`begin`).
         info = s;
         // The player left while the game was loading: it is not wanted any more.
         if (stopped) end();
@@ -271,7 +271,24 @@ function Player() {
         if (stopped) return;
         if (slot !== null) await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
         stack.close();
-        setSplash(false);
+        // The splash stays until the game has drawn: a console's BIOS can boot for seconds, and
+        // a save is only loaded once the game is up. The bar counts the wait meanwhile.
+        const waitingFrom = performance.now();
+        const showWaiting = () => {
+          const view = describeFirstPicture(performance.now() - waitingFrom);
+          setProgress({ label: view.label, detail: view.detail, percent: 100, failed: false });
+        };
+        showWaiting();
+        const waiting = window.setInterval(showWaiting, 500);
+        timers.push(waiting);
+        const firstPicture = () => {
+          window.clearInterval(waiting);
+          setProgress(null);
+          setSplash(false);
+        };
+        const v = video.current!;
+        if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(firstPicture);
+        else v.addEventListener("loadeddata", firstPicture, { once: true });
         session = new Session(
           (sdp) => api.answer(s.id, sdp, clientName()),
           video.current!,

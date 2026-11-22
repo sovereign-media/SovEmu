@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeStart, ForwardOnly, newStartId } from "./launch";
+import { describeFirstPicture, describeStart, ForwardOnly, newStartId } from "./launch";
 
 const status = (over: object) =>
   ({ phase: "CONTENT", elapsedMs: 0, phaseMs: 0, ...over }) as Parameters<typeof describeStart>[0];
@@ -38,5 +38,13 @@ describe("the loading bar", () => {
 
   it("makes ids the server accepts", () => {
     expect(newStartId()).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+  });
+});
+
+describe("waiting for the first picture", () => {
+  it("counts the wait, and says how to leave a game that never draws", () => {
+    expect(describeFirstPicture(500)).toEqual({ label: "Starting the game", detail: "", fraction: 1 });
+    expect(describeFirstPicture(6200).detail).toBe("6 s");
+    expect(describeFirstPicture(21_000).detail).toBe("21 s · still no picture: Escape opens the menu");
   });
 });
