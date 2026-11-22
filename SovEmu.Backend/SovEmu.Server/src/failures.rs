@@ -134,21 +134,11 @@ pub(crate) async fn recent_with_players(
         .collect())
 }
 
-/// What the server does as sessions start and end: the metrics, and the failures kept.
-#[derive(Debug)]
-pub(crate) struct SessionEvents {
-    pub(crate) failures: std::sync::Arc<Failures>,
-}
-
-impl Observer for SessionEvents {
-    fn session_started(&self, system: &str) {
-        crate::telemetry::SessionMetrics.session_started(system);
-    }
-
+/// Keeps the sessions that failed, as the workers report them ending.
+impl Observer for Failures {
     fn session_ended(&self, ended: &Ended<'_>) {
-        crate::telemetry::SessionMetrics.session_ended(ended);
         if ended.failed() {
-            self.failures.record(Failure::from_ended(ended));
+            self.record(Failure::from_ended(ended));
         }
     }
 }
@@ -177,7 +167,7 @@ mod tests {
     #[test]
     fn only_failures_are_kept_newest_first_up_to_the_limit() {
         let failures = std::sync::Arc::new(Failures::new(2));
-        let events = SessionEvents { failures: failures.clone() };
+        let events = failures.clone();
         let lines = vec!["no BIOS".to_owned()];
         for reason in [EndReason::Stopped, EndReason::Idle, EndReason::Exited] {
             events.session_ended(&ended(reason, &lines));
@@ -198,7 +188,7 @@ mod tests {
     #[test]
     fn a_failed_start_is_kept_with_why() {
         let failures = std::sync::Arc::new(Failures::new(5));
-        let events = SessionEvents { failures: failures.clone() };
+        let events = failures.clone();
         let lines = vec!["no BIOS".to_owned()];
         // The worker exited without an error code, but its game never loaded.
         events.session_ended(&Ended {

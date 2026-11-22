@@ -26,6 +26,20 @@ pub trait Observer: Send + Sync + std::fmt::Debug {
     fn session_ended(&self, _ended: &Ended<'_>) {}
 }
 
+/// Several observers told in turn, as one (the server's metrics, failures and activity log).
+#[derive(Debug, Default)]
+pub struct Observers(pub Vec<std::sync::Arc<dyn Observer>>);
+
+impl Observer for Observers {
+    fn session_started(&self, system: &str) {
+        self.0.iter().for_each(|o| o.session_started(system));
+    }
+
+    fn session_ended(&self, ended: &Ended<'_>) {
+        self.0.iter().for_each(|o| o.session_ended(ended));
+    }
+}
+
 /// A session that has ended: whose, which game, its system and core, why, and how long it ran.
 #[derive(Debug, Clone, Copy)]
 pub struct Ended<'a> {

@@ -54,7 +54,9 @@ impl Workers {
         let answered = tokio::time::timeout(ANSWER_TIMEOUT, async {
             let mut line = serde_json::to_string(&Request::Offer { id: 1, offer })?;
             line.push('\n');
-            stdin.write_all(line.as_bytes()).await?;
+            // A worker that has already gone (it could not start) has closed its stdin: that is
+            // it exiting, not a fault of the pipe's ("Broken pipe" would tell the admin nothing).
+            stdin.write_all(line.as_bytes()).await.map_err(|_| Error::Exited)?;
             let mut reply = String::new();
             BufReader::new(stdout).read_line(&mut reply).await?;
             match serde_json::from_str::<Reply>(&reply) {

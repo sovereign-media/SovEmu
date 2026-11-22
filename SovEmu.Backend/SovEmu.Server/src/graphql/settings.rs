@@ -1,6 +1,7 @@
 //! Emulator settings: each system's core options and run-ahead.
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// Where an emulator setting's value comes from.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
@@ -152,10 +153,16 @@ impl SettingsMutation {
         system: ID,
         changes: Vec<SettingChange>,
     ) -> Result<EmulatorSettings> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         let changes: BTreeMap<String, Option<String>> =
             changes.into_iter().map(|c| (c.key, c.value)).collect();
-        crate::settings::put_settings(state(ctx), &system, changes).await.api().map(Into::into)
+        let count = changes.len();
+        let settings = crate::settings::put_settings(state(ctx), &system, changes).await.api()?;
+        let entry = Entry::new(Kind::SettingsChanged)
+            .about(format!("Emulator settings for {}", system.as_str()))
+            .detail(format!("{count} {}", if count == 1 { "option" } else { "options" }));
+        record(ctx, &me, entry);
+        Ok(settings.into())
     }
 
     /// Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
@@ -167,13 +174,18 @@ impl SettingsMutation {
         system: ID,
         frames: Option<i32>,
     ) -> Result<EmulatorSettings> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         let frames = match frames {
             Some(f) if f < 0 => {
                 return Err(crate::error::ApiError::bad_request("frames cannot be negative")).api();
             }
             f => f.map(|f| f as u32),
         };
-        crate::settings::set_run_ahead(state(ctx), &system, frames).await.api().map(Into::into)
+        let settings = crate::settings::set_run_ahead(state(ctx), &system, frames).await.api()?;
+        let entry = Entry::new(Kind::SettingsChanged)
+            .about(format!("Run-ahead for {}", system.as_str()))
+            .detail(frames.map_or_else(|| "default".to_owned(), |f| format!("{f} frames")));
+        record(ctx, &me, entry);
+        Ok(settings.into())
     }
 }

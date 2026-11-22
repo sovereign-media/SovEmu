@@ -56,6 +56,18 @@ pub use throttle::{LOCKOUT_WINDOW, LoginThrottle, MAX_FAILURES, MAX_FAILURES_PER
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ClientIp(pub Option<IpAddr>);
 
+/// Told about sign-ins, for the server's activity log. Every method does nothing by default.
+pub trait Observer: Send + Sync + std::fmt::Debug {
+    /// Someone signed in with their password (the sign-in form, or an app's password fallback).
+    fn signed_in(&self, _user: &User, _address: Option<IpAddr>) {}
+    /// A sign-in was refused: wrong credentials, or (`locked_out`) too many failures already.
+    /// `username` is what was typed, which need not be an account.
+    fn sign_in_failed(&self, _username: &str, _address: Option<IpAddr>, _locked_out: bool) {}
+}
+
+/// Nobody listening.
+impl Observer for () {}
+
 /// Sign-in settings.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -83,6 +95,8 @@ pub struct Config {
     /// How long a just-used refresh token is still honoured (two tabs refreshing at once get the
     /// same new tokens); presenting it again after this ends that sign-in. 0: strictly once.
     pub refresh_retry: Duration,
+    /// Told about sign-ins and refusals.
+    pub observer: std::sync::Arc<dyn Observer>,
 }
 
 /// Where and how an app signs in at the address it reached: what an app asks first
@@ -243,6 +257,7 @@ impl Identity {
             .or_else(|| address.as_deref().and_then(|a| inner.ip_throttle.check(a, now).err()));
         if let Some(wait) = locked {
             tracing::warn!(user.name = %creds.username, wait_s = wait, "sign-in refused: locked out");
+            inner.config.observer.sign_in_failed(&creds.username, client, true);
             return Err(Error::TooManyRequests(format!(
                 "too many failed attempts; try again in {wait} s"
             )));
@@ -257,10 +272,12 @@ impl Identity {
                 inner.ip_throttle.failed(a, now);
             }
             tracing::warn!(user.name = %creds.username, "sign-in failed");
+            inner.config.observer.sign_in_failed(&creds.username, client, false);
             return Err(Error::Unauthorized("wrong username or password".into()));
         };
         inner.throttle.succeeded(&creds.username);
         tracing::info!(user.name = %user.username, user.id = user.id, "signed in");
+        inner.config.observer.signed_in(&user, client);
         Ok(user)
     }
 
