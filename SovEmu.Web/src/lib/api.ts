@@ -51,6 +51,7 @@ import {
   ScanLibraryMutation,
   SearchQuery,
   ServerResourcesQuery,
+  SessionFailuresQuery,
   type SessionFields,
   SessionOfferMutation,
   SetBackgroundMutation,
@@ -81,6 +82,8 @@ type BiosQueryResult = ResultOf<typeof BiosQuery>;
 type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
+/** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+export type SessionFailure = ResultOf<typeof SessionFailuresQuery>["sessionFailures"][number];
 type ServerResourcesResult = ResultOf<typeof ServerResourcesQuery>;
 type ResourceHistoryResult = ResultOf<typeof ResourceHistoryQuery>;
 type CheatsQuery = ResultOf<typeof CheatsDocument>;
@@ -214,6 +217,8 @@ export const api = {
   /** Admin: where 3D systems render, and every device the startup probe tried. */
   gpu: async () => (await request(GpuQuery)).gpu,
   activeSessions: async () => (await request(ActiveSessionsQuery)).activeSessions,
+  /** Admin: the games that failed most recently, newest first, with the core's last lines. */
+  sessionFailures: async () => (await request(SessionFailuresQuery)).sessionFailures,
   runJob: async (job: JobName) => (await request(RunJobMutation, { job })).runJob,
   /** Admin: the host, and the container's latest CPU and memory use. */
   serverResources: async () => (await request(ServerResourcesQuery)).serverResources,

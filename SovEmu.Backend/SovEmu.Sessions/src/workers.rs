@@ -210,8 +210,13 @@ impl std::fmt::Debug for Session {
 
 /// What the reaper needs to say why a worker ended.
 struct Exit {
+    user_id: i64,
+    game_id: i64,
+    title: String,
     system: String,
     core: String,
+    /// Set once the worker says it is ready: an end before it is an end while starting.
+    loaded: Arc<std::sync::atomic::AtomicBool>,
     /// What the worker said as it went ([`Reply::Exiting`]), if it did.
     reported: Arc<Mutex<Option<ExitReason>>>,
     last_words: LastWords,
@@ -355,10 +360,17 @@ impl Process {
                     );
                 }
                 workers.config.observer.session_ended(&Ended {
+                    user_id: exit.user_id,
+                    game_id: exit.game_id,
+                    title: &exit.title,
                     system: &exit.system,
                     core: &exit.core,
                     reason,
                     ran,
+                    loaded: exit.loaded.load(std::sync::atomic::Ordering::Relaxed),
+                    code,
+                    signal,
+                    last_lines: &last_words,
                 });
                 let _ = exit_tx.send(true);
                 workers.forget(&id, port);
@@ -671,6 +683,7 @@ impl Workers {
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
         let reported = Arc::new(Mutex::new(None));
+        let loaded = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let last_words = LastWords::follow(child.stderr.take().expect("piped"));
         let process = Process::reap(
             child,
@@ -680,8 +693,12 @@ impl Workers {
             after_exit,
             span.clone(),
             Exit {
+                user_id: launch.user_id,
+                game_id: launch.game_id,
+                title: launch.title.clone(),
                 system: launch.system.clone(),
                 core: core_name(&launch.core),
+                loaded: loaded.clone(),
                 reported: reported.clone(),
                 last_words,
             },
@@ -695,6 +712,7 @@ impl Workers {
                 match serde_json::from_str::<Reply>(&line) {
                     Ok(Reply::Failed { message }) => return Err(Error::Worker(message)),
                     Ok(Reply::Ready { core, width, height, fps, discs, .. }) => {
+                        loaded.store(true, std::sync::atomic::Ordering::Relaxed);
                         return Ok((core, width, height, fps, discs));
                     }
                     Ok(Reply::Options { options, categories }) => {
@@ -923,13 +941,17 @@ done
         workers_with(dir, &WORKER.replace("THEN", then), stop_timeout, Arc::new(()))
     }
 
+    /// Whether it had loaded, its exit code and its last lines.
+    type Details = (bool, Option<i32>, Vec<String>);
+
     /// Remembers why each session ended, and its core.
     #[derive(Debug, Default)]
-    struct Recorder(Mutex<Vec<(EndReason, String)>>);
+    struct Recorder(Mutex<Vec<(EndReason, String)>>, Mutex<Vec<Details>>);
 
     impl Observer for Recorder {
         fn session_ended(&self, ended: &Ended<'_>) {
             self.0.lock().unwrap().push((ended.reason, ended.core.to_owned()));
+            self.1.lock().unwrap().push((ended.loaded, ended.code, ended.last_lines.to_vec()));
         }
     }
 
@@ -1093,6 +1115,27 @@ kill -SEGV $$
         let workers = workers_with(&dir, crash, Duration::from_secs(5), recorder.clone());
         workers.start(launch(&dir, 1, 1)).await.unwrap();
         assert_eq!(recorder.ended(1).await, [EndReason::Crashed]);
+        let (loaded, _, lines) = recorder.1.lock().unwrap()[0].clone();
+        assert!(loaded, "it had loaded: a crash while playing");
+        assert_eq!(lines, ["the core's last words"], "what to tell the admin");
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_game_that_fails_to_load_says_so_with_its_last_words() {
+        let dir = dir("load-fails");
+        let recorder = Arc::new(Recorder::default());
+        let fails = r#"#!/bin/sh
+echo "missing BIOS: scph5501.bin" >&2
+echo '{"type":"failed","message":"the core could not load the game"}'
+exit 2
+"#;
+        let workers = workers_with(&dir, fails, Duration::from_secs(5), recorder.clone());
+        assert!(workers.start(launch(&dir, 1, 1)).await.is_err());
+        assert_eq!(recorder.ended(1).await, [EndReason::Error]);
+        let (loaded, code, lines) = recorder.1.lock().unwrap()[0].clone();
+        assert_eq!((loaded, code), (false, Some(2)), "ended while starting");
+        assert_eq!(lines, ["missing BIOS: scph5501.bin"]);
         settle(&workers, 2).await;
     }
 

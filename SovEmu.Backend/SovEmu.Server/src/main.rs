@@ -20,6 +20,7 @@ mod controls;
 mod cores;
 mod db;
 mod error;
+mod failures;
 mod graphql;
 mod home;
 #[cfg(test)]
@@ -402,6 +403,12 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_SESSION_HEALTH_SECS", default_value_t = 10)]
     pub session_health_secs: u32,
 
+    /// How many failed games (a load error, a crash, a worker that had to be killed) the admin
+    /// Sessions page keeps, with the core's last log lines; 0 keeps none. In memory: the log
+    /// has every one.
+    #[arg(long, env = "SOVEMU_SESSION_FAILURES", default_value_t = 50)]
+    pub session_failures: usize,
+
     /// `cache` mode: games larger than this (MiB) are copied before starting, smaller ones
     /// are played from the share while the copy runs.
     #[arg(long, env = "SOVEMU_CACHE_LARGE_GAME_MB", default_value_t = 64)]
@@ -682,6 +689,8 @@ pub struct AppState {
     pub(crate) storage: Arc<storage::StorageCache>,
     /// Games per system, counted when the library changes (`library`).
     pub(crate) game_counts: Arc<library::GameCounts>,
+    /// The most recent games that failed, for the Sessions page (`failures`).
+    pub(crate) failures: Arc<failures::Failures>,
 }
 
 impl AppState {
@@ -798,6 +807,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!(summary = %gpu.summary(), "GPU probe");
+    let session_failures = Arc::new(failures::Failures::new(config.session_failures));
     let workers = Workers::new(WorkerConfig {
         worker_bin,
         ports: config.udp_ports,
@@ -820,7 +830,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
-        observer: Arc::new(telemetry::SessionMetrics),
+        observer: Arc::new(failures::SessionEvents { failures: session_failures.clone() }),
     });
     let cache_dir = paths.cache_games();
     move_legacy_cache(&paths);
@@ -954,6 +964,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         client_events: Arc::default(),
         storage: Arc::default(),
         game_counts,
+        failures: session_failures,
         jobs,
         resources,
     })
