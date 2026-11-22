@@ -939,3 +939,41 @@ export const ConfigurationQuery = graphql(`
     }
   }
 `);
+
+export const NetworkQuery = graphql(`
+  query Network {
+    network {
+      http
+      udpFirst
+      udpLast
+      portCount
+      portsInUse
+      sessions
+      udpBind
+      advertisedIp
+      advertisedIpDetected
+      publicUrls
+      publicUrlsConfigured
+      signInAvailableHere
+      requestHost
+      clientIp
+      forwardedFor
+      trustedProxies
+      secureCookies
+      iceServers {
+        urls
+        hasCredential
+      }
+      settings {
+        group
+        name
+        value
+        effective
+        source
+        secret
+        default
+        description
+      }
+    }
+  }
+`);

@@ -52,16 +52,19 @@ struct Auth {
 
 pub(crate) async fn handler(
     State(state): State<AppState>,
+    client: Option<axum::Extension<crate::client_ip::ClientIp>>,
     headers: HeaderMap,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     let auth = Auth { headers, user: OnceCell::new() };
+    // The client's address as `client_ip::remember` resolved it (the admin Network page).
+    let client = client.map(|c| c.0).unwrap_or_default();
     let request = request.into_inner();
     // The request span (telemetry::trace_request) names the operation, for logs and traces.
     if let Some(name) = &request.operation_name {
         tracing::Span::current().record("graphql.operation.name", name.as_str());
     }
-    let request = request.data(state.clone()).data(auth);
+    let request = request.data(state.clone()).data(auth).data(client);
     let response = state.schema.execute(request).await;
     log_errors(&response.errors);
     response.into()
@@ -833,6 +836,64 @@ enum PartKind {
 
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
+
+/// How browsers and apps reach the server and its game streams.
+#[derive(SimpleObject)]
+struct NetworkReport {
+    /// The web client and API's address (`SOVEMU_HTTP`).
+    http: String,
+    /// The UDP ports for game sessions, one per concurrent session (`SOVEMU_UDP_PORTS`).
+    udp_first: i32,
+    udp_last: i32,
+    port_count: i32,
+    /// Ports held: by a session, or by a worker that has not exited yet.
+    ports_in_use: i32,
+    sessions: i32,
+    /// The address session ports bind to (`SOVEMU_UDP_BIND`).
+    udp_bind: String,
+    /// The address browsers send media to, as workers advertise it.
+    advertised_ip: String,
+    /// It was worked out (the machine's primary address), not set (`SOVEMU_ADVERTISE_IP`). In
+    /// a container that is the container's own address, which browsers cannot reach.
+    advertised_ip_detected: bool,
+    /// The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own.
+    public_urls: Vec<String>,
+    public_urls_configured: bool,
+    /// Sign-in works at the address this request was made to.
+    sign_in_available_here: bool,
+    /// The address this request was made to (its `Host`).
+    request_host: String,
+    /// This request's client, as the server resolved it (behind trusted proxies, the client).
+    client_ip: Option<String>,
+    /// This request's `X-Forwarded-For`, for checking a proxy.
+    forwarded_for: Option<String>,
+    trusted_proxies: Vec<String>,
+    secure_cookies: bool,
+    /// STUN/TURN servers handed to browsers.
+    ice_servers: Vec<IceServerSummary>,
+    /// The settings this page is about, as the Configuration page shows them.
+    settings: Vec<ConfigSetting>,
+}
+
+/// An ICE server, without its credentials.
+#[derive(SimpleObject)]
+struct IceServerSummary {
+    urls: Vec<String>,
+    /// It has a username and credential (a TURN server).
+    has_credential: bool,
+}
+
+/// The settings the Network page shows.
+const NETWORK_SETTINGS: &[&str] = &[
+    "SOVEMU_HTTP",
+    "SOVEMU_UDP_PORTS",
+    "SOVEMU_UDP_BIND",
+    "SOVEMU_ADVERTISE_IP",
+    "SOVEMU_ICE_SERVERS",
+    "SOVEMU_PUBLIC_URL",
+    "SOVEMU_TRUSTED_PROXIES",
+    "SOVEMU_SECURE_COOKIES",
+];
 
 /// A group of settings, as the README's settings table has them.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
@@ -2078,6 +2139,66 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: how browsers and apps reach the server and its game streams.
+    async fn network(&self, ctx: &Context<'_>) -> Result<NetworkReport> {
+        admin(ctx).await?;
+        let state = state(ctx);
+        let config = &state.config;
+        let headers = &ctx.data_unchecked::<Auth>().headers;
+        let header = |name: axum::http::HeaderName| {
+            headers.get(name).and_then(|h| h.to_str().ok()).map(str::to_owned)
+        };
+        let bound = std::net::SocketAddr::new(config.udp_bind, config.udp_ports.0);
+        let advertised = sovemu_protocol::net::advertised_addr(config.advertise_ip, bound).ip();
+        let ice_servers = config
+            .ice_servers
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .map(|s| IceServerSummary {
+                        urls: match &s["urls"] {
+                            serde_json::Value::String(u) => vec![u.clone()],
+                            serde_json::Value::Array(us) => {
+                                us.iter().filter_map(|u| u.as_str().map(str::to_owned)).collect()
+                            }
+                            _ => Vec::new(),
+                        },
+                        has_credential: s.get("credential").is_some(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(NetworkReport {
+            http: config.http.to_string(),
+            udp_first: config.udp_ports.0.into(),
+            udp_last: config.udp_ports.1.into(),
+            port_count: state.workers.port_count() as i32,
+            ports_in_use: state.workers.ports_in_use() as i32,
+            sessions: state.workers.count() as i32,
+            udp_bind: config.udp_bind.to_string(),
+            advertised_ip: advertised.to_string(),
+            advertised_ip_detected: config.advertise_ip.is_none()
+                && config.udp_bind.is_unspecified(),
+            public_urls: config.public_urls(),
+            public_urls_configured: !config.public_url.is_empty(),
+            sign_in_available_here: state.identity.sign_in_config(headers).is_some(),
+            request_host: header(axum::http::header::HOST).unwrap_or_default(),
+            client_ip: ctx
+                .data_opt::<crate::client_ip::ClientIp>()
+                .and_then(|c| c.0)
+                .map(|ip| ip.to_string()),
+            forwarded_for: header(axum::http::HeaderName::from_static("x-forwarded-for")),
+            trusted_proxies: config.trusted_proxies.iter().map(ToString::to_string).collect(),
+            secure_cookies: config.secure_cookies,
+            ice_servers,
+            settings: crate::configuration::settings(config)
+                .into_iter()
+                .filter(|s| NETWORK_SETTINGS.contains(&s.name.as_str()))
+                .map(Into::into)
+                .collect(),
+        })
     }
 
     /// Admins: the server's effective configuration, every setting with where its value came

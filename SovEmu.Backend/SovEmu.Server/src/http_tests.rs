@@ -1506,6 +1506,43 @@ async fn search_spans_every_system() {
 }
 
 #[tokio::test]
+async fn admins_see_how_the_server_is_reached() {
+    let mut h = Harness::new_with(
+        "network",
+        false,
+        vec![
+            "--advertise-ip".into(),
+            "192.0.2.10".into(),
+            "--ice-servers".into(),
+            r#"[{"urls":"stun:stun.example:3478"},{"urls":["turn:t.example"],"username":"u","credential":"pa55"}]"#
+                .into(),
+        ],
+    )
+    .await;
+    h.sign_up_admin().await;
+    let q = "{ network { udpFirst udpLast portCount portsInUse sessions advertisedIp \
+             advertisedIpDetected publicUrls publicUrlsConfigured signInAvailableHere \
+             iceServers { urls hasCredential } settings { name value } } }";
+    let n = h.ok(q, json!({})).await["network"].clone();
+    let (first, last) = (n["udpFirst"].as_i64().unwrap(), n["udpLast"].as_i64().unwrap());
+    assert_eq!(n["portCount"].as_i64(), Some(last - first + 1));
+    assert_eq!((n["portsInUse"].clone(), n["sessions"].clone()), (json!(0), json!(0)));
+    assert_eq!(n["advertisedIp"], "192.0.2.10");
+    assert_eq!(n["advertisedIpDetected"], false);
+    assert_eq!(n["publicUrlsConfigured"], true, "the harness names its public URL");
+    assert_eq!(n["signInAvailableHere"], false, "the harness's requests name no host");
+    assert_eq!(
+        n["iceServers"],
+        json!([
+            {"urls": ["stun:stun.example:3478"], "hasCredential": false},
+            {"urls": ["turn:t.example"], "hasCredential": true},
+        ])
+    );
+    let ice = n["settings"].as_array().unwrap().iter().find(|s| s["name"] == "SOVEMU_ICE_SERVERS");
+    assert!(!ice.unwrap()["value"].as_str().unwrap().contains("pa55"), "credentials masked");
+}
+
+#[tokio::test]
 async fn admins_see_every_core_with_its_licence() {
     let mut h = Harness::new("cores", true).await;
     h.sign_up_admin().await;

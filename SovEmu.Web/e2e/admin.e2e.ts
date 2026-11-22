@@ -103,3 +103,14 @@ test("the Configuration page shows every setting and where it came from", async 
   await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toHaveCount(0);
 });
+
+test("the Network page shows where streams go and how this request arrived", async ({ page }) => {
+  await page.goto("/admin/network/");
+  await expect(page.getByRole("heading", { name: "Network", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Game streams" })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "Ports in use" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign-in addresses" })).toBeVisible();
+  // The e2e server is reached at its own address, so signing in works here: no warning about it.
+  await expect(page.getByText(/Signing in does not work/)).toHaveCount(0);
+  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
+});

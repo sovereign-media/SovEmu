@@ -906,6 +906,17 @@ type HostFacts {
 }
 
 """
+An ICE server, without its credentials.
+"""
+type IceServerSummary {
+	urls: [String!]!
+	"""
+	It has a username and credential (a TURN server).
+	"""
+	hasCredential: Boolean!
+}
+
+"""
 A scalar that can represent any JSON value.
 """
 scalar JSON
@@ -1270,6 +1281,71 @@ type Mutation {
 	resetControllerMapping(controller: String!, system: ID): Boolean!
 }
 
+"""
+How browsers and apps reach the server and its game streams.
+"""
+type NetworkReport {
+	"""
+	The web client and API's address (`SOVEMU_HTTP`).
+	"""
+	http: String!
+	"""
+	The UDP ports for game sessions, one per concurrent session (`SOVEMU_UDP_PORTS`).
+	"""
+	udpFirst: Int!
+	udpLast: Int!
+	portCount: Int!
+	"""
+	Ports held: by a session, or by a worker that has not exited yet.
+	"""
+	portsInUse: Int!
+	sessions: Int!
+	"""
+	The address session ports bind to (`SOVEMU_UDP_BIND`).
+	"""
+	udpBind: String!
+	"""
+	The address browsers send media to, as workers advertise it.
+	"""
+	advertisedIp: String!
+	"""
+	It was worked out (the machine's primary address), not set (`SOVEMU_ADVERTISE_IP`). In
+	a container that is the container's own address, which browsers cannot reach.
+	"""
+	advertisedIpDetected: Boolean!
+	"""
+	The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own.
+	"""
+	publicUrls: [String!]!
+	publicUrlsConfigured: Boolean!
+	"""
+	Sign-in works at the address this request was made to.
+	"""
+	signInAvailableHere: Boolean!
+	"""
+	The address this request was made to (its `Host`).
+	"""
+	requestHost: String!
+	"""
+	This request's client, as the server resolved it (behind trusted proxies, the client).
+	"""
+	clientIp: String
+	"""
+	This request's `X-Forwarded-For`, for checking a proxy.
+	"""
+	forwardedFor: String
+	trustedProxies: [String!]!
+	secureCookies: Boolean!
+	"""
+	STUN/TURN servers handed to browsers.
+	"""
+	iceServers: [IceServerSummary!]!
+	"""
+	The settings this page is about, as the Configuration page shows them.
+	"""
+	settings: [ConfigSetting!]!
+}
+
 input NewUserInput {
 	username: String!
 	password: String!
@@ -1420,6 +1496,10 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: how browsers and apps reach the server and its game streams.
+	"""
+	network: NetworkReport!
 	"""
 	Admins: the server's effective configuration, every setting with where its value came
 	from, credentials masked (as the startup log prints it).

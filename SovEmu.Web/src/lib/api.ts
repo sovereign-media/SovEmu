@@ -31,6 +31,7 @@ import {
   HomeQuery as HomeDocument,
   JobsQuery,
   LoadStateMutation,
+  NetworkQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
   ResetControllerDefaultMutation,
@@ -127,6 +128,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type NetworkReport = ResultOf<typeof NetworkQuery>["network"];
 export type ConfigSetting = ResultOf<typeof ConfigurationQuery>["configuration"][number];
 export type CoreReport = ResultOf<typeof CoresQuery>["cores"][number];
 export type AdminPatch = ResultOf<typeof AdminPatchesQuery>["patches"][number];
@@ -174,6 +176,8 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: how browsers and apps reach the server and its game streams. */
+  network: async () => (await request(NetworkQuery)).network,
   /** Admin: the server's effective configuration, credentials masked. */
   configuration: async () => (await request(ConfigurationQuery)).configuration,
   /** Admin: every core with its licence, and the libretro release they come from. */

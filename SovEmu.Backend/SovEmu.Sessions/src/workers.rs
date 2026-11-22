@@ -540,7 +540,13 @@ impl Workers {
         Ok(session)
     }
 
-    fn port_count(&self) -> usize {
+    /// Ports held: by a session, or by a worker that has not exited yet.
+    pub fn ports_in_use(&self) -> usize {
+        self.port_count() - self.lock().free_ports.len()
+    }
+
+    /// The UDP ports there are, one per concurrent session.
+    pub fn port_count(&self) -> usize {
         (self.config.ports.1 - self.config.ports.0) as usize + 1
     }
 
@@ -1139,7 +1145,9 @@ kill -SEGV $$
         let start = workers.start(launch(&dir, 1, 1));
         assert!(tokio::time::timeout(Duration::from_millis(50), start).await.is_err());
         assert_eq!(free_ports(&workers), 1, "the abandoned worker still has its port");
+        assert_eq!((workers.ports_in_use(), workers.count()), (1, 0), "held without a session");
         // It finishes loading, finds its stdin closed, and exits on its own.
         settle(&workers, 2).await;
+        assert_eq!((workers.ports_in_use(), workers.port_count()), (0, 2));
     }
 }
