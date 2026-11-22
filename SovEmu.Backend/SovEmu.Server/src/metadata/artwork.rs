@@ -76,6 +76,8 @@ async fn wanted(state: &AppState) -> Vec<Wanted> {
 /// Works through the queue; the caller has [`claim`]ed the job.
 pub(crate) async fn run_claimed(state: AppState) {
     let meta = state.metadata.clone();
+    // Clears `running` however the downloads end (a panic included), so the next can start.
+    let _running = super::scopeguard(meta.clone(), |m| update(m, |s| s.running = false));
     let slots = Arc::new(Semaphore::new(meta.artwork_downloads.max(1)));
     for _ in 0..MAX_ROUNDS {
         let queue = wanted(&state).await;

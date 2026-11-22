@@ -2240,8 +2240,10 @@ impl Query {
         crate::api::start_progress(state(ctx), &user, &start_id).api().map(Into::into)
     }
 
+    /// Admins: how the library is played (direct, cache or mirror), its size, and the mirror's
+    /// sync. Its errors can name the share's paths.
     async fn library_status(&self, ctx: &Context<'_>) -> Result<LibraryStatus> {
-        user(ctx).await?;
+        admin(ctx).await?;
         let s = crate::admin::library_status(state(ctx)).await.api()?;
         Ok(LibraryStatus {
             mode: match s.mode {
@@ -2265,8 +2267,9 @@ impl Query {
         })
     }
 
+    /// Admins: the game-information lookup's progress and its notes.
     async fn metadata_status(&self, ctx: &Context<'_>) -> Result<MetadataStatus> {
-        user(ctx).await?;
+        admin(ctx).await?;
         Ok(crate::admin::metadata_status(state(ctx)).into())
     }
 

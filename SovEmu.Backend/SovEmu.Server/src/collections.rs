@@ -67,7 +67,7 @@ pub(crate) async fn set_favourite(
     game_id: i64,
     favourite: bool,
 ) -> ApiResult<()> {
-    game_exists(state, game_id).await?;
+    crate::api::require_game(state, game_id).await?;
     let sql = if favourite {
         "INSERT OR IGNORE INTO favourites (user_id, game_id) VALUES (?, ?)"
     } else {
@@ -101,6 +101,8 @@ pub(crate) async fn games(
         .bind(collection_id)
         .fetch_all(&state.db)
         .await?;
+    // A hidden system's games are not offered, in a collection as anywhere.
+    games.retain(|g| crate::api::enabled(state, &g.system));
     crate::api::annotate(state, user.id, &mut games).await?;
     Ok(games.into_iter().map(Game::with_box_art).collect())
 }
@@ -175,7 +177,7 @@ pub(crate) async fn set_member(
     member: bool,
 ) -> ApiResult<()> {
     owned(state, user, collection_id).await?;
-    game_exists(state, game_id).await?;
+    crate::api::require_game(state, game_id).await?;
     let sql = if member {
         "INSERT OR IGNORE INTO collection_games (collection_id, game_id) VALUES (?, ?)"
     } else {
@@ -204,12 +206,4 @@ async fn owned(state: &AppState, user: &User, collection_id: i64) -> ApiResult<(
             .fetch_optional(&state.db)
             .await?;
     found.map(|_| ()).ok_or_else(|| ApiError::not_found("collection"))
-}
-
-async fn game_exists(state: &AppState, game_id: i64) -> ApiResult<()> {
-    let found: Option<i64> = sqlx::query_scalar("SELECT id FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(&state.db)
-        .await?;
-    found.map(|_| ()).ok_or_else(|| ApiError::not_found("game"))
 }
