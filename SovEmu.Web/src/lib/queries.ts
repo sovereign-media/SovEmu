@@ -624,6 +624,47 @@ export const AdminStatusQuery = graphql(
   [MetadataFields],
 );
 
+const JobFields = graphql(`
+  fragment JobFields on JobState {
+    name
+    description
+    intervalMinutes
+    nextRunAt
+    running
+    runningSince
+    lastRun {
+      trigger
+      outcome
+      startedAt
+      finishedAt
+      seconds
+      message
+    }
+  }
+`);
+
+export const JobsQuery = graphql(
+  `
+  query Jobs {
+    jobs {
+      ...JobFields
+    }
+  }
+`,
+  [JobFields],
+);
+
+export const RunJobMutation = graphql(
+  `
+  mutation RunJob($job: JobName!) {
+    runJob(job: $job) {
+      ...JobFields
+    }
+  }
+`,
+  [JobFields],
+);
+
 export const FetchMetadataMutation = graphql(
   `
   mutation FetchMetadata($system: ID, $force: Boolean!) {

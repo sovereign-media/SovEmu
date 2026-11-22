@@ -1,7 +1,17 @@
 // The admin menu, as Sovereign's (`Sovereign.React/src/components/admin/adminNavItems.ts`): the gear
 // in the dock opens a cascade of groups, each a submenu of pages. One list drives the menu, the
 // page headings and the document titles, so a new page is one entry here.
-import { Gamepad, Gamepad2, Library, type LucideIcon, SlidersHorizontal, Users, UsersRound } from "lucide-react";
+import {
+  Gamepad,
+  Gamepad2,
+  Library,
+  ListChecks,
+  type LucideIcon,
+  Server,
+  SlidersHorizontal,
+  Users,
+  UsersRound,
+} from "lucide-react";
 
 export interface AdminNavItem {
   /** The page (with its trailing slash, as the router's paths have it). */
@@ -57,6 +67,19 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Emulator settings",
         title: "Each system's core and its options",
         icon: SlidersHorizontal,
+      },
+    ],
+  },
+  {
+    id: "server",
+    label: "Server",
+    icon: Server,
+    items: [
+      {
+        href: "/admin/jobs/",
+        label: "Jobs",
+        title: "Scans, syncs, lookups and upkeep: when each runs and how it last went",
+        icon: ListChecks,
       },
     ],
   },

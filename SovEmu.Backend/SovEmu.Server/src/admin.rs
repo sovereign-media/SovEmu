@@ -1,55 +1,97 @@
 //! Library and metadata administration: status, mirror sync, metadata jobs.
 
-use axum::http::StatusCode;
 use serde::Serialize;
 
 use crate::error::{ApiError, ApiResult};
+use crate::jobs::{self, Job, JobError, Summary, Trigger};
+use crate::library::{self, ScanReport};
 use crate::metadata::{self, JobStatus};
-use crate::{AppState, LibraryMode, library};
+use crate::{AppState, LibraryMode};
 use sovemu_library::mirror::{self, SyncStatus};
 
-pub(crate) async fn scan_and_log(state: &AppState) {
+/// Rescans the library ([`Job::Scan`](crate::jobs::Job::Scan)'s work, and the end of a mirror
+/// sync's).
+pub(crate) async fn scan(state: AppState) -> anyhow::Result<ScanReport> {
     // Decoration sets may have been added beside the library: list them again too.
     state.reload_decorations();
     let started = std::time::Instant::now();
-    match library::scan(&state.db, &state.config.roms_dir).await {
-        Ok(r) => tracing::info!(
-            library = %state.config.roms_dir.display(),
-            games = r.found,
-            added = r.added,
-            removed = r.removed,
-            elapsed_s = started.elapsed().as_secs_f64(),
-            "library scanned"
-        ),
-        Err(e) => tracing::error!(error = %e, "library scan failed"),
+    let r = library::scan(&state.db, &state.config.roms_dir).await?;
+    tracing::info!(
+        library = %state.config.roms_dir.display(),
+        games = r.found,
+        added = r.added,
+        removed = r.removed,
+        elapsed_s = started.elapsed().as_secs_f64(),
+        "library scanned"
+    );
+    Ok(r)
+}
+
+impl Summary for ScanReport {
+    fn summary(&self) -> Option<String> {
+        Some(format!("{} games: {} added, {} removed", self.found, self.added, self.removed))
     }
 }
 
-/// After a scan: look up game information for games that have none yet, if configured to.
-pub(crate) async fn after_scan(state: &AppState) {
+/// After a scan: look up game information for games that have none yet, if configured to, and
+/// wait for it.
+pub(crate) async fn after_scan(state: &AppState, trigger: Trigger) {
     if state.config.metadata_auto {
-        metadata::run_job(state.clone(), None, false).await;
+        let _ = state.jobs.run(Job::Metadata, trigger, lookup(state.clone(), None, false)).await;
     }
 }
 
-/// Mirrors the source into the local library, then rescans it. No-op outside `mirror` mode or
-/// while a sync is running.
-pub(crate) async fn sync_then_scan(state: AppState) {
-    let Some(source) = state.config.source_dir.clone() else { return };
-    {
-        let mut s = state.mirror.lock().unwrap_or_else(|e| e.into_inner());
-        if s.running {
-            return;
-        }
-        s.running = true;
+/// [`after_scan`] without waiting: a scheduled scan's run ends when the scan does.
+pub(crate) fn after_scan_in_background(state: &AppState) {
+    if state.config.metadata_auto {
+        let _ =
+            state.jobs.start(Job::Metadata, Trigger::Schedule, lookup(state.clone(), None, false));
     }
+}
+
+/// Looks up game information ([`Job::Metadata`]'s work): games without it, or with `force`
+/// every game; one system, or all.
+pub(crate) async fn lookup(
+    state: AppState,
+    system: Option<String>,
+    force: bool,
+) -> anyhow::Result<String> {
+    metadata::run_job(state.clone(), system, force).await;
+    let s = state.metadata.status();
+    let mut summary =
+        format!("{} found, {} not found, {} to retry", s.found, s.not_found, s.failed);
+    for note in &s.notes {
+        summary.push_str("; ");
+        summary.push_str(note);
+    }
+    Ok(summary)
+}
+
+/// Mirrors the source into the local library, then rescans it ([`Job::MirrorSync`]'s work).
+/// Fails if the source cannot be reached; files that failed to copy are counted.
+pub(crate) async fn sync_then_scan(state: AppState) -> anyhow::Result<String> {
+    let Some(source) = state.config.source_dir.clone() else {
+        anyhow::bail!("the library is not in mirror mode");
+    };
     let (dest, only, status) =
         (state.config.roms_dir.clone(), state.config.mirror_systems.clone(), state.mirror.clone());
     let threads = state.config.copy_threads;
-    let _ =
-        tokio::task::spawn_blocking(move || mirror::sync(&source, &dest, &only, threads, &status))
-            .await;
-    scan_and_log(&state).await;
+    // A file is copied to `<name>.part` and renamed into place, so a sync cut short (the
+    // server stopping) leaves no half-copied game behind.
+    tokio::task::spawn_blocking(move || mirror::sync(&source, &dest, &only, threads, &status))
+        .await?;
+    let s = state.mirror.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(error) = s.error {
+        anyhow::bail!(error);
+    }
+    let report = scan(state).await?;
+    Ok(format!(
+        "{} files copied, {} removed, {} failed; {}",
+        s.files_done,
+        s.removed,
+        s.failed,
+        report.summary().unwrap_or_default()
+    ))
 }
 
 #[derive(Debug, Serialize)]
@@ -85,20 +127,17 @@ pub(crate) async fn library_status(state: &AppState) -> ApiResult<LibraryStatus>
 }
 
 /// Starts a mirror sync (then a rescan) in the background.
-/// Starts a mirror sync in the background.
 pub(crate) fn library_sync(state: &AppState) -> ApiResult<()> {
     if state.config.library_mode != LibraryMode::Mirror {
         return Err(ApiError::bad_request("the library is not in mirror mode"));
     }
-    tokio::spawn(sync_then_scan(state.clone()));
-    Ok(())
+    Ok(jobs::start_by_admin(state, Job::MirrorSync)?)
 }
 
 pub(crate) fn metadata_status(state: &AppState) -> JobStatus {
     state.metadata.status()
 }
 
-/// Starts a metadata job in the background.
 /// Starts looking up game information in the background (`system`: one system only; `force`:
 /// look up games that already have it too).
 pub(crate) fn metadata_fetch(
@@ -106,9 +145,11 @@ pub(crate) fn metadata_fetch(
     system: Option<String>,
     force: bool,
 ) -> ApiResult<JobStatus> {
-    if state.metadata.status().running {
-        return Err(ApiError::new(StatusCode::CONFLICT, "a metadata job is already running"));
-    }
-    tokio::spawn(metadata::run_job(state.clone(), system, force));
+    state.jobs.start(Job::Metadata, Trigger::Admin, lookup(state.clone(), system, force)).map_err(
+        |e| match e {
+            JobError::Running => ApiError::conflict("a metadata job is already running"),
+            e => e.into(),
+        },
+    )?;
     Ok(state.metadata.status())
 }

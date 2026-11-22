@@ -36,6 +36,7 @@ export const q = {
   collections: () => queryOptions({ queryKey: ["collections"], queryFn: api.collections }),
   search: (text: string) => queryOptions({ queryKey: ["search", text], queryFn: () => api.search(text) }),
   adminStatus: () => queryOptions({ queryKey: ["admin", "status"], queryFn: api.adminStatus }),
+  jobs: () => queryOptions({ queryKey: ["admin", "jobs"], queryFn: api.jobs }),
   systemSettings: (system: string) =>
     queryOptions({ queryKey: ["admin", "settings", system], queryFn: () => api.systemSettings(system) }),
   controllerDefaults: () =>

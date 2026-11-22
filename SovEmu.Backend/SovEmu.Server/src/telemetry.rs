@@ -158,6 +158,8 @@ pub(crate) struct Metrics {
     /// `sovemu.sessions.ended`: game sessions ended, by system, core and reason (`crashed`
     /// counts a core that keeps crashing).
     pub sessions_ended: Counter<u64>,
+    /// `sovemu.job.duration`: seconds each background job's run took, by job and outcome.
+    pub job_duration: Histogram<f64>,
 }
 
 /// The instruments, made on first use (after [`init`] has installed the exporter, if any).
@@ -208,6 +210,12 @@ pub(crate) fn metrics() -> &'static Metrics {
             sessions_ended: meter
                 .u64_counter("sovemu.sessions.ended")
                 .with_description("Game sessions ended, by why.")
+                .build(),
+            job_duration: meter
+                .f64_histogram("sovemu.job.duration")
+                .with_unit("s")
+                .with_description("How long background jobs' runs took, by job and outcome.")
+                .with_boundaries(vec![1.0, 5.0, 30.0, 60.0, 300.0, 900.0, 3600.0, 14400.0])
                 .build(),
         }
     })

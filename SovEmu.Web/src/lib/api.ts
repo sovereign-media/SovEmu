@@ -22,12 +22,14 @@ import {
   type GameFields,
   GameQuery,
   HomeQuery as HomeDocument,
+  JobsQuery,
   LoadStateMutation,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
+  RunJobMutation,
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
   type SaveFields,
@@ -59,6 +61,7 @@ import {
 // What each document answers (gql.tada infers it from the schema).
 type AdminStatusQuery = ResultOf<typeof AdminStatusDocument>;
 type BiosQueryResult = ResultOf<typeof BiosQuery>;
+type JobsQueryResult = ResultOf<typeof JobsQuery>;
 type CheatsQuery = ResultOf<typeof CheatsDocument>;
 type CollectionsQuery = ResultOf<typeof CollectionsDocument>;
 type ControllerDefaultsQuery = ResultOf<typeof ControllerDefaultsDocument>;
@@ -106,6 +109,8 @@ export type ControllerMappingList = Awaited<ReturnType<typeof api.controllerMapp
 export type ControllerDefaults = ControllerDefaultsQuery["controllerDefaults"];
 export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
 export type MetadataStatus = AdminStatusQuery["metadataStatus"];
+export type JobState = JobsQueryResult["jobs"][number];
+export type JobName = JobState["name"];
 
 /** Slot 0 is the auto save, written whenever a session ends. */
 export const AUTO_SLOT = 0;
@@ -143,6 +148,9 @@ export const api = {
   /** Admin: library and game-information status together. */
   adminStatus: () => request(AdminStatusDocument),
   syncLibrary: () => request(SyncLibraryMutation),
+  /** Admin: the background jobs and how each last ran. */
+  jobs: async () => (await request(JobsQuery)).jobs,
+  runJob: async (job: JobName) => (await request(RunJobMutation, { job })).runJob,
   fetchMetadata: async (system?: string, force = false) =>
     (await request(FetchMetadataMutation, { system: system ?? null, force })).fetchMetadata,
   /** `startId` lets `startProgress` follow the start while this waits for it. */
