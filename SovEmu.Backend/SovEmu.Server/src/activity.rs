@@ -3,8 +3,8 @@
 //! observer), and what admins changed (by each change's resolver). Kept in `activity`, read by
 //! the admin Activity page, pruned after `SOVEMU_ACTIVITY_HISTORY_DAYS`.
 //!
-//! [`Activity::record`] never waits: it writes in the background, so recording cannot slow or
-//! fail what it records. Nothing secret is recorded: subjects are names (an account, a game, a
+//! [`Activity::record`] never waits: one writer in the background keeps entries in the order
+//! they were recorded, so recording cannot slow or fail what it records. Nothing secret is recorded: subjects are names (an account, a game, a
 //! job), details are outcomes (a role, an end reason), never a password or a token.
 
 use std::net::IpAddr;
@@ -154,22 +154,33 @@ impl Entry {
     }
 }
 
-/// Records into the database, in the background.
+/// Records into the database, in the background and in order: one writer takes entries from a
+/// queue, so two things that happen a moment apart are kept in the order they happened (a write
+/// each, started at once, could land either way round, and within a second the log orders by
+/// insertion).
 #[derive(Debug, Clone)]
 pub(crate) struct Activity {
-    db: SqlitePool,
+    queue: tokio::sync::mpsc::UnboundedSender<(Entry, i64)>,
 }
 
 impl Activity {
+    /// Starts the writer; call inside the runtime.
     pub(crate) fn new(db: SqlitePool) -> Self {
-        Self { db }
+        let (queue, mut entries) = tokio::sync::mpsc::unbounded_channel::<(Entry, i64)>();
+        tokio::spawn(async move {
+            while let Some((entry, at)) = entries.recv().await {
+                if let Err(e) = insert(&db, &entry, at).await {
+                    tracing::warn!(error = %e, kind = ?entry.kind, "could not record activity");
+                }
+            }
+        });
+        Self { queue }
     }
 
-    /// Records `entry` now, without waiting for the write (`db::write_in_background`).
+    /// Records `entry` now, without waiting for the write.
     pub(crate) fn record(&self, entry: Entry) {
-        let db = self.db.clone();
-        let at = crate::client_events::now_unix();
-        crate::db::write_in_background("activity", async move { insert(&db, &entry, at).await });
+        // The writer goes only with the runtime, as the server stops: nothing to keep then.
+        let _ = self.queue.send((entry, crate::client_events::now_unix()));
     }
 }
 

@@ -366,10 +366,3 @@ export const api = {
   setRunAhead: async (system: string, frames: number | null) =>
     (await request(SetRunAheadMutation, { system, frames })).setRunAhead,
 };
-
-/** Human-readable file size. */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
