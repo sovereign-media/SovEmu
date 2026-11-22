@@ -20,9 +20,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use sovemu_protocol::SessionDescription;
+use sovemu_protocol::ipc::SessionHealth;
 use sovemu_protocol::ipc::{CoreCategory, CoreOption};
 use sovemu_protocol::ipc::{ExitReason, Reply, Request};
+use sovemu_protocol::{ClientStats, Pipeline, SessionDescription};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, watch};
@@ -160,9 +161,29 @@ pub struct Session {
     disc: std::sync::atomic::AtomicU32,
     /// The options the core declared with its game loaded (the worker's `options` reply).
     declared: Mutex<Option<Declared>>,
+    /// When it started, as a Unix time.
+    started_at: f64,
+    /// What the worker and the client last reported about the stream.
+    live: Mutex<Live>,
     /// The `session` span: its id, game, system and user, on every line logged about it.
     span: tracing::Span,
 }
+
+/// What a session's worker and client last reported about its stream.
+#[derive(Debug, Clone, Default)]
+pub struct Live {
+    /// How the worker makes the stream (renderer, codec, encoder and its fallbacks, audio).
+    pub pipeline: Option<Pipeline>,
+    /// The worker's last `session health` interval.
+    pub health: Option<SessionHealth>,
+    /// What the client's stats panel showed, and when (only while the panel is open).
+    pub client_stats: Option<(ClientStats, Instant)>,
+    /// The client playing it (`web`, `android 1.4.0 (…)`), as it named itself.
+    pub client: Option<String>,
+}
+
+/// Client stats older than this are dropped: the panel was closed.
+const CLIENT_STATS_FRESH: Duration = Duration::from_secs(5);
 
 /// A core's options and categories, as a session reported them.
 pub type Declared = (Vec<CoreOption>, Vec<CoreCategory>);
@@ -365,6 +386,29 @@ impl Session {
         }
     }
 
+    /// When the session started, as a Unix time.
+    pub fn started_at(&self) -> f64 {
+        self.started_at
+    }
+
+    /// What the worker and client last reported, without client stats gone stale.
+    pub fn live(&self) -> Live {
+        let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if live.client_stats.as_ref().is_some_and(|(_, at)| at.elapsed() > CLIENT_STATS_FRESH) {
+            live.client_stats = None;
+        }
+        live
+    }
+
+    /// Records the client that sent the current offer.
+    pub fn set_client(&self, client: Option<String>) {
+        self.with_live(|live| live.client = client);
+    }
+
+    fn with_live(&self, change: impl FnOnce(&mut Live)) {
+        change(&mut self.live.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+
     /// Records a disc change the worker made.
     pub fn set_current_disc(&self, disc: u32) {
         self.disc.store(disc, Ordering::Relaxed);
@@ -456,6 +500,13 @@ impl Workers {
 
     pub fn for_user(&self, user_id: i64) -> Option<Arc<Session>> {
         self.lock().sessions.values().find(|s| s.user_id == user_id).cloned()
+    }
+
+    /// Every running session, oldest first.
+    pub fn all(&self) -> Vec<Arc<Session>> {
+        let mut all: Vec<_> = self.lock().sessions.values().cloned().collect();
+        all.sort_by(|a, b| a.started_at.total_cmp(&b.started_at));
+        all
     }
 
     pub fn count(&self) -> usize {
@@ -701,6 +752,10 @@ impl Workers {
             connected: AtomicBool::new(false),
             disc: std::sync::atomic::AtomicU32::new(1),
             declared: Mutex::new(declared),
+            started_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0.0, |d| d.as_secs_f64()),
+            live: Mutex::new(Live::default()),
             span: span.clone(),
         });
         tracing::info!(
@@ -728,7 +783,17 @@ impl Workers {
                         *reported.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
                     }
                     Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
-                    Reply::ClientDisconnected => reader.connected.store(false, Ordering::Relaxed),
+                    Reply::ClientDisconnected => {
+                        reader.connected.store(false, Ordering::Relaxed);
+                        reader.with_live(|live| live.client_stats = None);
+                    }
+                    Reply::Pipeline { pipeline } => {
+                        reader.with_live(|live| live.pipeline = Some(pipeline));
+                    }
+                    Reply::Health { health } => reader.with_live(|live| live.health = Some(health)),
+                    Reply::ClientStats { stats } => {
+                        reader.with_live(|live| live.client_stats = Some((stats, Instant::now())));
+                    }
                     Reply::Answer { id, .. } | Reply::Done { id } | Reply::Error { id, .. } => {
                         let waiter =
                             reader.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);

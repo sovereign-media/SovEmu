@@ -9,6 +9,8 @@
 
 use std::time::{Duration, Instant};
 
+use sovemu_protocol::ipc::SessionHealth;
+
 /// What one interval (or the whole session) added up to.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct Stats {
@@ -157,15 +159,33 @@ impl Health {
         self.window.inputs += 1;
     }
 
-    /// Writes a `session health` line once the interval has passed, and starts the next.
-    pub(crate) fn report_if_due(&mut self, now: Instant, at: &Now) {
-        let (Some(interval), Some(from)) = (self.interval, self.window_from) else { return };
+    /// Writes a `session health` line once the interval has passed, starts the next, and
+    /// returns the interval's numbers for the server.
+    pub(crate) fn report_if_due(&mut self, now: Instant, at: &Now) -> Option<SessionHealth> {
+        let (Some(interval), Some(from)) = (self.interval, self.window_from) else { return None };
         if now.duration_since(from) < interval {
-            return;
+            return None;
         }
         let window = self.close_window(now);
         self.window_from = Some(now);
         log_health(&window, at);
+        Some(SessionHealth {
+            fps: window.fps(),
+            overran: if window.ticks == 0 {
+                0.0
+            } else {
+                window.overran as f64 / window.ticks as f64
+            },
+            paused: match window.ticks + window.paused {
+                0 => 0.0,
+                all => window.paused as f64 / all as f64,
+            },
+            tick_mean_ms: window.mean_tick_ms(),
+            encode_mean_ms: window.mean_encode_ms(),
+            video_kbps: window.video_kbps(),
+            video_kbps_target: at.video_kbps_target,
+            estimate_kbps: at.estimate_kbps,
+        })
     }
 
     /// Writes the `session summary`: the whole session, the open window included.

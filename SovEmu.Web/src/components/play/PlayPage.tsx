@@ -38,7 +38,7 @@ import {
   type SystemControls,
   type SystemSummary,
 } from "../../lib/api";
-import { reportClientEvent } from "../../lib/clientEvents";
+import { clientName, reportClientEvent } from "../../lib/clientEvents";
 import {
   defaultMapping,
   diagramKey,
@@ -268,7 +268,7 @@ function Player() {
         stack.close();
         setSplash(false);
         session = new Session(
-          (sdp) => api.answer(s.id, sdp),
+          (sdp) => api.answer(s.id, sdp, clientName()),
           video.current!,
           input,
           {
@@ -684,7 +684,7 @@ function Player() {
           const { items, numbers } = await sampler.sample(session);
           setStats(items);
           // Logged by the worker beside its own health lines, for reading back later.
-          session.sendStats({ ...numbers, client: "web" });
+          session.sendStats({ ...numbers, client: clientName() });
         }, 1000),
       );
 

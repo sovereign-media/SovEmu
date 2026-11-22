@@ -195,6 +195,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] H.264, preferred when the client offers it (VP8 otherwise; `SOVEMU_VIDEO_CODEC`): libavcodec
       over VA-API, NVENC or x264 (`SOVEMU_VIDEO_ENCODER`), falling back to x264 when a GPU
       encoder does not open, fails, or holds frames back
+- [x] How each stream is made, shown to players and admins: the worker's pipeline (renderer,
+      codec, encoder and its fallbacks with why, audio, run-ahead) goes to the client on the input
+      channel (`0x82`) for its stats panel, and to the server, whose admin Sessions page lists
+      every game being played with the worker's live numbers (`activeSessions`)
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
       reading it back with `glReadPixels`
 - [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)

@@ -10,6 +10,7 @@ const TYPE_HOTKEYS = 0x02;
 const TYPE_ANALOG = 0x03;
 const TYPE_STATS = 0x04;
 const TYPE_ACK = 0x81;
+const TYPE_PIPELINE = 0x82;
 
 /** RetroPad button ids (libretro RETRO_DEVICE_ID_JOYPAD_*): bit n of a port's state. */
 export const Button = {
@@ -171,5 +172,69 @@ export function decodeAck(data: ArrayBuffer): InputAck | null {
     seq: view.getUint32(2, true),
     clientTimeMs: view.getUint32(6, true),
     frame: view.getUint32(10, true),
+  };
+}
+
+/**
+ * How the worker makes the stream (`0x82`, then the version, then JSON): what draws the picture,
+ * the video codec and encoder (and any it fell back from, with why), the audio, and run-ahead.
+ * Sent when the channel opens, when anything changes, and every 2 s. `Pipeline` in
+ * SovEmu.Protocol; every key may be missing.
+ */
+export interface Pipeline {
+  /** The OpenGL renderer a 3D core draws with; null for a core that draws on the CPU. */
+  renderer: string | null;
+  /** The renderer is the software one (llvmpipe). */
+  rendererSoftware: boolean;
+  video: {
+    codec: string;
+    encoder: string;
+    hardware: boolean;
+    fallbacks: { encoder: string; reason: string }[];
+    width: number;
+    height: number;
+    fps: number;
+  };
+  audio: { codec: string; sourceHz: number; kbps: number };
+  runAhead: number;
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** Decodes a pipeline message, or returns null for anything else. */
+export function decodePipeline(data: ArrayBuffer): Pipeline | null {
+  if (data.byteLength < 3 || data.byteLength > 4096) return null;
+  const bytes = new Uint8Array(data);
+  if (bytes[0] !== TYPE_PIPELINE || bytes[1] !== INPUT_VERSION) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder().decode(bytes.subarray(2)));
+  } catch {
+    return null;
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const p = json as Record<string, unknown>;
+  const video = obj(p.video);
+  const audio = obj(p.audio);
+  return {
+    renderer: typeof p.renderer === "string" ? p.renderer : null,
+    rendererSoftware: p.renderer_software === true,
+    video: {
+      codec: str(video.codec),
+      encoder: str(video.encoder),
+      hardware: video.hardware === true,
+      fallbacks: (Array.isArray(video.fallbacks) ? video.fallbacks : []).map((f) => ({
+        encoder: str(obj(f).encoder),
+        reason: str(obj(f).reason),
+      })),
+      width: num(video.width),
+      height: num(video.height),
+      fps: num(video.fps),
+    },
+    audio: { codec: str(audio.codec), sourceHz: num(audio.source_hz), kbps: num(audio.kbps) },
+    runAhead: num(p.run_ahead),
   };
 }

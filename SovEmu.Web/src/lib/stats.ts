@@ -1,4 +1,5 @@
 // Latency and stream health from RTCPeerConnection.getStats(), sampled once a second.
+import { decoderLabel, pipelineItems } from "./pipeline";
 import type { ClientStats } from "./protocol";
 import type { Session } from "./session";
 
@@ -90,6 +91,10 @@ export class StatsSampler {
       { label: "Bitrate", value: fmt(kbps, " kbps") },
       { label: "Packets lost", value: String(lost) },
     ];
+    const decoder = decoderLabel(v.decoderImplementation, v.powerEfficientDecoder);
+    if (decoder) items.push({ label: "Decoder", value: decoder });
+    // The server's side, as its worker last said.
+    if (session.pipeline) items.push(...pipelineItems(session.pipeline));
     return { items, numbers };
   }
 }

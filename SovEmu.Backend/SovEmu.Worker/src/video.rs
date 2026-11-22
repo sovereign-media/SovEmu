@@ -8,6 +8,7 @@
 //! encoder, starting with a keyframe.
 
 use sovemu_media::{EncodedFrame, H264Config, H264Encoder, H264Preference, Vp8Config, Vp8Encoder};
+use sovemu_protocol::{Fallback, VideoPath};
 
 /// A video codec the worker can send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +152,28 @@ impl Video {
         match &self.encoder {
             Encoder::H264(e) => e.backend().map(|b| b.name()),
             Encoder::Vp8(_) => Some("libvpx"),
+        }
+    }
+
+    /// The video half of the pipeline the client and the server are told about.
+    pub(crate) fn path(&self, width: u32, height: u32, fps: f64) -> VideoPath {
+        let (hardware, fallbacks) = match &self.encoder {
+            Encoder::H264(e) => (
+                e.backend().is_some_and(|b| b.is_hardware()),
+                e.fallbacks()
+                    .map(|(b, why)| Fallback { encoder: b.name().into(), reason: why.into() })
+                    .collect(),
+            ),
+            Encoder::Vp8(_) => (false, Vec::new()),
+        };
+        VideoPath {
+            codec: self.codec().name().into(),
+            encoder: self.encoder_name().unwrap_or_default().into(),
+            hardware,
+            fallbacks,
+            width,
+            height,
+            fps: (fps * 100.0).round() / 100.0,
         }
     }
 

@@ -8,12 +8,14 @@ import {
   CENTRED,
   type ClientStats,
   decodeAck,
+  decodePipeline,
   encodeAnalog,
   encodeHotkeys,
   encodeInput,
   encodeStats,
   hotkeyBits,
   INPUT_CHANNEL,
+  type Pipeline,
 } from "./protocol";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
@@ -35,6 +37,8 @@ export class Session {
   readonly pc: RTCPeerConnection;
   /** Recent input round trips (send -> server applies on a frame -> ack), in ms. */
   readonly inputRtts: number[] = [];
+  /** How the worker makes the stream, as it last said (null until it has). */
+  pipeline: Pipeline | null = null;
   private channel: RTCDataChannel;
   private seq = 0;
   /** The last sent buttons, every player's, as a comparable key. */
@@ -62,7 +66,7 @@ export class Session {
     this.pc.addTransceiver("audio", { direction: "recvonly" });
     this.channel = this.pc.createDataChannel(INPUT_CHANNEL, { ordered: false, maxRetransmits: 0 });
     this.channel.binaryType = "arraybuffer";
-    this.channel.onmessage = (e) => this.onAck(e.data as ArrayBuffer);
+    this.channel.onmessage = (e) => this.onMessage(e.data as ArrayBuffer);
 
     const stream = new MediaStream();
     video.srcObject = stream;
@@ -151,7 +155,12 @@ export class Session {
     this.raf = requestAnimationFrame(this.pump);
   };
 
-  private onAck(data: ArrayBuffer) {
+  private onMessage(data: ArrayBuffer) {
+    const pipeline = decodePipeline(data);
+    if (pipeline) {
+      this.pipeline = pipeline;
+      return;
+    }
     const ack = decodeAck(data);
     if (!ack) return;
     this.inputRtts.push((now32() - ack.clientTimeMs) >>> 0);

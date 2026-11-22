@@ -407,6 +407,36 @@ pub(crate) async fn set_disc(state: &AppState, user: &User, id: &str, disc: u32)
     Ok(())
 }
 
+/// A running session as the admin's sessions page shows it.
+pub(crate) struct ActiveSession {
+    pub(crate) info: SessionInfo,
+    pub(crate) user_id: i64,
+    /// The player's name; none if the account has gone.
+    pub(crate) username: Option<String>,
+    pub(crate) started_at: f64,
+    pub(crate) live: sovemu_sessions::workers::Live,
+}
+
+/// Every running session, oldest first, with what its worker and client last reported.
+pub(crate) async fn active_sessions(state: &AppState) -> ApiResult<Vec<ActiveSession>> {
+    let sessions = state.workers.all();
+    if sessions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let names: std::collections::HashMap<i64, String> =
+        state.identity.users().await?.into_iter().map(|u| (u.id, u.username)).collect();
+    Ok(sessions
+        .into_iter()
+        .map(|s| ActiveSession {
+            info: s.info(),
+            user_id: s.user_id,
+            username: names.get(&s.user_id).cloned(),
+            started_at: s.started_at(),
+            live: s.live(),
+        })
+        .collect())
+}
+
 pub(crate) fn current_session(state: &AppState, user: &User) -> Option<SessionInfo> {
     state.workers.for_user(user.id).map(|s| s.info())
 }
@@ -429,12 +459,18 @@ pub(crate) async fn offer(
     user: &User,
     id: &str,
     sdp: String,
+    client: Option<String>,
 ) -> ApiResult<String> {
     let session = owned_session(state, user.id, id)?;
     let answer = session
         .offer(SessionDescription { kind: SdpKind::Offer, sdp })
         .await
         .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    // A name, not a message: one line, and short.
+    let client = client
+        .map(|c| c.lines().next().unwrap_or_default().chars().take(80).collect::<String>())
+        .filter(|c| !c.trim().is_empty());
+    session.set_client(client);
     Ok(answer.sdp)
 }
 

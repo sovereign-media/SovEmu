@@ -19,7 +19,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use sovemu_media::{H264Decoder, OpusDecoder};
-use sovemu_protocol::{Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
+use sovemu_protocol::{
+    Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, Pipeline, SdpKind, SessionDescription,
+};
 use str0m::change::SdpAnswer;
 use str0m::channel::{ChannelConfig, Reliability};
 use str0m::media::MediaTime;
@@ -257,6 +259,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
     // Video packets that ask to be shown at once (playout delay 0/0), so no jitter buffer.
     let mut zero_delay_frames = 0;
     let mut picture_size = None;
+    let mut pipeline = None;
     let mut channel_open = false;
     let mut acks: Vec<InputAck> = Vec::new();
     // Video frames received when each ack arrived: with the ack's emulated frame, how many frames
@@ -351,8 +354,13 @@ fn streams_video_and_audio_and_acknowledges_input() {
                         audio_samples += opus.decode(&data.data).unwrap().len() / 2;
                     }
                     Event::ChannelData(data) if data.id == input => {
-                        acks.push(InputAck::decode(&data.data).expect("a valid ack"));
-                        acks_video.push(video_frames);
+                        if data.data.first() == Some(&0x82) {
+                            pipeline =
+                                Some(Pipeline::decode(&data.data).expect("a valid pipeline"));
+                        } else {
+                            acks.push(InputAck::decode(&data.data).expect("a valid ack"));
+                            acks_video.push(video_frames);
+                        }
                     }
                     _ => {}
                 }
@@ -402,6 +410,12 @@ fn streams_video_and_audio_and_acknowledges_input() {
     if std::env::var_os("SOVEMU_E2E_HTTP").is_none() {
         assert_eq!((w, h), (256, 224), "the test core's native resolution");
     }
+    let pipeline = pipeline.expect("the worker said how it makes the stream");
+    assert_eq!(pipeline.video.codec, "h264");
+    assert!(!pipeline.video.encoder.is_empty(), "{pipeline:?}");
+    assert_eq!((pipeline.video.width, pipeline.video.height), (w, h));
+    assert_eq!(pipeline.audio.codec, "opus");
+    assert_eq!(pipeline.renderer, None, "the test core draws on the CPU");
     assert!(audio_packets >= 100, "received {audio_packets} audio packets");
     assert_eq!(audio_samples, audio_packets * 480, "10 ms Opus packets");
     assert!(acks.len() >= 3, "received {} input acks", acks.len());

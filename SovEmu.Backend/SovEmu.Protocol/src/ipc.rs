@@ -1,12 +1,13 @@
 //! Server ↔ worker messages: one JSON object per line on the worker's stdin and stdout.
 //!
 //! The server starts `sovemu-worker session …` per game session. Requests carry an `id` the
-//! worker echoes in its reply, so several can be in flight. Events (`progress`, `ready`,
-//! `client_*`) carry none. The worker exits when its stdin closes, so a crashed server never leaves orphans.
+//! worker echoes in its reply, so several can be in flight. Events (`progress`, `ready`, `pipeline`,
+//! `health`, `client_*`) carry none. The worker exits when its stdin closes, so a crashed server
+//! never leaves orphans.
 
 use serde::{Deserialize, Serialize};
 
-use crate::SessionDescription;
+use crate::{ClientStats, Pipeline, SessionDescription};
 
 /// The most frames a session's picture may run ahead of the game (`sovemu-worker session
 /// --run-ahead`): beyond it, games visibly skip ahead. The server refuses more; the worker clamps.
@@ -140,11 +141,45 @@ pub enum Reply {
     },
     ClientConnected,
     ClientDisconnected,
+    /// How the stream is made, sent when a client connects and whenever it changes: the same
+    /// [`Pipeline`] the client gets on its DataChannel.
+    Pipeline {
+        pipeline: Pipeline,
+    },
+    /// The worker's numbers for the last `session health` interval, while a client is connected.
+    Health {
+        health: SessionHealth,
+    },
+    /// What the client's stats panel shows, passed on as it arrives (once a second while the
+    /// panel is open).
+    ClientStats {
+        stats: ClientStats,
+    },
     /// The worker is about to exit, its saves written, and why. A worker that crashes (or is
     /// killed) never sends it, which is how the server tells those apart.
     Exiting {
         reason: ExitReason,
     },
+}
+
+/// One `session health` interval, in [`Reply::Health`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SessionHealth {
+    /// Frames shown per second.
+    pub fps: f64,
+    /// The share of ticks that ran over their frame period, 0 to 1.
+    pub overran: f64,
+    /// The share of the interval the game was paused (the player's menu open), 0 to 1.
+    pub paused: f64,
+    pub tick_mean_ms: f64,
+    pub encode_mean_ms: f64,
+    /// What the encoder produced, and what it was aiming for.
+    pub video_kbps: f64,
+    pub video_kbps_target: u32,
+    /// The send-bandwidth estimate, where there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_kbps: Option<u64>,
 }
 
 /// Why a worker stopped on its own terms, in [`Reply::Exiting`].
