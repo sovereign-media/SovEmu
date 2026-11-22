@@ -18,6 +18,7 @@ import {
   ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerLayoutsQuery,
   ControllerMappingsQuery,
+  CoresQuery,
   CreateCollectionMutation,
   DecorationsQuery,
   DeleteCollectionMutation,
@@ -125,6 +126,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type CoreReport = ResultOf<typeof CoresQuery>["cores"][number];
 export type AdminPatch = ResultOf<typeof AdminPatchesQuery>["patches"][number];
 export type DecorationsReport = ResultOf<typeof DecorationsQuery>["decorations"];
 export type GpuStatus = ResultOf<typeof GpuQuery>["gpu"];
@@ -170,6 +172,8 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: every core with its licence, and the libretro release they come from. */
+  cores: () => request(CoresQuery),
   /** Admin: every soft patch in the library, with its game and who chose it. */
   adminPatches: async () => (await request(AdminPatchesQuery)).patches,
   /** Admin: the decoration sets, and the set each system's games are framed with. */

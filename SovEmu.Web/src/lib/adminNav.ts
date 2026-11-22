@@ -12,6 +12,7 @@ import {
   Microchip,
   MonitorCog,
   MonitorPlay,
+  Package,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
@@ -73,6 +74,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Emulator settings",
         title: "Each system's core and its options",
         icon: SlidersHorizontal,
+      },
+      {
+        href: "/admin/cores/",
+        label: "Cores",
+        title: "The emulators installed: versions, systems and licences",
+        icon: Package,
       },
       {
         href: "/admin/rendering/",

@@ -86,3 +86,14 @@ test("the Patches page explains how a patch becomes the default", async ({ page 
   await expect(game).toContainText("Default");
   await expect(game).toContainText("snes/Super Stand-in (USA).ips");
 });
+
+test("the Cores page lists the shipped cores with their licences, and finds one", async ({ page }) => {
+  await page.goto("/admin/cores/");
+  await expect(page.getByRole("heading", { name: "Cores", level: 1 })).toBeVisible();
+  await expect(page.getByText(/\d+ cores from libretro \d+\.\d+\.\d+/)).toBeVisible();
+  const cores = page.getByRole("region", { name: "Cores" });
+  await expect(cores.getByRole("listitem").filter({ hasText: "snes9x" })).toContainText("Non-commercial");
+  await page.getByRole("searchbox", { name: "Find a core" }).fill("mpl");
+  await expect(cores.getByRole("listitem")).toHaveCount(1);
+  await expect(cores.getByRole("listitem")).toContainText("mgba");
+});

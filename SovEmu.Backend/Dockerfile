@@ -88,6 +88,9 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
 FROM toolchain AS test
+# The core list, which SovEmu.Library's licence table is tested against (`cores.rs`), at the
+# place it sits relative to the sources in the repository.
+COPY scripts/cores.list /scripts/cores.list
 # Mesa (EGL through libglvnd, desktop GL and GLES, llvmpipe): the GPU-rendering tests draw with
 # the software renderer here, as a server without a GPU would.
 RUN apt-get update \

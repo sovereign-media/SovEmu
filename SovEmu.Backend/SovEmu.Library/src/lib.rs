@@ -9,6 +9,7 @@
 
 pub mod bios;
 pub mod cache;
+pub mod cores;
 pub mod decorations;
 pub mod info;
 pub mod labels;

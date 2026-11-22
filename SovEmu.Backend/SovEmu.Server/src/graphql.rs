@@ -834,6 +834,38 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// A libretro core: shipped in the image, or found in the cores folder.
+#[derive(SimpleObject)]
+struct CoreReport {
+    /// Its file name without `_libretro.<ext>` (`snes9x`).
+    name: String,
+    /// What the core calls itself: from its probe, else the licence table's name for it.
+    label: Option<String>,
+    version: Option<String>,
+    /// Its file in the cores folder; null when it is shipped but missing here.
+    file: Option<String>,
+    /// It loads (the image's build-time probe, else a probe now).
+    loaded: bool,
+    error: Option<String>,
+    /// The systems it plays.
+    systems: Vec<CoreSystem>,
+    /// As its core info file states it; null for a core the image doesn't ship.
+    licence: Option<String>,
+    /// Its licence forbids commercial use.
+    non_commercial: bool,
+    /// Its source.
+    source_url: Option<String>,
+}
+
+/// A system a core plays.
+#[derive(SimpleObject)]
+struct CoreSystem {
+    id: String,
+    name: String,
+    /// This system's games start with this core.
+    chosen: bool,
+}
+
 /// A soft patch in the library, as the admin sees it.
 #[derive(SimpleObject)]
 struct AdminPatch {
@@ -1980,6 +2012,42 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: every shipped core, then any other in the cores folder: version, whether it
+    /// loads, the systems it plays, and its licence.
+    async fn cores(&self, ctx: &Context<'_>) -> Result<Vec<CoreReport>> {
+        admin(ctx).await?;
+        Ok(crate::cores::report(state(ctx))
+            .await
+            .into_iter()
+            .map(|c| CoreReport {
+                label: c.label.or_else(|| c.licence.map(|l| l.label.to_owned())),
+                name: c.name,
+                version: c.version,
+                file: c.file.map(|f| f.display().to_string()),
+                loaded: c.loaded,
+                error: c.error,
+                systems: c
+                    .systems
+                    .into_iter()
+                    .map(|s| CoreSystem {
+                        id: s.system.id.to_owned(),
+                        name: s.system.name.to_owned(),
+                        chosen: s.chosen,
+                    })
+                    .collect(),
+                licence: c.licence.map(|l| l.licence.to_owned()),
+                non_commercial: c.licence.is_some_and(|l| l.non_commercial),
+                source_url: c.licence.map(|l| l.source.to_owned()),
+            })
+            .collect())
+    }
+
+    /// Admins: the libretro stable release the image's cores come from.
+    async fn libretro_release(&self, ctx: &Context<'_>) -> Result<&'static str> {
+        admin(ctx).await?;
+        Ok(sovemu_library::cores::LIBRETRO_RELEASE)
     }
 
     /// Admins: every soft patch in the library, with its game and how many players chose it.

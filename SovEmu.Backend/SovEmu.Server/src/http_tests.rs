@@ -1506,6 +1506,30 @@ async fn search_spans_every_system() {
 }
 
 #[tokio::test]
+async fn admins_see_every_core_with_its_licence() {
+    let mut h = Harness::new("cores", true).await;
+    h.sign_up_admin().await;
+    let q = "{ libretroRelease cores { name label loaded error file licence nonCommercial \
+             sourceUrl systems { id chosen } } }";
+    let data = h.ok(q, json!({})).await;
+    assert_eq!(data["libretroRelease"], sovemu_library::cores::LIBRETRO_RELEASE);
+    let cores = data["cores"].as_array().unwrap();
+    assert_eq!(cores.len(), sovemu_library::cores::CORES.len(), "every shipped core, in order");
+    // The test core, installed as fceumm: probed now, since there is no manifest.
+    let fceumm = &cores[0];
+    assert_eq!(fceumm["name"], "fceumm");
+    assert_eq!((fceumm["loaded"].clone(), fceumm["error"].clone()), (json!(true), Value::Null));
+    assert!(fceumm["file"].as_str().unwrap().contains("fceumm_libretro."));
+    assert_eq!(fceumm["licence"], "GPLv2");
+    assert_eq!(fceumm["systems"], json!([{"id": "nes", "chosen": true}]));
+    // Shipped, but not in this cores folder.
+    let snes9x = cores.iter().find(|c| c["name"] == "snes9x").unwrap();
+    assert_eq!((snes9x["file"].clone(), snes9x["loaded"].clone()), (Value::Null, json!(false)));
+    assert_eq!(snes9x["nonCommercial"], true);
+    assert_eq!(snes9x["systems"][0], json!({"id": "snes", "chosen": false}));
+}
+
+#[tokio::test]
 async fn soft_patches_apply_by_default_and_can_be_chosen() {
     let mut h = Harness::new("patches", true).await;
     h.sign_up_admin().await;

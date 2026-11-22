@@ -436,6 +436,58 @@ type ControllerMapping {
 	source: MappingSource!
 }
 
+"""
+A libretro core: shipped in the image, or found in the cores folder.
+"""
+type CoreReport {
+	"""
+	Its file name without `_libretro.<ext>` (`snes9x`).
+	"""
+	name: String!
+	"""
+	What the core calls itself: from its probe, else the licence table's name for it.
+	"""
+	label: String
+	version: String
+	"""
+	Its file in the cores folder; null when it is shipped but missing here.
+	"""
+	file: String
+	"""
+	It loads (the image's build-time probe, else a probe now).
+	"""
+	loaded: Boolean!
+	error: String
+	"""
+	The systems it plays.
+	"""
+	systems: [CoreSystem!]!
+	"""
+	As its core info file states it; null for a core the image doesn't ship.
+	"""
+	licence: String
+	"""
+	Its licence forbids commercial use.
+	"""
+	nonCommercial: Boolean!
+	"""
+	Its source.
+	"""
+	sourceUrl: String
+}
+
+"""
+A system a core plays.
+"""
+type CoreSystem {
+	id: String!
+	name: String!
+	"""
+	This system's games start with this core.
+	"""
+	chosen: Boolean!
+}
+
 type Decoration {
 	"""
 	The image (PNG), under `/media/decorations/`: a URL signed for this user.
@@ -1316,6 +1368,15 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: every shipped core, then any other in the cores folder: version, whether it
+	loads, the systems it plays, and its licence.
+	"""
+	cores: [CoreReport!]!
+	"""
+	Admins: the libretro stable release the image's cores come from.
+	"""
+	libretroRelease: String!
 	"""
 	Admins: every soft patch in the library, with its game and how many players chose it.
 	"""

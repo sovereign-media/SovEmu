@@ -902,3 +902,25 @@ export const AdminPatchesQuery = graphql(`
     }
   }
 `);
+
+export const CoresQuery = graphql(`
+  query Cores {
+    libretroRelease
+    cores {
+      name
+      label
+      version
+      file
+      loaded
+      error
+      licence
+      nonCommercial
+      sourceUrl
+      systems {
+        id
+        name
+        chosen
+      }
+    }
+  }
+`);

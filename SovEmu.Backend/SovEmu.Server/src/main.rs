@@ -14,6 +14,7 @@ mod client_ip;
 mod collections;
 mod controllers;
 mod controls;
+mod cores;
 mod db;
 mod error;
 mod graphql;
@@ -1039,6 +1040,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         "host"
     );
     let resources = Arc::new(resources::Monitor::new(host, config.resource_sample_seconds));
+    let core_info = Arc::new(settings::CoreInfoCache::from_manifest(&config.cores_dir));
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -1047,7 +1049,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         metadata,
         mirror: Arc::default(),
         gpu: Arc::new(gpu),
-        core_info: Arc::default(),
+        core_info,
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
         assets,
