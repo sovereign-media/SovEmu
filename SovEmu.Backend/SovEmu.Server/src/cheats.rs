@@ -73,11 +73,7 @@ pub(crate) async fn add(
     if code.is_empty() || code.len() > 256 {
         return Err(ApiError::bad_request("a cheat needs a code (up to 256 characters)"));
     }
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(&state.db)
-        .await?;
-    exists.ok_or_else(|| ApiError::not_found("game"))?;
+    crate::api::require_game(state, game_id).await?;
     sqlx::query("INSERT INTO cheats (user_id, game_id, description, code) VALUES (?, ?, ?, ?)")
         .bind(user.id)
         .bind(game_id)
@@ -85,7 +81,7 @@ pub(crate) async fn add(
         .bind(code)
         .execute(&state.db)
         .await?;
-    push(state, user.id, game_id).await?;
+    push_saved(state, user.id, game_id).await;
     list_for(state, user.id, game_id).await
 }
 
@@ -109,7 +105,7 @@ pub(crate) async fn set_enabled(
     if changed == 0 {
         return Err(ApiError::not_found("cheat"));
     }
-    push(state, user.id, game_id).await?;
+    push_saved(state, user.id, game_id).await;
     list_for(state, user.id, game_id).await
 }
 
@@ -129,6 +125,15 @@ pub(crate) async fn remove(
     if removed == 0 {
         return Err(ApiError::not_found("cheat"));
     }
-    push(state, user.id, game_id).await?;
+    push_saved(state, user.id, game_id).await;
     Ok(())
+}
+
+/// Hands the saved cheats to a running session. The change is already saved, so a session that
+/// cannot take them (it ended, its worker is busy) is logged, not the caller's error: the next
+/// session starts with them.
+async fn push_saved(state: &AppState, user_id: i64, game_id: i64) {
+    if let Err(e) = push(state, user_id, game_id).await {
+        tracing::warn!(game_id, error = %e.message, "cheats saved, not applied to the session");
+    }
 }
