@@ -115,8 +115,15 @@ function FailureItem({ f }: { f: SessionFailure }) {
         </a>
         <span className="text-amber-300">{failureLabel(f)}</span>
         <span className="text-xs text-slate-400">
-          {f.system.toUpperCase()} · {f.core} · {f.username ?? "(deleted account)"} · {when} · ran{" "}
-          {durationLabel(f.ranSeconds)}
+          {[
+            f.system.toUpperCase(),
+            f.core,
+            f.username ?? "(deleted account)",
+            when,
+            f.reason === "refused" ? null : `ran ${durationLabel(f.ranSeconds)}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
         <a
           className="ml-auto text-xs text-slate-400 hover:text-white hover:underline"
@@ -125,6 +132,7 @@ function FailureItem({ f }: { f: SessionFailure }) {
           Emulator settings
         </a>
       </div>
+      {f.message && <p className="mt-1 text-slate-300">{f.message}</p>}
       {f.lastLines.length > 0 && (
         <details className="mt-2">
           <summary className="cursor-pointer text-xs text-slate-400 hover:text-white">

@@ -91,6 +91,7 @@ const SIGNALS: Record<number, string> = {
 
 /** How a game failed, in words: `Crashed while playing (SIGSEGV)`, `Failed to start (exit 1)`. */
 export function failureLabel(f: Pick<SessionFailure, "whilePlaying" | "reason" | "exitCode" | "signal">): string {
+  if (f.reason === "refused") return "Refused to start";
   let what: string;
   if (f.reason === "killed") what = f.whilePlaying ? "Would not stop" : "Timed out starting";
   else if (f.reason === "crashed") what = f.whilePlaying ? "Crashed while playing" : "Crashed starting";

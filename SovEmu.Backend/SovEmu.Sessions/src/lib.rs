@@ -41,6 +41,17 @@ pub struct Ended<'a> {
     pub signal: Option<i32>,
     /// The worker's last lines on stderr (the core's own log, most often), oldest first.
     pub last_lines: &'a [String],
+    /// Why its start failed (the worker's message, or the server's timeout), if it did.
+    pub start_error: Option<&'a str>,
+}
+
+impl Ended<'_> {
+    /// The session went wrong: its start failed, or it errored, crashed or had to be killed.
+    /// Quitting and idling out are not failures.
+    pub fn failed(&self) -> bool {
+        self.start_error.is_some()
+            || matches!(self.reason, EndReason::Error | EndReason::Crashed | EndReason::Killed)
+    }
 }
 
 /// Why a worker exited: what it said as it went, or what the server saw.
@@ -100,6 +111,14 @@ pub enum Error {
     Unexpected(String),
     Io(std::io::Error),
     Json(serde_json::Error),
+}
+
+impl Error {
+    /// The start failed before any worker ran (no port free, the binary would not start), so
+    /// no worker will report it.
+    pub fn before_worker(&self) -> bool {
+        matches!(self, Self::NoPort(_) | Self::Spawn(..))
+    }
 }
 
 impl std::fmt::Display for Error {
