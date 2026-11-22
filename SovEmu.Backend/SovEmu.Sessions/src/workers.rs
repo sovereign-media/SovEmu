@@ -215,11 +215,28 @@ struct Exit {
     title: String,
     system: String,
     core: String,
-    /// Set once the worker says it is ready: an end before it is an end while starting.
-    loaded: Arc<std::sync::atomic::AtomicBool>,
-    /// What the worker said as it went ([`Reply::Exiting`]), if it did.
-    reported: Arc<Mutex<Option<ExitReason>>>,
+    told: Arc<Mutex<Told>>,
+    /// Closes once the start has settled (ready, failed or abandoned), so [`Told`] says how it
+    /// went: the worker's exit and the start's outcome reach the server in either order.
+    settled: oneshot::Receiver<()>,
     last_words: LastWords,
+}
+
+/// What the server learnt from a worker while it ran, for its reaper.
+#[derive(Debug, Default)]
+struct Told {
+    /// It said it was ready: an end before that is an end while starting.
+    loaded: bool,
+    /// Why its start failed, if it did.
+    start_error: Option<String>,
+    /// What it said as it went ([`Reply::Exiting`]), if it did.
+    exiting: Option<ExitReason>,
+}
+
+impl Told {
+    fn change(told: &Mutex<Self>, change: impl FnOnce(&mut Self)) {
+        change(&mut told.lock().unwrap_or_else(|e| e.into_inner()));
+    }
 }
 
 /// Why a worker ended: the server's own kill first, then what the worker said, then how the
@@ -336,10 +353,12 @@ impl Process {
                 let ran = started.elapsed();
                 // Its last lines (on stderr, after its exit) come in a moment after the exit.
                 let last_words = exit.last_words.finish().await;
-                let reported = *exit.reported.lock().unwrap_or_else(|e| e.into_inner());
+                let _ = exit.settled.await;
+                let told =
+                    std::mem::take(&mut *exit.told.lock().unwrap_or_else(|e| e.into_inner()));
                 let signal = status.as_ref().ok().and_then(signal_of);
                 let code = status.as_ref().ok().and_then(std::process::ExitStatus::code);
-                let reason = end_reason(we_killed, reported, signal, code);
+                let reason = end_reason(we_killed, told.exiting, signal, code);
                 if matches!(reason, EndReason::Crashed | EndReason::Killed) {
                     tracing::warn!(
                         reason = reason.as_str(),
@@ -367,7 +386,8 @@ impl Process {
                     core: &exit.core,
                     reason,
                     ran,
-                    loaded: exit.loaded.load(std::sync::atomic::Ordering::Relaxed),
+                    loaded: told.loaded,
+                    start_error: told.start_error.as_deref(),
                     code,
                     signal,
                     last_lines: &last_words,
@@ -682,8 +702,9 @@ impl Workers {
         };
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
-        let reported = Arc::new(Mutex::new(None));
-        let loaded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let told = Arc::new(Mutex::new(Told::default()));
+        // Held until this start returns, however it does.
+        let (_settling, settled) = oneshot::channel::<()>();
         let last_words = LastWords::follow(child.stderr.take().expect("piped"));
         let process = Process::reap(
             child,
@@ -698,8 +719,8 @@ impl Workers {
                 title: launch.title.clone(),
                 system: launch.system.clone(),
                 core: core_name(&launch.core),
-                loaded: loaded.clone(),
-                reported: reported.clone(),
+                told: told.clone(),
+                settled,
                 last_words,
             },
         );
@@ -712,7 +733,6 @@ impl Workers {
                 match serde_json::from_str::<Reply>(&line) {
                     Ok(Reply::Failed { message }) => return Err(Error::Worker(message)),
                     Ok(Reply::Ready { core, width, height, fps, discs, .. }) => {
-                        loaded.store(true, std::sync::atomic::Ordering::Relaxed);
                         return Ok((core, width, height, fps, discs));
                     }
                     Ok(Reply::Options { options, categories }) => {
@@ -735,20 +755,18 @@ impl Workers {
             Err(Error::Exited)
         })
         .await;
-        let ready = match ready {
-            Ok(Ok(ready)) => ready,
-            Ok(Err(e)) => {
-                tracing::warn!(
-                    parent: &span,
-                    error = %e,
-                    load_ms = started.elapsed().as_millis() as u64,
-                    "session failed to start"
-                );
-                return Err(e);
+        let ready = match ready
+            .unwrap_or(Err(Error::Timeout("the worker took too long to load the game")))
+        {
+            Ok(ready) => {
+                Told::change(&told, |t| t.loaded = true);
+                ready
             }
-            Err(_) => {
-                process.kill();
-                let e = Error::Timeout("the worker took too long to load the game");
+            Err(e) => {
+                Told::change(&told, |t| t.start_error = Some(e.to_string()));
+                if matches!(e, Error::Timeout(_)) {
+                    process.kill();
+                }
                 tracing::warn!(
                     parent: &span,
                     error = %e,
@@ -814,9 +832,7 @@ impl Workers {
             while let Ok(Some(line)) = lines.next_line().await {
                 let Ok(reply) = serde_json::from_str::<Reply>(&line) else { continue };
                 match reply {
-                    Reply::Exiting { reason } => {
-                        *reported.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
-                    }
+                    Reply::Exiting { reason } => Told::change(&told, |t| t.exiting = Some(reason)),
                     Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
                     Reply::ClientDisconnected => {
                         reader.connected.store(false, Ordering::Relaxed);
@@ -941,8 +957,8 @@ done
         workers_with(dir, &WORKER.replace("THEN", then), stop_timeout, Arc::new(()))
     }
 
-    /// Whether it had loaded, its exit code and its last lines.
-    type Details = (bool, Option<i32>, Vec<String>);
+    /// Whether it had loaded, its exit code, its last lines, and why its start failed.
+    type Details = (bool, Option<i32>, Vec<String>, Option<String>);
 
     /// Remembers why each session ended, and its core.
     #[derive(Debug, Default)]
@@ -951,7 +967,12 @@ done
     impl Observer for Recorder {
         fn session_ended(&self, ended: &Ended<'_>) {
             self.0.lock().unwrap().push((ended.reason, ended.core.to_owned()));
-            self.1.lock().unwrap().push((ended.loaded, ended.code, ended.last_lines.to_vec()));
+            self.1.lock().unwrap().push((
+                ended.loaded,
+                ended.code,
+                ended.last_lines.to_vec(),
+                ended.start_error.map(str::to_owned),
+            ));
         }
     }
 
@@ -1115,8 +1136,9 @@ kill -SEGV $$
         let workers = workers_with(&dir, crash, Duration::from_secs(5), recorder.clone());
         workers.start(launch(&dir, 1, 1)).await.unwrap();
         assert_eq!(recorder.ended(1).await, [EndReason::Crashed]);
-        let (loaded, _, lines) = recorder.1.lock().unwrap()[0].clone();
+        let (loaded, _, lines, start_error) = recorder.1.lock().unwrap()[0].clone();
         assert!(loaded, "it had loaded: a crash while playing");
+        assert_eq!(start_error, None);
         assert_eq!(lines, ["the core's last words"], "what to tell the admin");
         settle(&workers, 2).await;
     }
@@ -1133,10 +1155,63 @@ exit 2
         let workers = workers_with(&dir, fails, Duration::from_secs(5), recorder.clone());
         assert!(workers.start(launch(&dir, 1, 1)).await.is_err());
         assert_eq!(recorder.ended(1).await, [EndReason::Error]);
-        let (loaded, code, lines) = recorder.1.lock().unwrap()[0].clone();
+        let (loaded, code, lines, start_error) = recorder.1.lock().unwrap()[0].clone();
         assert_eq!((loaded, code), (false, Some(2)), "ended while starting");
         assert_eq!(lines, ["missing BIOS: scph5501.bin"]);
+        assert_eq!(start_error.as_deref(), Some("the core could not load the game"));
         settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_worker_that_exits_quietly_while_loading_is_a_failed_start() {
+        let dir = dir("load-quiet");
+        let recorder = Arc::new(Recorder::default());
+        let workers =
+            workers_with(&dir, "#!/bin/sh\nexit 0\n", Duration::from_secs(5), recorder.clone());
+        assert!(workers.start(launch(&dir, 1, 1)).await.is_err());
+        assert_eq!(recorder.ended(1).await, [EndReason::Exited], "a clean exit, but no game");
+        let (loaded, _, _, start_error) = recorder.1.lock().unwrap()[0].clone();
+        assert!(!loaded);
+        assert_eq!(start_error.as_deref(), Some("the worker exited while loading the game"));
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_worker_binary_that_will_not_start_fails_before_any_worker() {
+        let dir = dir("no-binary");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let workers = Workers::new(WorkerConfig {
+            worker_bin: dir.join("missing"),
+            ..workers.config.clone()
+        });
+        let e = workers.start(launch(&dir, 1, 1)).await.unwrap_err();
+        assert!(e.before_worker(), "{e}");
+        settle(&workers, 2).await;
+    }
+
+    #[test]
+    fn a_failed_start_or_a_crash_is_a_failure_and_quitting_is_not() {
+        let ended = |reason, start_error: Option<&'static str>| Ended {
+            user_id: 1,
+            game_id: 1,
+            title: "",
+            system: "nes",
+            core: "core",
+            reason,
+            ran: Duration::ZERO,
+            loaded: start_error.is_none(),
+            code: None,
+            signal: None,
+            last_lines: &[],
+            start_error,
+        };
+        for reason in [EndReason::Stopped, EndReason::Idle, EndReason::ControllerGone] {
+            assert!(!ended(reason, None).failed(), "{reason:?}");
+        }
+        for reason in [EndReason::Error, EndReason::Crashed, EndReason::Killed] {
+            assert!(ended(reason, None).failed(), "{reason:?}");
+        }
+        assert!(ended(EndReason::Exited, Some("exited while loading")).failed());
     }
 
     #[tokio::test]

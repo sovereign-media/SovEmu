@@ -2121,18 +2121,42 @@ async fn admins_see_the_games_that_failed_with_their_last_lines() {
         code: Some(1),
         signal: None,
         last_lines: &lines,
+        start_error: None,
     };
     events.session_ended(&ended(sovemu_sessions::EndReason::Stopped));
-    events.session_ended(&ended(sovemu_sessions::EndReason::Error));
-    let q = "{ sessionFailures { username gameId title system core whilePlaying reason exitCode signal lastLines ranSeconds } }";
+    events.session_ended(&sovemu_sessions::Ended {
+        start_error: Some("the core could not load the game"),
+        ..ended(sovemu_sessions::EndReason::Error)
+    });
+    let q = "{ sessionFailures { username gameId title system core whilePlaying reason message exitCode signal lastLines ranSeconds } }";
     assert_eq!(
         h.ok(q, json!({})).await["sessionFailures"],
         json!([{
             "username": "admin", "gameId": 42, "title": "Tony Hawk's Pro Skater 3", "system": "ps2",
-            "core": "pcsx2_libretro", "whilePlaying": false, "reason": "error", "exitCode": 1,
+            "core": "pcsx2_libretro", "whilePlaying": false, "reason": "error",
+            "message": "the core could not load the game", "exitCode": 1,
             "signal": null, "lastLines": ["[pcsx2] missing BIOS", "failed to boot"], "ranSeconds": 1.5,
         }]),
         "a quit is not a failure; the error is"
+    );
+}
+
+#[tokio::test]
+async fn a_start_the_server_refuses_is_listed_with_why() {
+    // No core is installed in this harness, so every start is refused before a worker runs.
+    let mut h = Harness::new("failures-refused", false).await;
+    h.sign_up_admin().await;
+    let game = h.games("nes").await[0]["id"].as_i64().unwrap();
+    assert_eq!(h.err(START, json!({"game": game})).await.0, "UNAVAILABLE");
+    let q = "{ sessionFailures { username title system core whilePlaying reason message exitCode signal lastLines } }";
+    assert_eq!(
+        h.ok(q, json!({})).await["sessionFailures"],
+        json!([{
+            "username": "admin", "title": "Test Game", "system": "nes", "core": null,
+            "whilePlaying": false, "reason": "refused",
+            "message": "no core installed for Nintendo Entertainment System",
+            "exitCode": null, "signal": null, "lastLines": [],
+        }])
     );
 }
 
