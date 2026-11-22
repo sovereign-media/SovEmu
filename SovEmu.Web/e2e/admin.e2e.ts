@@ -139,6 +139,53 @@ test("the Activity page shows who did what, filters it, and exports it as CSV", 
   expect(text).toContain("Added an account,activity-kid,viewer");
 });
 
+test("the Devices page lists every sign-in and signs one out; a user's page lists theirs", async ({ page }) => {
+  await page.goto("/admin/devices/");
+  // A second account, signed in as an app would (the password grant), through the API.
+  const ok = await page.evaluate(async () => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("oidc.user:"));
+    const token = key ? JSON.parse(localStorage.getItem(key) ?? "{}").access_token : "";
+    const added = await fetch("/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        query: 'mutation { addUser(input: {username: "devkid", password: "password123"}) { id } }',
+      }),
+    });
+    const id = (await added.json()).data?.addUser?.id;
+    const signedIn = await fetch("/oauth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "sovemu-native",
+        username: "devkid",
+        password: "password123",
+        scope: "openid profile offline_access",
+      }),
+    });
+    return id != null && signedIn.ok;
+  });
+  expect(ok).toBe(true);
+  await page.reload();
+  await expect(page.getByText(/^Web browser · admin/).first()).toBeVisible();
+  const kid = page.getByRole("listitem").filter({ hasText: "App · devkid" });
+  await expect(kid).toContainText("last used just now");
+
+  // Their own page lists the same sign-in.
+  await kid.getByRole("link", { name: "devkid" }).click();
+  await expect(page.getByRole("heading", { name: "devkid" })).toBeVisible();
+  await expect(page.getByText("Nothing yet")).toBeVisible();
+  await page.getByRole("link", { name: "All users" }).click();
+  await expect(page).toHaveURL(/\/admin\/users\/$/);
+
+  // Signed out from the Devices page: gone, while the admin's own browser stays signed in.
+  await page.goto("/admin/devices/");
+  await page.getByRole("button", { name: "Sign out App of devkid" }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "App · devkid" })).toHaveCount(0);
+  await expect(page.getByText(/^Web browser · admin/).first()).toBeVisible();
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

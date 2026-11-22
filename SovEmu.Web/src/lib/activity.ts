@@ -13,6 +13,7 @@ export const KIND_LABELS: Record<ActivityEntry["kind"], string> = {
   PASSWORD_SET: "Set a password",
   USER_REMOVED: "Removed an account",
   SIGNED_OUT_EVERYWHERE: "Signed an account out everywhere",
+  SIGN_IN_ENDED: "Signed a device out",
   SESSION_STOPPED: "Stopped a game",
   SETTINGS_CHANGED: "Changed settings",
   JOB_RUN: "Ran a job",

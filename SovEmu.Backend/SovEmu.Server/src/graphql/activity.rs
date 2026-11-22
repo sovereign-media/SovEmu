@@ -48,6 +48,8 @@ pub(super) enum ActivityKind {
     PasswordSet,
     UserRemoved,
     SignedOutEverywhere,
+    /// One browser or app signed out.
+    SignInEnded,
     SessionStopped,
     SettingsChanged,
     JobRun,
@@ -67,6 +69,7 @@ impl From<Kind> for ActivityKind {
             Kind::PasswordSet => Self::PasswordSet,
             Kind::UserRemoved => Self::UserRemoved,
             Kind::SignedOutEverywhere => Self::SignedOutEverywhere,
+            Kind::SignInEnded => Self::SignInEnded,
             Kind::SessionStopped => Self::SessionStopped,
             Kind::SettingsChanged => Self::SettingsChanged,
             Kind::JobRun => Self::JobRun,

@@ -32,6 +32,7 @@ import {
   DecorationsQuery,
   DeleteCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
+  EndSignInMutation,
   FetchMetadataMutation,
   type GameFields,
   GameQuery,
@@ -69,6 +70,7 @@ import {
   SetUserPasswordMutation,
   SetUserRoleMutation,
   SetupMutation,
+  SignInsQuery,
   SignOutEverywhereMutation,
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
@@ -82,6 +84,7 @@ import {
   SystemsQuery,
   TelemetryQuery,
   TestConnectionMutation,
+  UserDetailsQuery,
   UsersQuery,
   ViewerQuery as ViewerDocument,
 } from "./queries";
@@ -102,6 +105,8 @@ export interface ActivityFilter {
   userId: number | null;
   category: ActivityCategory | null;
 }
+/** A browser or app signed in as an account. */
+export type SignIn = ResultOf<typeof SignInsQuery>["signIns"][number];
 /** What an account may do. */
 export type Role = Enum<"Role">;
 /** An account, as the admin's Users page lists it. */
@@ -186,6 +191,12 @@ export const api = {
   viewer: async () => (await request(ViewerDocument)).viewer,
   /** Admins: every account, by name. */
   users: async () => (await request(UsersQuery)).users,
+  /** Admin: every browser and app signed in, across accounts. */
+  signIns: async () => (await request(SignInsQuery)).signIns,
+  /** Admin: one account, with its sign-ins, what it has played and its saves. */
+  userDetails: async (id: number) => (await request(UserDetailsQuery, { id })).user,
+  /** Admin: signs one browser or app out. */
+  endSignIn: (id: string) => request(EndSignInMutation, { id }),
   /** Admin: adds an account. */
   addUser: (username: string, password: string, role: Role) =>
     request(AddUserMutation, { input: { username, password, role } }),

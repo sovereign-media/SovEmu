@@ -14,6 +14,7 @@ export const SCREEN_PATHS = [
   "/admin/users/",
   "/admin/settings/",
   "/admin/controllers/",
+  "/admin/devices/",
   "/admin/client-errors/",
   "/admin/resources/",
   "/admin/sessions/",

@@ -27,6 +27,7 @@ import {
 } from "../ui/primitives";
 import { useToast } from "../ui/toast";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
+import UserDetails from "./UserDetails";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "VIEWER", label: "Viewer" },
@@ -172,7 +173,9 @@ function UsersList() {
                     {initials(u.username)}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-medium">
-                    {u.username}
+                    <a className="hover:underline" href={`/admin/users/?id=${u.id}`}>
+                      {u.username}
+                    </a>
                     {mine && <span className="ml-2 text-xs text-muted">(you)</span>}
                   </span>
                   {u.declared && (
@@ -275,9 +278,11 @@ function UsersList() {
 }
 
 export default function UsersAdmin() {
+  // One account's page when the address names one (`?id=`), else them all.
+  const id = Number(new URLSearchParams(location.search).get("id")) || null;
   return (
     <AdminPage width="max-w-3xl" description="Everyone with an account here. Admins also run the server; viewers play.">
-      <UsersList />
+      {id ? <UserDetails id={id} /> : <UsersList />}
     </AdminPage>
   );
 }

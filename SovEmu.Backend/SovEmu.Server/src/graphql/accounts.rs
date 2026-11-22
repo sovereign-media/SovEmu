@@ -41,6 +41,74 @@ impl From<User> for Account {
     }
 }
 
+/// Which client holds a sign-in.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SignInClient {
+    /// The web client, in a browser.
+    Web,
+    /// The Android or iOS app (a phone, a tablet, a TV).
+    App,
+    Other,
+}
+
+/// A browser or app signed in as an account: it holds a refresh token, and can be signed out
+/// on its own (`endSignIn`).
+#[derive(SimpleObject)]
+pub(super) struct SignInNode {
+    pub(super) id: ID,
+    pub(super) user_id: Option<i64>,
+    /// The account's name; null if it has gone.
+    pub(super) username: Option<String>,
+    pub(super) client: SignInClient,
+    /// When it signed in, as a Unix time in seconds.
+    pub(super) signed_in_at: f64,
+    /// When it last renewed its access: about when it was last in use (Unix seconds).
+    pub(super) last_used_at: f64,
+    /// When it lapses unless used again (Unix seconds); null for none.
+    pub(super) expires_at: Option<f64>,
+}
+
+fn unix(t: std::time::SystemTime) -> f64 {
+    t.duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+impl SignInNode {
+    fn new(s: sovemu_identity::SignIn, username: Option<String>) -> Self {
+        let client = match s.client_id.as_str() {
+            sovemu_identity::WEB_CLIENT => SignInClient::Web,
+            sovemu_identity::NATIVE_CLIENT => SignInClient::App,
+            _ => SignInClient::Other,
+        };
+        Self {
+            id: ID(s.id),
+            user_id: s.user_id,
+            username,
+            client,
+            signed_in_at: unix(s.signed_in_at),
+            last_used_at: unix(s.last_used_at),
+            expires_at: s.expires_at.map(unix),
+        }
+    }
+}
+
+/// One account, as the admin's user page shows it.
+#[derive(SimpleObject)]
+pub(super) struct UserDetails {
+    pub(super) user: Account,
+    /// When it was created (UTC, `YYYY-MM-DD HH:MM:SS`).
+    pub(super) joined_at: Option<String>,
+    /// Every browser and app signed in as it, the most recently used first.
+    pub(super) sign_ins: Vec<SignInNode>,
+    /// Different games it has started, and starts in all.
+    pub(super) games_played: i32,
+    pub(super) starts: i32,
+    /// Its latest game start (UTC, `YYYY-MM-DD HH:MM:SS`); null if none yet.
+    pub(super) last_played_at: Option<String>,
+    /// Its battery saves and states on disk: bytes (a Float: it can pass 2 GiB) and files.
+    pub(super) save_bytes: f64,
+    pub(super) save_files: i32,
+}
+
 /// Where and how to sign in at the address this request reached. Apps ask it first, signed out,
 /// and use these URLs as given (they hard-code nothing but `/graphql`).
 #[derive(SimpleObject)]
@@ -160,6 +228,42 @@ impl AccountsQuery {
         Ok(ClientConfig { ice_servers: Json(state(ctx).config.ice_servers.clone()) })
     }
 
+    /// Admins: one account, with its sign-ins, what it has played and its saves.
+    async fn user(&self, ctx: &Context<'_>, id: i64) -> Result<UserDetails> {
+        admin(ctx).await?;
+        let d = crate::user_details::details(state(ctx), id).await.api()?;
+        let name = d.user.username.clone();
+        Ok(UserDetails {
+            sign_ins: d
+                .sign_ins
+                .into_iter()
+                .map(|s| SignInNode::new(s, Some(name.clone())))
+                .collect(),
+            user: d.user.into(),
+            joined_at: d.joined_at,
+            games_played: d.played.games as i32,
+            starts: d.played.starts as i32,
+            last_played_at: d.played.last_played_at,
+            save_bytes: d.saves.0 as f64,
+            save_files: d.saves.1 as i32,
+        })
+    }
+
+    /// Admins: every browser and app signed in, across accounts, the most recently used first.
+    async fn sign_ins(&self, ctx: &Context<'_>) -> Result<Vec<SignInNode>> {
+        admin(ctx).await?;
+        let state = state(ctx);
+        let sign_ins = state.identity.sign_ins(None).await.map_err(|e| gql(e.into()))?;
+        let names = crate::api::usernames(state).await.api()?;
+        Ok(sign_ins
+            .into_iter()
+            .map(|s| {
+                let name = s.user_id.and_then(|id| names.get(&id).cloned());
+                SignInNode::new(s, name)
+            })
+            .collect())
+    }
+
     /// Admins: the accounts.
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<Account>> {
         admin(ctx).await?;
@@ -239,6 +343,28 @@ impl AccountsMutation {
         let me = admin(ctx).await?;
         let user = crate::auth::remove_user(state(ctx), &me, user_id).await.api()?;
         record(ctx, &me, Entry::new(Kind::UserRemoved).about(user.username));
+        Ok(true)
+    }
+
+    /// Admins: signs one browser or app out (`id` from `signIns` or `user`); it must sign in
+    /// again. The account's other sign-ins stand.
+    async fn end_sign_in(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
+        let me = admin(ctx).await?;
+        let state = state(ctx);
+        // Whose it was, for the log: the sign-in goes with the ending.
+        let whose = state.identity.sign_ins(None).await.ok().and_then(|all| {
+            all.into_iter().find(|s| s.id == id.as_str()).map(|s| (s.user_id, s.client_id))
+        });
+        state.identity.end_sign_in(&me, &id).await.map_err(|e| gql(e.into()))?;
+        let (user_id, client) = whose.unwrap_or((None, String::new()));
+        let name = match user_id {
+            Some(uid) => state.identity.user(uid).await.ok().flatten().map(|u| u.username),
+            None => None,
+        };
+        let entry = Entry::new(Kind::SignInEnded)
+            .about(name.unwrap_or_else(|| "a deleted account".to_owned()))
+            .detail(client);
+        record(ctx, &me, entry);
         Ok(true)
     }
 

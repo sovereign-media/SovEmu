@@ -31,6 +31,22 @@ use sqlx::SqlitePool;
 
 pub use accounts::{Credentials, NewUser, Role, User};
 pub use error::{Error, Result};
+
+/// A live sign-in: a browser's web client or an app holding a refresh token for an account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignIn {
+    /// Its refresh family: what [`Identity::end_sign_in`] takes.
+    pub id: String,
+    /// The account; none for a sign-in whose subject is not one (none are issued so).
+    pub user_id: Option<i64>,
+    /// [`WEB_CLIENT`] or [`NATIVE_CLIENT`].
+    pub client_id: String,
+    pub signed_in_at: std::time::SystemTime,
+    /// When it last had an access token: about when the client was last in use.
+    pub last_used_at: std::time::SystemTime,
+    /// When it lapses unless used; none for a sign-in with no limit.
+    pub expires_at: Option<std::time::SystemTime>,
+}
 pub use provider::{NATIVE_CLIENT, WEB_CLIENT};
 pub use store::SqliteStorage;
 pub use throttle::{LOCKOUT_WINDOW, LoginThrottle, MAX_FAILURES, MAX_FAILURES_PER_IP};
@@ -270,6 +286,11 @@ impl Identity {
         accounts::user_by_id(&self.inner.db, id).await
     }
 
+    /// When an account was created (UTC, `YYYY-MM-DD HH:MM:SS`), if there is one.
+    pub async fn joined(&self, id: i64) -> Result<Option<String>> {
+        accounts::joined(&self.inner.db, id).await
+    }
+
     /// Every account, by name.
     pub async fn users(&self) -> Result<Vec<User>> {
         accounts::list_users(&self.inner.db).await
@@ -370,15 +391,61 @@ impl Identity {
     /// Ends every sign-in of a user: browsers at the server, and every app's tokens.
     pub async fn sign_out_everywhere(&self, user_id: i64) -> Result<()> {
         sessions::end_all(&self.inner.db, user_id).await?;
-        let store = self.inner.provider.issuers[0].server.store();
-        // The barrier must outlive every token the sign-ins could still hold: a sign-in with no
-        // lifetime lives until revoked, so its barrier does too (in effect).
+        self.store()
+            .revoke_subject(&user_id.to_string(), self.revocation_window())
+            .await
+            .map_err(Error::internal)?;
+        Ok(())
+    }
+
+    /// Every live sign-in, or one account's, the most recently used first.
+    pub async fn sign_ins(&self, user_id: Option<i64>) -> Result<Vec<SignIn>> {
+        let subject = user_id.map(|id| id.to_string());
+        let stored = self.store().sign_ins(subject.as_deref()).await.map_err(Error::internal)?;
+        Ok(stored
+            .into_iter()
+            .map(|s| SignIn {
+                id: s.family_id,
+                user_id: s.subject.and_then(|s| s.parse().ok()),
+                client_id: s.client_id,
+                signed_in_at: s.signed_in_at,
+                last_used_at: s.last_used_at,
+                expires_at: s.expires_at,
+            })
+            .collect())
+    }
+
+    /// An admin ends one sign-in (`id`, from [`Identity::sign_ins`]) through oauth-as's family
+    /// revocation: that browser or app must sign in again. Its account's other sign-ins stand.
+    pub async fn end_sign_in(&self, admin: &User, id: &str) -> Result<()> {
+        if !admin.is_admin() {
+            return Err(Error::Forbidden("admins only".into()));
+        }
+        if id.is_empty()
+            || !self
+                .store()
+                .end_sign_in(id, self.revocation_window())
+                .await
+                .map_err(Error::internal)?
+        {
+            return Err(Error::NotFound("no such sign-in".into()));
+        }
+        tracing::info!(by = %admin.username, sign_in = %id, "ended a sign-in");
+        Ok(())
+    }
+
+    fn store(&self) -> &store::SqliteStorage {
+        self.inner.provider.issuers[0].server.store()
+    }
+
+    /// How long a revocation's barrier stands, from now: past every token the revoked sign-ins
+    /// could still hold. A sign-in with no lifetime lives until revoked, so its barrier does too
+    /// (in effect).
+    fn revocation_window(&self) -> oauth_as::store::RevocationWindow {
         let now = std::time::SystemTime::now();
         let l = self.inner.lifetimes;
         let longest = l.sign_in.unwrap_or(Duration::from_secs(100 * 365 * 86_400)).max(l.access);
-        let window = oauth_as::store::RevocationWindow { recorded_at: now, until: now + longest };
-        store.revoke_subject(&user_id.to_string(), window).await.map_err(Error::internal)?;
-        Ok(())
+        oauth_as::store::RevocationWindow { recorded_at: now, until: now + longest }
     }
 
     /// Upkeep: expired browser sign-ins, codes, grants and tokens deleted. How many records.

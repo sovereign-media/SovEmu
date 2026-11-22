@@ -16,6 +16,7 @@ import {
   Microchip,
   MonitorCog,
   MonitorPlay,
+  MonitorSmartphone,
   Network,
   Package,
   Palette,
@@ -72,6 +73,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Controllers",
         title: "The default button mapping for each controller model",
         icon: Gamepad,
+      },
+      {
+        href: "/admin/devices/",
+        label: "Devices",
+        title: "Every browser and app signed in, and signing one out",
+        icon: MonitorSmartphone,
       },
       {
         href: "/admin/client-errors/",

@@ -43,6 +43,7 @@ mod storage;
 mod streaming;
 mod structured;
 mod telemetry;
+mod user_details;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;

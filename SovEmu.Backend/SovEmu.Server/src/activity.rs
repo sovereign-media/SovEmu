@@ -25,6 +25,8 @@ pub(crate) enum Kind {
     PasswordSet,
     UserRemoved,
     SignedOutEverywhere,
+    /// One browser or app signed out.
+    SignInEnded,
     SessionStopped,
     SettingsChanged,
     JobRun,
@@ -51,7 +53,7 @@ impl Category {
 }
 
 impl Kind {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::SignedIn,
         Self::SignInFailed,
         Self::SignInLockedOut,
@@ -62,6 +64,7 @@ impl Kind {
         Self::PasswordSet,
         Self::UserRemoved,
         Self::SignedOutEverywhere,
+        Self::SignInEnded,
         Self::SessionStopped,
         Self::SettingsChanged,
         Self::JobRun,
@@ -81,6 +84,7 @@ impl Kind {
             Self::PasswordSet => "password_set",
             Self::UserRemoved => "user_removed",
             Self::SignedOutEverywhere => "signed_out_everywhere",
+            Self::SignInEnded => "sign_in_ended",
             Self::SessionStopped => "session_stopped",
             Self::SettingsChanged => "settings_changed",
             Self::JobRun => "job_run",

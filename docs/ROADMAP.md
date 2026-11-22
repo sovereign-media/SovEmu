@@ -56,6 +56,11 @@ held 59.93 fps over 300 frames with no resyncs.
       `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
       changes from their resolvers), kept in `activity` (migration 0023, pruned after
       `SOVEMU_ACTIVITY_HISTORY_DAYS`), filtered by account and kind, paged, and exported as CSV
+- [x] Admins see every browser and app signed in (a live refresh family: its client, when it
+      signed in and was last used, when it lapses) on the Devices page and each account's own
+      page, with what that account has played and its saves, and sign one out through oauth-as's
+      family revocation (`signIns`, `user`, `endSignIn`)
+- [ ] The apps name themselves when they sign in (app, version, device), so a sign-in shows it
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
 - [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per
