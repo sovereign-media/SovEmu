@@ -1,7 +1,7 @@
 // The admin Overview's cards in words. No React, so Vitest can check them.
 
 import type { Overview } from "./api";
-import { formatBytes } from "./storage";
+import { formatBytes } from "./numbers";
 import { ago } from "./time";
 
 /** How long the server has been up: "3 min", "5 h", "2 days". */
