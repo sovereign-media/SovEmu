@@ -2266,6 +2266,10 @@ type ServerResources {
 	read (outside a container, or on macOS).
 	"""
 	usageNote: String
+	"""
+	When this server process started (Unix seconds): its uptime.
+	"""
+	startedAt: Float!
 }
 
 """

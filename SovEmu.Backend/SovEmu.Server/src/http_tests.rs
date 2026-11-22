@@ -963,7 +963,7 @@ async fn admins_see_the_servers_resources() {
     h.sign_up_admin().await;
     let r = h
         .ok(
-            "{ serverResources { host { arch usableCpus } sampleSeconds usage { cpuPercent } usageNote } }",
+            "{ serverResources { host { arch usableCpus } sampleSeconds usage { cpuPercent } usageNote startedAt } }",
             json!({}),
         )
         .await["serverResources"]
@@ -971,6 +971,9 @@ async fn admins_see_the_servers_resources() {
     assert_eq!(r["host"]["arch"], std::env::consts::ARCH);
     assert!(r["host"]["usableCpus"].as_i64() >= Some(1));
     assert_eq!(r["sampleSeconds"], 5);
+    let started = r["startedAt"].as_f64().unwrap();
+    let now = crate::client_events::now_unix() as f64;
+    assert!(started <= now && now - started < 300.0, "started a moment ago: {started} at {now}");
     // The harness starts no sampler.
     assert_eq!((r["usage"].clone(), r["usageNote"].clone()), (Value::Null, json!("Not read yet.")));
     let history = h

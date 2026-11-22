@@ -217,6 +217,16 @@ test("the Logs page shows the server's own lines, filters them, and pauses", asy
   await expect(page.getByRole("button", { name: "Follow" })).toBeVisible();
 });
 
+test("the Overview sums up the server, each card leading to its page", async ({ page }) => {
+  await page.goto("/admin/overview/");
+  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Playing now/ })).toContainText("game ports in use");
+  await expect(page.getByRole("link", { name: /^Library/ })).toContainText("games");
+  await expect(page.getByRole("link", { name: /^Server/ })).toContainText("Up ");
+  await page.getByRole("link", { name: /^Disk/ }).click();
+  await expect(page).toHaveURL(/\/admin\/storage\/$/);
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

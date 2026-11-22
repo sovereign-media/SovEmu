@@ -714,6 +714,8 @@ pub struct AppState {
     pub(crate) failures: Arc<failures::Failures>,
     /// Who did what, and when (`activity`).
     pub(crate) activity: activity::Activity,
+    /// When this server process started (Unix seconds), for its uptime.
+    pub(crate) started_at: f64,
     /// The server's recent log, when `SOVEMU_LOG_BUFFER_LINES` keeps any (`logs`).
     pub(crate) logs: Option<Arc<logs::LogBuffer>>,
 }
@@ -1004,6 +1006,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         failures: session_failures,
         activity,
         logs: logs::installed(),
+        started_at: client_events::now_unix() as f64,
         jobs,
         resources,
     })

@@ -42,6 +42,7 @@ import {
   LoadStateMutation,
   LogsQuery,
   NetworkQuery,
+  OverviewQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
   PlayStatisticsQuery,
@@ -98,6 +99,8 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** What the admin Overview's cards read. */
+export type Overview = ResultOf<typeof OverviewQuery>;
 /** How much a log line says. */
 export type LogLevel = Enum<"LogLevel">;
 /** One line of the server's log. */
@@ -273,6 +276,8 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: everything the Overview's cards show, in one read. */
+  overview: () => request(OverviewQuery),
   /** Admin: the server's recent log, the newest lines the filter keeps. */
   logs: async (filter: LogFilter) => (await request(LogsQuery, filter)).logs,
   /** Admin: what was played over the last week, month or year. */

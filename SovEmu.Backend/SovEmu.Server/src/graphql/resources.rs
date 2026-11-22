@@ -55,6 +55,8 @@ pub(super) struct ServerResources {
     /// Why there is no reading: sampling is off, it has not run yet, or there is no cgroup to
     /// read (outside a container, or on macOS).
     pub(super) usage_note: Option<String>,
+    /// When this server process started (Unix seconds): its uptime.
+    pub(super) started_at: f64,
 }
 
 /// A chart's window.
@@ -150,6 +152,7 @@ impl ResourcesQuery {
                 })
             }),
             usage_note,
+            started_at: state(ctx).started_at,
         })
     }
 

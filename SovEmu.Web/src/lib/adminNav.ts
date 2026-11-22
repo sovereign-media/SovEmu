@@ -11,6 +11,7 @@ import {
   Gauge,
   HardDrive,
   History,
+  LayoutDashboard,
   Library,
   ListChecks,
   type LucideIcon,
@@ -46,6 +47,18 @@ export interface AdminNavGroup {
 }
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    items: [
+      {
+        href: "/admin/overview/",
+        label: "Overview",
+        title: "The server at a glance: who is playing, the library, problems, the disk",
+        icon: LayoutDashboard,
+      },
+    ],
+  },
   {
     id: "library",
     label: "Library",
