@@ -147,10 +147,15 @@ impl Persist {
         Ok(())
     }
 
-    pub(crate) fn load_state(&self, core: &mut Core, slot: u32) -> Result<()> {
+    /// A slot's state, as saved.
+    pub(crate) fn read_state(&self, slot: u32) -> Result<Vec<u8>> {
         let (state, _) = self.slot_paths(slot)?;
-        let bytes = std::fs::read(&state).with_context(|| format!("slot {slot} is empty"))?;
-        core.unserialize(&bytes).context("the core rejected the state")?;
+        std::fs::read(&state).with_context(|| format!("slot {slot} is empty"))
+    }
+
+    /// Puts a state read with [`Persist::read_state`] into the core.
+    pub(crate) fn apply_state(core: &mut Core, slot: u32, bytes: &[u8]) -> Result<()> {
+        core.unserialize(bytes).context("the core rejected the state")?;
         tracing::info!(slot, "loaded state");
         Ok(())
     }
