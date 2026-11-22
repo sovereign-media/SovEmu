@@ -3,11 +3,11 @@
 // the worker's live numbers. Like Sovereign's active streams; read every 2 s. Under them, the
 // games that failed lately (to start, or while playing) with the core's last lines.
 
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, CircleAlert, MonitorPlay, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, CircleAlert, MonitorPlay, Square, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
-import type { ActiveSession, SessionFailure } from "../../lib/api";
-import { q } from "../../lib/data";
+import { type ActiveSession, api, type SessionFailure } from "../../lib/api";
+import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { audioLabel, fallbacksLabel, renderingLabel, runAheadLabel, streamLabel } from "../../lib/pipeline";
 import {
@@ -20,7 +20,8 @@ import {
 } from "../../lib/sessions";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
-import { panel, Tooltip } from "../ui/primitives";
+import { Button } from "../ui/button";
+import { Confirm, panel, Tooltip } from "../ui/primitives";
 
 const pill = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap";
 
@@ -167,6 +168,12 @@ function Sessions() {
   const sessions = useQuery({ ...q.activeSessions(), refetchInterval: 2000 });
   const viewer = useQuery(q.viewer());
   const [open, setOpen] = useState<string | null>(null);
+  // The session the admin asked to stop, waiting for their confirmation.
+  const [stopping, setStopping] = useState<{ id: string; player: string; title: string } | null>(null);
+  const stop = useMutation({
+    mutationFn: api.stopSession,
+    onSettled: () => invalidate(["admin", "sessions"]),
+  });
   useEffect(() => {
     if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
   }, [viewer.data]);
@@ -196,7 +203,8 @@ function Sessions() {
                   <th className="py-2 pr-4 font-semibold">Stream</th>
                   <th className="hidden py-2 pr-4 font-semibold md:table-cell">Rendering</th>
                   <th className="hidden py-2 pr-4 font-semibold lg:table-cell">Live</th>
-                  <th className="py-2 font-semibold">Started</th>
+                  <th className="py-2 pr-4 font-semibold">Started</th>
+                  <th className="py-2" aria-label="Stop" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
@@ -260,11 +268,23 @@ function Sessions() {
                           <div>{new Date(s.startedAt * 1000).toLocaleTimeString([], { timeStyle: "short" })}</div>
                           <div className="text-xs text-slate-400">{durationLabel(now - s.startedAt)}</div>
                         </td>
+                        <td className="py-3">
+                          <Button
+                            variant="outline"
+                            aria-label={`Stop ${s.title} for ${s.username ?? "this player"}`}
+                            disabled={stop.isPending && stop.variables === s.id}
+                            onClick={() =>
+                              setStopping({ id: s.id, player: s.username ?? "this player", title: s.title })
+                            }
+                          >
+                            <Square /> Stop
+                          </Button>
+                        </td>
                       </tr>
                       {expanded && (
                         <tr>
                           <td />
-                          <td colSpan={6} className="pb-4">
+                          <td colSpan={7} className="pb-4">
                             <Details s={s} />
                           </td>
                         </tr>
@@ -276,8 +296,20 @@ function Sessions() {
             </table>
           </div>
         )}
+        {stop.error && <p className="mt-3 text-sm text-amber-300">{stop.error.message}</p>}
       </section>
       <Failures />
+      <Confirm
+        open={stopping !== null}
+        onOpenChange={(open) => !open && setStopping(null)}
+        title={stopping ? `Stop ${stopping.title} for ${stopping.player}?` : ""}
+        description="Their progress is saved first, as when they quit: the battery save, and an auto save they can load next time."
+        action="Stop the game"
+        onAction={() => {
+          if (stopping) stop.mutate(stopping.id);
+          setStopping(null);
+        }}
+      />
     </main>
   );
 }

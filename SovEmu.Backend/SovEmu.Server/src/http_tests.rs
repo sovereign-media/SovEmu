@@ -2137,6 +2137,25 @@ async fn admins_see_the_games_that_failed_with_their_last_lines() {
 }
 
 #[tokio::test]
+async fn an_admin_stops_a_players_session() {
+    // Through `Workers::stop`, as a player's own stop: the worker writes its saves before it is
+    // ever killed (tested in sovemu-sessions).
+    let mut h = Harness::new("admin-stop", true).await;
+    h.sign_up_admin().await;
+    let game = h.games("nes").await[0]["id"].as_i64().unwrap();
+    h.switch_to_new_viewer("kid").await;
+    let sid =
+        h.ok(START, json!({"game": game})).await["startSession"]["id"].as_str().unwrap().to_owned();
+
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    let stop = "mutation($s: ID!) { stopSession(id: $s) }";
+    h.ok(stop, json!({"s": sid})).await;
+    assert!(h.state.workers.get(&sid).is_none(), "ended");
+    assert_eq!(h.err(stop, json!({"s": sid})).await.0, "NOT_FOUND", "already ended");
+}
+
+#[tokio::test]
 async fn a_hidden_systems_games_cannot_be_reached_by_id() {
     let mut h = Harness::new_with("hidden-by-id", false, Vec::new()).await;
     h.sign_up_admin().await;

@@ -310,9 +310,12 @@ fn streams_video_and_audio_and_acknowledges_input() {
             normal_ratio = frames_per_shown(&acks, &acks_video, 0, acks.len());
             ff_start = Some((Instant::now(), acks.len()));
         }
+        // Enough acks to measure past those first ones, however slowly they arrive (a 100 ms
+        // heartbeat: a loaded CI runner had too few after a second, and measured nothing).
         if let Some((at, from)) = ff_start
             && pause_start.is_none()
             && at.elapsed() >= ff_window
+            && acks.len() >= from + 4 + FF_ACKS
         {
             // The first acks after the hotkey can still be from before it took hold.
             ff_ratio = frames_per_shown(&acks, &acks_video, from + 4, acks.len());
@@ -488,6 +491,9 @@ fn a_client_without_h264_gets_vp8() {
 
 /// Emulated frames per video frame received, between the acks `from` and `to` (exclusive): how
 /// far the game moved against how many frames were shown meanwhile. 0 if there are too few.
+/// The acks measured fast-forwarding, after the first few.
+const FF_ACKS: usize = 6;
+
 fn frames_per_shown(acks: &[InputAck], video: &[usize], from: usize, to: usize) -> f64 {
     if to < from + 2 || to > acks.len() {
         return 0.0;

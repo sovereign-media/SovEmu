@@ -103,6 +103,16 @@ COPY README.md /README.md
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
+# cargo-nextest, the test runner (SovEmu.Backend/.config/nextest.toml): its released binary, pinned
+# and checked, rather than `cargo install`, which this stage (after the sources) would redo on
+# every commit.
+ARG NEXTEST_VERSION=0.9.152
+ARG NEXTEST_SHA256=d039b43c3e0958441b6ad0a39c8884d018b3d2e8fb9928f209074b1100b5e17a
+RUN curl -sSfL --retry 5 -o /tmp/nextest.tar.gz \
+        "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+    && echo "${NEXTEST_SHA256}  /tmp/nextest.tar.gz" | sha256sum -c - \
+    && tar xzf /tmp/nextest.tar.gz -C /usr/local/cargo/bin \
+    && rm /tmp/nextest.tar.gz
 
 FROM test-base AS test
 # Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
@@ -110,11 +120,11 @@ FROM test-base AS test
 # slow them. Copying from `build` makes BuildKit wait for it before the tests run.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
-    cargo test --workspace --locked --no-run
+    cargo nextest run --workspace --locked --no-run
 COPY --from=build /out/sovemu-server /tmp/release-built
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
-    rm /tmp/release-built && cargo test --workspace --locked
+    rm /tmp/release-built && cargo nextest run --workspace --locked --profile ci
 
 ## ---- coverage: the test suite's line coverage (CI's Coverage job; not part of the image) -------
 # The same tests as `test`, instrumented by cargo-llvm-cov, in a target cache of their own. It
@@ -130,7 +140,7 @@ ENV COVERAGE_IGNORE='SovEmu\.TestCore/'
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-coverage,target=/src/target \
     mkdir -p /out \
-    && cargo llvm-cov --workspace --locked --ignore-run-fail \
+    && cargo llvm-cov nextest --workspace --locked --ignore-run-fail \
          --ignore-filename-regex "$COVERAGE_IGNORE" --lcov --output-path /out/lcov.info \
     && cargo llvm-cov report --ignore-filename-regex "$COVERAGE_IGNORE" --summary-only \
          > /out/summary.txt \

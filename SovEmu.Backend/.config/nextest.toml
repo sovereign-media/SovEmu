@@ -1,0 +1,17 @@
+# cargo-nextest: the test runner (`cargo nextest run --workspace`). It runs every test as a process
+# of its own, all at once across every test binary, so the tests that load a core (one per process,
+# `CORE_LOCK`) no longer take turns. The pre-push hook, the container's `test` stage and coverage
+# run it. Doctests are not run by nextest; the workspace has none (`cargo test --doc` if one is
+# ever added).
+
+[profile.default]
+# A test still running after 60 s is named; one still running after 3 minutes is stopped and
+# fails, rather than hanging the push or the build.
+slow-timeout = { period = "60s", terminate-after = 3 }
+# Every failure in one run, not only the first.
+fail-fast = false
+
+# The container's `test` stage (`--profile ci`): no colour codes in the build log, and the slow
+# tests named at the end.
+[profile.ci]
+final-status-level = "slow"

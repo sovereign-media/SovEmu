@@ -2,7 +2,7 @@
 # Checks what a push changes before it leaves the machine, so CI never sees a commit that fails
 # formatting, clippy or the tests on the developer's own platform:
 #
-#   SovEmu.Backend/  cargo fmt --check, clippy -D warnings, cargo test --workspace
+#   SovEmu.Backend/  cargo fmt --check, clippy -D warnings, cargo nextest run --workspace
 #   SovEmu.Web/      npm run schema:check, npm run lint, npm test, npm run build
 #                    (also when the server's schema.graphql changes)
 #
@@ -91,7 +91,13 @@ for commit in $commits; do
     b="$dir/SovEmu.Backend"
     step "$commit" "$b" "cargo fmt" cargo fmt --all --check
     step "$commit" "$b" "clippy" cargo clippy --workspace --all-targets --quiet -- -D warnings
-    step "$commit" "$b" "cargo test" cargo test --workspace --quiet
+    # nextest (SovEmu.Backend/.config/nextest.toml), else plain cargo test, which is slower.
+    if cargo nextest --version >/dev/null 2>&1; then
+      step "$commit" "$b" "tests" cargo nextest run --workspace --status-level fail --final-status-level fail
+    else
+      echo "pre-push: cargo-nextest is missing (cargo install cargo-nextest --locked); running cargo test" >&2
+      step "$commit" "$b" "cargo test" cargo test --workspace --quiet
+    fi
   fi
   if $web; then
     dir=$(checkout_for "$commit" SovEmu.Web)
