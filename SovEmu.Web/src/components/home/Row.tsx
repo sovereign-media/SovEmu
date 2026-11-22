@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { formatAgo, type Game, type RecentGame, type SystemSummary } from "../../lib/api";
 import { cardArt, nextScroll } from "../../lib/home";
+import { systemPhoto } from "../../lib/systemPhotos";
 import { systemBadge } from "../../lib/systems";
 import { cn } from "../ui/cn";
 
@@ -118,6 +119,9 @@ export function GameCard({
   );
 }
 
+/** The short name is the card's graphic: as large as leaves it readable beside the photo. */
+const shortNameSize = (short: string) => (short.length <= 2 ? 78 : short.length === 3 ? 68 : 54);
+
 export function SystemCard({
   system: s,
   row,
@@ -132,6 +136,7 @@ export function SystemCard({
   onOpen: () => void;
 }) {
   const badge = systemBadge(s);
+  const photo = systemPhoto(s.id);
   return (
     <button
       type="button"
@@ -142,14 +147,27 @@ export function SystemCard({
     >
       <div
         className={cn(
-          "relative grid h-32 place-items-center rounded-2xl border border-white/10 text-4xl font-black tracking-tight text-white shadow-xl transition-all duration-200",
+          "relative h-32 overflow-hidden rounded-2xl border border-edge bg-linear-160 from-[#1b2130] to-[#10131b] shadow-xl transition-all duration-200",
           ring(focused),
         )}
-        style={{ background: `linear-gradient(145deg, ${s.color}, color-mix(in srgb, ${s.color} 35%, black))` }}
       >
-        {s.short}
+        <span
+          className="absolute top-1/2 left-2.5 -translate-y-1/2 leading-none font-black tracking-[-0.06em]"
+          style={{ color: `color-mix(in srgb, ${s.color} 68%, white)`, fontSize: shortNameSize(s.short) }}
+        >
+          {s.short}
+        </span>
+        {photo && (
+          <img
+            src={photo}
+            alt=""
+            decoding="async"
+            className="absolute right-2 bottom-2 h-[76%] w-[58%] object-contain object-right-bottom drop-shadow-[-6px_8px_10px_rgb(0_0_0/0.6)]"
+          />
+        )}
+        <span className="absolute inset-x-0 bottom-0 h-[3px]" style={{ background: s.color }} />
         {badge && (
-          <span className="absolute right-3 bottom-2 rounded bg-black/60 px-2 py-0.5 text-[11px] font-semibold tracking-normal">
+          <span className="absolute top-2 right-2 rounded bg-black/70 px-2 py-0.5 text-[11px] font-semibold text-white">
             {badge}
           </span>
         )}

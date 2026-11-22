@@ -44,11 +44,14 @@ export function Hero({
     return () => clearTimeout(t);
   }, [index, n, hovered, onIndex]);
 
-  const box = "relative w-full overflow-hidden bg-black aspect-square min-h-80 sm:aspect-[16/9] lg:aspect-[16/6.3]";
+  // Beside the dock (md and up) the hero runs under it to the screen's edge, so the dock floats
+  // over one picture instead of sitting in a strip of its own; what the hero holds keeps clear.
+  const box =
+    "relative w-full overflow-hidden aspect-square min-h-80 sm:aspect-[16/9] md:-ml-16 md:w-[calc(100%+4rem)] lg:aspect-[16/6.3]";
   if (!n) {
     return (
       <div className={cn(box, "grid place-items-center bg-[radial-gradient(ellipse_at_top,#1e2a4a,transparent_70%)]")}>
-        <div className="grid justify-items-center gap-3 px-8 text-center text-slate-400">
+        <div className="grid justify-items-center gap-3 px-8 text-center text-slate-400 md:pl-24">
           <Gamepad2 className="size-12 text-slate-600" />
           {empty ? (
             <p>
@@ -69,7 +72,7 @@ export function Hero({
     <section
       aria-roledescription="carousel"
       aria-label="Featured games"
-      className={box}
+      className={cn(box, "bg-black")}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onTouchStart={(e) => (touch.current = e.touches[0].clientX)}
@@ -118,7 +121,7 @@ export function Hero({
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-surface to-transparent" />
 
-      <div className="absolute bottom-0 left-0 max-w-2xl p-6 pr-12 pb-14 sm:p-12 sm:pb-16">
+      <div className="absolute bottom-0 left-0 max-w-2xl p-6 pr-12 pb-14 sm:p-12 sm:pb-16 md:pl-28">
         <span
           className="rounded-md px-2 py-0.5 text-xs font-black text-white"
           style={{ background: color(game.system) }}
@@ -151,7 +154,7 @@ export function Hero({
             type="button"
             onClick={() => go(index - 1)}
             aria-label="Previous game"
-            className="absolute top-1/2 left-3 hidden -translate-y-1/2 cursor-pointer rounded-full bg-black/40 p-2 text-white backdrop-blur-sm transition-colors hover:bg-black/70 sm:block"
+            className="absolute top-1/2 left-3 hidden -translate-y-1/2 md:left-20 cursor-pointer rounded-full bg-black/40 p-2 text-white backdrop-blur-sm transition-colors hover:bg-black/70 sm:block"
           >
             <ChevronLeft className="size-6" />
           </button>
