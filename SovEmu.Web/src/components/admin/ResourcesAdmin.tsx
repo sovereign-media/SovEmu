@@ -4,10 +4,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ChartLine, Cpu, Info } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { ResourceHistory, ResourceRange, ServerResources } from "../../lib/api";
 import { q } from "../../lib/data";
-import { go } from "../../lib/go";
 import {
   formatBytes,
   formatCores,
@@ -18,9 +17,8 @@ import {
   tickLabel,
   timeTicks,
 } from "../../lib/resources";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Progress, panel, Segmented } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "HOUR", label: "Hour" },
@@ -295,10 +293,6 @@ function Chart({
 }
 
 function Resources() {
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
   const [range, setRange] = useState<ResourceRange>("HOUR");
   const resources = useQuery({
     ...q.serverResources(),
@@ -312,7 +306,7 @@ function Resources() {
   const series = (kind: "CPU" | "MEMORY") => history.data?.series.find((s) => s.resource === kind)?.points ?? [];
   const u = r.usage;
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
+    <>
       <Card title="Host" icon={<Cpu />}>
         <Host host={r.host} />
       </Card>
@@ -355,17 +349,14 @@ function Resources() {
           </span>
         </p>
       </Card>
-    </main>
+    </>
   );
 }
 
 export default function ResourcesAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Resources />
-      </div>
-    </Shell>
+    <AdminPage>
+      <Resources />
+    </AdminPage>
   );
 }
