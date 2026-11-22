@@ -164,10 +164,12 @@ pub fn sync(
                     let n = done.fetch_add(1, Ordering::Relaxed) + 1;
                     let b = bytes.load(Ordering::Relaxed);
                     let f = failed.load(Ordering::Relaxed);
+                    // Another thread may have written newer counts since these were read: the
+                    // progress only moves forward (the final counts are written below).
                     set(&|s| {
-                        s.files_done = n;
-                        s.bytes_done = b;
-                        s.failed = f;
+                        s.files_done = s.files_done.max(n);
+                        s.bytes_done = s.bytes_done.max(b);
+                        s.failed = s.failed.max(f);
                     });
                 }
             });
@@ -188,17 +190,16 @@ pub fn sync(
     }
 
     let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (done, bytes, failed) = (done.into_inner(), bytes.into_inner(), failed.into_inner());
     set(&|s| {
         s.running = false;
+        s.files_done = done;
+        s.bytes_done = bytes;
+        s.failed = failed;
         s.removed = removed;
         s.finished_at = Some(now);
     });
-    tracing::info!(
-        copied = done.load(Ordering::Relaxed),
-        failed = failed.load(Ordering::Relaxed),
-        removed,
-        "mirror sync done"
-    );
+    tracing::info!(copied = done, failed, removed, "mirror sync done");
 }
 
 #[cfg(test)]
