@@ -226,6 +226,7 @@ pub(crate) fn metrics() -> &'static Metrics {
 /// the returned value for as long as they should be reported.
 pub(crate) struct Gauges {
     _gauges: Vec<ObservableGauge<u64>>,
+    _resources: Vec<ObservableGauge<f64>>,
 }
 
 pub(crate) fn observe(state: &AppState) -> Gauges {
@@ -248,9 +249,10 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
             .with_callback(move |o| o.observe(capacity, &[]))
             .build(),
     );
+    let resources = resource_gauges(&meter, state);
     if state.config.otel_endpoint.is_none() {
         // Nothing reads the gauges: no need to count the library.
-        return Gauges { _gauges: gauges };
+        return Gauges { _gauges: gauges, _resources: resources };
     }
 
     let library: Arc<Mutex<Library>> = Arc::default();
@@ -286,7 +288,55 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
             })
             .build(),
     );
-    Gauges { _gauges: gauges }
+    Gauges { _gauges: gauges, _resources: resources }
+}
+
+/// The container's CPU and memory, from the resource sampler's latest reading (`resources`):
+/// nothing is observed when the container's counters cannot be read.
+fn resource_gauges(
+    meter: &opentelemetry::metrics::Meter,
+    state: &AppState,
+) -> Vec<ObservableGauge<f64>> {
+    type Pick = fn(&crate::resources::Usage) -> Option<f64>;
+    let gauges: [(&'static str, &'static str, &'static str, Pick); 4] = [
+        (
+            "sovemu.container.cpu.utilization",
+            "1",
+            "CPU used by the container (server and game sessions), as a share of the cores it may use.",
+            |u| u.cpu_percent.map(|p| p / 100.0),
+        ),
+        ("sovemu.container.cpu.limit", "{cpu}", "Cores the container may use.", |u| {
+            Some(u.allowed_cores)
+        }),
+        (
+            "sovemu.container.memory.usage",
+            "By",
+            "Memory used by the container, less page cache it can drop.",
+            |u| Some(u.memory_used as f64),
+        ),
+        (
+            "sovemu.container.memory.limit",
+            "By",
+            "The container's memory limit, or the host's memory when it has none.",
+            |u| Some(u.memory_limit as f64),
+        ),
+    ];
+    gauges
+        .into_iter()
+        .map(|(name, unit, description, pick)| {
+            let monitor = state.resources.clone();
+            meter
+                .f64_observable_gauge(name)
+                .with_unit(unit)
+                .with_description(description)
+                .with_callback(move |o| {
+                    if let Some(v) = monitor.latest().and_then(|r| r.usage).and_then(|u| pick(&u)) {
+                        o.observe(v, &[]);
+                    }
+                })
+                .build()
+        })
+        .collect()
 }
 
 #[derive(Default)]
