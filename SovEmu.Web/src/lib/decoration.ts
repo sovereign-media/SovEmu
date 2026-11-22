@@ -36,3 +36,8 @@ export function windowInsets(d: Decoration): { top: string; left: string; bottom
     right: pct(d.right, d.width),
   };
 }
+
+/** The environment line that frames a system's games with a set (`none`: no frame). */
+export function systemDecorationEnv(system: string, set: string): string {
+  return `SOVEMU_SYSTEMS__${system}__DECORATION=${set}`;
+}

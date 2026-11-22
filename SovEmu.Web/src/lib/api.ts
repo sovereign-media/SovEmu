@@ -4,27 +4,36 @@
 import type { Enum, ResultOf } from "./gql";
 import { onUnload, request } from "./graphql";
 import {
+  AboutQuery,
   ActiveSessionsQuery,
   AddCheatMutation,
+  AdminPatchesQuery,
   AdminStatusQuery as AdminStatusDocument,
+  BiosDirQuery,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
   CheatsQuery as CheatsDocument,
+  ClearCacheMutation,
   ClientConfigQuery,
   CollectionIdsQuery,
   CollectionsQuery as CollectionsDocument,
+  ConfigurationQuery,
   ControllerDefaultsQuery as ControllerDefaultsDocument,
   ControllerLayoutsQuery,
   ControllerMappingsQuery,
+  CoresQuery,
   CreateCollectionMutation,
+  DecorationsQuery,
   DeleteCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
   FetchMetadataMutation,
   type GameFields,
   GameQuery,
+  GpuQuery,
   HomeQuery as HomeDocument,
   JobsQuery,
   LoadStateMutation,
+  NetworkQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
   ResetControllerDefaultMutation,
@@ -52,11 +61,13 @@ import {
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
   StopSessionMutation,
+  StorageQuery,
   SyncLibraryMutation,
   SystemControlsQuery,
   type SystemFields,
   SystemGamesQuery,
   SystemsQuery,
+  TelemetryQuery,
   UsersQuery,
   ViewerQuery as ViewerDocument,
 } from "./queries";
@@ -121,6 +132,16 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type About = ResultOf<typeof AboutQuery>;
+export type TelemetryReport = ResultOf<typeof TelemetryQuery>["telemetry"];
+export type StorageReport = ResultOf<typeof StorageQuery>["storage"];
+export type NetworkReport = ResultOf<typeof NetworkQuery>["network"];
+export type ConfigSetting = ResultOf<typeof ConfigurationQuery>["configuration"][number];
+export type CoreReport = ResultOf<typeof CoresQuery>["cores"][number];
+export type AdminPatch = ResultOf<typeof AdminPatchesQuery>["patches"][number];
+export type DecorationsReport = ResultOf<typeof DecorationsQuery>["decorations"];
+export type GpuStatus = ResultOf<typeof GpuQuery>["gpu"];
+export type GpuDevice = GpuStatus["devices"][number];
 
 /** Slot 0 is the auto save, written whenever a session ends. */
 export const AUTO_SLOT = 0;
@@ -135,6 +156,8 @@ export const api = {
   systems: async () => (await request(SystemsQuery)).systems,
   /** Every system with its BIOS files checked (null for one that uses none). */
   bios: async () => (await request(BiosQuery)).systems,
+  /** Admins: the server's BIOS folder. */
+  biosDir: async () => (await request(BiosDirQuery)).biosDir,
   /** A system and its games, or null for an unknown or hidden system. */
   system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
   game: async (id: number) => (await request(GameQuery, { id })).game,
@@ -160,6 +183,26 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: the server's build, the services it uses and what the image ships. */
+  about: () => request(AboutQuery),
+  /** Admin: OpenTelemetry export, and how each signal's last export went. */
+  telemetry: async () => (await request(TelemetryQuery)).telemetry,
+  /** Admin: where the data folder's space goes (`refresh`: measure now). */
+  storage: async (refresh = false) => (await request(StorageQuery, { refresh })).storage,
+  /** Admin: deletes the game cache's copies, but those being played; the bytes freed. */
+  clearCache: async () => (await request(ClearCacheMutation)).clearCache,
+  /** Admin: how browsers and apps reach the server and its game streams. */
+  network: async () => (await request(NetworkQuery)).network,
+  /** Admin: the server's effective configuration, credentials masked. */
+  configuration: async () => (await request(ConfigurationQuery)).configuration,
+  /** Admin: every core with its licence, and the libretro release they come from. */
+  cores: () => request(CoresQuery),
+  /** Admin: every soft patch in the library, with its game and who chose it. */
+  adminPatches: async () => (await request(AdminPatchesQuery)).patches,
+  /** Admin: the decoration sets, and the set each system's games are framed with. */
+  decorations: async () => (await request(DecorationsQuery)).decorations,
+  /** Admin: where 3D systems render, and every device the startup probe tried. */
+  gpu: async () => (await request(GpuQuery)).gpu,
   activeSessions: async () => (await request(ActiveSessionsQuery)).activeSessions,
   runJob: async (job: JobName) => (await request(RunJobMutation, { job })).runJob,
   /** Admin: the host, and the container's latest CPU and memory use. */

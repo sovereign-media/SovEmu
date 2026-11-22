@@ -2,12 +2,22 @@
 // between groups. One list drives the menu, the page headings and the document titles, so a new
 // page is one entry here.
 import {
+  Activity,
+  FileDiff,
+  Frame,
   Gamepad,
   Gauge,
+  HardDrive,
   Library,
   ListChecks,
   type LucideIcon,
+  Microchip,
+  MonitorCog,
   MonitorPlay,
+  Network,
+  Package,
+  ScrollText,
+  Settings2,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
@@ -39,6 +49,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         title: "Scanning, the mirror or cache, and game information",
         icon: Library,
       },
+      {
+        href: "/admin/patches/",
+        label: "Patches",
+        title: "The soft patches found beside games, and which apply by default",
+        icon: FileDiff,
+      },
     ],
   },
   {
@@ -64,6 +80,30 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         title: "Each system's core and its options",
         icon: SlidersHorizontal,
       },
+      {
+        href: "/admin/cores/",
+        label: "Cores",
+        title: "The emulators installed: versions, systems and licences",
+        icon: Package,
+      },
+      {
+        href: "/admin/rendering/",
+        label: "Rendering",
+        title: "Where 3D systems render: the GPU, or software",
+        icon: MonitorCog,
+      },
+      {
+        href: "/admin/bios/",
+        label: "BIOS",
+        title: "The BIOS files each system needs, where they go, and their MD5s",
+        icon: Microchip,
+      },
+      {
+        href: "/admin/decorations/",
+        label: "Decorations",
+        title: "The bezel sets found, and which frames each system's games",
+        icon: Frame,
+      },
     ],
   },
   {
@@ -87,6 +127,36 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Jobs",
         title: "Scans, syncs, lookups and upkeep: when each runs and how it last went",
         icon: ListChecks,
+      },
+      {
+        href: "/admin/configuration/",
+        label: "Configuration",
+        title: "Every setting the server runs with, and where each came from",
+        icon: Settings2,
+      },
+      {
+        href: "/admin/network/",
+        label: "Network",
+        title: "How browsers and apps reach the server and its game streams",
+        icon: Network,
+      },
+      {
+        href: "/admin/storage/",
+        label: "Storage",
+        title: "Where the data folder's space goes, and clearing the game cache",
+        icon: HardDrive,
+      },
+      {
+        href: "/admin/telemetry/",
+        label: "Telemetry",
+        title: "Whether traces and metrics are exported, and how the last export went",
+        icon: Activity,
+      },
+      {
+        href: "/admin/about/",
+        label: "About",
+        title: "This build, and the software and services SovEmu is made with",
+        icon: ScrollText,
       },
     ],
   },

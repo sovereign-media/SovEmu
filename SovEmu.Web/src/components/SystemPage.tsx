@@ -12,6 +12,7 @@ import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } 
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
+import { biosHref } from "../lib/bios";
 import { q } from "../lib/data";
 import {
   activeFilters,
@@ -156,6 +157,7 @@ function SortChip({ sort, onSort }: { sort: GameSort; onSort: (s: GameSort) => v
 
 function Games() {
   const systemId = new URLSearchParams(location.search).get("id") ?? "";
+  const isAdmin = !!useQuery(q.viewer()).data?.user?.isAdmin;
   const [system, setSystem] = useState<SystemSummary | null>(null);
   const [games, setGames] = useState<Game[]>([]);
   const [query, setQuery] = useState("");
@@ -356,7 +358,7 @@ function Games() {
             </span>
             {system.biosMissing && (
               <a
-                href={`/bios/?id=${encodeURIComponent(system.id)}`}
+                href={biosHref(isAdmin, system.id)}
                 className="flex items-center gap-1.5 self-center rounded-full bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/30 [&_svg]:size-3.5"
               >
                 <Microchip /> BIOS missing: games will not start

@@ -6,8 +6,9 @@
 # To move to a newer stable release: change the version and the hash (sha256sum of
 # RetroArch_cores.7z from https://buildbot.libretro.com/stable/<version>/linux/x86_64/), rebuild
 # the image (it runs `sovemu-worker probe` over every core, so one that cannot load fails the
-# build), and bump FBNEO_COMMIT in SovEmu.Server/src/metadata/fbneo.rs to the FBNeo in the
-# release (its probe version ends in the commit).
+# build), bump FBNEO_COMMIT in SovEmu.Library/src/info/fbneo.rs to the FBNeo in the release
+# (its probe version ends in the commit), and LIBRETRO_RELEASE in SovEmu.Library/src/cores.rs.
+# A new core also needs its licence in that file's table (a test checks both against this list).
 #
 # Lines:
 #   release <version> <sha256 of RetroArch_cores.7z>
@@ -16,8 +17,9 @@
 #                                                <cores>/system/<dest> (the worker overlays it
 #                                                on the BIOS folder)
 #
-# Licences: fceumm, gambatte, mgba and pcsx_rearmed are GPL/MPL; snes9x, genesis_plus_gx and
-# fbneo are non-commercial. SovEmu is non-commercial, so all are usable (see docs/ARCHITECTURE.md).
+# Licences (SovEmu.Library/src/cores.rs, shown on the admin Cores page): snes9x,
+# genesis_plus_gx and fbneo are non-commercial, the rest GPL or MPL. SovEmu is non-commercial,
+# so all are usable (see docs/ARCHITECTURE.md).
 
 release 1.22.2 4b7ed8dc97d4bf035fce182c64b5658c7662e2e9e5d42129538afbd4b6096307
 

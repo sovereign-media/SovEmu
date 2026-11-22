@@ -44,11 +44,53 @@ pub struct CoreInfo {
 #[derive(Debug, Default)]
 pub struct CoreInfoCache(Mutex<HashMap<PathBuf, Arc<CoreInfo>>>);
 
+/// One core in the image's build-time probe (`<cores>/manifest.json`, `sovemu-worker probe`).
+#[derive(Debug, Deserialize)]
+struct ManifestEntry {
+    path: PathBuf,
+    #[serde(flatten)]
+    info: CoreInfo,
+}
+
 impl CoreInfoCache {
+    /// Starts from the image's build-time probe of every core it ships
+    /// (`<cores_dir>/manifest.json`), so no core is probed again at run time; empty without
+    /// one (a local build), when cores are probed as they are first asked about.
+    pub fn from_manifest(cores_dir: &Path) -> Self {
+        let path = cores_dir.join("manifest.json");
+        let Ok(bytes) = std::fs::read(&path) else { return Self::default() };
+        match serde_json::from_slice::<Vec<ManifestEntry>>(&bytes) {
+            Ok(entries) => {
+                let known = entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        // Keyed as `find_core` names them, wherever the probe ran.
+                        let file = e.path.file_name()?;
+                        Some((cores_dir.join(file), Arc::new(e.info)))
+                    })
+                    .collect::<HashMap<_, _>>();
+                tracing::info!(cores = known.len(), path = %path.display(), "core manifest read");
+                Self(Mutex::new(known))
+            }
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "core manifest unreadable");
+                Self::default()
+            }
+        }
+    }
+
     /// What `core` declares, probing it in a worker the first time.
     pub async fn get(&self, worker: &Path, core: &Path) -> ApiResult<Arc<CoreInfo>> {
-        if let Some(info) = self.0.lock().unwrap_or_else(|e| e.into_inner()).get(core) {
-            return Ok(info.clone());
+        let known = self.0.lock().unwrap_or_else(|e| e.into_inner()).get(core).cloned();
+        if let Some(info) = known {
+            return match &info.error {
+                // The image's probe could not load it.
+                Some(e) => Err(ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("the core did not load: {e}"),
+                )),
+                None => Ok(info),
+            };
         }
         let mut command = tokio::process::Command::new(worker);
         command
@@ -463,6 +505,34 @@ pub(crate) async fn put_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_image_manifest_answers_without_probing() {
+        let dir = std::env::temp_dir().join(format!("sovemu-manifest-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // As the image's probe wrote it, somewhere else.
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"[{"path":"/opt/sovemu/cores/good_libretro.so","name":"Good","version":"1.0",
+                 "valid_extensions":[],"need_fullpath":false,"supports_no_game":false,
+                 "variables":[],"categories":[]},
+                {"path":"/opt/sovemu/cores/bad_libretro.so","error":"missing libGL",
+                 "valid_extensions":[],"need_fullpath":false,"supports_no_game":false,
+                 "variables":[],"categories":[]}]"#,
+        )
+        .unwrap();
+        let cache = CoreInfoCache::from_manifest(&dir);
+        // A worker that does not exist: the answers must come from the manifest.
+        let worker = Path::new("/nonexistent/sovemu-worker");
+        let good = cache.get(worker, &dir.join("good_libretro.so")).await.unwrap();
+        assert_eq!((good.name.as_deref(), good.version.as_deref()), (Some("Good"), Some("1.0")));
+        let bad = cache.get(worker, &dir.join("bad_libretro.so")).await.unwrap_err();
+        assert!(bad.message.contains("missing libGL"), "{}", bad.message);
+        assert!(
+            CoreInfoCache::from_manifest(Path::new("/nonexistent")).0.lock().unwrap().is_empty()
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     fn option(key: &str) -> CoreOption {
         CoreOption {

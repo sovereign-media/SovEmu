@@ -9,11 +9,14 @@
 //!   bios/<system>/        BIOS files, unless SOVEMU_BIOS_DIR points elsewhere
 //!   saves/<user>/<system>/<game>.srm            battery saves
 //!   saves/<user>/<system>/states/<game>/        save states and their screenshots
-//!   cache/                mode `cache`: games copied from the library as they are played
+//!   cache/games/          mode `cache`: games and art copied from the library as they are used
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
-//!   metadata/             game information: LaunchBox's dump, FBNeo's DATs, downloaded art
+//!   metadata/             game information:
+//!   metadata/launchbox/   LaunchBox's database dump
+//!   metadata/fbneo/       FBNeo's DATs, by commit
+//!   metadata/media/       downloaded box art
 //! ```
 //!
 //! A new file or folder in the data directory gets its method here.
@@ -56,12 +59,24 @@ impl DataPaths {
 
     /// A user's battery saves for a system; states are in `states/<game>/` below it.
     pub fn saves(&self, user_id: i64, system: &str) -> PathBuf {
-        self.root.join("saves").join(user_id.to_string()).join(system)
+        self.all_saves().join(user_id.to_string()).join(system)
     }
 
-    /// Mode `cache`'s copies of games.
+    /// What the server makes or copies for itself, and can make again: the folders below.
     pub fn cache(&self) -> PathBuf {
         self.root.join("cache")
+    }
+
+    /// Mode `cache`'s copies of games and their art. Its own folder, since the cache evicts
+    /// everything in it: never put anything else there.
+    pub fn cache_games(&self) -> PathBuf {
+        self.cache().join("games")
+    }
+
+    /// Where copies were kept before they had a folder of their own (`cache/roms`,
+    /// `cache/media`), moved into [`Self::cache_games`] at startup.
+    pub fn legacy_cache_kinds(&self) -> [PathBuf; 2] {
+        [self.cache().join("roms"), self.cache().join("media")]
     }
 
     /// Playlists generated for multi-disc games.
@@ -88,6 +103,21 @@ impl DataPaths {
     pub fn launchbox(&self) -> PathBuf {
         self.metadata().join("launchbox")
     }
+
+    /// FBNeo's DAT files (arcade names), one folder per pinned commit.
+    pub fn fbneo_dats(&self) -> PathBuf {
+        self.metadata().join("fbneo")
+    }
+
+    /// Box art downloaded by the game-information lookup.
+    pub fn artwork(&self) -> PathBuf {
+        self.metadata().join("media")
+    }
+
+    /// The saves of every user, one folder per user id.
+    pub fn all_saves(&self) -> PathBuf {
+        self.root.join("saves")
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +132,19 @@ mod tests {
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
         assert_eq!(p.launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
+        assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
+    }
+
+    #[test]
+    fn the_game_cache_holds_nothing_else() {
+        // The cache evicts every file under its folder: nothing else may live there.
+        let p = DataPaths::new("/data");
+        for other in [p.disc_playlists(), p.builtin_decorations(), p.database(), p.metadata()] {
+            assert!(
+                !other.starts_with(p.cache_games()),
+                "{} is in the game cache",
+                other.display()
+            );
+        }
     }
 }

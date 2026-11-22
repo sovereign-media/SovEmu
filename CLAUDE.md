@@ -41,7 +41,9 @@ instead (as Sovereign's server takes its SPA).
   pins the release version and the SHA-256 of its `RetroArch_cores.7z`, and
   `scripts/install-cores.sh` installs the listed cores plus data folders from git at
   pinned commits. x86_64 only, because stable releases have no Linux arm64 cores. Moving to a
-  new release also moves `FBNEO_COMMIT` (`SovEmu.Library/src/info/fbneo.rs`).
+  new release also moves `FBNEO_COMMIT` (`SovEmu.Library/src/info/fbneo.rs`) and
+  `LIBRETRO_RELEASE`, and a new core needs its licence, in `SovEmu.Library/src/cores.rs` (a
+  test checks that table against `cores.list`).
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
   `RetroHost` or `Media` into `SovEmu.Server` or `SovEmu.Sessions`.

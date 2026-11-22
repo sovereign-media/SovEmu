@@ -12,7 +12,7 @@ use super::{GameInfo, LookupInput};
 
 /// The FBNeo in the libretro stable release scripts/cores.list names (1.22.2); its probe
 /// version ends in this commit. Bump it with the release.
-const FBNEO_COMMIT: &str = "01e29d5020880990cff42ac43bc6f016fc048761";
+pub const FBNEO_COMMIT: &str = "01e29d5020880990cff42ac43bc6f016fc048761";
 const ARCADE_DAT: &str = "FinalBurn Neo (ClrMame Pro XML, Arcade only).dat";
 const NEOGEO_DAT: &str = "FinalBurn Neo (ClrMame Pro XML, Neogeo only).dat";
 

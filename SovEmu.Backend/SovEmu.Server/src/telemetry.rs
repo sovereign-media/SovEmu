@@ -34,7 +34,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::AppState;
 
-const SERVICE: &str = "sovemu-server";
+pub(crate) const SERVICE: &str = "sovemu-server";
 
 /// How often the library's numbers (accounts, games per system) are counted for the gauges.
 const LIBRARY_REFRESH: Duration = Duration::from_secs(60);
@@ -55,6 +55,117 @@ impl LogFormat {
             Self::Text => "text",
             Self::Json => "json",
         }
+    }
+}
+
+/// How one signal's exports have gone, for the admin Telemetry page: kept by [`Recording`]
+/// as the SDK's export threads call it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ExportStatus {
+    /// When the last export finished.
+    pub(crate) last_at: Option<std::time::SystemTime>,
+    pub(crate) ok: bool,
+    /// The last export's error, credentials in URLs masked.
+    pub(crate) error: Option<String>,
+    pub(crate) exports: u64,
+    pub(crate) failures: u64,
+}
+
+static TRACES: Mutex<Option<ExportStatus>> = Mutex::new(None);
+static METRICS: Mutex<Option<ExportStatus>> = Mutex::new(None);
+
+/// The traces' and the metrics' export status (default before the first export).
+pub(crate) fn export_status() -> (ExportStatus, ExportStatus) {
+    let read = |slot: &Mutex<Option<ExportStatus>>| {
+        slot.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
+    };
+    (read(&TRACES), read(&METRICS))
+}
+
+fn record(slot: &Mutex<Option<ExportStatus>>, result: &opentelemetry_sdk::error::OTelSdkResult) {
+    let mut status = slot.lock().unwrap_or_else(|e| e.into_inner());
+    let status = status.get_or_insert_with(ExportStatus::default);
+    status.last_at = Some(std::time::SystemTime::now());
+    status.exports += 1;
+    match result {
+        Ok(()) => {
+            status.ok = true;
+            status.error = None;
+        }
+        Err(e) => {
+            status.ok = false;
+            status.failures += 1;
+            status.error = Some(scrub(&e.to_string()));
+        }
+    }
+}
+
+/// An error message with any URL in it redacted: an exporter's error can echo the endpoint,
+/// credentials and all.
+fn scrub(message: &str) -> String {
+    message
+        .split(' ')
+        .map(|word| {
+            let Some(at) = word.find("://") else { return word.to_owned() };
+            // The URL, without the punctuation around it (`(http://…)`, `"http://…",`).
+            let start = word[..at].rfind(|c: char| !c.is_ascii_alphanumeric()).map_or(0, |i| i + 1);
+            let end =
+                word[at..].find(['"', '\'', ')', ',', ';', '>']).map_or(word.len(), |i| at + i);
+            format!("{}{}{}", &word[..start], crate::redact::url(&word[start..end]), &word[end..])
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// An exporter that records how each export went ([`export_status`]), then passes the result
+/// on.
+#[derive(Debug)]
+struct Recording<E> {
+    inner: E,
+    slot: &'static Mutex<Option<ExportStatus>>,
+}
+
+impl<E: opentelemetry_sdk::trace::SpanExporter> opentelemetry_sdk::trace::SpanExporter
+    for Recording<E>
+{
+    async fn export(
+        &self,
+        batch: Vec<opentelemetry_sdk::trace::SpanData>,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        let result = self.inner.export(batch).await;
+        record(self.slot, &result);
+        result
+    }
+    fn shutdown_with_timeout(&self, timeout: Duration) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.inner.force_flush()
+    }
+    fn set_resource(&mut self, resource: &Resource) {
+        self.inner.set_resource(resource);
+    }
+}
+
+impl<E: opentelemetry_sdk::metrics::exporter::PushMetricExporter>
+    opentelemetry_sdk::metrics::exporter::PushMetricExporter for Recording<E>
+{
+    async fn export(
+        &self,
+        metrics: &opentelemetry_sdk::metrics::data::ResourceMetrics,
+    ) -> opentelemetry_sdk::error::OTelSdkResult {
+        let result = self.inner.export(metrics).await;
+        record(self.slot, &result);
+        result
+    }
+    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.inner.force_flush()
+    }
+    fn shutdown_with_timeout(&self, timeout: Duration) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.inner.shutdown_with_timeout(timeout)
+    }
+    fn temporality(&self) -> opentelemetry_sdk::metrics::Temporality {
+        self.inner.temporality()
     }
 }
 
@@ -107,6 +218,7 @@ pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Tel
                 .with_endpoint(format!("{base}/v1/traces"))
                 .build()
                 .context("the OTLP trace exporter")?;
+            let spans = Recording { inner: spans, slot: &TRACES };
             let tracer = SdkTracerProvider::builder()
                 .with_batch_exporter(spans)
                 .with_resource(resource.clone())
@@ -117,7 +229,9 @@ pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Tel
                 .build()
                 .context("the OTLP metric exporter")?;
             let meter = SdkMeterProvider::builder()
-                .with_reader(PeriodicReader::builder(metrics).build())
+                .with_reader(
+                    PeriodicReader::builder(Recording { inner: metrics, slot: &METRICS }).build(),
+                )
                 .with_resource(resource)
                 .build();
             global::set_meter_provider(meter.clone());
@@ -403,4 +517,45 @@ pub(crate) async fn trace_request(request: Request, next: Next) -> Response {
         ],
     );
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
+    use opentelemetry_sdk::trace::{SpanData, SpanExporter};
+
+    /// An exporter whose collector refuses everything, naming itself, credentials and all.
+    #[derive(Debug)]
+    struct Refused;
+
+    impl SpanExporter for Refused {
+        async fn export(&self, _batch: Vec<SpanData>) -> OTelSdkResult {
+            Err(OTelSdkError::InternalFailure(
+                "sending to (https://user:t0k3n@collector:4318/v1/traces?key=k3y): 401".into(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn exports_are_recorded_with_their_errors_scrubbed() {
+        static SLOT: Mutex<Option<ExportStatus>> = Mutex::new(None);
+        let exporter = Recording { inner: Refused, slot: &SLOT };
+        assert!(exporter.export(Vec::new()).await.is_err(), "the result is passed on");
+        let status = SLOT.lock().unwrap().clone().unwrap();
+        assert_eq!((status.ok, status.exports, status.failures), (false, 1, 1));
+        let error = status.error.unwrap();
+        assert!(error.contains("https://***@collector:4318/v1/traces?***"), "{error}");
+        assert!(!error.contains("t0k3n") && !error.contains("k3y"), "{error}");
+        assert!(error.ends_with(": 401"), "{error}");
+        record(&SLOT, &Ok(()));
+        let status = SLOT.lock().unwrap().clone().unwrap();
+        assert_eq!((status.ok, status.error, status.exports), (true, None, 2));
+    }
+
+    #[test]
+    fn messages_without_urls_are_left_alone() {
+        assert_eq!(scrub("connection refused"), "connection refused");
+        assert_eq!(scrub("see \"http://h/p?a=b\","), "see \"http://h/p?***\",");
+    }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BiosFile, BiosGroup, SystemBios } from "./api";
-import { fileHint, fileTone, summary } from "./bios";
+import { biosHref, fileHint, fileTone, summary } from "./bios";
 
 const file = (over: Partial<BiosFile>): BiosFile => ({
   name: "scph5501.bin",
@@ -8,6 +8,7 @@ const file = (over: Partial<BiosFile>): BiosFile => ({
   state: "OK",
   foundAt: "psx/scph5501.bin",
   md5: null,
+  expectedMd5: [],
   size: 524288,
   ...over,
 });
@@ -63,5 +64,13 @@ describe("BIOS summary", () => {
     expect(summary([bios("MISSING"), bios("WARNING"), bios("WARNING")])).toBe(
       "1 system is missing a required BIOS; 2 have files to check.",
     );
+  });
+});
+
+describe("BIOS links", () => {
+  it("send admins to the admin page", () => {
+    expect(biosHref(false)).toBe("/bios/");
+    expect(biosHref(true)).toBe("/admin/bios/");
+    expect(biosHref(true, "psx")).toBe("/admin/bios/?id=psx");
   });
 });

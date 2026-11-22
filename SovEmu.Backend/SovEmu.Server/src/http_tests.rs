@@ -1506,6 +1506,125 @@ async fn search_spans_every_system() {
 }
 
 #[tokio::test]
+async fn admins_see_how_the_server_is_reached() {
+    let mut h = Harness::new_with(
+        "network",
+        false,
+        vec![
+            "--advertise-ip".into(),
+            "192.0.2.10".into(),
+            "--ice-servers".into(),
+            r#"[{"urls":"stun:stun.example:3478"},{"urls":["turn:t.example"],"username":"u","credential":"pa55"}]"#
+                .into(),
+        ],
+    )
+    .await;
+    h.sign_up_admin().await;
+    let q = "{ network { udpFirst udpLast portCount portsInUse sessions advertisedIp \
+             advertisedIpDetected publicUrls publicUrlsConfigured signInAvailableHere \
+             iceServers { urls hasCredential } settings { name value } } }";
+    let n = h.ok(q, json!({})).await["network"].clone();
+    let (first, last) = (n["udpFirst"].as_i64().unwrap(), n["udpLast"].as_i64().unwrap());
+    assert_eq!(n["portCount"].as_i64(), Some(last - first + 1));
+    assert_eq!((n["portsInUse"].clone(), n["sessions"].clone()), (json!(0), json!(0)));
+    assert_eq!(n["advertisedIp"], "192.0.2.10");
+    assert_eq!(n["advertisedIpDetected"], false);
+    assert_eq!(n["publicUrlsConfigured"], true, "the harness names its public URL");
+    assert_eq!(n["signInAvailableHere"], false, "the harness's requests name no host");
+    assert_eq!(
+        n["iceServers"],
+        json!([
+            {"urls": ["stun:stun.example:3478"], "hasCredential": false},
+            {"urls": ["turn:t.example"], "hasCredential": true},
+        ])
+    );
+    let ice = n["settings"].as_array().unwrap().iter().find(|s| s["name"] == "SOVEMU_ICE_SERVERS");
+    assert!(!ice.unwrap()["value"].as_str().unwrap().contains("pa55"), "credentials masked");
+}
+
+#[tokio::test]
+async fn admins_see_where_the_space_goes() {
+    let mut h = Harness::new("storage", true).await;
+    h.sign_up_admin().await;
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+    let sid =
+        h.ok(START, json!({"game": id})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
+    h.ok(save, json!({"s": sid, "slot": 1})).await;
+
+    let q = "query($r: Boolean) { storage(refresh: $r) { measuredAt totalBytes freeBytes \
+             areas { id bytes files } saves { userId username bytes files } } }";
+    let r = h.ok(q, json!({"r": true})).await["storage"].clone();
+    let area = |id: &str| r["areas"].as_array().unwrap().iter().find(|a| a["id"] == id).cloned();
+    assert!(area("database").unwrap()["bytes"].as_f64().unwrap() > 0.0);
+    assert!(area("saves").unwrap()["files"].as_f64().unwrap() >= 1.0);
+    assert!(area("other").is_some());
+    assert_eq!(r["saves"][0]["userId"], 1);
+    assert!(r["saves"][0]["username"].is_string(), "named from the users table");
+    assert!(r["totalBytes"].as_f64().unwrap() >= r["freeBytes"].as_f64().unwrap());
+    // Kept a few minutes: the same measurement unless refreshed.
+    let again = h.ok(q, json!({"r": false})).await["storage"]["measuredAt"].clone();
+    assert_eq!(again, r["measuredAt"]);
+    // Direct mode keeps no copies: nothing to clear.
+    assert_eq!(h.ok("mutation { clearCache }", json!({})).await["clearCache"], json!(0.0));
+}
+
+#[tokio::test]
+async fn admins_see_whether_telemetry_is_exported() {
+    let mut h = Harness::new("telemetry", false).await;
+    h.sign_up_admin().await;
+    let q = "{ telemetry { enabled endpoint logFormat serviceName metricIntervalMs headerNames \
+             traces { lastAt ok exports } settings { name } } }";
+    let t = h.ok(q, json!({})).await["telemetry"].clone();
+    assert_eq!((t["enabled"].clone(), t["endpoint"].clone()), (json!(false), Value::Null));
+    assert_eq!(t["serviceName"], "sovemu-server");
+    assert_eq!(t["metricIntervalMs"], json!(60_000.0));
+    assert_eq!(t["traces"]["lastAt"], Value::Null, "nothing exported");
+    let names: Vec<&str> =
+        t["settings"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"SOVEMU_OTEL_ENDPOINT") && names.contains(&"SOVEMU_LOG_FORMAT"));
+}
+
+#[tokio::test]
+async fn everyone_sees_the_build_and_admins_the_attributions() {
+    let mut h = Harness::new("about", false).await;
+    h.sign_up_admin().await;
+    let build =
+        h.ok("{ buildInfo { version libretroRelease } }", json!({})).await["buildInfo"].clone();
+    assert_eq!(build["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(build["libretroRelease"], sovemu_library::cores::LIBRETRO_RELEASE);
+    let q = "{ attributions { fbneoCommit services { name licence } components { name commit } } }";
+    let a = h.ok(q, json!({})).await["attributions"].clone();
+    assert_eq!(a["services"][0], json!({"name": "ScreenScraper", "licence": "CC BY-NC-SA 4.0"}));
+    assert_eq!(a["fbneoCommit"].as_str().unwrap().len(), 40);
+    assert!(a["components"].as_array().unwrap().iter().any(|c| c["commit"].is_string()));
+}
+
+#[tokio::test]
+async fn admins_see_every_core_with_its_licence() {
+    let mut h = Harness::new("cores", true).await;
+    h.sign_up_admin().await;
+    let q = "{ libretroRelease cores { name label loaded error file licence nonCommercial \
+             sourceUrl systems { id chosen } } }";
+    let data = h.ok(q, json!({})).await;
+    assert_eq!(data["libretroRelease"], sovemu_library::cores::LIBRETRO_RELEASE);
+    let cores = data["cores"].as_array().unwrap();
+    assert_eq!(cores.len(), sovemu_library::cores::CORES.len(), "every shipped core, in order");
+    // The test core, installed as fceumm: probed now, since there is no manifest.
+    let fceumm = &cores[0];
+    assert_eq!(fceumm["name"], "fceumm");
+    assert_eq!((fceumm["loaded"].clone(), fceumm["error"].clone()), (json!(true), Value::Null));
+    assert!(fceumm["file"].as_str().unwrap().contains("fceumm_libretro."));
+    assert_eq!(fceumm["licence"], "GPLv2");
+    assert_eq!(fceumm["systems"], json!([{"id": "nes", "chosen": true}]));
+    // Shipped, but not in this cores folder.
+    let snes9x = cores.iter().find(|c| c["name"] == "snes9x").unwrap();
+    assert_eq!((snes9x["file"].clone(), snes9x["loaded"].clone()), (Value::Null, json!(false)));
+    assert_eq!(snes9x["nonCommercial"], true);
+    assert_eq!(snes9x["systems"][0], json!({"id": "snes", "chosen": false}));
+}
+
+#[tokio::test]
 async fn soft_patches_apply_by_default_and_can_be_chosen() {
     let mut h = Harness::new("patches", true).await;
     h.sign_up_admin().await;
@@ -1558,6 +1677,26 @@ async fn soft_patches_apply_by_default_and_can_be_chosen() {
 
     let (code, _) = h.err(set, json!({"g": id, "p": 99_999})).await;
     assert_eq!(code, "NOT_FOUND", "a patch of another game, or none");
+
+    // The admin's list: every patch with its game, and who chose it.
+    let all = h
+        .ok(
+            "{ patches { name file format isDefault gameId gameTitle system chosenBy originalBy } }",
+            json!({}),
+        )
+        .await["patches"]
+        .clone();
+    assert_eq!(
+        all,
+        json!([
+            {"name": "IPS patch", "file": "nes/Test Game (USA).ips", "format": "IPS",
+             "isDefault": true, "gameId": id, "gameTitle": "Test Game", "system": "nes",
+             "chosenBy": 0, "originalBy": 0},
+            {"name": "Hard Mode", "file": "nes/Test Game (USA)/Hard Mode.bps", "format": "BPS",
+             "isDefault": false, "gameId": id, "gameTitle": "Test Game", "system": "nes",
+             "chosenBy": 1, "originalBy": 0},
+        ])
+    );
 }
 
 #[tokio::test]
@@ -1609,6 +1748,29 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
         StatusCode::UNAUTHORIZED,
         "unsigned"
     );
+    // The admin's report: the set, what it holds, and each system's preview.
+    let report = h
+        .ok(
+            "{ decorations { default folders sets { name builtin hasDefault systems games } \
+             systems { system { id } set perSystem preview { set url } } } }",
+            json!({}),
+        )
+        .await["decorations"]
+        .clone();
+    assert_eq!(report["default"], "arcade");
+    assert_eq!(
+        report["sets"],
+        json!([{"name": "arcade", "builtin": false, "hasDefault": false, "systems": ["nes"], "games": 2}])
+    );
+    let nes = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "nes");
+    let nes = nes.unwrap();
+    assert_eq!((nes["set"].clone(), nes["perSystem"].clone()), (json!("arcade"), json!(false)));
+    let preview = nes["preview"]["url"].as_str().unwrap();
+    assert!(preview.starts_with("/media/decorations/arcade/systems/nes.png?Sov-"), "{preview}");
+    let snes = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "snes");
+    assert_eq!(snes.unwrap()["preview"], Value::Null, "no image for it, and no default");
+    assert!(report["folders"][0].as_str().unwrap().ends_with("decorations"));
+
     // `none` turns them off for a system.
     let mut h =
         Harness::new_with("decorations-none", false, vec!["--decoration".into(), "none".into()])

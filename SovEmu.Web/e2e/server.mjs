@@ -27,7 +27,8 @@ const data = join(web, "test-results/e2e-data");
 rmSync(data, { recursive: true, force: true });
 const games = {
   nes: ["Stand-in Quest (USA).nes", "Another Stand-in (Europe).nes"],
-  snes: ["Super Stand-in (USA).sfc"],
+  // A soft patch named like its game: its default (the Patches page lists it).
+  snes: ["Super Stand-in (USA).sfc", "Super Stand-in (USA).ips"],
   gb: ["Pocket Stand-in (Japan).gb"],
 };
 for (const [system, files] of Object.entries(games)) {

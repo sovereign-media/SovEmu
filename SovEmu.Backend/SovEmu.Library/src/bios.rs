@@ -517,6 +517,9 @@ pub struct FileReport {
     /// Where it was found, relative to the BIOS folder (`roms/…` beside the games).
     pub found_at: Option<String>,
     pub md5: Option<String>,
+    /// The good dumps' MD5s, any one of which is right (empty: any content is fine, or, for a
+    /// system that takes any number of dumps, too many to list).
+    pub expected_md5: Vec<String>,
     pub size: u64,
 }
 
@@ -600,6 +603,7 @@ pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report>
                         state,
                         found_at: path.map(&rel),
                         md5,
+                        expected_md5: k.md5.iter().map(|m| (*m).to_owned()).collect(),
                         size: k.size,
                     };
                     if let Some(at) = at {
@@ -645,6 +649,7 @@ pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report>
                         state,
                         found_at: Some(rel(p)),
                         md5: Some(md5.clone()),
+                        expected_md5: Vec::new(),
                         size: *len,
                     };
                     if p.starts_with(&folder) {
@@ -667,6 +672,7 @@ pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report>
                         state: FileState::Missing,
                         found_at: None,
                         md5: None,
+                        expected_md5: Vec::new(),
                         size: *size,
                     });
                 }

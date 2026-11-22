@@ -303,6 +303,7 @@ export const BiosQuery = graphql(
             state
             foundAt
             md5
+            expectedMd5
             size
           }
         }
@@ -819,3 +820,256 @@ export const ChangeEmulatorSettingsMutation = graphql(
 `,
   [SettingsFields],
 );
+
+export const GpuQuery = graphql(`
+  query Gpu {
+    gpu {
+      setting
+      mode
+      renderer
+      note
+      workerArg
+      probedAt
+      devices {
+        node
+        driver
+        kind
+        vendor
+        renderer
+        version
+        works
+        error
+        chosen
+      }
+    }
+  }
+`);
+
+export const BiosDirQuery = graphql(`
+  query BiosDir {
+    biosDir
+  }
+`);
+
+export const DecorationsQuery = graphql(`
+  query Decorations {
+    decorations {
+      default
+      folders
+      sets {
+        name
+        builtin
+        hasDefault
+        systems
+        games
+      }
+      systems {
+        set
+        perSystem
+        system {
+          id
+          name
+          color
+          gameCount
+        }
+        preview {
+          url
+          width
+          height
+          top
+          left
+          bottom
+          right
+        }
+      }
+    }
+  }
+`);
+
+export const AdminPatchesQuery = graphql(`
+  query AdminPatches {
+    patches {
+      id
+      name
+      file
+      format
+      isDefault
+      gameId
+      gameTitle
+      system
+      chosenBy
+      originalBy
+    }
+  }
+`);
+
+export const CoresQuery = graphql(`
+  query Cores {
+    libretroRelease
+    cores {
+      name
+      label
+      version
+      file
+      loaded
+      error
+      licence
+      nonCommercial
+      sourceUrl
+      systems {
+        id
+        name
+        chosen
+      }
+    }
+  }
+`);
+
+export const ConfigurationQuery = graphql(`
+  query Configuration {
+    configuration {
+      group
+      name
+      value
+      effective
+      source
+      secret
+      default
+      description
+    }
+  }
+`);
+
+export const NetworkQuery = graphql(`
+  query Network {
+    network {
+      http
+      udpFirst
+      udpLast
+      portCount
+      portsInUse
+      sessions
+      udpBind
+      advertisedIp
+      advertisedIpDetected
+      publicUrls
+      publicUrlsConfigured
+      signInAvailableHere
+      requestHost
+      clientIp
+      forwardedFor
+      trustedProxies
+      secureCookies
+      iceServers {
+        urls
+        hasCredential
+      }
+      settings {
+        group
+        name
+        value
+        effective
+        source
+        secret
+        default
+        description
+      }
+    }
+  }
+`);
+
+export const StorageQuery = graphql(`
+  query Storage($refresh: Boolean) {
+    storage(refresh: $refresh) {
+      measuredAt
+      dataDir
+      totalBytes
+      freeBytes
+      cacheLimitBytes
+      areas {
+        id
+        path
+        bytes
+        files
+      }
+      saves {
+        userId
+        username
+        bytes
+        files
+      }
+    }
+  }
+`);
+
+export const ClearCacheMutation = graphql(`
+  mutation ClearCache {
+    clearCache
+  }
+`);
+
+export const TelemetryQuery = graphql(`
+  query Telemetry {
+    telemetry {
+      enabled
+      endpoint
+      logFormat
+      serviceName
+      metricIntervalMs
+      headerNames
+      traces {
+        lastAt
+        ok
+        error
+        exports
+        failures
+      }
+      metrics {
+        lastAt
+        ok
+        error
+        exports
+        failures
+      }
+      settings {
+        group
+        name
+        value
+        effective
+        source
+        secret
+        default
+        description
+      }
+    }
+  }
+`);
+
+export const AboutQuery = graphql(`
+  query About {
+    buildInfo {
+      version
+      revision
+      built
+      libretroRelease
+    }
+    attributions {
+      fbneoCommit
+      services {
+        name
+        provides
+        url
+        licence
+        licenceUrl
+        terms
+      }
+      components {
+        name
+        what
+        licence
+        url
+        commit
+      }
+    }
+  }
+`);

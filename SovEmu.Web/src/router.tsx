@@ -47,6 +47,16 @@ const ControllersAdmin = lazy(() => import("./components/admin/ControllersAdmin"
 const JobsAdmin = lazy(() => import("./components/admin/JobsAdmin"));
 const SessionsAdmin = lazy(() => import("./components/admin/SessionsAdmin"));
 const ResourcesAdmin = lazy(() => import("./components/admin/ResourcesAdmin"));
+const RenderingAdmin = lazy(() => import("./components/admin/RenderingAdmin"));
+const BiosAdmin = lazy(() => import("./components/admin/BiosAdmin"));
+const DecorationsAdmin = lazy(() => import("./components/admin/DecorationsAdmin"));
+const PatchesAdmin = lazy(() => import("./components/admin/PatchesAdmin"));
+const CoresAdmin = lazy(() => import("./components/admin/CoresAdmin"));
+const ConfigurationAdmin = lazy(() => import("./components/admin/ConfigurationAdmin"));
+const NetworkAdmin = lazy(() => import("./components/admin/NetworkAdmin"));
+const StorageAdmin = lazy(() => import("./components/admin/StorageAdmin"));
+const TelemetryAdmin = lazy(() => import("./components/admin/TelemetryAdmin"));
+const AboutAdmin = lazy(() => import("./components/admin/AboutAdmin"));
 
 /** Path, title, screen, and the URL parameters the screen updates itself (with `history`). */
 const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[]][] = [
@@ -64,6 +74,16 @@ const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[
   ["/admin/resources/", "Resources", ResourcesAdmin, []],
   ["/admin/sessions/", "Sessions", SessionsAdmin, []],
   ["/admin/jobs/", "Jobs", JobsAdmin, []],
+  ["/admin/rendering/", "Rendering", RenderingAdmin, []],
+  ["/admin/bios/", "BIOS", BiosAdmin, []],
+  ["/admin/decorations/", "Decorations", DecorationsAdmin, []],
+  ["/admin/patches/", "Patches", PatchesAdmin, []],
+  ["/admin/cores/", "Cores", CoresAdmin, []],
+  ["/admin/configuration/", "Configuration", ConfigurationAdmin, []],
+  ["/admin/network/", "Network", NetworkAdmin, []],
+  ["/admin/storage/", "Storage", StorageAdmin, []],
+  ["/admin/telemetry/", "Telemetry", TelemetryAdmin, []],
+  ["/admin/about/", "About", AboutAdmin, []],
 ];
 
 const routes = SCREENS.map(([path, title, Screen, own]) =>

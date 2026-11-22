@@ -91,6 +91,17 @@ fn escape(segment: &str) -> String {
     out
 }
 
+/// What a decoration set holds ([`Decorations::summary`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SetSummary {
+    /// It has `default.png`, for every game nothing closer covers.
+    pub has_default: bool,
+    /// The systems with an image of their own (`systems/<id>.png`), by id.
+    pub systems: Vec<String>,
+    /// Images for single games (`games/…`).
+    pub games: usize,
+}
+
 /// Every set's files, from all the folders, merged.
 #[derive(Debug, Default)]
 pub struct Decorations {
@@ -119,6 +130,24 @@ impl Decorations {
     /// The sets found, by name.
     pub fn sets(&self) -> Vec<String> {
         self.sets.keys().cloned().collect()
+    }
+
+    /// What a set holds: a default image, which systems have their own, and how many games.
+    /// None for no such set.
+    pub fn summary(&self, set: &str) -> Option<SetSummary> {
+        let files = self.sets.get(set)?;
+        let mut systems: Vec<String> = files
+            .keys()
+            .filter_map(|p| p.strip_prefix("systems/")?.strip_suffix(".png"))
+            .filter(|s| !s.contains('/'))
+            .map(str::to_owned)
+            .collect();
+        systems.sort();
+        Some(SetSummary {
+            has_default: files.contains_key("default.png"),
+            systems,
+            games: files.keys().filter(|p| p.starts_with("games/") && p.ends_with(".png")).count(),
+        })
     }
 
     /// A file of a set, by its path within it.
@@ -348,6 +377,11 @@ mod tests {
         touch(builtin.join("arcade/default.png"), b"");
         touch(builtin.join("arcade/default.info"), info);
         let set = Decorations::load(&[user.clone(), builtin.clone()]);
+        assert_eq!(
+            set.summary("arcade"),
+            Some(SetSummary { has_default: true, systems: vec!["snes".into()], games: 1 })
+        );
+        assert_eq!(set.summary("missing"), None);
         let own = set.for_game("arcade", "snes", "Mother 2 (Japan)").unwrap();
         assert_eq!(own.path, "games/snes/Mother 2 (Japan).png");
         assert_eq!(own.url(), "/media/decorations/arcade/games/snes/Mother%202%20%28Japan%29.png");

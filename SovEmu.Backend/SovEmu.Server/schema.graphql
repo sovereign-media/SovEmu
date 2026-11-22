@@ -40,6 +40,43 @@ type ActiveSession {
 }
 
 """
+A soft patch in the library, as the admin sees it.
+"""
+type AdminPatch {
+	id: Int!
+	"""
+	From its file: "BPS patch" beside the game, else the file's name.
+	"""
+	name: String!
+	"""
+	The file, relative to the ROM folder.
+	"""
+	file: String!
+	"""
+	`IPS`, `UPS` or `BPS`.
+	"""
+	format: String!
+	"""
+	Named like its game, so applied unless a player chose otherwise.
+	"""
+	isDefault: Boolean!
+	gameId: Int!
+	gameTitle: String!
+	"""
+	The game's system, by id.
+	"""
+	system: String!
+	"""
+	Players who chose this patch.
+	"""
+	chosenBy: Int!
+	"""
+	Players who chose the original for its game, over the default.
+	"""
+	originalBy: Int!
+}
+
+"""
 Box art being downloaded after a lookup, for the games that have no local thumb.
 """
 type ArtworkStatus {
@@ -51,6 +88,39 @@ type ArtworkStatus {
 	done: Int!
 	downloaded: Int!
 	failed: Int!
+}
+
+"""
+A service SovEmu looks games up in.
+"""
+type AttributedService {
+	name: String!
+	"""
+	What SovEmu takes from it.
+	"""
+	provides: String!
+	url: String!
+	"""
+	The data's licence, where the service states one.
+	"""
+	licence: String
+	licenceUrl: String
+	"""
+	What its terms ask of an app, or that they state nothing.
+	"""
+	terms: String!
+}
+
+"""
+What the server draws on and ships with (the cores are `cores`).
+"""
+type Attributions {
+	services: [AttributedService!]!
+	components: [BundledComponent!]!
+	"""
+	The FinalBurn Neo commit whose DAT files name arcade games.
+	"""
+	fbneoCommit: String!
 }
 
 """
@@ -90,6 +160,11 @@ type BiosFile {
 	Of the file found.
 	"""
 	md5: String
+	"""
+	The good dumps' MD5s, any one of which is right. Empty when any content is fine, or
+	for a system that takes any number of dumps (PS2), whose list is too long to show.
+	"""
+	expectedMd5: [String!]!
 	"""
 	Bytes expected.
 	"""
@@ -219,6 +294,42 @@ type BootstrapConfig {
 }
 
 """
+Which build of the server this is.
+"""
+type BuildInfoNode {
+	"""
+	The server's version.
+	"""
+	version: String!
+	"""
+	The commit it was built from; null for a local build.
+	"""
+	revision: String
+	"""
+	That commit's time (ISO 8601); null for a local build.
+	"""
+	built: String
+	"""
+	The libretro stable release its cores come from.
+	"""
+	libretroRelease: String!
+}
+
+"""
+A component the image ships besides the cores.
+"""
+type BundledComponent {
+	name: String!
+	what: String!
+	licence: String!
+	url: String!
+	"""
+	The commit it is taken from, when pinned.
+	"""
+	commit: String
+}
+
+"""
 A cheat code for a game, this user's.
 """
 type Cheat {
@@ -326,6 +437,58 @@ type Collection {
 }
 
 """
+A group of settings, as the README's settings table has them.
+"""
+enum ConfigGroup {
+	ACCOUNTS
+	LIBRARY
+	GAME_INFORMATION
+	STREAMING
+	OPERATIONS
+}
+
+"""
+A setting of the running server.
+"""
+type ConfigSetting {
+	group: ConfigGroup!
+	"""
+	The environment variable that sets it.
+	"""
+	name: String!
+	"""
+	As given, with credentials masked; null when unset. A secret only says `(set)` or
+	`(unset)`.
+	"""
+	value: String
+	"""
+	What the server makes of it, where that differs from the value (an unset
+	`SOVEMU_ROMS_DIR` is `<data>/roms`).
+	"""
+	effective: String
+	source: ConfigSource!
+	secret: Boolean!
+	default: String
+	description: String!
+}
+
+"""
+Where a setting's value comes from.
+"""
+enum ConfigSource {
+	"""
+	Not set: the default.
+	"""
+	DEFAULT
+	ENVIRONMENT
+	"""
+	A secret read from the file `<VAR>_FILE` names.
+	"""
+	FILE
+	COMMAND_LINE
+}
+
+"""
 How much of its CPU and memory the container (server and game sessions) is using.
 """
 type ContainerUsage {
@@ -394,6 +557,58 @@ type ControllerMapping {
 	source: MappingSource!
 }
 
+"""
+A libretro core: shipped in the image, or found in the cores folder.
+"""
+type CoreReport {
+	"""
+	Its file name without `_libretro.<ext>` (`snes9x`).
+	"""
+	name: String!
+	"""
+	What the core calls itself: from its probe, else the licence table's name for it.
+	"""
+	label: String
+	version: String
+	"""
+	Its file in the cores folder; null when it is shipped but missing here.
+	"""
+	file: String
+	"""
+	It loads (the image's build-time probe, else a probe now).
+	"""
+	loaded: Boolean!
+	error: String
+	"""
+	The systems it plays.
+	"""
+	systems: [CoreSystem!]!
+	"""
+	As its core info file states it; null for a core the image doesn't ship.
+	"""
+	licence: String
+	"""
+	Its licence forbids commercial use.
+	"""
+	nonCommercial: Boolean!
+	"""
+	Its source.
+	"""
+	sourceUrl: String
+}
+
+"""
+A system a core plays.
+"""
+type CoreSystem {
+	id: String!
+	name: String!
+	"""
+	This system's games start with this core.
+	"""
+	chosen: Boolean!
+}
+
 type Decoration {
 	"""
 	The image (PNG), under `/media/decorations/`: a URL signed for this user.
@@ -415,6 +630,46 @@ type Decoration {
 	The set it comes from (`sovemu` is the built-in one).
 	"""
 	set: String!
+}
+
+"""
+A decoration set, and what it holds.
+"""
+type DecorationSet {
+	name: String!
+	"""
+	SovEmu's own set, drawn at build time.
+	"""
+	builtin: Boolean!
+	"""
+	It has an image for every game nothing closer covers (`default.png`).
+	"""
+	hasDefault: Boolean!
+	"""
+	The systems with an image of their own, by id.
+	"""
+	systems: [String!]!
+	"""
+	Images for single games.
+	"""
+	games: Int!
+}
+
+type DecorationsReport {
+	"""
+	Every set found in the decoration folders, by name (`sovemu` is the built-in one).
+	"""
+	sets: [DecorationSet!]!
+	"""
+	The set for systems without one of their own (`SOVEMU_DECORATION`; `none`: no frame).
+	"""
+	default: String!
+	"""
+	The folders sets are read from, the first winning for the same file: those in
+	`SOVEMU_DECORATIONS_DIRS`, `<data>/decorations`, then the built-in one.
+	"""
+	folders: [String!]!
+	systems: [SystemDecoration!]!
 }
 
 """
@@ -472,6 +727,23 @@ An encoder a session gave up, and why.
 type EncoderFallback {
 	encoder: String!
 	reason: String!
+}
+
+"""
+How one signal's exports have gone since the server started.
+"""
+type ExportResult {
+	"""
+	When the last export finished (Unix seconds); null before the first.
+	"""
+	lastAt: Float
+	ok: Boolean!
+	"""
+	The last export's error, URLs' credentials masked.
+	"""
+	error: String
+	exports: Float!
+	failures: Float!
 }
 
 type Game {
@@ -623,6 +895,10 @@ type GpuDevice {
 	version: String
 	works: Boolean!
 	error: String
+	"""
+	Workers render on this one.
+	"""
+	chosen: Boolean!
 }
 
 """
@@ -643,6 +919,15 @@ type GpuStatus {
 	Why the setting could not be honoured, or why nothing could be probed.
 	"""
 	note: String
+	"""
+	What workers are started with (`--gpu`): a render node, `auto`, `software` or `off`.
+	"""
+	workerArg: String!
+	"""
+	When the probe ran (Unix seconds): once, at startup, so a GPU added later needs a
+	restart. None when nothing was probed (`SOVEMU_GPU=off`).
+	"""
+	probedAt: Float
 }
 
 """
@@ -704,6 +989,17 @@ type HostFacts {
 	The kernel's release.
 	"""
 	kernel: String
+}
+
+"""
+An ICE server, without its credentials.
+"""
+type IceServerSummary {
+	urls: [String!]!
+	"""
+	It has a username and credential (a TURN server).
+	"""
+	hasCredential: Boolean!
 }
 
 """
@@ -1013,7 +1309,10 @@ type Mutation {
 	"""
 	Plays a game with one of its soft patches from now on (`Game.patches`), or the original
 	(`patchId` null). Its next session loads it so; a patched game keeps its own saves.
+	Admins: deletes the game cache's copies (mode `cache`), but those of games being played;
+	the bytes freed. Games are copied again as they are played.
 	"""
+	clearCache: Float!
 	setPatch(gameId: Int!, patchId: Int): Boolean!
 	"""
 	Creates a collection (CONFLICT if this user already has one by that name).
@@ -1069,6 +1368,71 @@ type Mutation {
 	Returns whether it had a mapping of the user's own.
 	"""
 	resetControllerMapping(controller: String!, system: ID): Boolean!
+}
+
+"""
+How browsers and apps reach the server and its game streams.
+"""
+type NetworkReport {
+	"""
+	The web client and API's address (`SOVEMU_HTTP`).
+	"""
+	http: String!
+	"""
+	The UDP ports for game sessions, one per concurrent session (`SOVEMU_UDP_PORTS`).
+	"""
+	udpFirst: Int!
+	udpLast: Int!
+	portCount: Int!
+	"""
+	Ports held: by a session, or by a worker that has not exited yet.
+	"""
+	portsInUse: Int!
+	sessions: Int!
+	"""
+	The address session ports bind to (`SOVEMU_UDP_BIND`).
+	"""
+	udpBind: String!
+	"""
+	The address browsers send media to, as workers advertise it.
+	"""
+	advertisedIp: String!
+	"""
+	It was worked out (the machine's primary address), not set (`SOVEMU_ADVERTISE_IP`). In
+	a container that is the container's own address, which browsers cannot reach.
+	"""
+	advertisedIpDetected: Boolean!
+	"""
+	The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own.
+	"""
+	publicUrls: [String!]!
+	publicUrlsConfigured: Boolean!
+	"""
+	Sign-in works at the address this request was made to.
+	"""
+	signInAvailableHere: Boolean!
+	"""
+	The address this request was made to (its `Host`).
+	"""
+	requestHost: String!
+	"""
+	This request's client, as the server resolved it (behind trusted proxies, the client).
+	"""
+	clientIp: String
+	"""
+	This request's `X-Forwarded-For`, for checking a proxy.
+	"""
+	forwardedFor: String
+	trustedProxies: [String!]!
+	secureCookies: Boolean!
+	"""
+	STUN/TURN servers handed to browsers.
+	"""
+	iceServers: [IceServerSummary!]!
+	"""
+	The settings this page is about, as the Configuration page shows them.
+	"""
+	settings: [ConfigSetting!]!
 }
 
 input NewUserInput {
@@ -1178,6 +1542,10 @@ type Query {
 	"""
 	bootstrapConfig: BootstrapConfig!
 	"""
+	Which build of the server this is, for anyone signed in (an app can show it).
+	"""
+	buildInfo: BuildInfoNode!
+	"""
 	Who is signed in, and whether first-run setup is needed. Works signed out.
 	"""
 	viewer: Viewer!
@@ -1221,6 +1589,52 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: the game-information services and the components the image ships, with their
+	licences and terms.
+	"""
+	attributions: Attributions!
+	"""
+	Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
+	export went.
+	"""
+	telemetry: TelemetryReport!
+	"""
+	Admins: where the data folder's space goes. Measured at most every few minutes, unless
+	`refresh` asks for a measurement now.
+	"""
+	storage(refresh: Boolean! = false): StorageReport!
+	"""
+	Admins: how browsers and apps reach the server and its game streams.
+	"""
+	network: NetworkReport!
+	"""
+	Admins: the server's effective configuration, every setting with where its value came
+	from, credentials masked (as the startup log prints it).
+	"""
+	configuration: [ConfigSetting!]!
+	"""
+	Admins: every shipped core, then any other in the cores folder: version, whether it
+	loads, the systems it plays, and its licence.
+	"""
+	cores: [CoreReport!]!
+	"""
+	Admins: the libretro stable release the image's cores come from.
+	"""
+	libretroRelease: String!
+	"""
+	Admins: every soft patch in the library, with its game and how many players chose it.
+	"""
+	patches: [AdminPatch!]!
+	"""
+	Admins: the decoration sets found, and the set each system's games are framed with.
+	"""
+	decorations: DecorationsReport!
+	"""
+	Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
+	the subfolder its `bios.folder` names.
+	"""
+	biosDir: String!
 	"""
 	Admins: where 3D systems render, and every device the startup probe tried.
 	"""
@@ -1516,6 +1930,45 @@ type StartStatus {
 	error: String
 }
 
+type StorageArea {
+	"""
+	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
+	`decorations`, `builtin_decorations`, `roms`, `bios` or `other`.
+	"""
+	id: String!
+	path: String!
+	bytes: Float!
+	files: Float!
+}
+
+"""
+Where the data folder's space goes.
+"""
+type StorageReport {
+	"""
+	When it was measured (Unix seconds): measurements are kept a few minutes.
+	"""
+	measuredAt: Float!
+	dataDir: String!
+	"""
+	The parts of the data folder, largest first. `other` is what no part claims.
+	"""
+	areas: [StorageArea!]!
+	"""
+	Each user's saves, largest first.
+	"""
+	saves: [UserStorage!]!
+	"""
+	The data folder's filesystem, in bytes.
+	"""
+	totalBytes: Float
+	freeBytes: Float
+	"""
+	`cache` mode: the cache's cap, in bytes (`SOVEMU_CACHE_GB`).
+	"""
+	cacheLimitBytes: Float
+}
+
 """
 A session's last `session health` interval.
 """
@@ -1672,6 +2125,59 @@ type SystemControls {
 	layout: PadLayout!
 }
 
+type SystemDecoration {
+	system: System!
+	"""
+	The set (`none`: no frame).
+	"""
+	set: String!
+	"""
+	Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`) rather than the default.
+	"""
+	perSystem: Boolean!
+	"""
+	What its games are framed with when they have no image of their own. None for `none`,
+	or a set that isn't there.
+	"""
+	preview: Decoration
+}
+
+"""
+OpenTelemetry export: whether it is on, where to, and how it has gone.
+"""
+type TelemetryReport {
+	"""
+	`SOVEMU_OTEL_ENDPOINT` is set: traces and metrics are exported.
+	"""
+	enabled: Boolean!
+	"""
+	The collector, credentials masked.
+	"""
+	endpoint: String
+	"""
+	`text` or `json` (`SOVEMU_LOG_FORMAT`).
+	"""
+	logFormat: String!
+	"""
+	`OTEL_SERVICE_NAME`, else SovEmu's.
+	"""
+	serviceName: String!
+	"""
+	How often metrics are sent (`OTEL_METRIC_EXPORT_INTERVAL`), milliseconds.
+	"""
+	metricIntervalMs: Float!
+	"""
+	The headers sent with each export (`OTEL_EXPORTER_OTLP_HEADERS`), by name only.
+	"""
+	headerNames: [String!]!
+	traces: ExportResult!
+	metrics: ExportResult!
+	"""
+	The settings this page is about, as the Configuration page shows them.
+	"""
+	settings: [ConfigSetting!]!
+}
+
 """
 An account.
 """
@@ -1683,6 +2189,16 @@ type User {
 	Whether the role is `ADMIN`.
 	"""
 	isAdmin: Boolean!
+}
+
+type UserStorage {
+	userId: Int!
+	"""
+	Null for a user that has been deleted (their saves are left behind).
+	"""
+	username: String
+	bytes: Float!
+	files: Float!
 }
 
 type Viewer {

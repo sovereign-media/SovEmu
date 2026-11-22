@@ -30,6 +30,11 @@ variable "GITHUB_SHA" {
   default = ""
 }
 
+# The commit's time (ISO 8601, UTC), set by ci.yml; empty in a local bake.
+variable "SOVEMU_BUILT" {
+  default = ""
+}
+
 # The shipped image (every core probed while building it), loaded for the smoke test and, on
 # main, published to GHCR as it is (ci.yml). The labels say which commit it is and link the
 # package to the repository.
@@ -40,6 +45,11 @@ target "image" {
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/sovereign-media/SovEmu"
     "org.opencontainers.image.revision" = GITHUB_SHA
+  }
+  # The commit and its time, built into sovemu-server for the admin About page.
+  args = {
+    SOVEMU_REVISION = GITHUB_SHA
+    SOVEMU_BUILT    = SOVEMU_BUILT
   }
   output     = ["type=docker"]
   cache-from = ["type=gha,scope=image", "type=gha,scope=test"]

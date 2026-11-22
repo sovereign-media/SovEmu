@@ -200,6 +200,35 @@ impl Cache {
     }
 
     /// Deletes least recently used copies until the cache fits its cap. `keep` is never evicted.
+    /// Deletes every copy (an admin's "clear the cache"), but those being copied and the
+    /// `keep` ones (`(namespace, relative)`: games being played), and returns the bytes freed.
+    pub fn clear(&self, keep: &[(&str, &str)]) -> u64 {
+        let keep: HashSet<PathBuf> =
+            keep.iter().filter_map(|(ns, rel)| self.path_for(ns, rel)).collect();
+        let copying = self.copying.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut freed = 0;
+        let mut stack = vec![self.dir.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else { continue };
+                if meta.is_dir() {
+                    stack.push(path);
+                } else if !path.to_string_lossy().ends_with(".used")
+                    && path.extension().is_none_or(|e| e != "part")
+                    && !keep.contains(&path)
+                    && !copying.contains(&path)
+                    && std::fs::remove_file(&path).is_ok()
+                {
+                    let _ = std::fs::remove_file(used_marker(&path));
+                    freed += meta.len();
+                }
+            }
+        }
+        freed
+    }
+
     pub(crate) fn evict(&self, keep: Option<&Path>) {
         let mut files = Vec::new();
         let mut stack = vec![self.dir.clone()];
@@ -295,6 +324,23 @@ mod tests {
         assert!(!cache.dir.join("roms/a.gba").exists(), "the oldest went");
         assert!(cache.dir.join("roms/b.gba").exists());
         assert!(cache.dir.join("roms/c.gba").exists());
+    }
+
+    #[test]
+    fn clearing_keeps_what_is_being_played() {
+        let lib = tmp("lib-clear");
+        let cache = Cache::new(tmp("store-clear"), 1 << 20, 4);
+        for name in ["a", "b"] {
+            let src = lib.join(format!("{name}.gba"));
+            std::fs::write(&src, [0u8; 100]).unwrap();
+            cache.copy(&src, &cache.dir.join(format!("roms/gba/{name}.gba"))).unwrap();
+        }
+        std::fs::write(cache.dir.join("roms/gba/c.gba.part"), [0u8; 7]).unwrap();
+        assert_eq!(cache.clear(&[("roms", "gba/b.gba")]), 100, "a went, b is being played");
+        assert!(!cache.dir.join("roms/gba/a.gba").exists());
+        assert!(!cache.dir.join("roms/gba/a.gba.used").exists(), "with its marker");
+        assert!(cache.dir.join("roms/gba/b.gba").exists());
+        assert!(cache.dir.join("roms/gba/c.gba.part").exists(), "a copy in flight is left");
     }
 
     #[test]

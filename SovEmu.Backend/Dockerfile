@@ -78,6 +78,11 @@ COPY SovEmu.Backend/ ./
 
 ## ---- build: the release binaries ------------------------------------------------------------------
 FROM toolchain AS build
+# Which build this is, for the admin About page (`option_env!` in sovemu-server): the commit and
+# its time, which CI passes (docker-bake.hcl). Empty in a local build. Declared here, not in
+# `toolchain`, so the test stage's compile does not change with every commit.
+ARG SOVEMU_REVISION=""
+ARG SOVEMU_BUILT=""
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-release,target=/src/target \
     cargo build --release --locked -p sovemu-worker -p sovemu-server \
@@ -88,6 +93,11 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
 FROM toolchain AS test
+# Files tests check the sources against, at the places they sit relative to the sources in the
+# repository: the core list (SovEmu.Library's licence table, `cores.rs`) and the README (every
+# setting has a row in its table, SovEmu.Server's `configuration.rs`).
+COPY scripts/cores.list /scripts/cores.list
+COPY README.md /README.md
 # Mesa (EGL through libglvnd, desktop GL and GLES, llvmpipe): the GPU-rendering tests draw with
 # the software renderer here, as a server without a GPU would.
 RUN apt-get update \

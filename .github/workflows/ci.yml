@@ -220,6 +220,10 @@ jobs:
               "cache-mount/target-test": { "target": "/src/target", "id": "target-test" }
             }
 
+      # The commit's time, built into the server (the admin About page) with its SHA.
+      - name: Build stamp
+        run: echo "SOVEMU_BUILT=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)" >> "$GITHUB_ENV"
+
       - name: Test suite and runtime image (probes every core)
         uses: docker/bake-action@v7
         with:
