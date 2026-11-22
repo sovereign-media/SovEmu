@@ -12,7 +12,7 @@ use crate::AppState;
 use crate::assets::SignedUser;
 use crate::auth::User;
 use crate::error::{ApiError, ApiResult};
-use crate::library::{self, ScanReport};
+use crate::library::ScanReport;
 use sovemu_library::systems::{self, System};
 use sovemu_sessions::workers::{Launch, SessionInfo};
 
@@ -205,8 +205,23 @@ pub(crate) async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResul
     fetch_game(state, user.id, id).await
 }
 
+/// An admin's rescan, waited for. Refused while a mirror sync runs (it ends with a scan of its
+/// own) rather than holding the request until the sync is done.
 pub(crate) async fn scan(state: &AppState) -> ApiResult<ScanReport> {
-    Ok(library::scan(&state.db, &state.config.roms_dir).await?)
+    use crate::jobs::{Job, JobError, Trigger};
+    if state.jobs.is_running(Job::MirrorSync) {
+        return Err(ApiError::conflict("a mirror sync is running; it rescans when it finishes"));
+    }
+    let report = state
+        .jobs
+        .run(Job::Scan, Trigger::Admin, crate::admin::scan(state.clone()))
+        .await
+        .map_err(|e| match e {
+            JobError::Running => ApiError::conflict("a library scan is already running"),
+            e => e.into(),
+        })?;
+    crate::admin::after_scan_in_background(state);
+    Ok(report)
 }
 
 /// Starts a game. Ends the user's current session first. `start_id`, chosen by the client, lets

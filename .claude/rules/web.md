@@ -43,10 +43,11 @@ paths:
   from Radix UI (`radix-ui`), styled once in `src/components/ui/` (dialogs, confirm, select,
   progress, dropdown menu, tooltip, scroll area, toast, `Button`); never hand-roll a
   control Radix has, and never use `prompt()`/`confirm()`. Icons are `lucide-react`.
-- **The admin menu is one list**, `src/lib/adminNav.ts`, as Sovereign's `adminNavItems.ts`: the
-  gear's groups and their pages, which also title each page (`adminDocumentTitle`). A new admin
-  page is an entry there, a route in `src/router.tsx`, and a component that sends a non-admin
-  home.
+- **The admin menu is one list**, `src/lib/adminNav.ts`: the admin pages, in groups that the
+  gear's menu shows as one flat list with a separator between them (SovEmu's own style, not
+  Sovereign's cascade of submenus), and that also title each page (`adminDocumentTitle`). A new
+  admin page is an entry there, a route in `src/router.tsx`, and a component that sends a
+  non-admin home.
 - **Pad and keyboard first.** Console-style screens are driven by `listenNav` (`src/lib/nav.ts`)
   with the focus logic in `src/lib/` (`home.ts`, `menu.ts`); Radix supplies the surfaces. Where
   both would see a key (Escape, Enter), make sure only one acts.

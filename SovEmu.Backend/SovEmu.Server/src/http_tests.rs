@@ -862,7 +862,7 @@ async fn mirror_mode_copies_the_library_and_plays_from_it() {
     let status = h.ok(LIBRARY, json!({})).await["libraryStatus"].clone();
     assert_eq!((status["mode"].clone(), status["games"].clone()), (json!("MIRROR"), json!(0)));
 
-    crate::admin::sync_then_scan(h.state.clone()).await;
+    crate::admin::sync_then_scan(h.state.clone()).await.unwrap();
     assert!(
         h.dir.join("library/nes/images/Test Game (USA)-thumb.png").is_file(),
         "artwork is mirrored too"
@@ -882,6 +882,47 @@ async fn library_status_reports_direct_mode() {
         json!({"mode": "DIRECT", "games": 2, "cacheBytes": null, "mirror": null})
     );
     assert_eq!(h.err("mutation { syncLibrary }", json!({})).await.0, "BAD_REQUEST");
+}
+
+const JOBS: &str = "{ jobs { name intervalMinutes running lastRun { trigger outcome message } } }";
+
+#[tokio::test]
+async fn admins_see_the_jobs_and_start_them() {
+    let mut h = Harness::new("jobs", false).await;
+    h.sign_up_admin().await;
+    let jobs = h.ok(JOBS, json!({})).await["jobs"].clone();
+    let names: Vec<&str> =
+        jobs.as_array().unwrap().iter().map(|j| j["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["SCAN", "METADATA", "MAINTENANCE"], "no mirror sync outside mirror mode");
+    assert_eq!(jobs[0]["intervalMinutes"], 60.0);
+    assert_eq!(jobs[1]["intervalMinutes"], Value::Null, "the lookup follows each scan");
+
+    h.ok("mutation { runJob(job: MAINTENANCE) { name } }", json!({})).await;
+    let mut last = Value::Null;
+    for _ in 0..200 {
+        last = h.ok(JOBS, json!({})).await["jobs"][2]["lastRun"].clone();
+        if last["outcome"] != "RUNNING" && !last.is_null() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        (last["trigger"].clone(), last["outcome"].clone()),
+        (json!("ADMIN"), json!("SUCCEEDED"))
+    );
+    assert!(last["message"].as_str().unwrap().contains("expired sign-ins deleted"));
+
+    // A rescan waited for is recorded too.
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+    let runs = h.ok("{ jobRuns(job: SCAN) { trigger outcome message } }", json!({})).await;
+    assert_eq!(
+        runs["jobRuns"][0],
+        json!({"trigger": "ADMIN", "outcome": "SUCCEEDED", "message": "2 games: 0 added, 0 removed"})
+    );
+    assert_eq!(
+        h.err("mutation { runJob(job: MIRROR_SYNC) { name } }", json!({})).await.0,
+        "BAD_REQUEST"
+    );
 }
 
 #[tokio::test]

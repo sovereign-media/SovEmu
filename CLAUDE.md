@@ -123,6 +123,11 @@ instead (as Sovereign's server takes its SPA).
   route or the session id; a worker gets its session id as `--session-id`.
 - **The server shuts down on SIGTERM as on Ctrl-C**: it stops every worker (so saves are
   written) before exiting. Kubernetes and `docker stop` send SIGTERM; never exit without it.
+- **Background work is a job** (`SovEmu.Server/src/jobs.rs`): a `Job` with its interval from a
+  `SOVEMU_*` setting, run through `Jobs`, which runs one of a job at a time, makes jobs in a lane
+  (scan, mirror sync) wait for each other, records every run in `job_runs`, turns a panic into a
+  failed run, and cancels everything on shutdown. Never start a bare `tokio::spawn` loop for
+  scheduled or admin-started work; an admin's button calls `runJob` or the job's own mutation.
 - **Long text goes through a file.** Commit messages, PR and issue bodies are written with the
   Write tool to `test-results/<task>.md` and passed with `-F` / `--body-file`, never a heredoc.
 

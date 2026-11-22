@@ -1124,6 +1124,162 @@ struct GpuStatus {
     note: Option<String>,
 }
 
+/// A background job (`jobs.rs`).
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum JobName {
+    /// Rescans the library.
+    Scan,
+    /// `MIRROR` mode: copies the source into the local mirror, then rescans it.
+    MirrorSync,
+    /// Looks up game information for games without it.
+    Metadata,
+    /// Database upkeep: expired sign-ins and old job history deleted.
+    Maintenance,
+}
+
+impl From<crate::jobs::Job> for JobName {
+    fn from(j: crate::jobs::Job) -> Self {
+        use crate::jobs::Job;
+        match j {
+            Job::Scan => Self::Scan,
+            Job::MirrorSync => Self::MirrorSync,
+            Job::Metadata => Self::Metadata,
+            Job::Maintenance => Self::Maintenance,
+        }
+    }
+}
+
+impl From<JobName> for crate::jobs::Job {
+    fn from(j: JobName) -> Self {
+        match j {
+            JobName::Scan => Self::Scan,
+            JobName::MirrorSync => Self::MirrorSync,
+            JobName::Metadata => Self::Metadata,
+            JobName::Maintenance => Self::Maintenance,
+        }
+    }
+}
+
+/// What started a job's run.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum JobTrigger {
+    Startup,
+    /// Its interval (`SOVEMU_*_INTERVAL_MINUTES`).
+    Schedule,
+    /// An admin.
+    Admin,
+}
+
+impl From<crate::jobs::Trigger> for JobTrigger {
+    fn from(t: crate::jobs::Trigger) -> Self {
+        use crate::jobs::Trigger;
+        match t {
+            Trigger::Startup => Self::Startup,
+            Trigger::Schedule => Self::Schedule,
+            Trigger::Admin => Self::Admin,
+        }
+    }
+}
+
+/// How a job's run ended.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum JobOutcome {
+    Running,
+    Succeeded,
+    Failed,
+    /// Stopped by the server shutting down.
+    Cancelled,
+    /// The server stopped without finishing it.
+    Interrupted,
+}
+
+impl From<crate::jobs::Outcome> for JobOutcome {
+    fn from(o: crate::jobs::Outcome) -> Self {
+        use crate::jobs::Outcome;
+        match o {
+            Outcome::Running => Self::Running,
+            Outcome::Succeeded => Self::Succeeded,
+            Outcome::Failed => Self::Failed,
+            Outcome::Cancelled => Self::Cancelled,
+            Outcome::Interrupted => Self::Interrupted,
+        }
+    }
+}
+
+/// One run of a background job.
+#[derive(SimpleObject)]
+struct JobRun {
+    id: ID,
+    job: JobName,
+    trigger: JobTrigger,
+    outcome: JobOutcome,
+    /// Unix seconds.
+    started_at: f64,
+    /// Unix seconds; none while it runs.
+    finished_at: Option<f64>,
+    seconds: Option<f64>,
+    /// What it did ("1,204 games: 3 added, 0 removed"), or why it failed.
+    message: Option<String>,
+}
+
+impl From<crate::jobs::JobRun> for JobRun {
+    fn from(r: crate::jobs::JobRun) -> Self {
+        Self {
+            id: ID(r.id.to_string()),
+            job: r.job.into(),
+            trigger: r.trigger.into(),
+            outcome: r.outcome.into(),
+            started_at: r.started_at as f64,
+            finished_at: r.finished_at.map(|t| t as f64),
+            seconds: r.duration_ms.map(|ms| ms as f64 / 1000.0),
+            message: r.message,
+        }
+    }
+}
+
+/// A background job this server has, and its state now.
+#[derive(SimpleObject)]
+struct JobState {
+    name: JobName,
+    description: String,
+    /// How often it runs on its own, in minutes; none if it does not (it follows another job,
+    /// or its interval is 0).
+    interval_minutes: Option<f64>,
+    /// When it next runs on its own (Unix seconds); none while it runs or if it does not.
+    next_run_at: Option<f64>,
+    running: bool,
+    /// What started the run under way.
+    running_trigger: Option<JobTrigger>,
+    /// When the run under way started (Unix seconds).
+    running_since: Option<f64>,
+    /// Its latest run (the one under way, if it is running).
+    last_run: Option<JobRun>,
+}
+
+fn unix(t: std::time::SystemTime) -> f64 {
+    t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or_default()
+}
+
+/// Every job this server has, as [`JobState`]s.
+async fn job_states(state: &AppState) -> Result<Vec<JobState>> {
+    let mut last = state.jobs.last_runs().await.map_err(|e| gql(e.into()))?;
+    Ok(state
+        .jobs
+        .info(state)
+        .into_iter()
+        .map(|i| JobState {
+            name: i.job.into(),
+            description: i.job.description().to_owned(),
+            interval_minutes: i.every.map(|d| d.as_secs_f64() / 60.0),
+            next_run_at: i.next_at.map(unix),
+            running: i.running.is_some(),
+            running_trigger: i.running.map(|(t, _)| t.into()),
+            running_since: i.running.map(|(_, at)| unix(at)),
+            last_run: last.remove(&i.job).map(Into::into),
+        })
+        .collect())
+}
+
 /// Where an emulator setting's value comes from.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 enum SettingSource {
@@ -1448,6 +1604,28 @@ impl Query {
         })
     }
 
+    /// Admins: the background jobs (scans, syncs, lookups, upkeep), and how each last ran.
+    async fn jobs(&self, ctx: &Context<'_>) -> Result<Vec<JobState>> {
+        admin(ctx).await?;
+        job_states(state(ctx)).await
+    }
+
+    /// Admins: the latest runs of background jobs, newest first: of one job, or of all.
+    async fn job_runs(
+        &self,
+        ctx: &Context<'_>,
+        job: Option<JobName>,
+        #[graphql(default = 50, validator(minimum = 1, maximum = 500))] limit: i32,
+    ) -> Result<Vec<JobRun>> {
+        admin(ctx).await?;
+        let runs = state(ctx)
+            .jobs
+            .runs(job.map(Into::into), limit as u32)
+            .await
+            .map_err(|e| gql(e.into()))?;
+        Ok(runs.into_iter().map(Into::into).collect())
+    }
+
     /// Admins: a system's emulator settings.
     async fn emulator_settings(&self, ctx: &Context<'_>, system: ID) -> Result<EmulatorSettings> {
         admin(ctx).await?;
@@ -1525,6 +1703,16 @@ impl Mutation {
         admin(ctx).await?;
         let r = crate::api::scan(state(ctx)).await.api()?;
         Ok(ScanReport { found: r.found as i64, added: r.added as i64, removed: r.removed as i64 })
+    }
+
+    /// Admins: starts a background job now, as its schedule would (`METADATA`: games without
+    /// game information). `CONFLICT` if it is running; `BAD_REQUEST` if this server does not
+    /// have it (`MIRROR_SYNC` outside `MIRROR` mode).
+    async fn run_job(&self, ctx: &Context<'_>, job: JobName) -> Result<Vec<JobState>> {
+        admin(ctx).await?;
+        let state = state(ctx);
+        crate::jobs::start_by_admin(state, job.into()).map_err(|e| gql(e.into()))?;
+        job_states(state).await
     }
 
     /// Admins: starts a mirror sync in the background (`MIRROR` mode only).

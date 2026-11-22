@@ -300,6 +300,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_MAINTENANCE_INTERVAL_MINUTES", default_value_t = 60)]
     pub maintenance_interval_minutes: u64,
 
+    /// Days of background-job history kept (each scan, sync, lookup and upkeep run, on the
+    /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
+    #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
+    pub job_history_days: u32,
+
     /// Delete accounts not declared in `SOVEMU_USERS__*` (or `SOVEMU_ADMIN_USERNAME`) at
     /// startup, so the environment is the whole list of users.
     #[arg(long, env = "SOVEMU_USERS_PRUNE")]
@@ -599,7 +604,7 @@ impl Config {
                 self.login_lockout_minutes
             ),
             format!(
-                "trusted_proxies={} maintenance_interval_minutes={}",
+                "trusted_proxies={} maintenance_interval_minutes={} job_history_days={}",
                 if self.trusted_proxies.is_empty() {
                     "(none)".into()
                 } else {
@@ -609,7 +614,8 @@ impl Config {
                         .collect::<Vec<_>>()
                         .join(",")
                 },
-                self.maintenance_interval_minutes
+                self.maintenance_interval_minutes,
+                self.job_history_days
             ),
             format!(
                 "users={} users_prune={}",
@@ -729,6 +735,8 @@ pub struct AppState {
     pub identity: sovemu_identity::Identity,
     /// Each user's allowance of client events (`client_events`).
     pub(crate) client_events: Arc<client_events::ClientEvents>,
+    /// Background jobs: scans, syncs, lookups, upkeep (`jobs`).
+    pub(crate) jobs: jobs::Jobs,
 }
 
 impl AppState {
@@ -947,6 +955,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     )
     .await?;
     reconcile_users(&identity, &config).await?;
+    let jobs = jobs::Jobs::new(db.clone()).await?;
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -961,6 +970,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         assets,
         identity,
         client_events: Arc::default(),
+        jobs,
     })
 }
 
@@ -985,21 +995,6 @@ async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) 
         identity.prune_users(&declared).await?;
     }
     Ok(())
-}
-
-/// Scans the library in the background: a network library can take minutes, and the last
-/// scan's games are already in the database meanwhile. In `mirror` mode, syncs first (scanning
-/// what is already mirrored while it runs), then scans again.
-fn spawn_initial_scan(state: &AppState) {
-    jobs::spawn(state);
-    let state = state.clone();
-    tokio::spawn(async move {
-        admin::scan_and_log(&state).await;
-        if state.config.library_mode == LibraryMode::Mirror {
-            admin::sync_then_scan(state.clone()).await;
-        }
-        admin::after_scan(&state).await;
-    });
 }
 
 /// Tidies the environment before the settings are parsed:
@@ -1047,6 +1042,10 @@ async fn shutdown_signal() {
     tracing::info!("shutting down: stopping game sessions");
 }
 
+/// How long shutdown waits for cancelled jobs to record it. A cancelled job stops at its next
+/// await, so this is a bound, not a wait anyone tunes.
+const JOBS_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn main() -> Result<()> {
     unset_empty_settings();
     let config = Config::parse();
@@ -1077,8 +1076,10 @@ async fn run(mut config: Config) -> Result<()> {
     let state = build_state(config).await?;
     tracing::info!(summary = %state.config.summary(), "configuration");
     let _gauges = telemetry::observe(&state);
-    spawn_initial_scan(&state);
-    let workers = state.workers.clone();
+    // Scans the library in the background: a network library can take minutes, and the last
+    // scan's games are already in the database meanwhile.
+    jobs::spawn(&state);
+    let (workers, jobs) = (state.workers.clone(), state.jobs.clone());
     if state.config.web_dir.is_none() {
         tracing::warn!("no --web-dir: serving the API only");
     }
@@ -1091,7 +1092,9 @@ async fn run(mut config: Config) -> Result<()> {
     // With each connection's address, for `client_ip` (sign-in throttling, request spans).
     let app = router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
-    workers.stop_all().await;
+    // Both at once: the workers write their players' saves while the jobs record that they
+    // were cancelled.
+    tokio::join!(workers.stop_all(), jobs.shutdown(JOBS_SHUTDOWN_GRACE));
     Ok(())
 }
 
