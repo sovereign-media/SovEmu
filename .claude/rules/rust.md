@@ -46,9 +46,11 @@ paths:
   binaries may use `anyhow` with `.context(...)`.
 - **Logging** goes through `tracing`. Core log lines arrive under the `core` target.
 - **Tests.** Unit tests in `#[cfg(test)]` modules; integration tests under `tests/`. Anything
-  that loads a core takes the test file's `CORE_LOCK` first. Never make a test depend on a
+  that loads a core takes the test file's `CORE_LOCK` first (needed under `cargo test`; nextest
+  gives each test its own process). Tests run in parallel with every other test, on a loaded CI
+  machine: wait for what you measure (a count of frames or acks), never for a fixed time alone. Never make a test depend on a
   downloaded core or ROM.
 - Before a PR: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`, all from `SovEmu.Backend/`. The pre-push hook (`.githooks/pre-push`,
+  `cargo nextest run --workspace` (or `cargo test --workspace`), all from `SovEmu.Backend/`. The pre-push hook (`.githooks/pre-push`,
   on with `git config core.hooksPath .githooks`) runs them for any push that touches the backend;
   never skip it with `--no-verify` to get a failing change up.
