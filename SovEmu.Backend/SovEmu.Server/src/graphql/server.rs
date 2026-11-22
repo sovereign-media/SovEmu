@@ -352,7 +352,6 @@ impl ServerQuery {
     async fn telemetry(&self, ctx: &Context<'_>) -> Result<TelemetryReport> {
         admin(ctx).await?;
         let config = &state(ctx).config;
-        let settings = crate::configuration::settings(config);
         let env = |name: &str| {
             config.given.environment.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
         };
@@ -371,16 +370,13 @@ impl ServerQuery {
                 .unwrap_or_default(),
             traces: traces.into(),
             metrics: metrics.into(),
-            settings: settings
-                .into_iter()
-                .filter(|s| {
-                    s.name == "SOVEMU_OTEL_ENDPOINT"
-                        || s.name == "SOVEMU_LOG_FORMAT"
-                        || s.name == "RUST_LOG"
-                        || s.name.starts_with("OTEL_")
-                })
-                .map(Into::into)
-                .collect(),
+            settings: crate::configuration::settings_where(config, |name| {
+                matches!(name, "SOVEMU_OTEL_ENDPOINT" | "SOVEMU_LOG_FORMAT" | "RUST_LOG")
+                    || name.starts_with("OTEL_")
+            })
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         })
     }
 
@@ -476,11 +472,12 @@ impl ServerQuery {
             trusted_proxies: config.trusted_proxies.iter().map(ToString::to_string).collect(),
             secure_cookies: config.secure_cookies,
             ice_servers,
-            settings: crate::configuration::settings(config)
-                .into_iter()
-                .filter(|s| NETWORK_SETTINGS.contains(&s.name.as_str()))
-                .map(Into::into)
-                .collect(),
+            settings: crate::configuration::settings_where(config, |name| {
+                NETWORK_SETTINGS.contains(&name)
+            })
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         })
     }
 

@@ -25,6 +25,7 @@ export const SCREEN_PATHS = [
   "/admin/cores/",
   "/admin/configuration/",
   "/admin/network/",
+  "/admin/streaming/",
   "/admin/storage/",
   "/admin/telemetry/",
   "/admin/about/",

@@ -8,14 +8,10 @@
 // not count, so each frame is matched by when it was received, not by when it is shown. The
 // Android app measures the same way.
 
+import { median } from "./numbers";
+
 /** How many recent inputs the median is taken over. */
 const SAMPLES = 60;
-
-function median(values: number[]): number {
-  if (!values.length) return NaN;
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
 
 /**
  * The ack leaves the worker just before its frame, but its arrival is timed on the page's main

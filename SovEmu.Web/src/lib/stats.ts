@@ -1,4 +1,6 @@
 // Latency and stream health from RTCPeerConnection.getStats(), sampled once a second.
+
+import { median } from "./numbers";
 import { decoderLabel, pipelineItems } from "./pipeline";
 import type { ClientStats } from "./protocol";
 import type { Session } from "./session";
@@ -17,12 +19,6 @@ export interface StatsSample {
 type Sample = { t: number; video?: RTCInboundRtpStreamStats; audio?: RTCInboundRtpStreamStats };
 
 const fmt = (x: number, unit = "", digits = 0) => (Number.isFinite(x) ? `${x.toFixed(digits)}${unit}` : "–");
-
-function median(values: number[]): number {
-  if (!values.length) return NaN;
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
 
 /** Nearest-rank percentile, as the Android client computes it. */
 function percentile(values: number[], p: number): number {
