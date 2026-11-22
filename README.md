@@ -365,6 +365,10 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
 | `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
 | `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
+| `SOVEMU_BACKUP_DIR` | `<data>/backups` | Where backups are kept: one zip file each, holding the database, the signing keys (`server.json`) and every save. It holds password hashes and keys: keep it as safe as the data folder |
+| `SOVEMU_BACKUP_INTERVAL_HOURS` | `0` | A backup every this many hours (0: none on a schedule; the admin's Backups page still makes one) |
+| `SOVEMU_BACKUP_KEEP` | `7` | Backups kept, the newest (0: every one) |
+| `SOVEMU_RESTORE_FROM` | none | A backup to restore at startup, before the database opens. What it replaces is moved into `<data>/before-restore-<time>/`, never deleted, and each backup is restored once however often the server restarts with this set |
 | `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
 | `SOVEMU_LOG_BUFFER_LINES` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
 | `SOVEMU_ACTIVITY_HISTORY_DAYS` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |

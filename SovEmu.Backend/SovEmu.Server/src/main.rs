@@ -12,6 +12,7 @@ mod appearance;
 mod assets;
 mod attention;
 mod auth;
+mod backup;
 mod cheats;
 mod client_events;
 mod client_ip;
@@ -351,6 +352,25 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_MAINTENANCE_INTERVAL_MINUTES", default_value_t = 60)]
     pub maintenance_interval_minutes: u64,
 
+    /// Where backups are kept (default `<data>/backups`). A backup holds the database, the
+    /// signing keys and every save: keep it somewhere as safe as they are.
+    #[arg(long, env = "SOVEMU_BACKUP_DIR")]
+    pub backup_dir: Option<PathBuf>,
+
+    /// A backup every this many hours (0: none on a schedule; the admin's button still makes one).
+    #[arg(long, env = "SOVEMU_BACKUP_INTERVAL_HOURS", default_value_t = 0)]
+    pub backup_interval_hours: u64,
+
+    /// Backups kept, the newest (0: every one).
+    #[arg(long, env = "SOVEMU_BACKUP_KEEP", default_value_t = 7)]
+    pub backup_keep: u32,
+
+    /// A backup to restore at startup, before the database opens. What was there is moved into
+    /// `<data>/before-restore-<time>/`, and each backup is restored once, however often the
+    /// server restarts with this set.
+    #[arg(long, env = "SOVEMU_RESTORE_FROM")]
+    pub restore_from: Option<PathBuf>,
+
     /// Days of background-job history kept (each scan, sync, lookup and upkeep run, on the
     /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
     #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
@@ -594,6 +614,14 @@ impl Config {
             .unwrap_or_else(|| self.paths().bios())
     }
 
+    /// Where backups are kept: `SOVEMU_BACKUP_DIR`, else `<data>/backups`.
+    pub fn backup_dir(&self) -> PathBuf {
+        self.backup_dir
+            .clone()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| self.paths().backups())
+    }
+
     /// A secret's value, by its variable.
     fn secret(&self, var: &str) -> Option<&str> {
         match var {
@@ -775,6 +803,7 @@ pub fn router(state: AppState) -> Router {
                 .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
                 .route("/media/backgrounds/{id}", get(appearance::background_file))
                 .route("/media/systems/{id}", get(appearance::photo_file))
+                .route("/media/backups/{name}", get(admin::backup_file))
                 .route_layer(middleware::from_fn_with_state(
                     state.clone(),
                     assets::require_signature,
@@ -836,6 +865,20 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         .with_context(|| format!("creating {}", config.data_dir.display()))?;
     std::fs::create_dir_all(&config.roms_dir).ok();
     bios::prepare(&config.bios_dir());
+    // A restore replaces the database, so it comes before the database opens.
+    if let Some(file) = config.restore_from.as_ref().filter(|p| !p.as_os_str().is_empty()) {
+        match backup::restore(&paths, file)? {
+            backup::Restored::Done { aside } => tracing::warn!(
+                backup = %file.display(),
+                replaced = %aside.display(),
+                "restored a backup; what it replaced is kept"
+            ),
+            backup::Restored::Already => tracing::info!(
+                backup = %file.display(),
+                "this backup was restored already; SOVEMU_RESTORE_FROM can be removed"
+            ),
+        }
+    }
     let db = db::open(&paths.database()).await?;
     let activity = activity::Activity::new(db.clone());
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);

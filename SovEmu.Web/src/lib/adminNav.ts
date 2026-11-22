@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bug,
   CircleAlert,
+  DatabaseBackup,
   FileDiff,
   Frame,
   Gamepad,
@@ -215,6 +216,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Storage",
         title: "Where the data folder's space goes, and clearing the game cache",
         icon: HardDrive,
+      },
+      {
+        href: "/admin/backups/",
+        label: "Backups",
+        title: "Backing up the accounts, settings and saves, and restoring a backup",
+        icon: DatabaseBackup,
       },
       {
         href: "/admin/telemetry/",

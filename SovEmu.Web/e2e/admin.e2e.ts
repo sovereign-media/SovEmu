@@ -265,6 +265,22 @@ test("a shared collection is filled from a game's panel and reaches everyone's H
   await expect(page.getByText("None yet.")).toBeVisible();
 });
 
+test("the Backups page backs up now, offers the file and its restore line, and deletes it", async ({ page }) => {
+  await page.goto("/admin/backups/");
+  await expect(page.getByText("No backups yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Back up now" }).click();
+  const backup = page.getByRole("list", { name: "Backups" }).getByRole("listitem");
+  await expect(backup).toHaveCount(1);
+  await expect(backup.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "href",
+    /^\/media\/backups\/sovemu-backup-.*Sov-Signature=/,
+  );
+  await expect(page.getByText(/Succeeded/)).toBeVisible();
+  await backup.getByRole("button", { name: /^Delete / }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("No backups yet.")).toBeVisible();
+});
+
 test("the Overview sums up the server, each card leading to its page", async ({ page }) => {
   await page.goto("/admin/overview/");
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();

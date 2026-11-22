@@ -931,7 +931,11 @@ async fn admins_see_the_jobs_and_start_them() {
     let jobs = h.ok(JOBS, json!({})).await["jobs"].clone();
     let names: Vec<&str> =
         jobs.as_array().unwrap().iter().map(|j| j["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["SCAN", "METADATA", "MAINTENANCE"], "no mirror sync outside mirror mode");
+    assert_eq!(
+        names,
+        ["SCAN", "METADATA", "MAINTENANCE", "BACKUP"],
+        "no mirror sync outside mirror mode"
+    );
     assert_eq!(jobs[0]["intervalMinutes"], 60.0);
     assert_eq!(jobs[1]["intervalMinutes"], Value::Null, "the lookup follows each scan");
 
@@ -2304,6 +2308,8 @@ const ADMIN_ONLY: &[&str] = &[
     "{ gamesNeedingAttention(kind: DUPLICATE) { path } }",
     "{ attentionCounts { count } }",
     "mutation { lookUpGame(gameId: 1) { running } }",
+    "{ backups { dir } }",
+    "mutation { deleteBackup(name: \"x\") }",
     "mutation { createSharedCollection(name: \"x\") { id } }",
     "mutation { renameSharedCollection(id: 1, name: \"x\") }",
     "mutation { deleteSharedCollection(id: 1) }",
@@ -2343,6 +2349,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/statistics.rs"),
         include_str!("graphql/logs.rs"),
         include_str!("graphql/attention.rs"),
+        include_str!("graphql/backups.rs"),
         include_str!("graphql/collections_admin.rs"),
     ]
     .iter()
@@ -3262,4 +3269,59 @@ async fn admins_keep_shared_collections_that_everyone_sees_but_only_admins_chang
     crate::collections::declare(&h.state.db, &config.collections[..1]).await.unwrap();
     let names = h.ok(list, json!({})).await["sharedCollections"].clone();
     assert_eq!(names.as_array().unwrap().len(), 1, "Racing is no longer declared: {names}");
+}
+
+#[tokio::test]
+async fn admins_make_download_and_delete_backups_and_only_admins_get_them() {
+    let mut h = Harness::new("backups", false).await;
+    h.sign_up_admin().await;
+    let list = "{ backups { dir intervalHours keep restoreFrom files { name bytes url } } }";
+    let before = h.ok(list, json!({})).await["backups"].clone();
+    assert_eq!(before["files"], json!([]));
+    assert_eq!((before["intervalHours"].as_f64(), before["keep"].as_i64()), (Some(0.0), Some(7)));
+    assert!(before["dir"].as_str().unwrap().ends_with("backups"));
+
+    h.ok("mutation { runJob(job: BACKUP) { name } }", json!({})).await;
+    let mut files = Value::Null;
+    for _ in 0..300 {
+        files = h.ok(list, json!({})).await["backups"]["files"].clone();
+        if files.as_array().is_some_and(|f| !f.is_empty()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let backup = files[0].clone();
+    let name = backup["name"].as_str().unwrap().to_owned();
+    assert!(name.starts_with("sovemu-backup-") && name.ends_with(".zip"), "{name}");
+
+    let (status, bytes, headers) = h.get_raw(backup["url"].as_str().unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&bytes[..2], b"PK", "a zip file");
+    assert_eq!(bytes.len() as f64, backup["bytes"].as_f64().unwrap());
+    assert!(headers[header::CONTENT_DISPOSITION].to_str().unwrap().contains(&name));
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    assert!(zip.by_name("sovemu.db").is_ok() && zip.by_name("backup.json").is_ok());
+
+    // It holds every password hash: a viewer's signed URL for it is refused, and no URL
+    // leaves the backup folder.
+    h.switch_to_new_viewer("kid").await;
+    let kid: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'kid'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let (status, _, _) = h.get_raw(&h.signed(kid, &format!("/media/backups/{name}"))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    let admin: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let (status, _, _) = h.get_raw(&h.signed(admin, "/media/backups/..%2Fsovemu.db")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let delete = "mutation ($n: String!) { deleteBackup(name: $n) }";
+    h.ok(delete, json!({"n": name})).await;
+    assert_eq!(h.ok(list, json!({})).await["backups"]["files"], json!([]));
+    assert_eq!(h.err(delete, json!({"n": name})).await.0, "NOT_FOUND");
 }

@@ -14,6 +14,7 @@ import {
   AppearanceQuery,
   AttentionCountsQuery,
   BackgroundQuery,
+  BackupsQuery,
   BiosDirQuery,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
@@ -32,6 +33,7 @@ import {
   CreateCollectionMutation,
   CreateSharedCollectionMutation,
   DecorationsQuery,
+  DeleteBackupMutation,
   DeleteCollectionMutation,
   DeleteSharedCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
@@ -111,6 +113,7 @@ export type Overview = ResultOf<typeof OverviewQuery>;
 /** How much a log line says. */
 export type LogLevel = Enum<"LogLevel">;
 export type AttentionKind = Enum<"AttentionKind">;
+export type Backups = ResultOf<typeof BackupsQuery>["backups"];
 export type AttentionItem = ResultOf<typeof GamesNeedingAttentionQuery>["gamesNeedingAttention"][number];
 export type AttentionCount = ResultOf<typeof AttentionCountsQuery>["attentionCounts"][number];
 /** One line of the server's log. */
@@ -312,6 +315,9 @@ export const api = {
   attentionCounts: async () => (await request(AttentionCountsQuery)).attentionCounts,
   /** Admin: looks one game up again, in the background. */
   lookUpGame: async (gameId: number) => (await request(LookUpGameMutation, { gameId })).lookUpGame,
+  /** Admin: the backups kept, newest first, and how they are made. */
+  backups: async () => (await request(BackupsQuery)).backups,
+  deleteBackup: (name: string) => request(DeleteBackupMutation, { name }),
   /** Admin: what was played over the last week, month or year. */
   playStatistics: async (range: StatsRange) => (await request(PlayStatisticsQuery, { range })).playStatistics,
   /** Admin: a page of the activity log, newest first; `after` is the last page's `next`. */

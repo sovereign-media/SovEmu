@@ -10,6 +10,9 @@
 //!   history deleted, the query planner's statistics refreshed (`PRAGMA optimize`) and the
 //!   write-ahead log folded back into the database, so none of them grows without end.
 //!
+//! - [`Job::Backup`] (`SOVEMU_BACKUP_INTERVAL_HOURS`, off by default): a backup of the database,
+//!   the signing keys and the saves (`backup.rs`).
+//!
 //! Work too frequent to be a job (the resource readings, every few seconds) is a sampler
 //! ([`Jobs::sampler`]): stopped on shutdown and kept alive through panics like a job, but with
 //! no history.
@@ -50,6 +53,7 @@ pub(crate) enum Job {
     MirrorSync,
     Metadata,
     Maintenance,
+    Backup,
 }
 
 /// Jobs that must not run at the same time share a lane, and wait for each other in it.
@@ -60,7 +64,8 @@ enum Lane {
 }
 
 impl Job {
-    pub(crate) const ALL: [Job; 4] = [Job::Scan, Job::MirrorSync, Job::Metadata, Job::Maintenance];
+    pub(crate) const ALL: [Job; 5] =
+        [Job::Scan, Job::MirrorSync, Job::Metadata, Job::Maintenance, Job::Backup];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
@@ -68,6 +73,7 @@ impl Job {
             Job::MirrorSync => "mirror_sync",
             Job::Metadata => "metadata",
             Job::Maintenance => "maintenance",
+            Job::Backup => "backup",
         }
     }
 
@@ -78,6 +84,7 @@ impl Job {
             Job::MirrorSync => "Mirror sync",
             Job::Metadata => "Game information",
             Job::Maintenance => "Database upkeep",
+            Job::Backup => "Backup",
         }
     }
 
@@ -97,13 +104,16 @@ impl Job {
             Job::Maintenance => {
                 "Deletes expired sign-ins and old job history, and keeps the database compact and its query plans current."
             }
+            Job::Backup => {
+                "Backs up the database, the signing keys and every save into one file, keeping the newest."
+            }
         }
     }
 
     fn lane(self) -> Option<Lane> {
         match self {
             Job::Scan | Job::MirrorSync => Some(Lane::Library),
-            Job::Metadata | Job::Maintenance => None,
+            Job::Metadata | Job::Maintenance | Job::Backup => None,
         }
     }
 
@@ -120,6 +130,7 @@ impl Job {
             // Follows each scan rather than keeping a clock of its own.
             Job::Metadata => 0,
             Job::Maintenance => state.config.maintenance_interval_minutes,
+            Job::Backup => state.config.backup_interval_hours.saturating_mul(60),
         };
         (minutes > 0 && self.available(state)).then(|| Duration::from_secs(minutes * 60))
     }
@@ -678,6 +689,10 @@ pub(crate) fn spawn(state: &AppState) {
         let state = state.clone();
         jobs.schedule(Job::Maintenance, every, move || maintain(state.clone()));
     }
+    if let Some(every) = Job::Backup.every(state) {
+        let state = state.clone();
+        jobs.schedule(Job::Backup, every, move || admin::back_up(state.clone()));
+    }
 }
 
 /// Starts `job` as an admin asked: in the background, with its usual work.
@@ -710,6 +725,7 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
             )
             .map(drop),
         Job::Maintenance => jobs.start(Job::Maintenance, Trigger::Admin, maintain(s)).map(drop),
+        Job::Backup => jobs.start(Job::Backup, Trigger::Admin, admin::back_up(s)).map(drop),
     }
 }
 

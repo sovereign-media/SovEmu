@@ -14,6 +14,8 @@ pub(super) enum JobName {
     Metadata,
     /// Database upkeep: expired sign-ins and old job history deleted.
     Maintenance,
+    /// A backup of the database, the signing keys and the saves.
+    Backup,
 }
 
 impl From<crate::jobs::Job> for JobName {
@@ -24,6 +26,7 @@ impl From<crate::jobs::Job> for JobName {
             Job::MirrorSync => Self::MirrorSync,
             Job::Metadata => Self::Metadata,
             Job::Maintenance => Self::Maintenance,
+            Job::Backup => Self::Backup,
         }
     }
 }
@@ -35,6 +38,7 @@ impl From<JobName> for crate::jobs::Job {
             JobName::MirrorSync => Self::MirrorSync,
             JobName::Metadata => Self::Metadata,
             JobName::Maintenance => Self::Maintenance,
+            JobName::Backup => Self::Backup,
         }
     }
 }
@@ -120,6 +124,8 @@ impl From<crate::jobs::JobRun> for JobRun {
 #[derive(SimpleObject)]
 pub(super) struct JobState {
     pub(super) name: JobName,
+    /// Its name for people ("Library scan").
+    pub(super) label: String,
     pub(super) description: String,
     /// How often it runs on its own, in minutes; none if it does not (it follows another job,
     /// or its interval is 0).
@@ -144,6 +150,7 @@ pub(super) async fn job_states(state: &AppState) -> Result<Vec<JobState>> {
         .into_iter()
         .map(|i| JobState {
             name: i.job.into(),
+            label: i.job.label().to_owned(),
             description: i.job.description().to_owned(),
             interval_minutes: i.every.map(|d| d.as_secs_f64() / 60.0),
             next_run_at: i.next_at.map(unix),
