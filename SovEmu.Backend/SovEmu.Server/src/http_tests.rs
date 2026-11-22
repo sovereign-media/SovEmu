@@ -926,6 +926,28 @@ async fn admins_see_the_jobs_and_start_them() {
 }
 
 #[tokio::test]
+async fn admins_see_the_servers_resources() {
+    let mut h = Harness::new("resources", false).await;
+    h.sign_up_admin().await;
+    let r = h
+        .ok(
+            "{ serverResources { host { arch usableCpus } sampleSeconds usage { cpuPercent } usageNote } }",
+            json!({}),
+        )
+        .await["serverResources"]
+        .clone();
+    assert_eq!(r["host"]["arch"], std::env::consts::ARCH);
+    assert!(r["host"]["usableCpus"].as_i64() >= Some(1));
+    assert_eq!(r["sampleSeconds"], 5);
+    // The harness starts no sampler.
+    assert_eq!((r["usage"].clone(), r["usageNote"].clone()), (Value::Null, json!("Not read yet.")));
+    let history = h
+        .ok("{ resourceHistory(range: DAY) { bucketSeconds series { resource } } }", json!({}))
+        .await;
+    assert_eq!(history["resourceHistory"], json!({"bucketSeconds": 432, "series": []}));
+}
+
+#[tokio::test]
 async fn checks_bios_files_per_system() {
     let mut h = Harness::new("bios", false).await;
     h.sign_up_admin().await;

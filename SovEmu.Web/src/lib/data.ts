@@ -3,7 +3,7 @@
 // what it made stale (`invalidate`). Screens use these with `useQuery`; the player, which loads
 // imperatively, with `queryClient.fetchQuery`.
 import { QueryClient, queryOptions } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, type ResourceRange } from "./api";
 import { ApiError } from "./graphql";
 
 export const queryClient = new QueryClient({
@@ -37,6 +37,9 @@ export const q = {
   search: (text: string) => queryOptions({ queryKey: ["search", text], queryFn: () => api.search(text) }),
   adminStatus: () => queryOptions({ queryKey: ["admin", "status"], queryFn: api.adminStatus }),
   jobs: () => queryOptions({ queryKey: ["admin", "jobs"], queryFn: api.jobs }),
+  serverResources: () => queryOptions({ queryKey: ["admin", "resources"], queryFn: api.serverResources }),
+  resourceHistory: (range: ResourceRange) =>
+    queryOptions({ queryKey: ["admin", "resources", "history", range], queryFn: () => api.resourceHistory(range) }),
   systemSettings: (system: string) =>
     queryOptions({ queryKey: ["admin", "settings", system], queryFn: () => api.systemSettings(system) }),
   controllerDefaults: () =>

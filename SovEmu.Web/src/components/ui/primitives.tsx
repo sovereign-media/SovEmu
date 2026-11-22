@@ -10,6 +10,7 @@ import {
   Progress as ProgressPrimitive,
   ScrollArea as ScrollPrimitive,
   Select as SelectPrimitive,
+  ToggleGroup as TogglePrimitive,
   Tooltip as TooltipPrimitive,
 } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
@@ -207,6 +208,41 @@ export function Progress({
         style={{ width: `${value}%`, background: color }}
       />
     </ProgressPrimitive.Root>
+  );
+}
+
+// --- Segmented choice -----------------------------------------------------------------------
+
+/** One of a few options, side by side (a chart's time range). */
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <TogglePrimitive.Root
+      type="single"
+      value={value}
+      aria-label={label}
+      onValueChange={(v) => v && onChange(v as T)}
+      className="inline-flex rounded-lg border border-edge bg-surface p-0.5"
+    >
+      {options.map((o) => (
+        <TogglePrimitive.Item
+          key={o.value}
+          value={o.value}
+          className="rounded-md px-3 py-1 text-sm text-slate-400 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-accent data-[state=on]:bg-accent data-[state=on]:text-white"
+        >
+          {o.label}
+        </TogglePrimitive.Item>
+      ))}
+    </TogglePrimitive.Root>
   );
 }
 

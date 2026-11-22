@@ -665,6 +665,53 @@ export const RunJobMutation = graphql(
   [JobFields],
 );
 
+export const ServerResourcesQuery = graphql(`
+  query ServerResources {
+    serverResources {
+      host {
+        cpuModel
+        arch
+        hostCpus
+        usableCpus
+        maxMhz
+        features
+        memoryBytes
+        kernel
+      }
+      sampleSeconds
+      usage {
+        sampledAt
+        cpuPercent
+        allowedCores
+        cpuLimited
+        memoryUsedBytes
+        memoryLimitBytes
+        memoryLimited
+        memoryPercent
+      }
+      usageNote
+    }
+  }
+`);
+
+export const ResourceHistoryQuery = graphql(`
+  query ResourceHistory($range: ResourceRange!) {
+    resourceHistory(range: $range) {
+      from
+      to
+      bucketSeconds
+      series {
+        resource
+        points {
+          at
+          average
+          max
+        }
+      }
+    }
+  }
+`);
+
 export const FetchMetadataMutation = graphql(
   `
   mutation FetchMetadata($system: ID, $force: Boolean!) {

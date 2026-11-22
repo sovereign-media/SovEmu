@@ -361,6 +361,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
 | `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
 | `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SOVEMU_RESOURCE_SAMPLE_SECONDS` | `5` | Seconds between readings of the container's CPU and memory (its cgroup: the server and every game session), for the admin Resources page and the OpenTelemetry gauges (0: not read) |
+| `SOVEMU_RESOURCE_HISTORY_DAYS` | `30` | Days of CPU and memory history kept, a row per minute (0: kept for ever) |
 | `SOVEMU_ASSET_KEY` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret: `_FILE` works. Changing it invalidates URLs already handed out |
 | `SOVEMU_ASSET_URL_HOURS` | `24` | How long a signed file URL is valid (rounded to the hour, so URLs stay cacheable) |
 | `TZ` | `UTC` | The time zone of log timestamps, an IANA name (`America/Chicago`); workers follow it. The standard variable, not a `SOVEMU_` one, so container tools and cluster injectors (k8tz) that set it just work. The chart's `timezone` sets it |

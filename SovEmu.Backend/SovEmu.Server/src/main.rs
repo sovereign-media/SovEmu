@@ -29,6 +29,7 @@ mod paths;
 #[cfg(test)]
 mod query_plans;
 mod releases;
+mod resources;
 mod search;
 mod settings;
 mod structured;
@@ -304,6 +305,16 @@ pub struct Config {
     /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
     #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
     pub job_history_days: u32,
+
+    /// Seconds between readings of the container's CPU and memory, for the admin Resources page
+    /// and the OpenTelemetry gauges (0: not read).
+    #[arg(long, env = "SOVEMU_RESOURCE_SAMPLE_SECONDS", default_value_t = 5)]
+    pub resource_sample_seconds: u32,
+
+    /// Days of CPU and memory history kept (a row per minute); maintenance deletes older rows
+    /// (0: kept for ever).
+    #[arg(long, env = "SOVEMU_RESOURCE_HISTORY_DAYS", default_value_t = 30)]
+    pub resource_history_days: u32,
 
     /// Delete accounts not declared in `SOVEMU_USERS__*` (or `SOVEMU_ADMIN_USERNAME`) at
     /// startup, so the environment is the whole list of users.
@@ -604,7 +615,8 @@ impl Config {
                 self.login_lockout_minutes
             ),
             format!(
-                "trusted_proxies={} maintenance_interval_minutes={} job_history_days={}",
+                "trusted_proxies={} maintenance_interval_minutes={} job_history_days={} \
+                 resource_sample_seconds={} resource_history_days={}",
                 if self.trusted_proxies.is_empty() {
                     "(none)".into()
                 } else {
@@ -615,7 +627,9 @@ impl Config {
                         .join(",")
                 },
                 self.maintenance_interval_minutes,
-                self.job_history_days
+                self.job_history_days,
+                self.resource_sample_seconds,
+                self.resource_history_days
             ),
             format!(
                 "users={} users_prune={}",
@@ -737,6 +751,8 @@ pub struct AppState {
     pub(crate) client_events: Arc<client_events::ClientEvents>,
     /// Background jobs: scans, syncs, lookups, upkeep (`jobs`).
     pub(crate) jobs: jobs::Jobs,
+    /// The host's facts and the container's CPU and memory readings (`resources`).
+    pub(crate) resources: Arc<resources::Monitor>,
 }
 
 impl AppState {
@@ -956,6 +972,15 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     .await?;
     reconcile_users(&identity, &config).await?;
     let jobs = jobs::Jobs::new(db.clone()).await?;
+    let host = tokio::task::spawn_blocking(resources::host::read_system).await?;
+    tracing::info!(
+        cpu = host.cpu_model.as_deref().unwrap_or("unknown"),
+        cpus = host.usable_cpus,
+        memory_bytes = host.memory_bytes.unwrap_or_default(),
+        features = %host.features.join(","),
+        "host"
+    );
+    let resources = Arc::new(resources::Monitor::new(host, config.resource_sample_seconds));
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -971,6 +996,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         identity,
         client_events: Arc::default(),
         jobs,
+        resources,
     })
 }
 

@@ -1,7 +1,7 @@
 // The admin menu: the gear in the dock opens one flat list of the admin pages, a separator
 // between groups. One list drives the menu, the page headings and the document titles, so a new
 // page is one entry here.
-import { Gamepad, Library, ListChecks, type LucideIcon, SlidersHorizontal, Users } from "lucide-react";
+import { Gamepad, Gauge, Library, ListChecks, type LucideIcon, SlidersHorizontal, Users } from "lucide-react";
 
 export interface AdminNavItem {
   /** The page (with its trailing slash, as the router's paths have it). */
@@ -61,6 +61,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     id: "server",
     label: "Server",
     items: [
+      {
+        href: "/admin/resources/",
+        label: "Resources",
+        title: "The host's CPU and memory, and how much the server is using",
+        icon: Gauge,
+      },
       {
         href: "/admin/jobs/",
         label: "Jobs",

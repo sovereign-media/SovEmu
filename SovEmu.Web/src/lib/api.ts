@@ -29,6 +29,7 @@ import {
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
+  ResourceHistoryQuery,
   RunJobMutation,
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
@@ -37,6 +38,7 @@ import {
   SavesQuery,
   ScanLibraryMutation,
   SearchQuery,
+  ServerResourcesQuery,
   type SessionFields,
   SessionOfferMutation,
   SetCheatMutation,
@@ -62,6 +64,8 @@ import {
 type AdminStatusQuery = ResultOf<typeof AdminStatusDocument>;
 type BiosQueryResult = ResultOf<typeof BiosQuery>;
 type JobsQueryResult = ResultOf<typeof JobsQuery>;
+type ServerResourcesResult = ResultOf<typeof ServerResourcesQuery>;
+type ResourceHistoryResult = ResultOf<typeof ResourceHistoryQuery>;
 type CheatsQuery = ResultOf<typeof CheatsDocument>;
 type CollectionsQuery = ResultOf<typeof CollectionsDocument>;
 type ControllerDefaultsQuery = ResultOf<typeof ControllerDefaultsDocument>;
@@ -111,6 +115,9 @@ export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
 export type MetadataStatus = AdminStatusQuery["metadataStatus"];
 export type JobState = JobsQueryResult["jobs"][number];
 export type JobName = JobState["name"];
+export type ServerResources = ServerResourcesResult["serverResources"];
+export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
+export type ResourceRange = Enum<"ResourceRange">;
 
 /** Slot 0 is the auto save, written whenever a session ends. */
 export const AUTO_SLOT = 0;
@@ -151,6 +158,9 @@ export const api = {
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
   runJob: async (job: JobName) => (await request(RunJobMutation, { job })).runJob,
+  /** Admin: the host, and the container's latest CPU and memory use. */
+  serverResources: async () => (await request(ServerResourcesQuery)).serverResources,
+  resourceHistory: async (range: ResourceRange) => (await request(ResourceHistoryQuery, { range })).resourceHistory,
   fetchMetadata: async (system?: string, force = false) =>
     (await request(FetchMetadataMutation, { system: system ?? null, force })).fetchMetadata,
   /** `startId` lets `startProgress` follow the start while this waits for it. */

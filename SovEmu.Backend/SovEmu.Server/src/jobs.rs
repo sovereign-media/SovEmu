@@ -10,6 +10,10 @@
 //!   history deleted, the query planner's statistics refreshed (`PRAGMA optimize`) and the
 //!   write-ahead log folded back into the database, so none of them grows without end.
 //!
+//! Work too frequent to be a job (the resource readings, every few seconds) is a sampler
+//! ([`Jobs::sampler`]): stopped on shutdown and kept alive through panics like a job, but with
+//! no history.
+//!
 //! Every run goes through [`Jobs`], which gives each job the same guarantees:
 //! - one run of a job at a time: starting one that is running is [`JobError::Running`];
 //! - jobs that would get in each other's way wait for each other ([`Job::lane`]: a scan and a
@@ -415,6 +419,56 @@ impl Jobs {
         slots.get(&job).is_some_and(|s| s.running.is_some())
     }
 
+    /// Runs `tick` every `every` until the server shuts down: a sampler, for work too frequent
+    /// to be a job (a reading every few seconds). It keeps no history; each tick runs in a task
+    /// of its own, so a panic is a failed tick, and a failure is logged once, until a tick
+    /// succeeds again. Ticks never overlap, and a late one is not made up.
+    pub(crate) fn sampler<F, Fut>(&self, name: &'static str, every: Duration, tick: F)
+    where
+        F: Fn() -> Fut + Send + 'static,
+        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        let cancel = self.0.cancel.clone();
+        let span = tracing::info_span!("sampler", sampler = name);
+        self.0.tasks.spawn(
+            async move {
+                let mut interval = tokio::time::interval(every);
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                let mut failing = false;
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {}
+                        () = cancel.cancelled() => return,
+                    }
+                    let task = tokio::spawn(tick().in_current_span());
+                    let _abort = AbortOnDrop(task.abort_handle());
+                    let result = tokio::select! {
+                        r = task => r,
+                        () = cancel.cancelled() => return,
+                    };
+                    let error = match result {
+                        Ok(Ok(())) => None,
+                        Ok(Err(e)) => Some(format!("{e:#}")),
+                        Err(e) if e.is_panic() => Some("panicked".to_owned()),
+                        Err(_) => return,
+                    };
+                    match error {
+                        Some(e) if !failing => {
+                            tracing::warn!(error = %e, "sampling failed; logged once until it recovers");
+                            failing = true;
+                        }
+                        None if failing => {
+                            tracing::info!("sampling recovered");
+                            failing = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            .instrument(span),
+        );
+    }
+
     fn slot(&self, job: Job, f: impl FnOnce(&mut Slot)) {
         f(self.0.slots.lock().unwrap_or_else(|e| e.into_inner()).entry(job).or_default());
     }
@@ -564,6 +618,14 @@ async fn record_end(
 /// each job's interval from then on.
 pub(crate) fn spawn(state: &AppState) {
     let jobs = &state.jobs;
+    if state.resources.sample_seconds > 0 {
+        let s = state.clone();
+        let every = Duration::from_secs(u64::from(s.resources.sample_seconds));
+        jobs.sampler("resources", every, move || {
+            let s = s.clone();
+            async move { s.resources.tick(&s.db).await }
+        });
+    }
     let first = state.clone();
     jobs.0.tasks.spawn(async move {
         let _ = first.jobs.run(Job::Scan, Trigger::Startup, admin::scan(first.clone())).await;
@@ -634,9 +696,12 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
 
 /// One round of upkeep (see the module's notes).
 async fn maintain(state: AppState) -> anyhow::Result<String> {
+    let samples = crate::resources::prune(&state.db, state.config.resource_history_days).await?;
     let (expired, pruned) =
         maintain_db(&state.db, &state.identity, state.config.job_history_days).await?;
-    Ok(format!("{expired} expired sign-ins deleted, {pruned} old job runs pruned"))
+    Ok(format!(
+        "{expired} expired sign-ins deleted, {pruned} old job runs and {samples} old resource samples pruned"
+    ))
 }
 
 /// Expired sign-ins, codes and tokens deleted (`sovemu_identity`), job runs older than
