@@ -466,11 +466,11 @@ leaves your machine, it runs the checks for whatever the push changes:
 - **`SovEmu.Backend/`:** `cargo fmt --check`, clippy with `-D warnings`, and the tests.
 - **`SovEmu.Web/`, or the server's `schema.graphql`:** the schema types check, lint, the
   tests and the build (which checks every GraphQL document against the schema).
-- **Docs, CI or the chart:** nothing.
+- **Docs or CI:** nothing.
 
 On a failure it names the step and gives the command to rerun it. `git push --no-verify` skips
-it. CI checks the backend on Linux only (macOS when run by hand), because every push has
-already passed these checks on the developer's Mac.
+it. CI lints the backend on Linux and runs its tests once, inside the container build, against
+the libraries the image ships; nothing in CI runs on macOS.
 
 ## Running a core headless
 
