@@ -909,6 +909,185 @@ impl CollectionNode {
 /// A running game: one worker streaming over WebRTC.
 struct SessionNode(sovemu_sessions::workers::SessionInfo);
 
+/// A game being played, as the admin's sessions page shows it.
+struct ActiveSessionNode(crate::api::ActiveSession);
+
+#[Object(name = "ActiveSession")]
+impl ActiveSessionNode {
+    async fn id(&self) -> ID {
+        ID::from(&self.0.info.id)
+    }
+    async fn user_id(&self) -> i64 {
+        self.0.user_id
+    }
+    /// The player; null if the account has been deleted since.
+    async fn username(&self) -> Option<&str> {
+        self.0.username.as_deref()
+    }
+    /// The app and device playing it, as the client named itself (null until it connects, or
+    /// for a client that predates naming itself).
+    async fn client(&self) -> Option<&str> {
+        self.0.live.client.as_deref()
+    }
+    async fn game_id(&self) -> i64 {
+        self.0.info.game_id
+    }
+    async fn title(&self) -> &str {
+        &self.0.info.title
+    }
+    async fn system(&self) -> &str {
+        &self.0.info.system
+    }
+    /// The core's name.
+    async fn core(&self) -> &str {
+        &self.0.info.core
+    }
+    /// When it started, as a Unix time in seconds.
+    async fn started_at(&self) -> f64 {
+        self.0.started_at
+    }
+    /// A client is streaming it (else it waits, for a client to come back or its idle timeout).
+    async fn connected(&self) -> bool {
+        self.0.info.connected
+    }
+    /// How the stream is made; null until the first frame is encoded.
+    async fn pipeline(&self) -> Option<StreamPipeline> {
+        self.0.live.pipeline.as_ref().map(StreamPipeline::from)
+    }
+    /// The worker's last health interval (every 10 s while a client is connected).
+    async fn health(&self) -> Option<StreamHealth> {
+        self.0.live.health.as_ref().map(StreamHealth::from)
+    }
+    /// What the player's stats panel shows; only while it is open.
+    async fn client_stats(&self) -> Option<ClientStreamStats> {
+        self.0.live.client_stats.as_ref().map(|(s, _)| ClientStreamStats::from(s))
+    }
+}
+
+/// How a session's stream is made: what draws the picture, the video codec and encoder (and
+/// any encoder it fell back from), the audio, and run-ahead.
+#[derive(SimpleObject)]
+struct StreamPipeline {
+    /// The OpenGL renderer a 3D core draws with; null for a core that draws on the CPU.
+    renderer: Option<String>,
+    /// The renderer is the software one (llvmpipe), not a GPU.
+    renderer_software: bool,
+    /// `h264` or `vp8`.
+    video_codec: String,
+    /// `vaapi`, `nvenc`, `x264` or `libvpx`.
+    video_encoder: String,
+    /// The encoder runs on a GPU.
+    video_hardware: bool,
+    /// Encoders given up before this one, in order, with why.
+    fallbacks: Vec<EncoderFallback>,
+    width: i32,
+    height: i32,
+    fps: f64,
+    /// `opus`.
+    audio_codec: String,
+    /// The core's own sample rate, resampled to 48 kHz.
+    audio_source_hz: f64,
+    audio_kbps: i32,
+    /// Frames the picture runs ahead of the game (0: off).
+    run_ahead: i32,
+}
+
+impl From<&sovemu_protocol::Pipeline> for StreamPipeline {
+    fn from(p: &sovemu_protocol::Pipeline) -> Self {
+        Self {
+            renderer: p.renderer.clone(),
+            renderer_software: p.renderer_software,
+            video_codec: p.video.codec.clone(),
+            video_encoder: p.video.encoder.clone(),
+            video_hardware: p.video.hardware,
+            fallbacks: p
+                .video
+                .fallbacks
+                .iter()
+                .map(|f| EncoderFallback { encoder: f.encoder.clone(), reason: f.reason.clone() })
+                .collect(),
+            width: p.video.width as i32,
+            height: p.video.height as i32,
+            fps: p.video.fps,
+            audio_codec: p.audio.codec.clone(),
+            audio_source_hz: p.audio.source_hz,
+            audio_kbps: p.audio.kbps as i32,
+            run_ahead: p.run_ahead as i32,
+        }
+    }
+}
+
+/// An encoder a session gave up, and why.
+#[derive(SimpleObject)]
+struct EncoderFallback {
+    encoder: String,
+    reason: String,
+}
+
+/// A session's last `session health` interval.
+#[derive(SimpleObject)]
+struct StreamHealth {
+    /// Frames shown per second.
+    fps: f64,
+    /// The share of frames that took longer than a frame period, 0 to 1.
+    overran: f64,
+    /// The share of the interval the game was paused (the player's menu open), 0 to 1.
+    paused: f64,
+    tick_mean_ms: f64,
+    encode_mean_ms: f64,
+    /// What the encoder produced, and what it aimed for, kbit/s.
+    video_kbps: f64,
+    video_kbps_target: i32,
+    /// The send-bandwidth estimate, kbit/s.
+    estimate_kbps: Option<f64>,
+}
+
+impl From<&sovemu_protocol::ipc::SessionHealth> for StreamHealth {
+    fn from(h: &sovemu_protocol::ipc::SessionHealth) -> Self {
+        Self {
+            fps: h.fps,
+            overran: h.overran,
+            paused: h.paused,
+            tick_mean_ms: h.tick_mean_ms,
+            encode_mean_ms: h.encode_mean_ms,
+            video_kbps: h.video_kbps,
+            video_kbps_target: h.video_kbps_target as i32,
+            estimate_kbps: h.estimate_kbps.map(|k| k as f64),
+        }
+    }
+}
+
+/// What a player's stats panel shows (times in ms, rates in kbit/s); null where the client has
+/// no value.
+#[derive(SimpleObject)]
+struct ClientStreamStats {
+    /// Button to pixel, as the client estimates it.
+    estimate_ms: Option<f64>,
+    input_rtt_ms: Option<f64>,
+    net_rtt_ms: Option<f64>,
+    jitter_ms: Option<f64>,
+    decode_ms: Option<f64>,
+    fps: Option<f64>,
+    kbps: Option<f64>,
+    /// Packets lost since the stream began.
+    packets_lost: Option<f64>,
+}
+
+impl From<&sovemu_protocol::ClientStats> for ClientStreamStats {
+    fn from(s: &sovemu_protocol::ClientStats) -> Self {
+        Self {
+            estimate_ms: s.estimate_ms,
+            input_rtt_ms: s.input_rtt_p50_ms,
+            net_rtt_ms: s.net_rtt_ms,
+            jitter_ms: s.jitter_ms,
+            decode_ms: s.decode_ms,
+            fps: s.fps,
+            kbps: s.kbps,
+            packets_lost: s.packets_lost.map(|n| n as f64),
+        }
+    }
+}
+
 #[Object(name = "GameSession")]
 impl SessionNode {
     async fn id(&self) -> ID {
@@ -1678,6 +1857,13 @@ impl Query {
         Ok(users.into_iter().map(Account::from).collect())
     }
 
+    /// Admins: every game being played now, oldest first, with how each stream is made.
+    async fn active_sessions(&self, ctx: &Context<'_>) -> Result<Vec<ActiveSessionNode>> {
+        admin(ctx).await?;
+        let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
+        Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
     /// Admins: where 3D systems render, and every device the startup probe tried.
     async fn gpu(&self, ctx: &Context<'_>) -> Result<GpuStatus> {
         admin(ctx).await?;
@@ -1998,9 +2184,17 @@ impl Mutation {
     }
 
     /// Answers a client's WebRTC offer (SDP) for a session with the worker's answer (SDP).
-    async fn session_offer(&self, ctx: &Context<'_>, id: ID, sdp: String) -> Result<String> {
+    /// `client` names the app and device (`web`, `android 1.4.0 (Mi TV)`), as its stats do,
+    /// for the admin's sessions page.
+    async fn session_offer(
+        &self,
+        ctx: &Context<'_>,
+        id: ID,
+        sdp: String,
+        client: Option<String>,
+    ) -> Result<String> {
         let user = user(ctx).await?;
-        crate::api::offer(state(ctx), &user, &id, sdp).await.api()
+        crate::api::offer(state(ctx), &user, &id, sdp, client).await.api()
     }
 
     /// Presses the console's reset button.

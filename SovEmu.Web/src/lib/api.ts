@@ -4,6 +4,7 @@
 import type { Enum, ResultOf } from "./gql";
 import { onUnload, request } from "./graphql";
 import {
+  ActiveSessionsQuery,
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
   BiosQuery,
@@ -64,6 +65,8 @@ import {
 type AdminStatusQuery = ResultOf<typeof AdminStatusDocument>;
 type BiosQueryResult = ResultOf<typeof BiosQuery>;
 type JobsQueryResult = ResultOf<typeof JobsQuery>;
+/** A game being played, as the admin's sessions page shows it. */
+export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 type ServerResourcesResult = ResultOf<typeof ServerResourcesQuery>;
 type ResourceHistoryResult = ResultOf<typeof ResourceHistoryQuery>;
 type CheatsQuery = ResultOf<typeof CheatsDocument>;
@@ -157,6 +160,7 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  activeSessions: async () => (await request(ActiveSessionsQuery)).activeSessions,
   runJob: async (job: JobName) => (await request(RunJobMutation, { job })).runJob,
   /** Admin: the host, and the container's latest CPU and memory use. */
   serverResources: async () => (await request(ServerResourcesQuery)).serverResources,
@@ -167,9 +171,9 @@ export const api = {
   startSession: async (gameId: number, startId?: string) =>
     (await request(StartSessionMutation, { gameId, startId: startId ?? null })).startSession,
   startProgress: async (startId: string) => (await request(StartProgressDocument, { startId })).startProgress,
-  /** The worker's answer (SDP) to a WebRTC offer for the session. */
-  answer: async (sessionId: string, sdp: string) =>
-    (await request(SessionOfferMutation, { id: sessionId, sdp })).sessionOffer,
+  /** The worker's answer (SDP) to a WebRTC offer for the session; `client` names this browser. */
+  answer: async (sessionId: string, sdp: string, client: string) =>
+    (await request(SessionOfferMutation, { id: sessionId, sdp, client })).sessionOffer,
   stopSession: (id: string) => request(StopSessionMutation, { id }),
   /** Stops a session as the page closes, so the auto save is written now. */
   stopSessionOnUnload: (id: string) => onUnload(StopSessionMutation, { id }),

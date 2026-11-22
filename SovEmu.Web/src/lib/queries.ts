@@ -546,8 +546,8 @@ export const StartProgressQuery = graphql(`
 `);
 
 export const SessionOfferMutation = graphql(`
-  mutation SessionOffer($id: ID!, $sdp: String!) {
-    sessionOffer(id: $id, sdp: $sdp)
+  mutation SessionOffer($id: ID!, $sdp: String!, $client: String) {
+    sessionOffer(id: $id, sdp: $sdp, client: $client)
   }
 `);
 
@@ -639,6 +639,59 @@ const JobFields = graphql(`
       finishedAt
       seconds
       message
+    }
+  }
+`);
+
+export const ActiveSessionsQuery = graphql(`
+  query ActiveSessions {
+    activeSessions {
+      id
+      username
+      client
+      gameId
+      title
+      system
+      core
+      startedAt
+      connected
+      pipeline {
+        renderer
+        rendererSoftware
+        videoCodec
+        videoEncoder
+        videoHardware
+        fallbacks {
+          encoder
+          reason
+        }
+        width
+        height
+        fps
+        audioCodec
+        audioSourceHz
+        audioKbps
+        runAhead
+      }
+      health {
+        fps
+        overran
+        paused
+        tickMeanMs
+        encodeMeanMs
+        videoKbps
+        videoKbpsTarget
+        estimateKbps
+      }
+      clientStats {
+        estimateMs
+        inputRttMs
+        netRttMs
+        decodeMs
+        fps
+        kbps
+        packetsLost
+      }
     }
   }
 `);

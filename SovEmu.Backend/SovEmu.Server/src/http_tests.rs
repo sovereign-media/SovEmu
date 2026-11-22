@@ -312,6 +312,7 @@ async fn first_run_setup_then_sign_in() {
     assert_eq!(h.login("ghost", "password123").await, Err("invalid_grant".into()));
     assert_eq!(h.login("KID", "password123").await.unwrap()["isAdmin"], false);
     assert_eq!(h.err("{ users { username } }", json!({})).await.0, "FORBIDDEN");
+    assert_eq!(h.err("{ activeSessions { id } }", json!({})).await.0, "FORBIDDEN");
     assert_eq!(h.err("mutation { scanLibrary { found } }", json!({})).await.0, "FORBIDDEN");
     assert!(h.systems().await.as_array().unwrap().len() > 5);
 }
@@ -541,6 +542,19 @@ async fn runs_a_game_session_in_a_worker() {
 
     let current = h.ok("{ currentSession { id connected } }", json!({})).await;
     assert_eq!(current["currentSession"]["id"], sid.as_str());
+
+    // Admins see it on the sessions page; nothing is streamed yet, so no pipeline or health.
+    let active = "{ activeSessions { id username title system core connected startedAt client pipeline { videoCodec } health { fps } clientStats { fps } } }";
+    let listed = h.ok(active, json!({})).await["activeSessions"].clone();
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    let row = &listed[0];
+    assert_eq!((row["id"].as_str(), row["username"].as_str()), (Some(sid.as_str()), Some("admin")));
+    assert_eq!((row["title"].clone(), row["system"].clone()), (json!("Test Game"), json!("nes")));
+    assert_eq!(row["connected"], false);
+    assert!(row["startedAt"].as_f64().unwrap() > 1.7e9);
+    for empty in ["client", "pipeline", "health", "clientStats"] {
+        assert_eq!(row[empty], Value::Null, "{empty}");
+    }
     let reset = "mutation($id: ID!) { resetSession(id: $id) }";
     assert_eq!(h.ok(reset, json!({"id": sid})).await["resetSession"], true);
     let offer = "mutation($id: ID!) { sessionOffer(id: $id, sdp: \"not sdp\") }";

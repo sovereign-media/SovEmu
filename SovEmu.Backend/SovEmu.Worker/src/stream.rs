@@ -38,6 +38,8 @@ use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 use crate::runahead::RunAhead;
 use crate::video::{CodecSetting, Video, VideoCodec, VideoSettings};
+use sovemu_protocol::ipc::SessionHealth;
+use sovemu_protocol::{AudioPath, Pipeline};
 
 /// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
 /// Every client resends what is held at least every 100 ms, so a release that never arrives (the
@@ -85,10 +87,16 @@ pub(crate) enum Command {
 }
 
 /// Something the front end may want to report.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum StreamEvent {
     ClientConnected,
     ClientDisconnected,
+    /// How the stream is made now (sent when it changes).
+    Pipeline(Pipeline),
+    /// The last health interval's numbers.
+    Health(SessionHealth),
+    /// What the client's stats panel shows.
+    ClientStats(ClientStats),
 }
 
 /// How to start a session.
@@ -153,6 +161,12 @@ pub(crate) struct Session {
     /// When the client's last stats were logged (they are logged at most every
     /// [`STATS_SPACING`], however often a client sends them).
     stats_at: Option<Instant>,
+    /// Events for the front end, handed over by the loop after each turn.
+    events: Vec<StreamEvent>,
+    /// The pipeline last reported, and when it last went to the client (`None`: it must go
+    /// now, as when the channel has just opened).
+    pipeline: Option<Pipeline>,
+    pipeline_to_client_at: Option<Instant>,
     /// The configured (maximum) video bitrate; adaptation stays at or below it.
     max_video_kbps: u32,
     audio_kbps: u32,
@@ -256,6 +270,9 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             stats_at: None,
+            events: Vec::new(),
+            pipeline: None,
+            pipeline_to_client_at: None,
             max_video_kbps: config.video_kbps,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
@@ -581,6 +598,9 @@ pub(crate) fn run(
             session.step(p, behind)?;
             next_frame = pacer.next_deadline(Instant::now());
         }
+        for event in session.take_events() {
+            on_event(event);
+        }
     }
 }
 
@@ -628,7 +648,10 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                         tracing::warn!(kind = ?m.kind, "client offered media without the codec")
                     }
                 },
-                Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => p.input = Some(id),
+                Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => {
+                    p.input = Some(id);
+                    session.pipeline_to_client_at = None;
+                }
                 Event::ChannelClose(id) if Some(id) == p.input => {
                     tracing::warn!("input channel closed: releasing held input");
                     p.input = None;
@@ -688,6 +711,7 @@ impl Session {
                 }
                 self.stats_at = Some(now);
                 log_client_stats(&stats);
+                self.events.push(StreamEvent::ClientStats(stats));
                 return;
             }
             Err(e) => {
@@ -761,7 +785,9 @@ impl Session {
         if hotkeys.pause {
             self.health.paused();
             let at = self.health_now();
-            self.health.report_if_due(now, &at);
+            if let Some(h) = self.health.report_if_due(now, &at) {
+                self.events.push(StreamEvent::Health(h));
+            }
             return Ok(());
         }
         if hotkeys.rewind {
@@ -859,10 +885,63 @@ impl Session {
         self.persist.tick(&mut self.core, now);
         self.health.ticked(behind, now.elapsed());
         let at = self.health_now();
-        self.health.report_if_due(Instant::now(), &at);
+        if let Some(h) = self.health.report_if_due(Instant::now(), &at) {
+            self.events.push(StreamEvent::Health(h));
+        }
+        self.refresh_pipeline(p);
         Ok(())
     }
+
+    /// How the stream is made right now.
+    fn pipeline(&self) -> Pipeline {
+        let (width, height) = self.shot_size;
+        let renderer = self.core.renderer();
+        Pipeline {
+            renderer: renderer.map(|r| r.renderer.clone()),
+            renderer_software: renderer.is_some_and(|r| r.software),
+            video: self.video.path(width, height, self.fps),
+            audio: AudioPath {
+                codec: "opus".into(),
+                source_hz: self.audio.input_rate(),
+                kbps: self.audio_kbps,
+            },
+            run_ahead: self.run_ahead.frames(),
+        }
+    }
+
+    /// Reports the pipeline to the server when it changes, and sends it to the client then and
+    /// every [`PIPELINE_RESEND`] (the input channel drops what it loses).
+    fn refresh_pipeline(&mut self, p: &mut Peer) {
+        if self.shot_size == (0, 0) {
+            return; // nothing encoded yet
+        }
+        let now = Instant::now();
+        let pipeline = self.pipeline();
+        if self.pipeline.as_ref() != Some(&pipeline) {
+            self.events.push(StreamEvent::Pipeline(pipeline.clone()));
+            self.pipeline = Some(pipeline);
+            self.pipeline_to_client_at = None;
+        }
+        let due =
+            self.pipeline_to_client_at.is_none_or(|at| now.duration_since(at) >= PIPELINE_RESEND);
+        if due
+            && let (Some(id), Some(pipeline)) = (p.input, &self.pipeline)
+            && let Some(mut channel) = p.rtc.channel(id)
+        {
+            let _ = channel.write(true, &pipeline.encode());
+            self.pipeline_to_client_at = Some(now);
+        }
+    }
+
+    /// The events gathered since the last call.
+    pub(crate) fn take_events(&mut self) -> Vec<StreamEvent> {
+        std::mem::take(&mut self.events)
+    }
 }
+
+/// How often the pipeline goes to the client even when it has not changed: the input channel
+/// does not retransmit, so a lost one is replaced soon.
+const PIPELINE_RESEND: Duration = Duration::from_secs(2);
 
 /// Clients send their stats once a second while the overlay is open; any faster is dropped,
 /// so a client cannot fill the log.

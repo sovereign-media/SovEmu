@@ -131,6 +131,9 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             event_out.send(&match event {
                 StreamEvent::ClientConnected => Reply::ClientConnected,
                 StreamEvent::ClientDisconnected => Reply::ClientDisconnected,
+                StreamEvent::Pipeline(pipeline) => Reply::Pipeline { pipeline },
+                StreamEvent::Health(health) => Reply::Health { health },
+                StreamEvent::ClientStats(stats) => Reply::ClientStats { stats },
             })
         },
         idle,

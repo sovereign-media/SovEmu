@@ -1,17 +1,24 @@
-// The admin's server pages: the menu that reaches them, the background jobs, and the resources.
+// The admin's server pages: the menu that reaches them, the active sessions, the background jobs,
+// and the resources.
 
 import { expect, test } from "@playwright/test";
 
 test("the admin menu lists every admin page, flat", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Admin", exact: true }).click();
-  for (const name of ["Library", "Users", "Controllers", "Emulator settings", "Resources", "Jobs"]) {
+  for (const name of ["Library", "Users", "Controllers", "Emulator settings", "Sessions", "Resources", "Jobs"]) {
     await expect(page.getByRole("menuitem", { name, exact: true })).toBeVisible();
   }
   // Pages, not group submenus.
   await expect(page.getByRole("menuitem", { name: "Users & Devices" })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Jobs", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/jobs\/$/);
+});
+
+test("the Sessions page says when nothing is being played", async ({ page }) => {
+  await page.goto("/admin/sessions/");
+  await expect(page.getByRole("heading", { name: "Active sessions" })).toBeVisible();
+  await expect(page.getByText("No games are being played.")).toBeVisible();
 });
 
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {

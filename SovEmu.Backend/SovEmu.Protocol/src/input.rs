@@ -70,6 +70,21 @@
 //!
 //! Sent after the frame that consumed the input has run, so `now - client_time_ms` on the
 //! client is the input round trip up to emulation: network both ways plus frame alignment.
+//!
+//! ## Worker → client: [`Pipeline`]
+//!
+//! | Offset | Size | Field |
+//! |---|---|---|
+//! | 0 | 1 | message type, `0x82` |
+//! | 1 | 1 | version |
+//! | 2 | rest | a UTF-8 JSON object, at most [`MAX_PIPELINE_LEN`] bytes in all |
+//!
+//! How the worker is making the stream: what renders the picture, the video codec and encoder
+//! (and any encoder it fell back from, with why), the audio, and run-ahead. Sent when the
+//! channel opens and again whenever any of it changes (a fallback, a new resolution), so a
+//! client's stats panel can show the server's side beside its own. JSON, like
+//! [`ClientStats`]: unknown keys are ignored. Added after version 1 without bumping it:
+//! clients that predate it drop the type.
 
 use std::fmt;
 
@@ -87,6 +102,7 @@ const TYPE_STATS: u8 = 0x04;
 const ANALOG_HEADER: usize = 7;
 const ANALOG_PORT: usize = 12;
 const TYPE_ACK: u8 = 0x81;
+const TYPE_PIPELINE: u8 = 0x82;
 const INPUT_HEADER: usize = 11;
 const ACK_LEN: usize = 14;
 
@@ -99,6 +115,8 @@ pub enum DecodeError {
     BadPortCount(u8),
     /// A stats message whose body is not a JSON object of the expected shape, or too long.
     BadStats(String),
+    /// A pipeline message whose body is not a JSON object of the expected shape, or too long.
+    BadPipeline(String),
 }
 
 impl fmt::Display for DecodeError {
@@ -109,6 +127,7 @@ impl fmt::Display for DecodeError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported input protocol version {v}"),
             Self::BadPortCount(n) => write!(f, "invalid port count {n}"),
             Self::BadStats(e) => write!(f, "invalid stats message: {e}"),
+            Self::BadPipeline(e) => write!(f, "invalid pipeline message: {e}"),
         }
     }
 }
@@ -290,6 +309,79 @@ pub struct ClientStats {
     pub game_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wifi_lock: Option<bool>,
+}
+
+/// The longest [`Pipeline`] message, header included.
+pub const MAX_PIPELINE_LEN: usize = 4096;
+
+/// How the worker makes the stream, for the client's stats panel and the admin's sessions page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pipeline {
+    /// The OpenGL renderer a 3D core draws with (`Mesa Intel(R) Iris(R) Xe Graphics`); none for
+    /// a core that draws its frames on the CPU.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renderer: Option<String>,
+    /// The renderer is the software one (llvmpipe), not a GPU.
+    pub renderer_software: bool,
+    pub video: VideoPath,
+    pub audio: AudioPath,
+    /// Frames the picture runs ahead of the game (0: off).
+    pub run_ahead: u32,
+}
+
+/// The video half of a [`Pipeline`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VideoPath {
+    /// `h264` or `vp8`.
+    pub codec: String,
+    /// `vaapi`, `nvenc`, `x264` or `libvpx`.
+    pub encoder: String,
+    /// The encoder runs on a GPU.
+    pub hardware: bool,
+    /// Encoders tried before this one, in order, and why each was given up.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<Fallback>,
+    /// The encoded picture, before the client scales it.
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+}
+
+/// An encoder given up, and why.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Fallback {
+    pub encoder: String,
+    pub reason: String,
+}
+
+/// The audio half of a [`Pipeline`].
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioPath {
+    /// `opus`.
+    pub codec: String,
+    /// The core's own sample rate, resampled to 48 kHz.
+    pub source_hz: f64,
+    pub kbps: u32,
+}
+
+impl Pipeline {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![TYPE_PIPELINE, INPUT_VERSION];
+        serde_json::to_writer(&mut out, self).expect("pipeline serializes");
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        check_header(bytes, TYPE_PIPELINE, 2)?;
+        if bytes.len() > MAX_PIPELINE_LEN {
+            return Err(DecodeError::BadPipeline(format!("{} bytes", bytes.len())));
+        }
+        serde_json::from_slice(&bytes[2..]).map_err(|e| DecodeError::BadPipeline(e.to_string()))
+    }
 }
 
 impl ClientStats {
@@ -491,5 +583,41 @@ mod tests {
         let mut long = vec![0x04, 1, b'{'];
         long.resize(MAX_STATS_LEN + 1, b' ');
         assert!(matches!(ClientStats::decode(&long), Err(DecodeError::BadStats(_))));
+    }
+
+    /// The same bytes as `protocol.test.ts` (and the apps' protocol tests decode them too).
+    pub(crate) const PIPELINE_VECTOR: &[u8] = br#"{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}"#;
+
+    #[test]
+    fn the_pipeline_is_json_after_the_header() {
+        let pipeline = Pipeline {
+            renderer: Some("llvmpipe".into()),
+            renderer_software: true,
+            video: VideoPath {
+                codec: "h264".into(),
+                encoder: "x264".into(),
+                hardware: false,
+                fallbacks: vec![Fallback { encoder: "vaapi".into(), reason: "no device".into() }],
+                width: 256,
+                height: 224,
+                fps: 60.0,
+            },
+            audio: AudioPath { codec: "opus".into(), source_hz: 32040.0, kbps: 128 },
+            run_ahead: 1,
+        };
+        let mut expected = vec![0x82, 1];
+        expected.extend_from_slice(PIPELINE_VECTOR);
+        assert_eq!(pipeline.encode(), expected);
+        assert_eq!(Pipeline::decode(&expected), Ok(pipeline));
+    }
+
+    #[test]
+    fn a_pipeline_tolerates_missing_and_unknown_keys_and_refuses_the_wrong_type() {
+        let mut sparse = vec![0x82, 1];
+        sparse.extend_from_slice(br#"{"video":{"codec":"vp8","newer":1},"later":true}"#);
+        let decoded = Pipeline::decode(&sparse).unwrap();
+        assert_eq!((decoded.video.codec.as_str(), decoded.renderer), ("vp8", None));
+        assert!(matches!(Pipeline::decode(b"\x82\x01\"fast\""), Err(DecodeError::BadPipeline(_))));
+        assert!(matches!(Pipeline::decode(b"\x04\x01{}"), Err(DecodeError::WrongType(0x04))));
     }
 }

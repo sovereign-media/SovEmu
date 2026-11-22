@@ -233,8 +233,8 @@ pub struct H264Encoder {
     context: Option<Context>,
     /// The VA-API device, opened once and kept across reopens.
     vaapi_device: Option<BufferRef>,
-    /// Backends that failed to open or to encode; not tried again.
-    failed: Vec<H264Backend>,
+    /// Backends that failed to open or to encode, in order, with why; not tried again.
+    failed: Vec<(H264Backend, String)>,
     frames: i64,
     force_keyframe: bool,
     /// Packets received but not yet returned: one per frame, oldest first.
@@ -276,6 +276,12 @@ impl H264Encoder {
         &self.config
     }
 
+    /// The encoders given up so far, in order, and why: one that did not open, failed, or held
+    /// frames back.
+    pub fn fallbacks(&self) -> impl Iterator<Item = (H264Backend, &str)> {
+        self.failed.iter().map(|(b, why)| (*b, why.as_str()))
+    }
+
     /// The encoder in use, once the first frame has opened one.
     pub fn backend(&self) -> Option<H264Backend> {
         self.context.as_ref().map(|c| c.backend)
@@ -313,7 +319,7 @@ impl H264Encoder {
     fn open(&mut self, width: u32, height: u32) -> Result<Context, Error> {
         let mut tried = Vec::new();
         for backend in self.config.preference.candidates() {
-            if self.failed.contains(&backend) {
+            if self.failed.iter().any(|(b, _)| *b == backend) {
                 continue;
             }
             match self.open_backend(backend, width, height) {
@@ -330,7 +336,7 @@ impl H264Encoder {
                 Err(e) => {
                     tracing::debug!(encoder = backend.name(), error = %e, "H.264 encoder did not open");
                     tried.push(format!("{}: {e}", backend.name()));
-                    self.failed.push(backend);
+                    self.failed.push((backend, e.to_string()));
                 }
             }
         }
@@ -380,7 +386,7 @@ impl H264Encoder {
                 // back is dropped for the next one rather than stopping or delaying the picture.
                 let backend = self.backend().expect("checked above");
                 tracing::warn!(encoder = backend.name(), error = %e, "H.264 encoder failed; switching");
-                self.failed.push(backend);
+                self.failed.push((backend, e.to_string()));
                 self.context = None;
                 self.encode_once(rgba, width, height)
             }
@@ -897,6 +903,10 @@ mod tests {
             return; // a machine with an NVIDIA GPU: nothing to fall back from
         }
         assert_eq!(enc.backend(), Some(H264Backend::Software));
+        let fallbacks: Vec<_> = enc.fallbacks().collect();
+        assert_eq!(fallbacks.len(), 1);
+        assert_eq!(fallbacks[0].0, H264Backend::Nvenc);
+        assert!(!fallbacks[0].1.is_empty(), "with why");
     }
 
     #[test]

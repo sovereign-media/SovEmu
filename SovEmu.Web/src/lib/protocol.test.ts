@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bit, decodeAck, encodeAnalog, encodeHotkeys, encodeInput, encodeStats } from "./protocol";
+import { bit, decodeAck, decodePipeline, encodeAnalog, encodeHotkeys, encodeInput, encodeStats } from "./protocol";
 
 // The same vectors as `input_layout_is_stable` in SovEmu.Protocol/src/input.rs.
 describe("input protocol", () => {
@@ -59,5 +59,46 @@ describe("input protocol", () => {
     expect(bit("B")).toBe(1);
     expect(bit("START")).toBe(1 << 3);
     expect(bit("A")).toBe(1 << 8);
+  });
+});
+
+describe("pipeline messages", () => {
+  // `PIPELINE_VECTOR` in SovEmu.Protocol/src/input.rs.
+  const VECTOR =
+    '{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}';
+  const message = (type: number, body: string) => {
+    const json = new TextEncoder().encode(body);
+    const out = new Uint8Array(2 + json.length);
+    out.set([type, 1]);
+    out.set(json, 2);
+    return out.buffer;
+  };
+
+  it("decodes the Rust reference", () => {
+    expect(decodePipeline(message(0x82, VECTOR))).toEqual({
+      renderer: "llvmpipe",
+      rendererSoftware: true,
+      video: {
+        codec: "h264",
+        encoder: "x264",
+        hardware: false,
+        fallbacks: [{ encoder: "vaapi", reason: "no device" }],
+        width: 256,
+        height: 224,
+        fps: 60,
+      },
+      audio: { codec: "opus", sourceHz: 32040, kbps: 128 },
+      runAhead: 1,
+    });
+  });
+
+  it("tolerates missing and unknown keys and refuses anything else", () => {
+    const sparse = decodePipeline(message(0x82, '{"video":{"codec":"vp8","newer":1},"later":true}'));
+    expect(sparse?.video.codec).toBe("vp8");
+    expect(sparse?.renderer).toBeNull();
+    expect(sparse?.video.fallbacks).toEqual([]);
+    expect(decodePipeline(message(0x82, '"fast"'))).toBeNull();
+    expect(decodePipeline(message(0x82, "{not json"))).toBeNull();
+    expect(decodePipeline(message(0x04, "{}"))).toBeNull();
   });
 });
