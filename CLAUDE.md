@@ -57,7 +57,7 @@ instead (as Sovereign's server takes its SPA).
   static files (one `index.html` and its assets, no Node in the image), and the Rust side serves
   them next to `/graphql`, answering every other page path with `index.html` for the client's
   router. Never add a Node server or server-side rendering.
-- **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
+- **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql/`, async-graphql: one module per area, each with its types and its part of the `Query` and `Mutation` roots, joined in `mod.rs`):
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
   videos, save screenshots, decorations), for sign-in (the OpenID Connect routes OAuth defines,
