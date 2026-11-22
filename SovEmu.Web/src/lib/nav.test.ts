@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { formatSize } from "./api";
 import { type NavAction, REPEAT_DELAY_MS, REPEAT_INTERVAL_MS, Repeater } from "./nav";
 
 const held = (...a: NavAction[]) => new Set<NavAction>(a);
@@ -20,13 +19,5 @@ describe("Repeater", () => {
     expect(r.update(held("accept"), 2000)).toEqual([]);
     expect(r.update(held(), 2001)).toEqual([]);
     expect(r.update(held("accept"), 2002)).toEqual(["accept"]);
-  });
-});
-
-describe("formatting", () => {
-  it("sizes", () => {
-    expect(formatSize(512)).toBe("512 B");
-    expect(formatSize(65_552)).toBe("64 KB");
-    expect(formatSize(4 * 1024 * 1024)).toBe("4.0 MB");
   });
 });

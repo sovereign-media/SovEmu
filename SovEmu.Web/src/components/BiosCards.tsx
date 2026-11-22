@@ -3,8 +3,9 @@
 
 import { CircleAlert, CircleCheck, CircleDashed, CircleHelp, Copy, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import { type BiosGroup, type BiosSystem, formatSize, type SystemBios } from "../lib/api";
+import type { BiosGroup, BiosSystem, SystemBios } from "../lib/api";
 import { FILE_STATES, fileHint, fileTone, IMPORTANCE, STATES, type Tone } from "../lib/bios";
+import { formatBytes } from "../lib/numbers";
 import { cn } from "./ui/cn";
 import { panel, Tooltip } from "./ui/primitives";
 
@@ -80,7 +81,7 @@ function Group({ group, folder, admin }: { group: BiosGroup; folder: string; adm
                 <p className="flex flex-wrap items-baseline gap-x-2">
                   <code className="font-mono text-slate-200">{f.name}</code>
                   <span className="text-slate-400">{f.label}</span>
-                  <span className="text-xs text-slate-600">{formatSize(f.size)}</span>
+                  <span className="text-xs text-slate-600">{formatBytes(f.size)}</span>
                 </p>
                 {hint && tone !== "quiet" && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
                 {admin && <ExpectedMd5 md5s={f.expectedMd5} />}
