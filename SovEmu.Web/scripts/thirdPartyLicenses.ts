@@ -103,7 +103,7 @@ function repository(m: Manifest): string | null {
   return (url ?? m.homepage ?? null)?.replace(/^git\+/, "").replace(/\.git$/, "") ?? null;
 }
 
-function describe(root: string): BundledPackage {
+function readPackage(root: string): BundledPackage {
   const m = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Manifest;
   const license = typeof m.license === "string" ? m.license : (m.license?.type ?? "");
   const text = [readFirst(root, LICENSE_FILE), readFirst(root, NOTICE_FILE)].filter(Boolean).join("\n\n");
@@ -125,7 +125,7 @@ export function thirdPartyLicenses(): Plugin {
       }
       const packages = new Map<string, BundledPackage>();
       for (const root of roots) {
-        const p = describe(root);
+        const p = readPackage(root);
         packages.set(`${p.name}@${p.version}`, p);
       }
       const rejected = [...packages.values()].filter((p) => !allowed(p.license));
