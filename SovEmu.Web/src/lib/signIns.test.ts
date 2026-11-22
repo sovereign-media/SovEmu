@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_LABELS, lapsesText, usedText } from "./signIns";
+import { CLIENT_LABELS, lapsesText, signInName, usedText } from "./signIns";
 
 describe("sign-ins", () => {
   const now = Date.parse("2026-11-22T12:00:00Z");
@@ -22,5 +22,14 @@ describe("sign-ins", () => {
     expect(usedText({ signedInAt: unix - 4 * 86_400, lastUsedAt: unix - 10 }, now)).toBe(
       "Signed in 4 days ago · last used just now",
     );
+  });
+
+  it("names a sign-in by its device, else its kind of client", () => {
+    expect(signInName({ client: "APP", device: "SovEmu for Android 1.4.0 · Mi TV" })).toBe(
+      "SovEmu for Android 1.4.0 · Mi TV",
+    );
+    expect(signInName({ client: "APP", device: null })).toBe("App");
+    expect(signInName({ client: "WEB", device: null }, { lower: true })).toBe("web browser");
+    expect(signInName({ client: "APP", device: "Living-room TV" }, { lower: true })).toBe("Living-room TV");
   });
 });

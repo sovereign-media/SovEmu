@@ -252,12 +252,17 @@ fn state<'a>(ctx: &Context<'a>) -> &'a AppState {
     ctx.data_unchecked::<AppState>()
 }
 
+/// This request's headers (its bearer access token).
+fn request_headers<'a>(ctx: &Context<'a>) -> &'a HeaderMap {
+    &ctx.data_unchecked::<Auth>().headers
+}
+
 async fn viewer(ctx: &Context<'_>) -> Result<Option<User>> {
     let auth = ctx.data_unchecked::<Auth>();
     let user = auth
         .user
         .get_or_try_init(|| async {
-            let user = state(ctx).identity.user_for_request(&auth.headers).await?;
+            let user = state(ctx).identity.user_for_request(request_headers(ctx)).await?;
             // Every line logged for the rest of the request then names whose it was.
             if let Some(user) = &user {
                 tracing::Span::current().record("user.id", user.id);

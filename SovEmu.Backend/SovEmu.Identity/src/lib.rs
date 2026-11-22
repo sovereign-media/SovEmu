@@ -14,6 +14,7 @@
 //! pool. It knows nothing about GraphQL.
 
 mod accounts;
+mod devices;
 mod error;
 mod keys;
 mod provider;
@@ -46,6 +47,9 @@ pub struct SignIn {
     pub last_used_at: std::time::SystemTime,
     /// When it lapses unless used; none for a sign-in with no limit.
     pub expires_at: Option<std::time::SystemTime>,
+    /// What the app calls its device ([`Identity::name_device`]); none for a browser, or an app
+    /// that has not said.
+    pub device: Option<String>,
 }
 pub use provider::{NATIVE_CLIENT, WEB_CLIENT};
 pub use store::SqliteStorage;
@@ -402,9 +406,11 @@ impl Identity {
     pub async fn sign_ins(&self, user_id: Option<i64>) -> Result<Vec<SignIn>> {
         let subject = user_id.map(|id| id.to_string());
         let stored = self.store().sign_ins(subject.as_deref()).await.map_err(Error::internal)?;
+        let mut names = devices::names(&self.inner.db).await?;
         Ok(stored
             .into_iter()
             .map(|s| SignIn {
+                device: names.remove(&s.family_id),
                 id: s.family_id,
                 user_id: s.subject.and_then(|s| s.parse().ok()),
                 client_id: s.client_id,
@@ -455,7 +461,27 @@ impl Identity {
         let swept = oauth_as::store::Storage::sweep_expired(store, std::time::SystemTime::now())
             .await
             .map_err(Error::internal)?;
-        Ok(sessions + swept)
+        let names = devices::prune(&self.inner.db).await?;
+        Ok(sessions + swept + names)
+    }
+
+    /// Names the sign-in a request's bearer token belongs to (its refresh family) as the app
+    /// holding it describes its device ("SovEmu for Android 1.4.0 · Mi TV Stick"), for the
+    /// admin's lists of sign-ins. `Unauthorized` without a live token; `NotFound` for a token
+    /// that belongs to no sign-in that lasts (none are issued so).
+    pub async fn name_device(&self, headers: &HeaderMap, name: &str) -> Result<()> {
+        let name = devices::clean(name)?;
+        let token = bearer(headers).ok_or_else(|| Error::Unauthorized("not signed in".into()))?;
+        let issued = self.inner.provider.issuers[0]
+            .server
+            .introspect(&token)
+            .await
+            .map_err(Error::internal)?
+            .ok_or_else(|| Error::Unauthorized("not signed in".into()))?;
+        let family = issued.family_id.as_deref().ok_or_else(|| {
+            Error::NotFound("this sign-in does not last, so it has no device".into())
+        })?;
+        devices::name(&self.inner.db, family, &name).await
     }
 }
 
