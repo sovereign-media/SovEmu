@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientSummary, durationLabel, healthSummary } from "./sessions";
+import { clientSummary, decoderSummary, durationLabel, healthSummary } from "./sessions";
 
 describe("sessions page", () => {
   it("says how long a game has run", () => {
@@ -41,6 +41,8 @@ describe("sessions page", () => {
     const stats = {
       estimateMs: 44.6,
       inputToFrameMs: null as number | null,
+      decoder: null as string | null,
+      lowLatencyDecode: null as boolean | null,
       inputRttMs: 22,
       netRttMs: 4,
       decodeMs: 3.14,
@@ -56,5 +58,13 @@ describe("sessions page", () => {
       "39 ms button→frame · ~45 ms est. · decode 3.1 ms",
     );
     expect(clientSummary({ clientStats: null })).toBeNull();
+    expect(decoderSummary({ clientStats: stats })).toBeNull();
+    expect(decoderSummary({ clientStats: { ...stats, decoder: "ExternalDecoder" } })).toBe("ExternalDecoder");
+    expect(
+      decoderSummary({ clientStats: { ...stats, decoder: "c2.amlogic.avc.decoder", lowLatencyDecode: false } }),
+    ).toBe("c2.amlogic.avc.decoder · low latency: not supported");
+    expect(decoderSummary({ clientStats: { ...stats, decoder: "c2.qti.avc.decoder", lowLatencyDecode: true } })).toBe(
+      "c2.qti.avc.decoder · low latency: on",
+    );
   });
 });

@@ -38,6 +38,18 @@ export function healthSummary(s: Pick<ActiveSession, "health" | "pipeline">): He
 }
 
 /**
+ * The player's decoder and whether it runs in low-latency mode:
+ * `c2.amlogic.avc.decoder · low latency: not supported`. Null while their panel is closed or
+ * the client does not say.
+ */
+export function decoderSummary(s: Pick<ActiveSession, "clientStats">): string | null {
+  const c = s.clientStats;
+  if (!c?.decoder) return null;
+  if (c.lowLatencyDecode == null) return c.decoder;
+  return `${c.decoder} · low latency: ${c.lowLatencyDecode ? "on" : "not supported"}`;
+}
+
+/**
  * `39 ms button→frame · ~47 ms est. · decode 3.1 ms` (measured where the client measures, else
  * its estimate alone), or null while the player's stats panel is closed.
  */

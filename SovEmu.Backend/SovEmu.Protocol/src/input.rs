@@ -317,9 +317,13 @@ pub struct ClientStats {
     pub game_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wifi_lock: Option<bool>,
-    /// The client asked its video decoder for low-latency mode.
+    /// The client's video decoder runs in low-latency mode (the decoder supports it, and the
+    /// client turned it on). Absent where the client cannot tell (browsers).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub low_latency_decode: Option<bool>,
+    /// The client's video decoder (`c2.amlogic.avc.decoder`, a browser's `ExternalDecoder`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decoder: Option<String>,
 }
 
 /// The longest [`Pipeline`] message, header included.

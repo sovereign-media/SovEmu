@@ -970,6 +970,7 @@ fn log_client_stats(s: &ClientStats) {
         game_mode = s.game_mode,
         wifi_lock = s.wifi_lock,
         low_latency_decode = s.low_latency_decode,
+        decoder = s.decoder.as_deref(),
         "client stats"
     );
 }

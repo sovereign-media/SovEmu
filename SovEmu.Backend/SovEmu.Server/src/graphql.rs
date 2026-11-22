@@ -1073,6 +1073,10 @@ struct ClientStreamStats {
     kbps: Option<f64>,
     /// Packets lost since the stream began.
     packets_lost: Option<f64>,
+    /// The player's video decoder.
+    decoder: Option<String>,
+    /// Whether that decoder runs in low-latency mode; null where the client cannot tell.
+    low_latency_decode: Option<bool>,
 }
 
 impl From<&sovemu_protocol::ClientStats> for ClientStreamStats {
@@ -1087,6 +1091,8 @@ impl From<&sovemu_protocol::ClientStats> for ClientStreamStats {
             fps: s.fps,
             kbps: s.kbps,
             packets_lost: s.packets_lost.map(|n| n as f64),
+            decoder: s.decoder.clone(),
+            low_latency_decode: s.low_latency_decode,
         }
     }
 }

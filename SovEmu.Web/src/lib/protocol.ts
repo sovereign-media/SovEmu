@@ -132,6 +132,8 @@ export interface ClientStats {
   game_mode?: boolean;
   wifi_lock?: boolean;
   low_latency_decode?: boolean;
+  /** The video decoder (getStats' `decoderImplementation`). */
+  decoder?: string;
 }
 
 const STATS_KEYS: (keyof ClientStats)[] = [
@@ -151,6 +153,7 @@ const STATS_KEYS: (keyof ClientStats)[] = [
   "game_mode",
   "wifi_lock",
   "low_latency_decode",
+  "decoder",
 ];
 
 /** `0x04`, the version, then the known values as a JSON object (unknown and non-finite ones left out). */
