@@ -52,6 +52,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Auth: local accounts (argon2, HttpOnly session cookie), first-run admin setup, admin adds
       users, changes their roles and passwords, signs them out everywhere and removes them (never
       the last admin, nor an account the environment declares, which shows locked)
+- [x] The admin Activity page: who did what, and when (sign-ins and refusals through
+      `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
+      changes from their resolvers), kept in `activity` (migration 0023, pruned after
+      `SOVEMU_ACTIVITY_HISTORY_DAYS`), filtered by account and kind, paged, and exported as CSV
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

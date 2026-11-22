@@ -2,6 +2,7 @@
 //! the admin's choice), and each system's photo (`System.photoUrl`, in `library`).
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// A background clients draw behind every screen: a transparent image laid over the surface
 /// colour, scaled to cover the screen.
@@ -83,8 +84,10 @@ impl AppearanceMutation {
     /// Admins: the background for everyone: a background's id, `random` or `none`. `CONFLICT`
     /// while `SOVEMU_BACKGROUND` sets it; `NOT_FOUND` for a background that is not there.
     async fn set_background(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         crate::appearance::choose(state(ctx), id.trim()).await.api()?;
+        let entry = Entry::new(Kind::SettingsChanged).about("Background").detail(id.trim());
+        record(ctx, &me, entry);
         Ok(true)
     }
 }

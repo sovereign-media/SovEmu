@@ -6,6 +6,7 @@ import { onUnload, request } from "./graphql";
 import {
   AboutQuery,
   ActiveSessionsQuery,
+  ActivityQuery,
   AddCheatMutation,
   AddUserMutation,
   AdminPatchesQuery,
@@ -95,6 +96,15 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** What kind of thing happened, for the Activity page's filter. */
+export type ActivityCategory = Enum<"ActivityCategory">;
+/** One entry of the activity log. */
+export type ActivityEntry = ResultOf<typeof ActivityQuery>["activity"]["entries"][number];
+/** Which entries of the activity log a page asks for. */
+export interface ActivityFilter {
+  userId: number | null;
+  category: ActivityCategory | null;
+}
 /** A browser or app signed in as an account. */
 export type SignIn = ResultOf<typeof SignInsQuery>["signIns"][number];
 /** What an account may do. */
@@ -247,6 +257,9 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: a page of the activity log, newest first; `after` is the last page's `next`. */
+  activity: async (filter: ActivityFilter, after: string | null, limit = 100) =>
+    (await request(ActivityQuery, { ...filter, after, limit })).activity,
   /** Admin: the settings that shape every game's stream, and how long a connection test lasts. */
   streaming: async () => (await request(StreamingQuery)).streaming,
   /** Admin: answers this browser's offer with a connection-test peer on a game port. */

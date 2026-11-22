@@ -1143,6 +1143,54 @@ async fn admins_manage_accounts_but_keep_an_admin_and_leave_declared_ones_alone(
 }
 
 #[tokio::test]
+async fn the_activity_log_keeps_sign_ins_and_admin_changes() {
+    const PAGE: &str = "query($u: Int, $c: ActivityCategory, $a: String, $l: Int!) {
+        activity(userId: $u, category: $c, after: $a, limit: $l) {
+            entries { kind category username subject detail address } next } }";
+    let mut h = Harness::new("activity", false).await;
+    h.sign_up_admin().await;
+    h.sign_out();
+    assert!(h.login("admin", "not-the-password").await.is_err());
+    h.login("admin", "password123").await.unwrap();
+    let add = "mutation { addUser(input: {username: \"kid\", password: \"password123\"}) { id } }";
+    h.ok(add, json!({})).await;
+
+    // Recorded in the background: wait for the four entries, not for a time.
+    let all = json!({"l": 50});
+    let mut entries = Value::Null;
+    for _ in 0..100 {
+        entries = h.ok(PAGE, all.clone()).await["activity"]["entries"].clone();
+        if entries.as_array().unwrap().len() >= 4 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let kinds: Vec<&str> =
+        entries.as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    // Newest first; the first sign-in is the harness's own, setting the admin up.
+    assert_eq!(kinds, ["USER_ADDED", "SIGNED_IN", "SIGN_IN_FAILED", "SIGNED_IN"]);
+    assert_eq!(
+        entries[0],
+        json!({"kind": "USER_ADDED", "category": "ADMIN", "username": "admin", "subject": "kid",
+               "detail": "viewer", "address": null})
+    );
+    // (The harness's requests have no peer address; `activity`'s own tests keep one.)
+    assert_eq!(entries[2]["username"], "admin", "a refused sign-in keeps the name tried");
+    assert_eq!(entries[2]["category"], "SIGN_IN");
+
+    // By category, and a page at a time.
+    let sign_ins =
+        h.ok(PAGE, json!({"c": "SIGN_IN", "l": 50})).await["activity"]["entries"].clone();
+    assert_eq!(sign_ins.as_array().unwrap().len(), 3);
+    let first = h.ok(PAGE, json!({"l": 1})).await["activity"].clone();
+    assert_eq!(first["entries"][0]["kind"], "USER_ADDED");
+    let next = first["next"].as_str().unwrap().to_owned();
+    let second = h.ok(PAGE, json!({"a": next, "l": 1})).await["activity"].clone();
+    assert_eq!(second["entries"][0]["kind"], "SIGNED_IN");
+    assert_eq!(h.err(PAGE, json!({"a": "nonsense", "l": 1})).await.0, "BAD_REQUEST");
+}
+
+#[tokio::test]
 async fn admins_see_each_sign_in_and_end_one() {
     let mut h = Harness::new("sign-ins", false).await;
     h.sign_up_admin().await;
@@ -1192,6 +1240,21 @@ async fn admins_see_each_sign_in_and_end_one() {
     h.token = admins;
     let left = h.ok("{ signIns { username } }", json!({})).await["signIns"].clone();
     assert!(left.as_array().unwrap().iter().all(|s| s["username"] != "kid"), "{left}");
+
+    // The activity log names whose sign-in it was (recorded in the background: wait for it).
+    let ended = "{ activity(category: ADMIN) { entries { kind subject detail } } }";
+    let mut found = Value::Null;
+    for _ in 0..100 {
+        found = h.ok(ended, json!({})).await["activity"]["entries"][0].clone();
+        if found["kind"] == "SIGN_IN_ENDED" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        found,
+        json!({"kind": "SIGN_IN_ENDED", "subject": "kid", "detail": "sovemu-native"})
+    );
 }
 
 #[tokio::test]
@@ -2153,6 +2216,7 @@ const ADMIN_ONLY: &[&str] = &[
     "{ streaming { testSeconds } }",
     "mutation { testConnection(sdp: \"v=0\") }",
     "{ clientEventGroups { count } }",
+    "{ activity { next } }",
     "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
@@ -2184,6 +2248,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/controllers.rs"),
         include_str!("graphql/streaming.rs"),
         include_str!("graphql/client_events.rs"),
+        include_str!("graphql/activity.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())
@@ -2289,7 +2354,7 @@ async fn admins_see_the_games_that_failed_with_their_last_lines() {
     );
     // As the workers' observer records it (sovemu-sessions reports how each worker ended).
     use sovemu_sessions::Observer;
-    let events = crate::failures::SessionEvents { failures: h.state.failures.clone() };
+    let events = h.state.failures.clone();
     let lines = vec!["[pcsx2] missing BIOS".to_owned(), "failed to boot".to_owned()];
     let ended = |reason| sovemu_sessions::Ended {
         user_id: 1,

@@ -105,6 +105,40 @@ test("the Users page adds an account, changes its role and password, and removes
   await expect(page.getByRole("menuitem", { name: "Remove…" })).toHaveAttribute("data-disabled", "");
 });
 
+test("the Activity page shows who did what, filters it, and exports it as CSV", async ({ page }) => {
+  // An admin change to find: an account added through the Users page.
+  await page.goto("/admin/users/");
+  await page.getByRole("button", { name: "Add a user" }).click();
+  await page.getByLabel("Username").fill("activity-kid");
+  await page.getByLabel(/^Password/).fill("password123");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("activity-kid", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/activity/");
+  // The e2e admin signed in through the real sign-in form, so that is in the log too.
+  await expect(page.getByRole("cell", { name: "Signed in" }).first()).toBeVisible();
+  const added = page.getByRole("row").filter({ hasText: "activity-kid" });
+  await expect(added).toContainText("Added an account");
+
+  await page.getByRole("radio", { name: "Sign-ins" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "activity-kid" })).toHaveCount(0);
+  await page.getByRole("radio", { name: "Admin changes" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "activity-kid" })).toHaveCount(1);
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export CSV" }).click();
+  const csv = await (await download).createReadStream();
+  const text = await new Promise<string>((resolve) => {
+    let out = "";
+    csv.on("data", (chunk) => {
+      out += chunk;
+    });
+    csv.on("end", () => resolve(out));
+  });
+  expect(text.split("\r\n")[0]).toBe("time,user,what,subject,detail,address");
+  expect(text).toContain("Added an account,activity-kid,viewer");
+});
+
 test("the Devices page lists every sign-in and signs one out; a user's page lists theirs", async ({ page }) => {
   await page.goto("/admin/devices/");
   // A second account, signed in as an app would (the password grant), through the API.

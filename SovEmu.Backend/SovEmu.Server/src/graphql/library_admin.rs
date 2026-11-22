@@ -1,6 +1,7 @@
 //! The admin's library: scans, the mirror, game information, soft patches, decorations and the game cache.
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// A soft patch in the library, as the admin sees it.
 #[derive(SimpleObject)]
@@ -262,15 +263,17 @@ pub(super) struct LibraryAdminMutation;
 impl LibraryAdminMutation {
     /// Admins: rescans the library.
     async fn scan_library(&self, ctx: &Context<'_>) -> Result<ScanReport> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         let r = crate::api::scan(state(ctx)).await.api()?;
+        record(ctx, &me, Entry::new(Kind::JobRun).about(crate::jobs::Job::Scan.label()));
         Ok(ScanReport { found: r.found as i64, added: r.added as i64, removed: r.removed as i64 })
     }
 
     /// Admins: starts a mirror sync in the background (`MIRROR` mode only).
     async fn sync_library(&self, ctx: &Context<'_>) -> Result<bool> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         crate::admin::library_sync(state(ctx)).api()?;
+        record(ctx, &me, Entry::new(Kind::JobRun).about(crate::jobs::Job::MirrorSync.label()));
         Ok(true)
     }
 
@@ -282,10 +285,16 @@ impl LibraryAdminMutation {
         system: Option<ID>,
         #[graphql(default)] force: bool,
     ) -> Result<MetadataStatus> {
-        admin(ctx).await?;
-        crate::admin::metadata_fetch(state(ctx), system.map(|s| s.to_string()), force)
-            .api()
-            .map(Into::into)
+        let me = admin(ctx).await?;
+        let on =
+            system.as_ref().map_or_else(|| "every system".to_owned(), |s| s.as_str().to_owned());
+        let status =
+            crate::admin::metadata_fetch(state(ctx), system.map(|s| s.to_string()), force).api()?;
+        let entry = Entry::new(Kind::JobRun)
+            .about(crate::jobs::Job::Metadata.label())
+            .detail(format!("{on}{}", if force { ", every game again" } else { "" }));
+        record(ctx, &me, entry);
+        Ok(status.into())
     }
 
     /// Plays a game with one of its soft patches from now on (`Game.patches`), or the original
@@ -293,7 +302,11 @@ impl LibraryAdminMutation {
     /// Admins: deletes the game cache's copies (mode `cache`), but those of games being played;
     /// the bytes freed. Games are copied again as they are played.
     async fn clear_cache(&self, ctx: &Context<'_>) -> Result<f64> {
-        admin(ctx).await?;
-        Ok(crate::storage::clear_cache(state(ctx)).await.api()? as f64)
+        let me = admin(ctx).await?;
+        let freed = crate::storage::clear_cache(state(ctx)).await.api()?;
+        let entry =
+            Entry::new(Kind::CacheCleared).detail(format!("{} MB freed", freed / 1_000_000));
+        record(ctx, &me, entry);
+        Ok(freed as f64)
     }
 }

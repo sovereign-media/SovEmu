@@ -543,7 +543,12 @@ pub(crate) async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<
 /// Ends a session: the player's own, or, for an admin, anyone's (the Sessions page). Through
 /// `Workers::stop`, which asks the worker to write its saves before anything is killed; the
 /// player's client sees the game end as after an idle timeout.
-pub(crate) async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
+/// Ends a session: the player's own, or anyone's for an admin. Whose it was, and its game.
+pub(crate) async fn stop_session(
+    state: &AppState,
+    user: &User,
+    id: &str,
+) -> ApiResult<(i64, String)> {
     let session = if user.is_admin() {
         state.workers.get(id).ok_or_else(|| ApiError::not_found("session"))?
     } else {
@@ -553,7 +558,7 @@ pub(crate) async fn stop_session(state: &AppState, user: &User, id: &str) -> Api
         tracing::info!(by = %user.username, player = session.user_id, "session stopped by an admin");
     }
     state.workers.stop(id).await;
-    Ok(())
+    Ok((session.user_id, session.info().title))
 }
 
 /// Where a user's saves for a game live: battery saves in

@@ -40,6 +40,95 @@ type ActiveSession {
 }
 
 """
+What kind of thing happened, for the page's filter.
+"""
+enum ActivityCategory {
+	"""
+	Signing in, and refusals.
+	"""
+	SIGN_IN
+	"""
+	Games started and ended.
+	"""
+	PLAY
+	"""
+	What admins changed.
+	"""
+	ADMIN
+}
+
+"""
+One thing that happened.
+"""
+type ActivityEntry {
+	"""
+	When (Unix seconds).
+	"""
+	at: Float!
+	"""
+	The account that did it; null for a refused sign-in.
+	"""
+	userId: Int
+	"""
+	Its name now, else the name it had (an account since deleted), or for a refused sign-in
+	the name that was tried.
+	"""
+	username: String
+	kind: ActivityKind!
+	category: ActivityCategory!
+	"""
+	What it was about: a game, an account, a job, a system's settings.
+	"""
+	subject: String
+	"""
+	More: a new role, how a game ended.
+	"""
+	detail: String
+	"""
+	The client's address, where there was a request.
+	"""
+	address: String
+}
+
+"""
+What happened.
+"""
+enum ActivityKind {
+	SIGNED_IN
+	SIGN_IN_FAILED
+	"""
+	Refused without checking: too many failed attempts already.
+	"""
+	SIGN_IN_LOCKED_OUT
+	GAME_STARTED
+	GAME_ENDED
+	USER_ADDED
+	ROLE_CHANGED
+	PASSWORD_SET
+	USER_REMOVED
+	SIGNED_OUT_EVERYWHERE
+	"""
+	One browser or app signed out.
+	"""
+	SIGN_IN_ENDED
+	SESSION_STOPPED
+	SETTINGS_CHANGED
+	JOB_RUN
+	CACHE_CLEARED
+}
+
+"""
+A page of the activity log, newest first.
+"""
+type ActivityPage {
+	entries: [ActivityEntry!]!
+	"""
+	Give as `after` for the next page; null when this was the last.
+	"""
+	next: String
+}
+
+"""
 A soft patch in the library, as the admin sees it.
 """
 type AdminPatch {
@@ -1856,6 +1945,12 @@ type Query {
 	`limit`, up to 200).
 	"""
 	clientEvents(kind: ClientEventKind!, client: String!, days: Int! = 7, limit: Int! = 50): [ClientEvent!]!
+	"""
+	Admins: the activity log, newest first: one account's (`userId`), one kind of thing
+	(`category`), or all. Up to `limit` (500 at most) a page; pass a page's `next` as `after`
+	for the one after it.
+	"""
+	activity(userId: Int, category: ActivityCategory, after: String, limit: Int! = 100): ActivityPage!
 }
 
 enum Rendering {

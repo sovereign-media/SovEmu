@@ -1,6 +1,15 @@
 //! Controller layouts and mappings, the user's and the admin's defaults.
 
 use super::*;
+use crate::activity::{Entry, Kind};
+
+/// An admin's change to a controller model's default, on one system or every system.
+fn controller_entry(controller: &str, system: Option<&ID>, what: &str) -> Entry {
+    let on = system.map_or_else(|| "every system".to_owned(), |s| s.to_string());
+    Entry::new(Kind::SettingsChanged)
+        .about(format!("Controller {controller}"))
+        .detail(format!("{what} ({on})"))
+}
 
 /// The default controller mappings (admins).
 #[derive(SimpleObject)]
@@ -86,9 +95,9 @@ impl ControllersMutation {
         #[graphql(default)] name: String,
         bindings: Vec<crate::controllers::Binding>,
     ) -> Result<crate::controllers::ControllerMapping> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         let state = state(ctx);
-        crate::controllers::save_default(
+        let saved = crate::controllers::save_default(
             state,
             &controller,
             system.as_ref().map(|s| s.as_str()),
@@ -96,7 +105,9 @@ impl ControllersMutation {
             bindings,
         )
         .await
-        .api()
+        .api()?;
+        record(ctx, &me, controller_entry(&controller, system.as_ref(), "default mapping saved"));
+        Ok(saved)
     }
 
     /// Admins: forgets the admin's default for a controller model. Returns whether it had one.
@@ -106,14 +117,22 @@ impl ControllersMutation {
         controller: String,
         system: Option<ID>,
     ) -> Result<bool> {
-        admin(ctx).await?;
-        crate::controllers::reset_default(
+        let me = admin(ctx).await?;
+        let had = crate::controllers::reset_default(
             state(ctx),
             &controller,
             system.as_ref().map(|s| s.as_str()),
         )
         .await
-        .api()
+        .api()?;
+        if had {
+            record(
+                ctx,
+                &me,
+                controller_entry(&controller, system.as_ref(), "default mapping reset"),
+            );
+        }
+        Ok(had)
     }
 
     /// Puts a controller model back on the defaults (an admin's, else the built-in ones).

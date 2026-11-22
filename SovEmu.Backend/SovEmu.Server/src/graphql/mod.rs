@@ -32,6 +32,7 @@ use crate::auth::{Credentials, NewUser, User};
 use crate::error::ApiError;
 
 mod accounts;
+mod activity;
 mod appearance;
 mod client_events;
 mod controllers;
@@ -268,6 +269,12 @@ async fn user(ctx: &Context<'_>) -> Result<User> {
     viewer(ctx).await?.ok_or_else(|| gql(ApiError::unauthorized()))
 }
 
+/// Records what `user` just did in the activity log, with this request's address.
+fn record(ctx: &Context<'_>, user: &User, entry: crate::activity::Entry) {
+    let address = ctx.data_opt::<crate::client_ip::ClientIp>().and_then(|c| c.0);
+    state(ctx).activity.record(entry.by(user).from(address));
+}
+
 /// The signed-in user, who must be an admin, or `FORBIDDEN`.
 async fn admin(ctx: &Context<'_>) -> Result<User> {
     let user = user(ctx).await?;
@@ -298,6 +305,7 @@ pub(crate) struct Query(
     appearance::AppearanceQuery,
     streaming::StreamingQuery,
     client_events::ClientEventsQuery,
+    activity::ActivityQuery,
 );
 
 // The mutation root: each area's mutations, in this order.

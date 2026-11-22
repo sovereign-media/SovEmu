@@ -71,6 +71,16 @@ impl Job {
         }
     }
 
+    /// Its name for people, as the Jobs page shows it.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Job::Scan => "Library scan",
+            Job::MirrorSync => "Mirror sync",
+            Job::Metadata => "Game information",
+            Job::Maintenance => "Database upkeep",
+        }
+    }
+
     fn from_name(name: &str) -> Option<Job> {
         Job::ALL.into_iter().find(|j| j.name() == name)
     }
@@ -702,17 +712,16 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
 /// One round of upkeep (see the module's notes).
 async fn maintain(state: AppState) -> anyhow::Result<String> {
     let samples = crate::resources::prune(&state.db, state.config.resource_history_days).await?;
-    let events = crate::client_events::prune(
-        &state.db,
-        state.config.client_event_days,
-        crate::client_events::now_unix(),
-    )
-    .await?;
+    let now = crate::client_events::now_unix();
+    let events =
+        crate::client_events::prune(&state.db, state.config.client_event_days, now).await?;
+    let activity =
+        crate::activity::prune(&state.db, state.config.activity_history_days, now).await?;
     let (expired, pruned) =
         maintain_db(&state.db, &state.identity, state.config.job_history_days).await?;
     Ok(format!(
         "{expired} expired sign-ins deleted, {pruned} old job runs, {samples} old resource \
-         samples and {events} old client errors pruned"
+         samples, {events} old client errors and {activity} old activity entries pruned"
     ))
 }
 
@@ -908,6 +917,7 @@ mod tests {
             max_failures_per_ip: 20,
             lockout: std::time::Duration::from_secs(300),
             refresh_retry: std::time::Duration::ZERO,
+            observer: std::sync::Arc::new(()),
         };
         let identity = sovemu_identity::Identity::new(db.clone(), config).await.unwrap();
         sqlx::query("INSERT INTO users (username, password_hash) VALUES ('a', 'x')")

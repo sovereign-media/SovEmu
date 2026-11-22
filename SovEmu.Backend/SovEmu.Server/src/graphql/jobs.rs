@@ -1,6 +1,7 @@
 //! Background jobs: their schedule, history, and running one now.
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// A background job (`jobs.rs`).
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
@@ -191,9 +192,11 @@ impl JobsMutation {
     /// game information). `CONFLICT` if it is running; `BAD_REQUEST` if this server does not
     /// have it (`MIRROR_SYNC` outside `MIRROR` mode).
     async fn run_job(&self, ctx: &Context<'_>, job: JobName) -> Result<Vec<JobState>> {
-        admin(ctx).await?;
+        let me = admin(ctx).await?;
         let state = state(ctx);
-        crate::jobs::start_by_admin(state, job.into()).map_err(|e| gql(e.into()))?;
+        let job: crate::jobs::Job = job.into();
+        crate::jobs::start_by_admin(state, job).map_err(|e| gql(e.into()))?;
+        record(ctx, &me, Entry::new(Kind::JobRun).about(job.label()));
         job_states(state).await
     }
 }

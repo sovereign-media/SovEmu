@@ -1167,6 +1167,24 @@ export const ClientEventsQuery = graphql(`
   }
 `);
 
+export const ActivityQuery = graphql(`
+  query Activity($userId: Int, $category: ActivityCategory, $after: String, $limit: Int!) {
+    activity(userId: $userId, category: $category, after: $after, limit: $limit) {
+      entries {
+        at
+        userId
+        username
+        kind
+        category
+        subject
+        detail
+        address
+      }
+      next
+    }
+  }
+`);
+
 export const ClearCacheMutation = graphql(`
   mutation ClearCache {
     clearCache
