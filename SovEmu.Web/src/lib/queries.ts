@@ -645,6 +645,25 @@ const JobFields = graphql(`
   }
 `);
 
+export const SessionFailuresQuery = graphql(`
+  query SessionFailures {
+    sessionFailures {
+      at
+      username
+      gameId
+      title
+      system
+      core
+      whilePlaying
+      reason
+      exitCode
+      signal
+      lastLines
+      ranSeconds
+    }
+  }
+`);
+
 export const ActiveSessionsQuery = graphql(`
   query ActiveSessions {
     activeSessions {

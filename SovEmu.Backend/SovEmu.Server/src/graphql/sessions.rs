@@ -50,6 +50,32 @@ impl From<ClientEventInput> for crate::client_events::Event {
 pub(super) struct SessionNode(pub(super) sovemu_sessions::workers::SessionInfo);
 
 /// A game being played, as the admin's sessions page shows it.
+/// A game that failed: it ended with an error while starting, or crashed, errored or had to be
+/// killed while playing. The newest the server keeps (`SOVEMU_SESSION_FAILURES`).
+#[derive(SimpleObject)]
+pub(super) struct SessionFailure {
+    /// When it ended (Unix seconds).
+    pub(super) at: f64,
+    /// Null for an account since deleted.
+    pub(super) username: Option<String>,
+    pub(super) game_id: i64,
+    pub(super) title: String,
+    pub(super) system: String,
+    /// The core's file name without its extension (`pcsx2_libretro`).
+    pub(super) core: String,
+    /// It had loaded: it failed while playing; else while starting.
+    pub(super) while_playing: bool,
+    /// `error`, `crashed` (a signal: in the core, most often) or `killed` (it would not stop, or
+    /// its start timed out).
+    pub(super) reason: String,
+    pub(super) exit_code: Option<i32>,
+    pub(super) signal: Option<i32>,
+    /// The worker's last log lines (the core's own, most often), oldest first.
+    pub(super) last_lines: Vec<String>,
+    /// How long it ran, seconds.
+    pub(super) ran_seconds: f64,
+}
+
 pub(super) struct ActiveSessionNode(pub(super) crate::api::ActiveSession);
 
 #[Object(name = "ActiveSession")]
@@ -358,6 +384,29 @@ impl SessionsQuery {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: the games that failed most recently, newest first, with the core's last lines.
+    async fn session_failures(&self, ctx: &Context<'_>) -> Result<Vec<SessionFailure>> {
+        admin(ctx).await?;
+        let failures = crate::failures::recent_with_players(state(ctx)).await.api()?;
+        Ok(failures
+            .into_iter()
+            .map(|(f, username)| SessionFailure {
+                at: f.at,
+                username,
+                game_id: f.game_id,
+                title: f.title,
+                system: f.system,
+                core: f.core,
+                while_playing: f.loaded,
+                reason: f.reason.as_str().to_owned(),
+                exit_code: f.code,
+                signal: f.signal,
+                last_lines: f.last_lines,
+                ran_seconds: f.ran_s,
+            })
+            .collect())
     }
 }
 

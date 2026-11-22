@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientSummary, decoderSummary, durationLabel, frameWorkLabel, healthSummary } from "./sessions";
+import { clientSummary, decoderSummary, durationLabel, failureLabel, frameWorkLabel, healthSummary } from "./sessions";
 
 describe("sessions page", () => {
   it("says how long a game has run", () => {
@@ -73,5 +73,18 @@ describe("sessions page", () => {
     expect(decoderSummary({ clientStats: { ...stats, decoder: "c2.qti.avc.decoder", lowLatencyDecode: true } })).toBe(
       "c2.qti.avc.decoder · low latency: on",
     );
+  });
+
+  it("says how a game failed, and when", () => {
+    const f = { whilePlaying: true, reason: "crashed", exitCode: null, signal: 11 };
+    expect(failureLabel(f)).toBe("Crashed while playing (SIGSEGV)");
+    expect(failureLabel({ ...f, signal: 31 })).toBe("Crashed while playing (signal 31)");
+    expect(failureLabel({ ...f, whilePlaying: false, reason: "error", signal: null, exitCode: 1 })).toBe(
+      "Failed to start (exit 1)",
+    );
+    expect(failureLabel({ ...f, whilePlaying: false, reason: "killed", signal: 9 })).toBe(
+      "Timed out starting (SIGKILL)",
+    );
+    expect(failureLabel({ ...f, reason: "killed", signal: null })).toBe("Would not stop");
   });
 });
