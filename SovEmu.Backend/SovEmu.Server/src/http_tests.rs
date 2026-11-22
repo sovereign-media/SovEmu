@@ -2316,6 +2316,7 @@ const ADMIN_ONLY: &[&str] = &[
     "{ attentionCounts { count } }",
     "mutation { lookUpGame(gameId: 1) { running } }",
     "{ backups { dir } }",
+    "{ thirdPartyNotices { server { id } } }",
     "mutation { deleteBackup(name: \"x\") }",
     "mutation { createSharedCollection(name: \"x\") { id } }",
     "mutation { renameSharedCollection(id: 1, name: \"x\") }",

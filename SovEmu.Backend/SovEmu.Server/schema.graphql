@@ -1914,6 +1914,28 @@ input NewUserInput {
 }
 
 """
+One licence text, and the packages it covers.
+"""
+type Notice {
+	"""
+	SPDX (`MIT`).
+	"""
+	id: String!
+	name: String!
+	packages: [NoticePackage!]!
+	text: String!
+}
+
+"""
+A package SovEmu ships.
+"""
+type NoticePackage {
+	name: String!
+	version: String!
+	repository: String
+}
+
+"""
 A RetroPad button (libretro's RETRO_DEVICE_ID_JOYPAD_*).
 """
 enum PadButton {
@@ -2168,6 +2190,11 @@ type Query {
 	licences and terms.
 	"""
 	attributions: Attributions!
+	"""
+	Admins: every open-source package the server and the web client ship, with its licence
+	text, grouped by licence.
+	"""
+	thirdPartyNotices: ThirdPartyNotices!
 	"""
 	Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
 	export went.
@@ -2933,6 +2960,20 @@ type TelemetryReport {
 	The settings this page is about, as the Configuration page shows them.
 	"""
 	settings: [ConfigSetting!]!
+}
+
+"""
+The open-source packages SovEmu ships, with their licences.
+"""
+type ThirdPartyNotices {
+	"""
+	The server's and the workers' Rust crates (cargo-about, at the image's build).
+	"""
+	server: [Notice!]!
+	"""
+	The web client's npm packages (its build); empty for a development build.
+	"""
+	web: [Notice!]!
 }
 
 """

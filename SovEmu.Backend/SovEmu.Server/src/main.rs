@@ -32,6 +32,7 @@ mod jobs;
 mod library;
 mod logs;
 mod metadata;
+mod notices;
 mod ops;
 mod patches;
 mod paths;

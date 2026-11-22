@@ -73,6 +73,16 @@ RUN apt-get update \
 ENV CARGO_TERM_COLOR=always \
     CARGO_INCREMENTAL=0 \
     CARGO_PROFILE_DEV_DEBUG=line-tables-only
+# cargo-about, which lists the licences of the crates the image is built from (`build` below):
+# its released binary, pinned and checked, before the sources so it is not fetched per commit.
+ARG CARGO_ABOUT_VERSION=0.9.3
+ARG CARGO_ABOUT_SHA256=3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4
+RUN curl -sSfL --retry 5 -o /tmp/cargo-about.tar.gz \
+        "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    && echo "${CARGO_ABOUT_SHA256}  /tmp/cargo-about.tar.gz" | sha256sum -c - \
+    && tar xzf /tmp/cargo-about.tar.gz --strip-components=1 -C /usr/local/cargo/bin \
+        "cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl/cargo-about" \
+    && rm /tmp/cargo-about.tar.gz
 WORKDIR /src
 COPY SovEmu.Backend/ ./
 
@@ -83,9 +93,13 @@ FROM toolchain AS build
 # `toolchain`, so the test stage's compile does not change with every commit.
 ARG SOVEMU_REVISION=""
 ARG SOVEMU_BUILT=""
+# The third-party notices are listed again from the lockfile first, so the image always ships
+# the current list (the committed copy is a local build's): a crate under a licence about.toml
+# does not accept fails the build here.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-release,target=/src/target \
-    cargo build --release --locked -p sovemu-worker -p sovemu-server \
+    cargo about generate --locked -c about.toml about.hbs -o SovEmu.Server/third-party-notices.json \
+    && cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
     && install -D target/release/sovemu-server /out/sovemu-server \
     # Drop the line tables (most of the binaries' size) but keep symbol names for backtraces.

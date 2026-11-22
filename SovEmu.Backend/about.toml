@@ -1,0 +1,26 @@
+# cargo-about (the image's build stage): the licences of every crate the server and worker are
+# built from, written to /opt/sovemu/third-party-notices.json for the admin About page. A crate
+# under a licence not accepted here fails the build: adding one is a decision, not a lockfile
+# bump. Each accepted licence is permissive and asks only that its notice travels with the code.
+accepted = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+# The shipped binaries only: test and build tools are not in the image.
+targets = ["x86_64-unknown-linux-gnu"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+# SovEmu's own crates (`publish = false`) are what the notices are for, not in them.
+private = { ignore = true }

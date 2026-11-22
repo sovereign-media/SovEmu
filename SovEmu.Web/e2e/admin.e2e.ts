@@ -281,6 +281,19 @@ test("the Backups page backs up now, offers the file and its restore line, and d
   await expect(page.getByText("No backups yet.")).toBeVisible();
 });
 
+test("the About page lists the open-source packages of the server and the web client", async ({ page }) => {
+  await page.goto("/admin/about/");
+  await page.getByRole("button", { name: "Show the packages" }).click();
+  const licences = page.getByRole("list", { name: "Licences" });
+  await expect(licences).toContainText("Apache-2.0");
+  await licences.getByText("Apache-2.0").first().click();
+  await expect(licences).toContainText("tokio");
+  await page.getByRole("radio", { name: "Web client" }).click();
+  await expect(licences).toContainText("MIT");
+  await licences.getByText("MIT").first().click();
+  await expect(licences).toContainText("react");
+});
+
 test("the Overview sums up the server, each card leading to its page", async ({ page }) => {
   await page.goto("/admin/overview/");
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();

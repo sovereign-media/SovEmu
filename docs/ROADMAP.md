@@ -82,6 +82,10 @@ held 59.93 fps over 300 frames with no resyncs.
       `SOVEMU_BACKUP_KEEP` kept, in `SOVEMU_BACKUP_DIR`) or the page's button, downloaded through
       a signed URL for admins only; restored at startup from `SOVEMU_RESTORE_FROM`, what it
       replaces moved into `before-restore-<time>/`, each backup restored once
+- [x] The About page lists every open-source package shipped, by licence, with its text: the
+      server's crates (cargo-about, `about.toml`'s accepted licences, listed again by the image's
+      build stage; `third-party-notices.json` committed for a local build) and the web client's
+      npm packages (a Vite plugin with its own allow-list), through `thirdPartyNotices`
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's
