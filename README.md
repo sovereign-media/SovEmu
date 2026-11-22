@@ -304,7 +304,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_REFRESH_RETRY_SECONDS` | `30` | How long a just-used refresh token is honoured again (two tabs refreshing at once); after that, presenting it ends the sign-in. 0: strictly once |
 | `SOVEMU_PUBLIC_URL` | `localhost`, `127.0.0.1` and `SOVEMU_ADVERTISE_IP` on the HTTP port | The addresses people reach the server at, comma-separated (`https://games.example.com,http://192.168.1.10:8080`). Each issues sign-in tokens; signing in elsewhere is refused. Set it when you use a hostname or a proxy |
 | `SOVEMU_PASSWORD_SIGN_IN` | `true` | Whether the apps may sign in with a username and password, as well as with a code shown on the screen |
-| `SOVEMU_CLIENT_EVENTS` | `true` | Whether what goes wrong on a client (a failed connection, a stalled picture, a screen error) is logged as `client event`. Off, clients' reports are dropped. Nothing is stored |
+| `SOVEMU_CLIENT_EVENTS` | `true` | Whether what goes wrong on a client (a failed connection, a stalled picture, a screen error) is logged as `client event` and kept for the admin Client errors page (`SOVEMU_CLIENT_EVENT_DAYS`). Off, clients' reports are dropped |
 | `SOVEMU_TOKEN_KEY` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret: `_FILE` works |
 | `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
 | `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
@@ -365,6 +365,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
 | `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
 | `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SOVEMU_CLIENT_EVENT_DAYS` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |
 | `SOVEMU_RESOURCE_SAMPLE_SECONDS` | `5` | Seconds between readings of the container's CPU and memory (its cgroup: the server and every game session), for the admin Resources page and the OpenTelemetry gauges (0: not read) |
 | `SOVEMU_RESOURCE_HISTORY_DAYS` | `30` | Days of CPU and memory history kept, a row per minute (0: kept for ever) |
 | `SOVEMU_ASSET_KEY` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret: `_FILE` works. Changing it invalidates URLs already handed out |

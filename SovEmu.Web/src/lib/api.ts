@@ -17,6 +17,8 @@ import {
   CheatsQuery as CheatsDocument,
   ClearCacheMutation,
   ClientConfigQuery,
+  ClientEventGroupsQuery,
+  ClientEventsQuery,
   CollectionIdsQuery,
   CollectionsQuery as CollectionsDocument,
   ConfigurationQuery,
@@ -83,6 +85,12 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** What went wrong on a client, as the apps report it. */
+export type ClientEventKind = Enum<"ClientEventKind">;
+/** Client errors of one kind from one client. */
+export type ClientEventGroup = ResultOf<typeof ClientEventGroupsQuery>["clientEventGroups"][number];
+/** One client error. */
+export type ClientEvent = ResultOf<typeof ClientEventsQuery>["clientEvents"][number];
 export type SessionFailure = ResultOf<typeof SessionFailuresQuery>["sessionFailures"][number];
 type ServerResourcesResult = ResultOf<typeof ServerResourcesQuery>;
 type ResourceHistoryResult = ResultOf<typeof ResourceHistoryQuery>;
@@ -206,6 +214,11 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: the client errors of the last `days` days, by kind and client. */
+  clientEventGroups: async (days: number) => (await request(ClientEventGroupsQuery, { days })).clientEventGroups,
+  /** Admin: one kind and client's errors of the last `days` days, newest first. */
+  clientEvents: async (kind: ClientEventKind, client: string, days: number) =>
+    (await request(ClientEventsQuery, { kind, client, days })).clientEvents,
   /** Admin: the server's effective configuration, credentials masked. */
   configuration: async () => (await request(ConfigurationQuery)).configuration,
   /** Admin: every core with its licence, and the libretro release they come from. */
@@ -284,17 +297,4 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** "3 days ago" style, from an SQLite UTC timestamp ("2026-11-13 23:00:00"). */
-export function formatAgo(sqliteUtc: string | null, now = Date.now()): string {
-  if (!sqliteUtc) return "never";
-  const then = Date.parse(`${sqliteUtc.replace(" ", "T")}Z`);
-  const minutes = Math.round((now - then) / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days} days ago`;
 }

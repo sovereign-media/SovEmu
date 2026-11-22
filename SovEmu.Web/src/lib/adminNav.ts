@@ -3,6 +3,7 @@
 // page is one entry here.
 import {
   Activity,
+  Bug,
   FileDiff,
   Frame,
   Gamepad,
@@ -69,6 +70,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Controllers",
         title: "The default button mapping for each controller model",
         icon: Gamepad,
+      },
+      {
+        href: "/admin/client-errors/",
+        label: "Client errors",
+        title: "What went wrong in the apps, by kind and by app and device",
+        icon: Bug,
       },
     ],
   },

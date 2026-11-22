@@ -63,6 +63,7 @@ import type { QualityNotice } from "../../lib/pipeline";
 import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { type StatItem, StatsSampler } from "../../lib/stats";
+import { ago } from "../../lib/time";
 import { PadDiagram } from "../PadDiagram";
 import Shell from "../Shell";
 import { Button } from "../ui/button";
@@ -97,14 +98,6 @@ const ICONS: Record<string, LucideIcon> = {
 const SLOTS = [1, 2, 3, 4];
 const FILTER_KEY = "sovemu.filter";
 const player = (port: number) => `Player ${port + 1}`;
-
-const ago = (unix: number) => {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - unix));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return new Date(unix * 1000).toLocaleDateString();
-};
 
 interface Loaded {
   game: Game;

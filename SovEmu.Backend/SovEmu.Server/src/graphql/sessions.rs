@@ -1,49 +1,6 @@
-//! Game sessions: starting one and following its start, the WebRTC offer, saves and states, discs, and what clients report.
+//! Game sessions: starting one and following its start, the WebRTC offer, saves and states, and discs.
 
 use super::*;
-
-/// What went wrong on a client (`reportClientEvents`).
-#[derive(Enum, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClientEventKind {
-    /// WebRTC could not connect.
-    ConnectionFailed,
-    /// A connected stream dropped.
-    ConnectionLost,
-    /// No new picture for a while during play.
-    StreamStalled,
-    /// A controller the client has no layout for.
-    ControllerUnknown,
-    /// A screen or the app failed.
-    ScreenError,
-    Other,
-}
-
-/// One thing that went wrong on a client.
-#[derive(InputObject)]
-pub(super) struct ClientEventInput {
-    pub(super) kind: ClientEventKind,
-    /// What happened, in a line (kept to 500 characters).
-    pub(super) message: String,
-    /// The game session it happened in, if any.
-    pub(super) session_id: Option<ID>,
-    /// When, in seconds since the Unix epoch on the client's clock.
-    pub(super) at: Option<f64>,
-}
-
-impl From<ClientEventInput> for crate::client_events::Event {
-    fn from(e: ClientEventInput) -> Self {
-        use crate::client_events::Kind;
-        let kind = match e.kind {
-            ClientEventKind::ConnectionFailed => Kind::ConnectionFailed,
-            ClientEventKind::ConnectionLost => Kind::ConnectionLost,
-            ClientEventKind::StreamStalled => Kind::StreamStalled,
-            ClientEventKind::ControllerUnknown => Kind::ControllerUnknown,
-            ClientEventKind::ScreenError => Kind::ScreenError,
-            ClientEventKind::Other => Kind::Other,
-        };
-        Self { kind, message: e.message, session_id: e.session_id.map(|id| id.0), at: e.at }
-    }
-}
 
 /// A running game: one worker streaming over WebRTC.
 pub(super) struct SessionNode(pub(super) sovemu_sessions::workers::SessionInfo);
@@ -421,28 +378,6 @@ pub(super) struct SessionsMutation;
 
 #[Object]
 impl SessionsMutation {
-    /// Signed-in users: what went wrong on this client (a connection that failed, a stalled
-    /// picture, a screen that crashed), for the server's log beside the session's own lines.
-    /// `client` names it and its version (`android 0.1.0 (MiTV-AFMU1, Android 11)`). At most
-    /// 20 events a call and 60 a minute per user; the rest are dropped. Returns how many were
-    /// logged (0 when `SOVEMU_CLIENT_EVENTS` is off). Nothing is stored.
-    async fn report_client_events(
-        &self,
-        ctx: &Context<'_>,
-        client: String,
-        events: Vec<ClientEventInput>,
-    ) -> Result<i32> {
-        let user = user(ctx).await?;
-        let state = state(ctx);
-        if !state.config.client_events {
-            return Ok(0);
-        }
-        let events: Vec<crate::client_events::Event> = events.into_iter().map(Into::into).collect();
-        let logged =
-            state.client_events.report(user.id, &client, &events, std::time::Instant::now());
-        Ok(logged as i32)
-    }
-
     /// Starts a game (ending this user's running one first) and returns once it is ready to
     /// stream. Give a `startId` (8–64 letters, digits, `-` or `_`) to follow its progress with
     /// `startProgress` meanwhile.

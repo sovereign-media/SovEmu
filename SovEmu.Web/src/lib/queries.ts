@@ -1023,6 +1023,36 @@ export const StorageQuery = graphql(`
   }
 `);
 
+export const ClientEventGroupsQuery = graphql(`
+  query ClientEventGroups($days: Int!) {
+    clientEventGroups(days: $days) {
+      kind
+      client
+      count
+      users
+      lastAt
+      lastMessage
+    }
+  }
+`);
+
+export const ClientEventsQuery = graphql(`
+  query ClientEvents($kind: ClientEventKind!, $client: String!, $days: Int!) {
+    clientEvents(kind: $kind, client: $client, days: $days) {
+      at
+      clientAt
+      username
+      client
+      kind
+      message
+      sessionId
+      gameId
+      title
+      system
+    }
+  }
+`);
+
 export const ClearCacheMutation = graphql(`
   mutation ClearCache {
     clearCache

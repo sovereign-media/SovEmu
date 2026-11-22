@@ -35,6 +35,34 @@ test("a game the server will not start is listed under the Sessions page's failu
   await expect(failures.getByText(/^no core installed for /).first()).toBeVisible();
 });
 
+test("the Client errors page groups what the apps reported, and opens a group", async ({ page }) => {
+  await page.goto("/admin/client-errors/");
+  // Reported as an app does: signed in, through the API.
+  const reported = await page.evaluate(async () => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("oidc.user:"));
+    const token = key ? JSON.parse(localStorage.getItem(key) ?? "{}").access_token : "";
+    const response = await fetch("/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        query: 'mutation($e: [ClientEventInput!]!) { reportClientEvents(client: "tv 9.9 (Test TV)", events: $e) }',
+        variables: { e: [{ kind: "STREAM_STALLED", message: "no new picture for 5 s" }] },
+      }),
+    });
+    return (await response.json()).data?.reportClientEvents;
+  });
+  expect(reported).toBe(1);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Client errors", level: 1 })).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: "tv 9.9" });
+  await expect(row).toContainText("Picture stalled");
+  await expect(row).toContainText("Test TV");
+  await row.getByRole("button", { name: /^Show Picture stalled from tv 9\.9/ }).click();
+  await expect(page.getByText("no new picture for 5 s").last()).toBeVisible();
+  await page.getByRole("radio", { name: "Day" }).click();
+  await expect(page.getByRole("radio", { name: "Day" })).toHaveAttribute("data-state", "on");
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

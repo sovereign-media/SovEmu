@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { agoFromUnix, exportText, intervalText } from "./telemetry";
+import { exportText, intervalText } from "./telemetry";
 
 const now = 1_700_000_000_000;
 
 describe("the telemetry page", () => {
-  it("says how long ago", () => {
-    expect(agoFromUnix(now / 1000 - 2, now)).toBe("just now");
-    expect(agoFromUnix(now / 1000 - 30, now)).toBe("30 s ago");
-    expect(agoFromUnix(now / 1000 - 180, now)).toBe("3 min ago");
-    expect(agoFromUnix(now / 1000 - 7200, now)).toBe("2 h ago");
-  });
-
   it("says how each signal's exports went", () => {
     const base = { lastAt: null, ok: false, error: null, exports: 0, failures: 0 };
     expect(exportText(base, now)).toEqual({ tone: "quiet", text: "No export yet" });
