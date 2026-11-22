@@ -294,17 +294,20 @@ struct Candidate {
 /// run side by side.
 const STAT_THREADS: usize = 16;
 
-/// Walks `root` and returns every file that belongs to a known system.
+/// Walks `root` and returns every file that belongs to a known system. An error when `root`
+/// itself cannot be read (a share that went away): never an empty library, which a caller would
+/// take as every game removed.
 ///
 /// Two stages, both parallel, because on an SMB/NFS library the cost is round trips: list every
 /// folder (one thread per top-level folder, no per-file requests), then read the size and date
 /// of only the files that are ROMs.
-pub fn walk(root: &Path) -> Vec<Found> {
-    let Ok(entries) = std::fs::read_dir(root) else { return Vec::new() };
+pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
+    let entries = std::fs::read_dir(root).map_err(|e| unreadable(root, e))?;
     let mut candidates = Vec::new();
     let mut patches = Vec::new();
     let mut folders = Vec::new();
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.map_err(|e| unreadable(root, e))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
@@ -320,27 +323,27 @@ pub fn walk(root: &Path) -> Vec<Found> {
             candidates.push(Candidate { path, system, media: String::new(), patches: Vec::new() });
         }
     }
-    std::thread::scope(|scope| {
+    std::thread::scope(|scope| -> std::io::Result<()> {
         let handles: Vec<_> = folders
             .iter()
             .map(|(dir, system)| {
                 scope.spawn(move || {
                     let mut found = Listing::default();
-                    walk_dir(dir, *system, 1, &mut found);
-                    found
+                    walk_dir(dir, *system, 1, &mut found).map(|()| found)
                 })
             })
             .collect();
         for handle in handles {
-            let listing = handle.join().unwrap_or_default();
+            let listing = handle.join().map_err(panicked)??;
             candidates.extend(listing.candidates);
             patches.extend(listing.patches);
         }
-    });
+        Ok(())
+    })?;
     attach_patches(&mut candidates, &patches);
 
     let chunk = candidates.len().div_ceil(STAT_THREADS).max(1);
-    let mut found: Vec<Found> = std::thread::scope(|scope| {
+    let mut found: Vec<Found> = std::thread::scope(|scope| -> std::io::Result<Vec<Found>> {
         let handles: Vec<_> = candidates
             .chunks(chunk)
             .map(|part| {
@@ -349,17 +352,29 @@ pub fn walk(root: &Path) -> Vec<Found> {
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
-    });
+        let mut found = Vec::new();
+        for handle in handles {
+            found.extend(handle.join().map_err(panicked)?);
+        }
+        Ok(found)
+    })?;
     found.sort_by(|a, b| (a.system, &a.title, &a.path).cmp(&(b.system, &b.title, &b.path)));
-    found
+    Ok(found)
 }
 
-fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &mut Listing) {
+/// Lists `dir` into `found`. A folder that cannot be read, or whose listing breaks off, is an
+/// error, naming it: a scan that went on without it would remove its games, and with them
+/// everyone's history, favourites and patch choices for them.
+fn walk_dir(
+    dir: &Path,
+    system: Option<&'static System>,
+    depth: usize,
+    found: &mut Listing,
+) -> std::io::Result<()> {
     if depth > MAX_DEPTH {
-        return;
+        return Ok(());
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let entries = std::fs::read_dir(dir).map_err(|e| unreadable(dir, e))?;
     // List the artwork folders once per directory rather than probing per game.
     let mut media = HashSet::new();
     for sub in ["images", "videos"] {
@@ -369,7 +384,8 @@ fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &m
             );
         }
     }
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.map_err(|e| unreadable(dir, e))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
@@ -377,7 +393,7 @@ fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &m
         }
         if is_dir(&entry) {
             if !MEDIA_DIRS.contains(&name.to_ascii_lowercase().as_str()) {
-                walk_dir(&path, system, depth + 1, found);
+                walk_dir(&path, system, depth + 1, found)?;
             }
         } else if patch_extension(&path).is_some() {
             found.patches.push(path);
@@ -393,6 +409,17 @@ fn walk_dir(dir: &Path, system: Option<&'static System>, depth: usize, found: &m
             found.candidates.push(Candidate { path, system: sys, media, patches: Vec::new() });
         }
     }
+    Ok(())
+}
+
+/// An error naming the folder it happened in.
+fn unreadable(dir: &Path, e: std::io::Error) -> std::io::Error {
+    std::io::Error::new(e.kind(), format!("reading {}: {e}", dir.display()))
+}
+
+/// A walk thread that panicked, as an error: its part of the library is unknown, not empty.
+fn panicked(_: Box<dyn std::any::Any + Send>) -> std::io::Error {
+    std::io::Error::other("a library walk thread panicked")
 }
 
 /// Whether a directory entry is a directory, from the listing itself where the OS provides it:
@@ -540,7 +567,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, [0u8; 4]).unwrap();
         }
-        let found = walk(&root);
+        let found = walk(&root).unwrap();
         std::fs::remove_dir_all(&root).ok();
         let paths: Vec<_> = found.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
@@ -660,7 +687,7 @@ mod tests {
     fn folds_a_multi_disc_game_into_one() {
         let root = library();
         let psx: Vec<_> =
-            group_discs(walk(&root)).into_iter().filter(|f| f.system == "psx").collect();
+            group_discs(walk(&root).unwrap()).into_iter().filter(|f| f.system == "psx").collect();
         std::fs::remove_dir_all(&root).ok();
         let paths: Vec<_> = psx.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
@@ -704,7 +731,8 @@ mod tests {
     fn walks_folders_aliases_and_loose_files() {
         let root = library();
         // The multi-disc files are the next test's.
-        let found: Vec<_> = walk(&root).into_iter().filter(|f| f.system != "psx").collect();
+        let found: Vec<_> =
+            walk(&root).unwrap().into_iter().filter(|f| f.system != "psx").collect();
         let summary: Vec<_> =
             found.iter().map(|f| (f.system, f.path.as_str(), f.title.as_str())).collect();
         assert_eq!(
@@ -720,6 +748,34 @@ mod tests {
         assert_eq!(found[2].media, "image,marquee,video", "artwork beside the ROM");
         assert_eq!(found[3].media, "", "none for this one");
         assert_eq!(found[2].size, 16);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_library_that_cannot_be_read_is_an_error_not_an_empty_library() {
+        let missing =
+            std::env::temp_dir().join(format!("sovemu-no-library-{}", std::process::id()));
+        let err = walk(&missing).unwrap_err();
+        assert!(err.to_string().contains("sovemu-no-library"), "names the folder: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_system_folder_fails_the_walk() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("sovemu-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("snes")).unwrap();
+        std::fs::write(root.join("snes/Game.sfc"), [0u8; 16]).unwrap();
+        std::fs::set_permissions(root.join("snes"), std::fs::Permissions::from_mode(0o000))
+            .unwrap();
+        // Root reads anything: the folder cannot be made unreadable for it (the container).
+        if std::fs::read_dir(root.join("snes")).is_err() {
+            let err = walk(&root).unwrap_err();
+            assert!(err.to_string().contains("snes"), "{err}");
+        }
+        std::fs::set_permissions(root.join("snes"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
         std::fs::remove_dir_all(root).ok();
     }
 }
