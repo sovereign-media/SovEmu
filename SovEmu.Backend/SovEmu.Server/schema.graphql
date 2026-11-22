@@ -1334,7 +1334,8 @@ type Mutation {
 	"""
 	startSession(gameId: Int!, startId: String): GameSession!
 	"""
-	Ends a session; the worker writes the battery save and the auto save first.
+	Ends a session, the player's own or (admins) anyone's; the worker writes the battery save
+	and the auto save first.
 	"""
 	stopSession(id: ID!): Boolean!
 	"""

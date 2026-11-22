@@ -404,7 +404,8 @@ impl SessionsMutation {
             .map(SessionNode)
     }
 
-    /// Ends a session; the worker writes the battery save and the auto save first.
+    /// Ends a session, the player's own or (admins) anyone's; the worker writes the battery save
+    /// and the auto save first.
     async fn stop_session(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
         let user = user(ctx).await?;
         crate::api::stop_session(state(ctx), &user, &id).await.api()?;
