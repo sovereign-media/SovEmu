@@ -10,7 +10,9 @@ pub enum Error {
     Unauthorized(String),
     /// Signed in, but not allowed.
     Forbidden(String),
-    /// Already exists, or already done.
+    /// No such thing (an account since deleted).
+    NotFound(String),
+    /// Already exists, or already done; or it would leave the server without an admin.
     Conflict(String),
     /// Too many failed attempts: try again later.
     TooManyRequests(String),
@@ -26,10 +28,25 @@ impl Error {
             Self::BadRequest(m)
             | Self::Unauthorized(m)
             | Self::Forbidden(m)
+            | Self::NotFound(m)
             | Self::Conflict(m)
             | Self::TooManyRequests(m)
             | Self::Config(m)
             | Self::Internal(m) => m,
+        }
+    }
+
+    /// The HTTP status it answers with, for the sign-in routes and the server's API alike.
+    pub fn status(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::Config(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

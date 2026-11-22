@@ -25,7 +25,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use sqlx::SqlitePool;
 
@@ -248,6 +248,11 @@ impl Identity {
         Ok(user)
     }
 
+    /// The account with this id, if there is one.
+    pub async fn user(&self, id: i64) -> Result<Option<User>> {
+        accounts::user_by_id(&self.inner.db, id).await
+    }
+
     /// Every account, by name.
     pub async fn users(&self) -> Result<Vec<User>> {
         accounts::list_users(&self.inner.db).await
@@ -266,6 +271,64 @@ impl Identity {
             "added a user"
         );
         Ok(user)
+    }
+
+    /// An admin changes an account's role. The last admin cannot be made a viewer.
+    pub async fn set_role(&self, admin: &User, user_id: i64, role: Role) -> Result<User> {
+        let target = self.target(admin, user_id).await?;
+        if target.is_admin() && role != Role::Admin {
+            self.keep_an_admin(&target, "made a viewer").await?;
+        }
+        accounts::set_role(&self.inner.db, user_id, role).await?;
+        tracing::info!(by = %admin.username, user.name = %target.username, role = role.as_str(), "changed a role");
+        Ok(User { role, ..target })
+    }
+
+    /// An admin sets an account's password, which signs that user out everywhere (as a password
+    /// changed in the environment does).
+    pub async fn set_password(&self, admin: &User, user_id: i64, password: &str) -> Result<()> {
+        let target = self.target(admin, user_id).await?;
+        accounts::set_password(&self.inner.db, user_id, password).await?;
+        self.sign_out_everywhere(user_id).await?;
+        tracing::info!(by = %admin.username, user.name = %target.username, "set a password");
+        Ok(())
+    }
+
+    /// An admin removes an account, and every sign-in of theirs. Their own account and the last
+    /// admin cannot be removed. Their saves stay on disk.
+    pub async fn remove_user(&self, admin: &User, user_id: i64) -> Result<()> {
+        let target = self.target(admin, user_id).await?;
+        if target.id == admin.id {
+            return Err(Error::Conflict("you cannot remove your own account".into()));
+        }
+        if target.is_admin() {
+            self.keep_an_admin(&target, "removed").await?;
+        }
+        accounts::delete(&self.inner.db, user_id).await?;
+        self.sign_out_everywhere(user_id).await?;
+        tracing::info!(by = %admin.username, user.name = %target.username, "removed a user");
+        Ok(())
+    }
+
+    /// The account an admin is about to change.
+    async fn target(&self, admin: &User, user_id: i64) -> Result<User> {
+        if !admin.is_admin() {
+            return Err(Error::Forbidden("admins only".into()));
+        }
+        accounts::user_by_id(&self.inner.db, user_id)
+            .await?
+            .ok_or_else(|| Error::NotFound("no such user".into()))
+    }
+
+    /// Refuses a change that would leave no admin: `target` is one, and the last.
+    async fn keep_an_admin(&self, target: &User, change: &str) -> Result<()> {
+        if accounts::count_admins(&self.inner.db).await? <= 1 {
+            return Err(Error::Conflict(format!(
+                "{} is the only admin, and cannot be {change}",
+                target.username
+            )));
+        }
+        Ok(())
     }
 
     /// Makes sure a declared user exists with the declared password and role (the environment is
@@ -322,15 +385,7 @@ pub fn bearer(headers: &HeaderMap) -> Option<String> {
 
 /// An error as a plain page response (the sign-in routes are not the API).
 fn web_error(e: &Error) -> Response {
-    let status = match e {
-        Error::BadRequest(_) => StatusCode::BAD_REQUEST,
-        Error::Unauthorized(_) => StatusCode::UNAUTHORIZED,
-        Error::Forbidden(_) => StatusCode::FORBIDDEN,
-        Error::Conflict(_) => StatusCode::CONFLICT,
-        Error::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
-        Error::Config(_) | Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    (status, e.message().to_owned()).into_response()
+    (e.status(), e.message().to_owned()).into_response()
 }
 
 #[cfg(test)]

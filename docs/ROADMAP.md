@@ -50,7 +50,8 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `SovEmu.Server`: axum serving `SovEmu.Web` and `/api/*`; SQLite (sqlx, WAL, embedded
       migrations)
 - [x] Auth: local accounts (argon2, HttpOnly session cookie), first-run admin setup, admin adds
-      users
+      users, changes their roles and passwords, signs them out everywhere and removes them (never
+      the last admin, nor an account the environment declares, which shows locked)
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
 - [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per

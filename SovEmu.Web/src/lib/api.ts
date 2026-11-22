@@ -7,6 +7,7 @@ import {
   AboutQuery,
   ActiveSessionsQuery,
   AddCheatMutation,
+  AddUserMutation,
   AdminPatchesQuery,
   AdminStatusQuery as AdminStatusDocument,
   AppearanceQuery,
@@ -40,6 +41,7 @@ import {
   NetworkQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
+  RemoveUserMutation,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
@@ -63,7 +65,10 @@ import {
   SetInCollectionMutation,
   SetPatchMutation,
   SetRunAheadMutation,
+  SetUserPasswordMutation,
+  SetUserRoleMutation,
   SetupMutation,
+  SignOutEverywhereMutation,
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
   StopSessionMutation,
@@ -87,6 +92,10 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** What an account may do. */
+export type Role = Enum<"Role">;
+/** An account, as the admin's Users page lists it. */
+export type Account = ResultOf<typeof UsersQuery>["users"][number];
 /** What went wrong on a client, as the apps report it. */
 export type ClientEventKind = Enum<"ClientEventKind">;
 /** Client errors of one kind from one client. */
@@ -167,6 +176,17 @@ export const api = {
   viewer: async () => (await request(ViewerDocument)).viewer,
   /** Admins: every account, by name. */
   users: async () => (await request(UsersQuery)).users,
+  /** Admin: adds an account. */
+  addUser: (username: string, password: string, role: Role) =>
+    request(AddUserMutation, { input: { username, password, role } }),
+  /** Admin: makes an account an admin or a viewer. */
+  setUserRole: (userId: number, role: Role) => request(SetUserRoleMutation, { userId, role }),
+  /** Admin: sets an account's password, signing that user out everywhere. */
+  setUserPassword: (userId: number, password: string) => request(SetUserPasswordMutation, { userId, password }),
+  /** Admin: removes an account (its saves stay on disk). */
+  removeUser: (userId: number) => request(RemoveUserMutation, { userId }),
+  /** Admin: signs an account out of every browser and app. */
+  signOutEverywhere: (userId: number) => request(SignOutEverywhereMutation, { userId }),
   setup: async (username: string, password: string) => (await request(SetupMutation, { username, password })).setup,
   iceServers: async () => (await request(ClientConfigQuery)).clientConfig.iceServers as RTCIceServer[],
   home: async () => (await request(HomeDocument)).home,

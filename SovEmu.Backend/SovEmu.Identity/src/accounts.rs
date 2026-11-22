@@ -92,6 +92,10 @@ fn validate(username: &str, password: &str) -> Result<()> {
             "usernames are 1-32 letters, digits, '-', '_' or '.'".into(),
         ));
     }
+    validate_password(password)
+}
+
+fn validate_password(password: &str) -> Result<()> {
     if password.chars().count() < 8 {
         return Err(Error::BadRequest("passwords need at least 8 characters".into()));
     }
@@ -149,6 +153,34 @@ pub(crate) async fn count_users(pool: &SqlitePool) -> Result<i64> {
     Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(pool).await?)
 }
 
+/// How many admins there are.
+pub(crate) async fn count_admins(pool: &SqlitePool) -> Result<i64> {
+    Ok(sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+        .fetch_one(pool)
+        .await?)
+}
+
+pub(crate) async fn set_role(pool: &SqlitePool, id: i64, role: Role) -> Result<()> {
+    sqlx::query("UPDATE users SET role = ? WHERE id = ?").bind(role).bind(id).execute(pool).await?;
+    Ok(())
+}
+
+pub(crate) async fn set_password(pool: &SqlitePool, id: i64, password: &str) -> Result<()> {
+    validate_password(password)?;
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(hash_password(password)?)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Deletes an account; everything of theirs in the database goes with it (`ON DELETE CASCADE`).
+pub(crate) async fn delete(pool: &SqlitePool, id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(pool).await?;
+    Ok(())
+}
+
 /// What [`ensure`] changed about an existing account.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Ensured {
@@ -184,20 +216,12 @@ pub(crate) async fn ensure(
     };
     let mut ensured = Ensured::default();
     if !verify_password(password, &hash) {
-        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-            .bind(hash_password(password)?)
-            .bind(id)
-            .execute(pool)
-            .await?;
+        set_password(pool, id, password).await?;
         ensured.password_changed = true;
         tracing::info!(user.name = %username, "updated a password from the environment");
     }
     if current != role {
-        sqlx::query("UPDATE users SET role = ? WHERE id = ?")
-            .bind(role)
-            .bind(id)
-            .execute(pool)
-            .await?;
+        set_role(pool, id, role).await?;
         tracing::info!(user.name = %username, role = role.as_str(), "updated a role from the environment");
     }
     Ok((id, ensured))
@@ -210,7 +234,7 @@ pub(crate) async fn prune(pool: &SqlitePool, keep: &[String]) -> Result<Vec<i64>
     let mut removed = Vec::new();
     for (id, name) in all {
         if !keep.iter().any(|k| k.eq_ignore_ascii_case(&name)) {
-            sqlx::query("DELETE FROM users WHERE id = ?").bind(id).execute(pool).await?;
+            delete(pool, id).await?;
             tracing::info!(user.name = %name, "removed a user not declared in the environment");
             removed.push(id);
         }

@@ -143,7 +143,42 @@ export const UsersQuery = graphql(`
       id
       username
       role
+      declared
     }
+  }
+`);
+
+export const AddUserMutation = graphql(`
+  mutation AddUser($input: NewUserInput!) {
+    addUser(input: $input) {
+      id
+    }
+  }
+`);
+
+export const SetUserRoleMutation = graphql(`
+  mutation SetUserRole($userId: Int!, $role: Role!) {
+    setUserRole(userId: $userId, role: $role) {
+      id
+    }
+  }
+`);
+
+export const SetUserPasswordMutation = graphql(`
+  mutation SetUserPassword($userId: Int!, $password: String!) {
+    setUserPassword(userId: $userId, password: $password)
+  }
+`);
+
+export const RemoveUserMutation = graphql(`
+  mutation RemoveUser($userId: Int!) {
+    removeUser(userId: $userId)
+  }
+`);
+
+export const SignOutEverywhereMutation = graphql(`
+  mutation SignOutEverywhere($userId: Int!) {
+    signOutEverywhere(userId: $userId)
   }
 `);
 
