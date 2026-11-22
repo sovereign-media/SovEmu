@@ -212,6 +212,11 @@ held 59.93 fps over 300 frames with no resyncs.
       (`testConnection`: a `sovemu-worker connection-test` peer with no media on a pooled port,
       echoing a data channel), showing whether the ports are reachable, the round trip, and
       whether it went direct, through STUN or through a TURN relay; then the stream settings
+- [x] The admin Client errors page: what the apps report (`reportClientEvents`: failed or lost
+      connections, stalled pictures, screen errors, unknown controllers) is kept in
+      `client_events` (migration 0022, pruned after `SOVEMU_CLIENT_EVENT_DAYS`) and grouped by
+      kind and by app and device, each group opening onto its events with the game they
+      happened in
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
       reading it back with `glReadPixels`
 - [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)

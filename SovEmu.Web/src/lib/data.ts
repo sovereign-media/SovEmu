@@ -3,7 +3,7 @@
 // what it made stale (`invalidate`). Screens use these with `useQuery`; the player, which loads
 // imperatively, with `queryClient.fetchQuery`.
 import { QueryClient, queryOptions } from "@tanstack/react-query";
-import { api, type ResourceRange } from "./api";
+import { api, type ClientEventKind, type ResourceRange } from "./api";
 import { ApiError } from "./graphql";
 
 export const queryClient = new QueryClient({
@@ -46,6 +46,13 @@ export const q = {
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
   streaming: () => queryOptions({ queryKey: ["admin", "streaming"], queryFn: api.streaming }),
+  clientEventGroups: (days: number) =>
+    queryOptions({ queryKey: ["admin", "client-events", days], queryFn: () => api.clientEventGroups(days) }),
+  clientEvents: (kind: ClientEventKind, client: string, days: number) =>
+    queryOptions({
+      queryKey: ["admin", "client-events", days, kind, client],
+      queryFn: () => api.clientEvents(kind, client, days),
+    }),
   configuration: () =>
     queryOptions({ queryKey: ["admin", "configuration"], queryFn: api.configuration, staleTime: Infinity }),
   cores: () => queryOptions({ queryKey: ["admin", "cores"], queryFn: api.cores }),

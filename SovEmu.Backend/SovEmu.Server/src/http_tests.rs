@@ -1243,7 +1243,7 @@ async fn run_ahead_is_on_by_default_admins_change_it_and_the_environment_locks_i
 }
 
 #[tokio::test]
-async fn client_events_are_logged_for_signed_in_users_within_their_allowance() {
+async fn client_events_are_kept_for_signed_in_users_within_their_allowance() {
     const REPORT: &str = "mutation($c: String!, $e: [ClientEventInput!]!) {
         reportClientEvents(client: $c, events: $e) }";
     let mut h = Harness::new("client-events", false).await;
@@ -1254,11 +1254,36 @@ async fn client_events_are_logged_for_signed_in_users_within_their_allowance() {
     let many: Vec<Value> = (0..30).map(|_| json!({"kind": "OTHER", "message": "x"})).collect();
     assert_eq!(h.ok(REPORT, json!({"c": "web", "e": many})).await["reportClientEvents"], 20);
 
+    // The admin reads them back, grouped, then one group's events.
+    let groups = h
+        .ok("{ clientEventGroups { kind client count users lastMessage } }", json!({}))
+        .await["clientEventGroups"]
+        .clone();
+    assert_eq!(
+        groups,
+        json!([
+            {"kind": "OTHER", "client": "web", "count": 20, "users": 1, "lastMessage": "x"},
+            {"kind": "CONNECTION_FAILED", "client": "web", "count": 1, "users": 1, "lastMessage": "ICE failed"},
+        ])
+    );
+    let failed = "{ clientEvents(kind: CONNECTION_FAILED, client: \"web\") { username message sessionId gameId clientAt } }";
+    assert_eq!(
+        h.ok(failed, json!({})).await["clientEvents"],
+        json!([{"username": "admin", "message": "ICE failed", "sessionId": "abc", "gameId": null, "clientAt": 1.5e9}]),
+        "no game: session abc is not running"
+    );
+    assert_eq!(h.err("{ clientEventGroups(days: 0) { count } }", json!({})).await.0, "BAD_REQUEST");
+
     // Off, they are accepted and dropped: clients need no special case.
     let mut config = (*h.state.config).clone();
     config.client_events = false;
     h.state.config = std::sync::Arc::new(config);
     assert_eq!(h.ok(REPORT, json!({"c": "web", "e": one})).await["reportClientEvents"], 0);
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM client_events")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(total, 21, "nothing kept while off");
 }
 
 #[tokio::test]
@@ -1976,6 +2001,8 @@ const ADMIN_ONLY: &[&str] = &[
     "{ sessionFailures { title } }",
     "{ streaming { testSeconds } }",
     "mutation { testConnection(sdp: \"v=0\") }",
+    "{ clientEventGroups { count } }",
+    "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
 
@@ -2005,6 +2032,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/settings.rs"),
         include_str!("graphql/controllers.rs"),
         include_str!("graphql/streaming.rs"),
+        include_str!("graphql/client_events.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())

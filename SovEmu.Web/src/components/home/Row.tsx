@@ -1,9 +1,10 @@
 // A home screen row: a titled, horizontally scrolling strip of game or system cards.
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { formatAgo, type Game, type RecentGame, type SystemSummary } from "../../lib/api";
+import type { Game, RecentGame, SystemSummary } from "../../lib/api";
 import { cardArt, nextScroll } from "../../lib/home";
 import { systemBadge } from "../../lib/systems";
+import { agoFromSqlite } from "../../lib/time";
 import { cn } from "../ui/cn";
 
 export function Row({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
@@ -111,7 +112,7 @@ export function GameCard({
         <p className="truncate text-xs text-slate-400">
           {short}
           {game.release && <span className="font-medium text-amber-200/90"> · {game.release}</span>}
-          {game.lastPlayedAt && wide ? ` · ${formatAgo(game.lastPlayedAt)}` : ""}
+          {game.lastPlayedAt && wide ? ` · ${agoFromSqlite(game.lastPlayedAt)}` : ""}
         </p>
       </div>
     </button>

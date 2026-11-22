@@ -393,6 +393,59 @@ type ClientConfig {
 }
 
 """
+One client error.
+"""
+type ClientEvent {
+	"""
+	When the server received it (Unix seconds).
+	"""
+	at: Float!
+	"""
+	When it happened, on the client's clock (Unix seconds), if it said.
+	"""
+	clientAt: Float
+	"""
+	The player; null for an account since deleted.
+	"""
+	username: String
+	client: String!
+	kind: ClientEventKind!
+	message: String!
+	"""
+	The game session it happened in, if any.
+	"""
+	sessionId: String
+	"""
+	That session's game, when the server could tell (the session was still running).
+	"""
+	gameId: Int
+	title: String
+	system: String
+}
+
+"""
+Client errors of one kind from one client (app and version) in a window: how many, from how
+many players, and the latest.
+"""
+type ClientEventGroup {
+	kind: ClientEventKind!
+	"""
+	The app and its version, as it named itself (`android 1.4.0 (Mi TV, Android 11)`).
+	"""
+	client: String!
+	count: Int!
+	"""
+	How many accounts reported it.
+	"""
+	users: Int!
+	"""
+	The latest one's time (Unix seconds) and message.
+	"""
+	lastAt: Float!
+	lastMessage: String!
+}
+
+"""
 One thing that went wrong on a client.
 """
 input ClientEventInput {
@@ -412,7 +465,7 @@ input ClientEventInput {
 }
 
 """
-What went wrong on a client (`reportClientEvents`).
+What went wrong on a client.
 """
 enum ClientEventKind {
 	"""
@@ -1319,14 +1372,6 @@ type Mutation {
 	setCheatEnabled(gameId: Int!, cheatId: Int!, enabled: Boolean!): [Cheat!]!
 	deleteCheat(gameId: Int!, cheatId: Int!): Boolean!
 	"""
-	Signed-in users: what went wrong on this client (a connection that failed, a stalled
-	picture, a screen that crashed), for the server's log beside the session's own lines.
-	`client` names it and its version (`android 0.1.0 (MiTV-AFMU1, Android 11)`). At most
-	20 events a call and 60 a minute per user; the rest are dropped. Returns how many were
-	logged (0 when `SOVEMU_CLIENT_EVENTS` is off). Nothing is stored.
-	"""
-	reportClientEvents(client: String!, events: [ClientEventInput!]!): Int!
-	"""
 	Starts a game (ending this user's running one first) and returns once it is ready to
 	stream. Give a `startId` (8–64 letters, digits, `-` or `_`) to follow its progress with
 	`startProgress` meanwhile.
@@ -1426,6 +1471,14 @@ type Mutation {
 	the round trip and the path (direct, or through a relay) from its own end.
 	"""
 	testConnection(sdp: String!): String!
+	"""
+	Signed-in users: what went wrong on this client (a connection that failed, a stalled
+	picture, a screen that crashed), for the server's log beside the session's own lines and
+	the admin's Client errors page. `client` names it and its version (`android 0.1.0
+	(MiTV-AFMU1, Android 11)`). At most 20 events a call and 60 a minute per user; the rest
+	are dropped. Returns how many were taken (0 when `SOVEMU_CLIENT_EVENTS` is off).
+	"""
+	reportClientEvents(client: String!, events: [ClientEventInput!]!): Int!
 }
 
 """
@@ -1760,6 +1813,16 @@ type Query {
 	keyframes, fast-forward, rewind).
 	"""
 	streaming: StreamingReport!
+	"""
+	Admins: the client errors of the last `days` days, by kind and client, the most frequent
+	first.
+	"""
+	clientEventGroups(days: Int! = 7): [ClientEventGroup!]!
+	"""
+	Admins: one group's client errors in the last `days` days, newest first (at most
+	`limit`, up to 200).
+	"""
+	clientEvents(kind: ClientEventKind!, client: String!, days: Int! = 7, limit: Int! = 50): [ClientEvent!]!
 }
 
 enum Rendering {

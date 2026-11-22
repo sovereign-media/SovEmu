@@ -33,6 +33,7 @@ use crate::error::ApiError;
 
 mod accounts;
 mod appearance;
+mod client_events;
 mod controllers;
 mod jobs;
 mod library;
@@ -296,6 +297,7 @@ pub(crate) struct Query(
     controllers::ControllersQuery,
     appearance::AppearanceQuery,
     streaming::StreamingQuery,
+    client_events::ClientEventsQuery,
 );
 
 // The mutation root: each area's mutations, in this order.
@@ -310,6 +312,7 @@ pub(crate) struct Mutation(
     controllers::ControllersMutation,
     appearance::AppearanceMutation,
     streaming::StreamingMutation,
+    client_events::ClientEventsMutation,
 );
 
 #[cfg(test)]

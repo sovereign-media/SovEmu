@@ -5,8 +5,9 @@
 import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { AUTO_SLOT, formatAgo, formatSize, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
+import { AUTO_SLOT, formatSize, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
 import { maxPlayers } from "../../lib/games";
+import { ago, agoFromSqlite } from "../../lib/time";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/primitives";
@@ -65,8 +66,6 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
     </span>
   );
 }
-
-const ago = (unix: number) => formatAgo(new Date(unix * 1000).toISOString().replace("T", " ").slice(0, 19));
 
 /** Stops the wheel and touch from scrolling the page through the dimming. React's own wheel
  *  and touch listeners are passive, so they could not cancel it. */
@@ -205,7 +204,7 @@ export function GamePanel({
                 )}
                 <p className="border-t border-white/10 pt-3 text-xs text-slate-500">
                   {shown.playCount
-                    ? `Played ${shown.playCount}× · last ${formatAgo(shown.lastPlayedAt)}`
+                    ? `Played ${shown.playCount}× · last ${agoFromSqlite(shown.lastPlayedAt)}`
                     : "Not played yet"}
                   {" · "}
                   <span className="font-mono break-all">{shown.path}</span> · {formatSize(shown.size)}
