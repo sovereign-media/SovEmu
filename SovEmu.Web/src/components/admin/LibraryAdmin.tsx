@@ -3,14 +3,12 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { go } from "../../lib/go";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { Confirm, Progress, panel } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 const MODES: Record<LibraryStatus["mode"], [string, string]> = {
   DIRECT: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
@@ -66,11 +64,6 @@ function Library() {
   const [confirm, setConfirm] = useState(false);
   const refresh = useCallback(() => invalidate(["admin", "status"]), []);
 
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
-
   // A rescan changes what every screen lists.
   const scanning_ = useMutation({
     mutationFn: () => api.scan(),
@@ -91,7 +84,7 @@ function Library() {
   const art = metadata.artwork;
   const artPct = art.total ? (100 * art.done) / art.total : 0;
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
+    <>
       <Card
         title="Library"
         icon={<HardDrive />}
@@ -197,17 +190,14 @@ function Library() {
         action="Refresh all"
         onAction={() => fetchMetadata(true)}
       />
-    </main>
+    </>
   );
 }
 
 export default function LibraryAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Library />
-      </div>
-    </Shell>
+    <AdminPage>
+      <Library />
+    </AdminPage>
   );
 }

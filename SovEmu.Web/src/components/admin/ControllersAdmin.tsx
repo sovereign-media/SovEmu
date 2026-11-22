@@ -31,11 +31,10 @@ import { invalidate, q } from "../../lib/data";
 import { captureInput } from "../../lib/input";
 import type { ButtonName } from "../../lib/protocol";
 import { PadDiagram } from "../PadDiagram";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 const NOT_BOUND = "";
 
@@ -239,7 +238,7 @@ function Controllers() {
         : "Built-in default";
 
   return (
-    <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 pt-16 pb-16">
+    <>
       <section className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -355,17 +354,14 @@ function Controllers() {
           </pre>
         </section>
       )}
-    </main>
+    </>
   );
 }
 
 export default function ControllersAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Controllers />
-      </div>
-    </Shell>
+    <AdminPage width="max-w-6xl">
+      <Controllers />
+    </AdminPage>
   );
 }

@@ -4,15 +4,12 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, Clock, LoaderCircle, Play } from "lucide-react";
-import { useEffect } from "react";
 import { api, type JobState } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { go } from "../../lib/go";
 import { JOB_LABELS, lastRunText, scheduleText } from "../../lib/jobs";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { panel } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 function StatusIcon({ job }: { job: JobState }) {
   if (job.running) return <LoaderCircle className="size-5 animate-spin text-sky-400" aria-label="Running" />;
@@ -26,10 +23,6 @@ function StatusIcon({ job }: { job: JobState }) {
 function Jobs() {
   // Runs end on the server: their state is read every 2 s.
   const jobs = useQuery({ ...q.jobs(), refetchInterval: 2000 });
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
 
   // A scan or a lookup changes what the library pages show.
   const run = useMutation({
@@ -40,7 +33,7 @@ function Jobs() {
   if (!jobs.data) return null;
   const now = Date.now();
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
+    <>
       <section className={panel}>
         <h2 className="text-xl font-bold">Background jobs</h2>
         <p className="mt-2 text-sm text-slate-400">
@@ -78,17 +71,14 @@ function Jobs() {
           ))}
         </ul>
       </section>
-    </main>
+    </>
   );
 }
 
 export default function JobsAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Jobs />
-      </div>
-    </Shell>
+    <AdminPage>
+      <Jobs />
+    </AdminPage>
   );
 }

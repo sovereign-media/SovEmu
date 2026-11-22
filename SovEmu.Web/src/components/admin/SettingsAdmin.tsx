@@ -7,16 +7,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
 import { q, queryClient } from "../../lib/data";
-import { go } from "../../lib/go";
 import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadge } from "../../lib/settings";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, value: string | null) => void }) {
   const badge = sourceBadge(s.source);
@@ -158,11 +156,6 @@ function Settings() {
   const saved = (system: string, now: SystemSettings) =>
     queryClient.setQueryData(q.systemSettings(system).queryKey, now);
 
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
-
   const change = async (key: string, value: string | null) => {
     if (!current) return;
     try {
@@ -208,7 +201,7 @@ function Settings() {
   const changed = loaded?.settings.filter((s) => s.source === "ADMIN").length ?? 0;
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-16 pb-16">
+    <>
       <section className={panel}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -335,17 +328,14 @@ function Settings() {
           </div>
         </div>
       )}
-    </main>
+    </>
   );
 }
 
 export default function SettingsAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Settings />
-      </div>
-    </Shell>
+    <AdminPage width="max-w-6xl">
+      <Settings />
+    </AdminPage>
   );
 }

@@ -5,10 +5,9 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, CircleAlert, MonitorPlay, Square, TriangleAlert } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import { type ActiveSession, api, type SessionFailure } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { go } from "../../lib/go";
 import { audioLabel, fallbacksLabel, renderingLabel, runAheadLabel, streamLabel } from "../../lib/pipeline";
 import {
   clientSummary,
@@ -18,10 +17,9 @@ import {
   frameWorkLabel,
   healthSummary,
 } from "../../lib/sessions";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { Confirm, panel, Tooltip } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 const pill = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap";
 
@@ -166,7 +164,6 @@ function Failures() {
 
 function Sessions() {
   const sessions = useQuery({ ...q.activeSessions(), refetchInterval: 2000 });
-  const viewer = useQuery(q.viewer());
   const [open, setOpen] = useState<string | null>(null);
   // The session the admin asked to stop, waiting for their confirmation.
   const [stopping, setStopping] = useState<{ id: string; player: string; title: string } | null>(null);
@@ -174,14 +171,11 @@ function Sessions() {
     mutationFn: api.stopSession,
     onSettled: () => invalidate(["admin", "sessions"]),
   });
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
 
   if (!sessions.data) return null;
   const now = Date.now() / 1000;
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-16 pb-16">
+    <>
       <section className={panel}>
         <h2 className="flex items-center gap-2 text-xl font-bold">
           <MonitorPlay className="size-5 text-slate-400" /> Active sessions
@@ -310,17 +304,14 @@ function Sessions() {
           setStopping(null);
         }}
       />
-    </main>
+    </>
   );
 }
 
 export default function SessionsAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Sessions />
-      </div>
-    </Shell>
+    <AdminPage width="max-w-6xl">
+      <Sessions />
+    </AdminPage>
   );
 }
