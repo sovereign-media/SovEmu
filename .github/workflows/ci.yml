@@ -46,7 +46,6 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       web: ${{ steps.filter.outputs.web }}
       image: ${{ steps.filter.outputs.image }}
-      chart: ${{ steps.filter.outputs.chart }}
     steps:
       - uses: actions/checkout@v7
 
@@ -71,9 +70,6 @@ jobs:
               - SovEmu.Web/**
               - scripts/cores.list
               - scripts/install-cores.sh
-            chart:
-              - .github/workflows/ci.yml
-              - charts/**
 
   backend:
     needs: changes
@@ -276,41 +272,3 @@ jobs:
             docker push "$IMAGE:$tag"
           done
           echo "Published \`$IMAGE:bleeding-$stamp\` ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
-
-  chart:
-    # charts/sovemu: lint and render every value set in ci/, and validate what it renders
-    # against the Kubernetes schemas.
-    needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.chart == 'true'
-    name: Helm chart
-    # A quick job, without Docker: the small runners (2Gi), leaving the 9Gi ones to builds.
-    runs-on: ${{ vars.SMALL_RUNNER || vars.LARGE_RUNNER || 'ubuntu-latest' }}
-    defaults:
-      run:
-        working-directory: charts/sovemu
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: azure/setup-helm@v5
-
-      # Into the job's temp folder: the self-hosted runner's user cannot write to /usr/local/bin.
-      - name: kubeconform
-        run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP" kubeconform
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-
-      - name: Lint and validate
-        run: |
-          for values in ci/*.yaml; do
-            echo "::group::$values"
-            helm lint . --strict -f "$values"
-            helm template sovemu . -f "$values" | kubeconform -strict -summary -kubernetes-version 1.31.0 -
-            echo "::endgroup::"
-          done
-
-      - name: Required settings are enforced
-        run: |
-          if helm template sovemu . >/dev/null 2>&1; then
-            echo "rendering without media.advertiseIP should fail"; exit 1
-          fi

@@ -101,8 +101,9 @@ instead (as Sovereign's server takes its SPA).
   (emulator settings, `system_settings`), the environment still wins, the UI shows it locked,
   and the page offers the stored values as environment lines. Tunables are settings, not constants.
   Lists and maps use Sovereign's `__` hierarchy (`SOVEMU_USERS__0__USERNAME`,
-  `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A new setting also gets
-  its place in `charts/sovemu` if it needs more than `settings:` (a secret, a volume, a port).
+  `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A setting that needs more
+  than a variable (a secret, a volume, a port) also needs the cluster's Helm chart, which is
+  kept outside this repository, to provide it.
 - **GPU rendering is headless EGL in the worker** (`SovEmu.RetroHost/src/gl.rs`): libEGL is
   opened at run time, never linked, so the worker still runs without Mesa. A GPU core's frames
   are read back from a framebuffer object after `retro_run`; the context is current on the
