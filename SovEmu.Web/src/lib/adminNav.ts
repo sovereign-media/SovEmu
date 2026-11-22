@@ -2,6 +2,7 @@
 // between groups. One list drives the menu, the page headings and the document titles, so a new
 // page is one entry here.
 import {
+  Frame,
   Gamepad,
   Gauge,
   Library,
@@ -77,6 +78,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "BIOS",
         title: "The BIOS files each system needs, where they go, and their MD5s",
         icon: Microchip,
+      },
+      {
+        href: "/admin/decorations/",
+        label: "Decorations",
+        title: "The bezel sets found, and which frames each system's games",
+        icon: Frame,
       },
     ],
   },

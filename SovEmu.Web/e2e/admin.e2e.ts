@@ -67,3 +67,12 @@ test("the BIOS page shows each system's files with the MD5s they should have", a
   await expect(psx).toBeVisible();
   await expect(psx.getByRole("button", { name: /^Copy [0-9a-f]{32}$/ }).first()).toBeVisible();
 });
+
+test("the Decorations page lists the sets and frames each system", async ({ page }) => {
+  await page.goto("/admin/decorations/");
+  await expect(page.getByRole("heading", { name: "Decorations", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sets" })).toBeVisible();
+  await expect(page.getByText(/SOVEMU_DECORATION=/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Systems" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Nintendo Entertainment System" })).toBeVisible();
+});

@@ -423,6 +423,46 @@ type Decoration {
 }
 
 """
+A decoration set, and what it holds.
+"""
+type DecorationSet {
+	name: String!
+	"""
+	SovEmu's own set, drawn at build time.
+	"""
+	builtin: Boolean!
+	"""
+	It has an image for every game nothing closer covers (`default.png`).
+	"""
+	hasDefault: Boolean!
+	"""
+	The systems with an image of their own, by id.
+	"""
+	systems: [String!]!
+	"""
+	Images for single games.
+	"""
+	games: Int!
+}
+
+type DecorationsReport {
+	"""
+	Every set found in the decoration folders, by name (`sovemu` is the built-in one).
+	"""
+	sets: [DecorationSet!]!
+	"""
+	The set for systems without one of their own (`SOVEMU_DECORATION`; `none`: no frame).
+	"""
+	default: String!
+	"""
+	The folders sets are read from, the first winning for the same file: those in
+	`SOVEMU_DECORATIONS_DIRS`, `<data>/decorations`, then the built-in one.
+	"""
+	folders: [String!]!
+	systems: [SystemDecoration!]!
+}
+
+"""
 An emulator setting (a libretro core option).
 """
 type EmulatorSetting {
@@ -1240,6 +1280,10 @@ type Query {
 	"""
 	activeSessions: [ActiveSession!]!
 	"""
+	Admins: the decoration sets found, and the set each system's games are framed with.
+	"""
+	decorations: DecorationsReport!
+	"""
 	Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
 	the subfolder its `bios.folder` names.
 	"""
@@ -1693,6 +1737,23 @@ type SystemControls {
 	"""
 	buttons: [SystemButton!]!
 	layout: PadLayout!
+}
+
+type SystemDecoration {
+	system: System!
+	"""
+	The set (`none`: no frame).
+	"""
+	set: String!
+	"""
+	Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`) rather than the default.
+	"""
+	perSystem: Boolean!
+	"""
+	What its games are framed with when they have no image of their own. None for `none`,
+	or a set that isn't there.
+	"""
+	preview: Decoration
 }
 
 """

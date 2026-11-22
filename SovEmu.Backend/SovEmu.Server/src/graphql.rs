@@ -887,6 +887,76 @@ impl DecorationNode {
     }
 }
 
+/// The decoration sets found, and the set each system's games are framed with.
+struct DecorationsReportNode(crate::admin::DecorationsReport);
+
+#[Object(name = "DecorationsReport")]
+impl DecorationsReportNode {
+    /// Every set found in the decoration folders, by name (`sovemu` is the built-in one).
+    async fn sets(&self) -> Vec<DecorationSet> {
+        self.0
+            .sets
+            .iter()
+            .map(|(name, s)| DecorationSet {
+                name: name.clone(),
+                builtin: name == sovemu_library::decorations::BUILTIN,
+                has_default: s.has_default,
+                systems: s.systems.clone(),
+                games: s.games as i32,
+            })
+            .collect()
+    }
+    /// The set for systems without one of their own (`SOVEMU_DECORATION`; `none`: no frame).
+    async fn default(&self) -> &str {
+        &self.0.default
+    }
+    /// The folders sets are read from, the first winning for the same file: those in
+    /// `SOVEMU_DECORATIONS_DIRS`, `<data>/decorations`, then the built-in one.
+    async fn folders(&self) -> &[String] {
+        &self.0.folders
+    }
+    async fn systems(&self) -> Vec<SystemDecorationNode<'_>> {
+        self.0.systems.iter().map(SystemDecorationNode).collect()
+    }
+}
+
+/// A decoration set, and what it holds.
+#[derive(SimpleObject)]
+struct DecorationSet {
+    name: String,
+    /// SovEmu's own set, drawn at build time.
+    builtin: bool,
+    /// It has an image for every game nothing closer covers (`default.png`).
+    has_default: bool,
+    /// The systems with an image of their own, by id.
+    systems: Vec<String>,
+    /// Images for single games.
+    games: i32,
+}
+
+/// A system and the decoration set its games are framed with.
+struct SystemDecorationNode<'a>(&'a crate::admin::SystemDecoration);
+
+#[Object(name = "SystemDecoration")]
+impl SystemDecorationNode<'_> {
+    async fn system(&self) -> SystemNode {
+        SystemNode(self.0.system.clone())
+    }
+    /// The set (`none`: no frame).
+    async fn set(&self) -> &str {
+        &self.0.set
+    }
+    /// Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`) rather than the default.
+    async fn per_system(&self) -> bool {
+        self.0.per_system
+    }
+    /// What its games are framed with when they have no image of their own. None for `none`,
+    /// or a set that isn't there.
+    async fn preview(&self) -> Option<DecorationNode> {
+        self.0.preview.clone().map(DecorationNode)
+    }
+}
+
 #[Object(name = "Collection")]
 impl CollectionNode {
     async fn id(&self) -> i64 {
@@ -1888,6 +1958,12 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: the decoration sets found, and the set each system's games are framed with.
+    async fn decorations(&self, ctx: &Context<'_>) -> Result<DecorationsReportNode> {
+        admin(ctx).await?;
+        crate::admin::decorations_report(state(ctx)).await.api().map(DecorationsReportNode)
     }
 
     /// Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in

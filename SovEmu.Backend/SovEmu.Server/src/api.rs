@@ -16,7 +16,7 @@ use crate::library::ScanReport;
 use sovemu_library::systems::{self, System};
 use sovemu_sessions::workers::{Launch, SessionInfo};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct SystemSummary {
     #[serde(flatten)]
     pub(crate) system: System,

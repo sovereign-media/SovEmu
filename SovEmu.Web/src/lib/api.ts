@@ -18,6 +18,7 @@ import {
   ControllerLayoutsQuery,
   ControllerMappingsQuery,
   CreateCollectionMutation,
+  DecorationsQuery,
   DeleteCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
   FetchMetadataMutation,
@@ -123,6 +124,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type DecorationsReport = ResultOf<typeof DecorationsQuery>["decorations"];
 export type GpuStatus = ResultOf<typeof GpuQuery>["gpu"];
 export type GpuDevice = GpuStatus["devices"][number];
 
@@ -166,6 +168,8 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: the decoration sets, and the set each system's games are framed with. */
+  decorations: async () => (await request(DecorationsQuery)).decorations,
   /** Admin: where 3D systems render, and every device the startup probe tried. */
   gpu: async () => (await request(GpuQuery)).gpu,
   activeSessions: async () => (await request(ActiveSessionsQuery)).activeSessions,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAspect, shouldFrame, windowInsets } from "./decoration";
+import { parseAspect, shouldFrame, systemDecorationEnv, windowInsets } from "./decoration";
 
 describe("decorations", () => {
   it("reads the player's aspect ratio", () => {
@@ -18,5 +18,11 @@ describe("decorations", () => {
   it("places the window in percentages of the image", () => {
     const d = { url: "", width: 1920, height: 1080, top: 0, left: 240, bottom: 54, right: 240 };
     expect(windowInsets(d)).toEqual({ top: "0.0000%", left: "12.5000%", bottom: "5.0000%", right: "12.5000%" });
+  });
+});
+
+describe("decoration settings", () => {
+  it("are written as the line that sets them", () => {
+    expect(systemDecorationEnv("snes", "arcade")).toBe("SOVEMU_SYSTEMS__snes__DECORATION=arcade");
   });
 });

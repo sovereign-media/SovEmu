@@ -1609,6 +1609,29 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
         StatusCode::UNAUTHORIZED,
         "unsigned"
     );
+    // The admin's report: the set, what it holds, and each system's preview.
+    let report = h
+        .ok(
+            "{ decorations { default folders sets { name builtin hasDefault systems games } \
+             systems { system { id } set perSystem preview { set url } } } }",
+            json!({}),
+        )
+        .await["decorations"]
+        .clone();
+    assert_eq!(report["default"], "arcade");
+    assert_eq!(
+        report["sets"],
+        json!([{"name": "arcade", "builtin": false, "hasDefault": false, "systems": ["nes"], "games": 2}])
+    );
+    let nes = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "nes");
+    let nes = nes.unwrap();
+    assert_eq!((nes["set"].clone(), nes["perSystem"].clone()), (json!("arcade"), json!(false)));
+    let preview = nes["preview"]["url"].as_str().unwrap();
+    assert!(preview.starts_with("/media/decorations/arcade/systems/nes.png?Sov-"), "{preview}");
+    let snes = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "snes");
+    assert_eq!(snes.unwrap()["preview"], Value::Null, "no image for it, and no default");
+    assert!(report["folders"][0].as_str().unwrap().ends_with("decorations"));
+
     // `none` turns them off for a system.
     let mut h =
         Harness::new_with("decorations-none", false, vec!["--decoration".into(), "none".into()])

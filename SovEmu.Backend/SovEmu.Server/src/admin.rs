@@ -7,6 +7,7 @@ use crate::jobs::{self, Job, JobError, Summary, Trigger};
 use crate::library::{self, ScanReport};
 use crate::metadata::{self, JobStatus};
 use crate::{AppState, LibraryMode};
+use sovemu_library::decorations;
 use sovemu_library::mirror::{self, SyncStatus};
 
 /// Rescans the library ([`Job::Scan`](crate::jobs::Job::Scan)'s work, and the end of a mirror
@@ -152,4 +153,52 @@ pub(crate) fn metadata_fetch(
         },
     )?;
     Ok(state.metadata.status())
+}
+
+/// The decoration sets found, and the set each system's games are framed with.
+pub(crate) struct DecorationsReport {
+    /// Each set, by name, and what it holds.
+    pub(crate) sets: Vec<(String, decorations::SetSummary)>,
+    /// `SOVEMU_DECORATION`: the set for systems without one of their own.
+    pub(crate) default: String,
+    /// The folders sets are read from, first wins.
+    pub(crate) folders: Vec<String>,
+    pub(crate) systems: Vec<SystemDecoration>,
+}
+
+pub(crate) struct SystemDecoration {
+    pub(crate) system: crate::api::SystemSummary,
+    pub(crate) set: String,
+    /// Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`), not the default.
+    pub(crate) per_system: bool,
+    /// What its games are framed with when they have no image of their own: the system's
+    /// image, else the set's default. None for `none`, or a set that isn't there.
+    pub(crate) preview: Option<decorations::Decoration>,
+}
+
+/// Every system with its decoration set and a preview, and every set found.
+pub(crate) async fn decorations_report(state: &AppState) -> ApiResult<DecorationsReport> {
+    let found = state.decorations();
+    let systems = crate::api::list_systems(state).await?;
+    let config = &state.config;
+    Ok(DecorationsReport {
+        sets: found
+            .sets()
+            .into_iter()
+            .filter_map(|s| Some((s.clone(), found.summary(&s)?)))
+            .collect(),
+        default: config.decoration.clone(),
+        folders: config.decoration_dirs().iter().map(|d| d.display().to_string()).collect(),
+        systems: systems
+            .into_iter()
+            .map(|system| {
+                let id = system.system.id;
+                let set = config.decoration_for(id).to_owned();
+                let per_system = config.systems.get(id).is_some_and(|s| s.decoration.is_some());
+                let preview =
+                    (set != decorations::NONE).then(|| found.for_game(&set, id, "")).flatten();
+                SystemDecoration { system, set, per_system, preview }
+            })
+            .collect(),
+    })
 }

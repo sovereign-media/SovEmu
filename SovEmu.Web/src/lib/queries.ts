@@ -850,3 +850,38 @@ export const BiosDirQuery = graphql(`
     biosDir
   }
 `);
+
+export const DecorationsQuery = graphql(`
+  query Decorations {
+    decorations {
+      default
+      folders
+      sets {
+        name
+        builtin
+        hasDefault
+        systems
+        games
+      }
+      systems {
+        set
+        perSystem
+        system {
+          id
+          name
+          color
+          gameCount
+        }
+        preview {
+          url
+          width
+          height
+          top
+          left
+          bottom
+          right
+        }
+      }
+    }
+  }
+`);
