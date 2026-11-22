@@ -273,12 +273,18 @@ fn zip_bytes(xml: &str) -> Vec<u8> {
 }
 
 /// A pair of UDP ports no other harness in this run uses.
+/// Two free UDP ports in a row, for this test's worker pool. Under nextest every test is its
+/// own process, all at once, so a range worked out from the process id could be another test's
+/// at the same moment (their workers then failed to bind, now and then); a pair is taken only
+/// once both ports bind here.
 fn udp_ports() -> String {
-    use std::sync::atomic::{AtomicU16, Ordering};
-    static NEXT: AtomicU16 = AtomicU16::new(0);
-    let base =
-        41000 + (std::process::id() % 400) as u16 * 40 + NEXT.fetch_add(2, Ordering::Relaxed);
-    format!("{base}-{}", base + 1)
+    loop {
+        let first = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let base = first.local_addr().unwrap().port();
+        if base < u16::MAX && std::net::UdpSocket::bind(("127.0.0.1", base + 1)).is_ok() {
+            return format!("{base}-{}", base + 1);
+        }
+    }
 }
 
 const SETUP: &str = "mutation($u: String!, $p: String!) { setup(username: $u, password: $p) { id username isAdmin } }";
