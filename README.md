@@ -349,7 +349,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
 | `SOVEMU_WORKER_START_TIMEOUT` | `120` | Seconds a game may take to load (disc images on a slow share) |
 | `SOVEMU_WORKER_STOP_TIMEOUT` | `15` | Seconds a game may take to write its saves and exit before it is killed |
-| `SOVEMU_REWIND_SECONDS` | `60` | Rewind history (0: rewind off) |
+| `SOVEMU_REWIND_SECONDS` | `60` | Rewind history (0: rewind off). A session turns rewind off by itself where a save state is too large or too slow to take every other frame (PS2) |
 | `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
 | `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
 | `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |

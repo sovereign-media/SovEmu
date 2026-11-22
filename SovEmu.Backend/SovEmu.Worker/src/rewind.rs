@@ -4,8 +4,21 @@
 //! [`INTERVAL`]× speed. How far back it reaches is capped twice (both set by the server): by
 //! seconds of history and by memory. An NES state is a few KiB (the seconds cap applies), a SNES
 //! state about 400 KiB (the memory cap applies first: ~5 s in 64 MiB).
+//!
+//! Rewind turns itself off where it cannot pay for itself: a PS2 state is tens of megabytes, so
+//! taking one every other frame cost more than a whole frame period (the game ran at half speed)
+//! and kept a fraction of a second. A snapshot must fit a share of the frame period
+//! ([`BUDGET`]), and the history must be able to hold at least [`MIN_STATES`].
 
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
+
+/// The share of a frame period one snapshot may take.
+const BUDGET: f64 = 0.25;
+/// Snapshots in a row over budget before rewind turns itself off (one slow one is a hiccup).
+const SLOW_SNAPSHOTS: u32 = 3;
+/// The fewest snapshots worth keeping: under a quarter of a second at 60 fps is no rewind.
+const MIN_STATES: usize = 8;
 
 /// Snapshot every this many frames.
 pub(crate) const INTERVAL: u32 = 2;
@@ -17,13 +30,18 @@ pub(crate) struct Rewind {
     max_bytes: usize,
     max_states: usize,
     counter: u32,
-    /// Set if the core cannot serialize; stops trying every frame.
+    /// Set if the core cannot serialize, or its states cost too much; stops trying every frame.
     unsupported: bool,
+    /// How long one snapshot may take.
+    budget: Duration,
+    slow: u32,
 }
 
 impl Rewind {
-    pub(crate) fn new(max_bytes: usize, max_states: usize) -> Self {
+    pub(crate) fn new(max_bytes: usize, max_states: usize, fps: f64) -> Self {
         Self {
+            budget: Duration::from_secs_f64(BUDGET / fps.clamp(1.0, 1000.0)),
+            slow: 0,
             states: VecDeque::new(),
             bytes: 0,
             max_bytes,
@@ -48,7 +66,24 @@ impl Rewind {
             return;
         }
         self.counter = 0;
-        match serialize() {
+        let started = Instant::now();
+        let state = serialize();
+        let took = started.elapsed();
+        if let Ok(state) = &state {
+            self.slow = if took > self.budget { self.slow + 1 } else { 0 };
+            if self.slow >= SLOW_SNAPSHOTS || state.len() * MIN_STATES > self.max_bytes {
+                tracing::info!(
+                    state_mb = state.len() as f64 / (1024.0 * 1024.0),
+                    snapshot_ms = took.as_secs_f64() * 1000.0,
+                    budget_ms = self.budget.as_secs_f64() * 1000.0,
+                    "rewind is off: this core's states are too large or too slow to take every other frame"
+                );
+                self.unsupported = true;
+                self.clear();
+                return;
+            }
+        }
+        match state {
             Ok(state) if state.len() <= self.max_bytes => {
                 self.bytes += state.len();
                 self.states.push_back(state);
@@ -90,7 +125,7 @@ mod tests {
 
     #[test]
     fn snapshots_every_interval_and_steps_back_newest_first() {
-        let mut r = Rewind::new(1024, 100);
+        let mut r = Rewind::new(1024, 100, 60.0);
         for frame in 0u8..6 {
             r.record(|| Ok::<_, ()>(vec![frame; 4]));
         }
@@ -105,12 +140,12 @@ mod tests {
 
     #[test]
     fn evicts_the_oldest_past_either_cap() {
-        let mut r = Rewind::new(10, 100);
+        let mut r = Rewind::new(40, 100, 60.0);
         for frame in 0u8..20 {
             r.record(|| Ok::<_, ()>(vec![frame; 4]));
         }
-        assert_eq!(r.len(), 2, "10 bytes hold two 4-byte states");
-        let mut r = Rewind::new(1 << 20, 3);
+        assert_eq!(r.len(), 10, "40 bytes hold ten 4-byte states");
+        let mut r = Rewind::new(1 << 20, 3, 60.0);
         for frame in 0u8..20 {
             r.record(|| Ok::<_, ()>(vec![frame; 4]));
         }
@@ -118,8 +153,34 @@ mod tests {
     }
 
     #[test]
+    fn turns_itself_off_when_states_are_too_large_or_too_slow() {
+        // A state an eighth of the memory cap would keep fewer than MIN_STATES: not worth taking.
+        let mut r = Rewind::new(64, 100, 60.0);
+        let mut calls = 0;
+        for _ in 0..20 {
+            r.record(|| {
+                calls += 1;
+                Ok::<_, ()>(vec![0; 16])
+            });
+        }
+        assert_eq!((calls, r.len()), (1, 0));
+
+        // Small but slow: three snapshots in a row over a quarter of the frame period.
+        let mut r = Rewind::new(1 << 20, 100, 60.0);
+        let mut calls = 0;
+        for _ in 0..20 {
+            r.record(|| {
+                calls += 1;
+                std::thread::sleep(Duration::from_millis(6));
+                Ok::<_, ()>(vec![0; 4])
+            });
+        }
+        assert_eq!((calls, r.len()), (3, 0));
+    }
+
+    #[test]
     fn gives_up_when_the_core_cannot_serialize() {
-        let mut r = Rewind::new(1024, 100);
+        let mut r = Rewind::new(1024, 100, 60.0);
         let mut calls = 0;
         for _ in 0..10 {
             r.record(|| {

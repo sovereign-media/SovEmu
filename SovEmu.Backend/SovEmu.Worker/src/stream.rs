@@ -265,6 +265,7 @@ impl Session {
                 config.rewind_max_mb as usize * 1024 * 1024,
                 (f64::from(config.rewind_seconds) * av.fps / f64::from(crate::rewind::INTERVAL))
                     as usize,
+                av.fps,
             ),
             fast_forward: config.fast_forward.max(1),
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
