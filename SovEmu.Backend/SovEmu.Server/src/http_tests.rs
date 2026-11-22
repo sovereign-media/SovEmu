@@ -106,6 +106,7 @@ impl Harness {
         args.extend(extra);
         let state = build_state(Config::parse_from(args)).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
+        state.game_counts.refresh(&state.db).await.unwrap();
         Self { state, dir, cookie: None, token: None }
     }
 
@@ -1622,6 +1623,25 @@ async fn admins_see_every_core_with_its_licence() {
     assert_eq!((snes9x["file"].clone(), snes9x["loaded"].clone()), (Value::Null, json!(false)));
     assert_eq!(snes9x["nonCommercial"], true);
     assert_eq!(snes9x["systems"][0], json!({"id": "snes", "chosen": false}));
+}
+
+#[tokio::test]
+async fn system_counts_follow_each_scan() {
+    let mut h = Harness::new("counts", false).await;
+    h.sign_up_admin().await;
+    let nes = |systems: &Value| system(systems, "nes")["gameCount"].as_i64().unwrap();
+    let before = nes(&h.systems().await);
+    std::fs::write(h.dir.join("roms/nes/Second Game (USA).nes"), [0u8; 16]).unwrap();
+    assert_eq!(
+        nes(&h.systems().await),
+        before,
+        "counted when the library changes, not per request"
+    );
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+    assert_eq!(nes(&h.systems().await), before + 1);
+    std::fs::remove_file(h.dir.join("roms/nes/Second Game (USA).nes")).unwrap();
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+    assert_eq!(nes(&h.systems().await), before);
 }
 
 #[tokio::test]

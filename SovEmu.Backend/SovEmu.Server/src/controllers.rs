@@ -394,7 +394,7 @@ pub(crate) async fn save(
     check(controller, name, &bindings).map_err(ApiError::bad_request)?;
     let system = system_key(system).map_err(ApiError::bad_request)?;
     let json = serde_json::to_string(&bindings).map_err(ApiError::internal)?;
-    let mut tx = state.db.begin().await?;
+    let mut tx = crate::db::write_tx(&state.db).await?;
     let (count, exists): (i64, bool) = sqlx::query_as(
         "SELECT COUNT(*), COALESCE(MAX(controller = ? AND system = ?), 0)
          FROM controller_mappings WHERE user_id = ?",

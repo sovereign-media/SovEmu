@@ -382,6 +382,8 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
         }
     });
     let users = library.clone();
+    // Counted when the library changes (`GameCounts`), not by this loop.
+    let games = state.game_counts.clone();
     gauges.push(
         meter
             .u64_observable_gauge("sovemu.users")
@@ -396,8 +398,8 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
             .u64_observable_gauge("sovemu.games")
             .with_description("Games in the library, by system.")
             .with_callback(move |o| {
-                for (system, n) in &library.lock().unwrap_or_else(|e| e.into_inner()).games {
-                    o.observe(*n, &[KeyValue::new("system", system.clone())]);
+                for (system, n) in games.get().iter() {
+                    o.observe((*n).max(0) as u64, &[KeyValue::new("system", system.clone())]);
                 }
             })
             .build(),
@@ -456,20 +458,12 @@ fn resource_gauges(
 #[derive(Default)]
 struct Library {
     users: u64,
-    games: Vec<(String, u64)>,
 }
 
 impl Library {
     async fn count(db: &sqlx::SqlitePool) -> sqlx::Result<Self> {
         let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(db).await?;
-        let games: Vec<(String, i64)> =
-            sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system ORDER BY system")
-                .fetch_all(db)
-                .await?;
-        Ok(Self {
-            users: users.max(0) as u64,
-            games: games.into_iter().map(|(s, n)| (s, n.max(0) as u64)).collect(),
-        })
+        Ok(Self { users: users.max(0) as u64 })
     }
 }
 

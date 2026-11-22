@@ -20,7 +20,7 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, s
     let root = root.to_owned();
     let found =
         tokio::task::spawn_blocking(move || group_discs(walk(&root))).await.unwrap_or_default();
-    let mut tx = pool.begin().await?;
+    let mut tx = crate::db::write_tx(pool).await?;
     let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&mut *tx).await?;
     sqlx::query("CREATE TEMP TABLE IF NOT EXISTS seen (path TEXT PRIMARY KEY)")
         .execute(&mut *tx)
@@ -100,4 +100,35 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, s
     crate::releases::refresh(pool).await?;
     let added = (after - before + removed as i64).max(0) as usize;
     Ok(ScanReport { found: found.len(), added, removed })
+}
+
+/// Games per system, counted when the library changes (after each scan, and at startup), not on
+/// each request that lists the systems.
+#[derive(Debug, Default)]
+pub(crate) struct GameCounts(
+    std::sync::RwLock<std::sync::Arc<std::collections::BTreeMap<String, i64>>>,
+);
+
+impl GameCounts {
+    pub(crate) async fn load(pool: &SqlitePool) -> sqlx::Result<Self> {
+        let counts = Self::default();
+        counts.refresh(pool).await?;
+        Ok(counts)
+    }
+
+    /// Counts again.
+    pub(crate) async fn refresh(&self, pool: &SqlitePool) -> sqlx::Result<()> {
+        let rows: Vec<(String, i64)> =
+            sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system")
+                .fetch_all(pool)
+                .await?;
+        *self.0.write().unwrap_or_else(|e| e.into_inner()) =
+            std::sync::Arc::new(rows.into_iter().collect());
+        Ok(())
+    }
+
+    /// Each system's games, as last counted.
+    pub(crate) fn get(&self) -> std::sync::Arc<std::collections::BTreeMap<String, i64>> {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
 }

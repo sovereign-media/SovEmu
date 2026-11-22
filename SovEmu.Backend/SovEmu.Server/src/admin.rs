@@ -17,6 +17,7 @@ pub(crate) async fn scan(state: AppState) -> anyhow::Result<ScanReport> {
     state.reload_decorations();
     let started = std::time::Instant::now();
     let r = library::scan(&state.db, &state.config.roms_dir).await?;
+    state.game_counts.refresh(&state.db).await?;
     tracing::info!(
         library = %state.config.roms_dir.display(),
         games = r.found,
