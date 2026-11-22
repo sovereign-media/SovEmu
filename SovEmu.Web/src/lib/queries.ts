@@ -1253,6 +1253,65 @@ export const LogsQuery = graphql(`
   }
 `);
 
+// The admin Overview: one read for every card, each summarising a page it links to.
+export const OverviewQuery = graphql(`
+  query Overview {
+    network {
+      portCount
+      portsInUse
+    }
+    activeSessions {
+      id
+      username
+      title
+    }
+    libraryStatus {
+      mode
+      games
+    }
+    jobs {
+      name
+      running
+      lastRun {
+        outcome
+        finishedAt
+        message
+      }
+    }
+    metadataStatus {
+      running
+      total
+      found
+    }
+    systems {
+      id
+      name
+      biosMissing
+    }
+    gpu {
+      mode
+      renderer
+    }
+    storage {
+      totalBytes
+      freeBytes
+    }
+    buildInfo {
+      version
+      revision
+    }
+    serverResources {
+      startedAt
+    }
+    sessionFailures {
+      at
+    }
+    clientEventGroups(days: 1) {
+      count
+    }
+  }
+`);
+
 export const ClearCacheMutation = graphql(`
   mutation ClearCache {
     clearCache

@@ -54,6 +54,7 @@ export const q = {
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
+  overview: () => queryOptions({ queryKey: ["admin", "overview"], queryFn: api.overview }),
   logs: (filter: LogFilter) => queryOptions({ queryKey: ["admin", "logs", filter], queryFn: () => api.logs(filter) }),
   playStatistics: (range: StatsRange) =>
     queryOptions({ queryKey: ["admin", "statistics", range], queryFn: () => api.playStatistics(range) }),

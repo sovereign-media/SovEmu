@@ -285,7 +285,8 @@ export function MenuContent({ children }: { children: ReactNode }) {
       <MenuPrimitive.Content
         align="end"
         sideOffset={6}
-        className="z-50 min-w-44 rounded-lg border border-edge bg-panel p-1 shadow-2xl"
+        // Never taller than the room the screen has: a long menu (the admin's) scrolls.
+        className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-y-auto rounded-lg border border-edge bg-panel p-1 shadow-2xl"
       >
         {children}
       </MenuPrimitive.Content>

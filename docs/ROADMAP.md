@@ -64,6 +64,10 @@ held 59.93 fps over 300 frames with no resyncs.
       off) by a `tracing` layer behind the same filter as stderr, with its game sessions' worker
       lines (through `sovemu_sessions`' observer) tagged by session; filtered by level, session
       and text, followed live and paused
+- [x] The admin Overview, the menu's first page: who is playing and the game ports in use,
+      the library and its last scan, game information, BIOS gaps, rendering, the disk, failed
+      games and today's client errors, the version and uptime (`serverResources.startedAt`),
+      each card linking to its page
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

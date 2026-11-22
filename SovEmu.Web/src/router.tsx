@@ -42,6 +42,7 @@ const PlayPage = lazy(() => import("./components/play/PlayPage"));
 const Search = lazy(() => import("./components/search/Search"));
 const BiosPage = lazy(() => import("./components/BiosPage"));
 const LibraryAdmin = lazy(() => import("./components/admin/LibraryAdmin"));
+const OverviewAdmin = lazy(() => import("./components/admin/OverviewAdmin"));
 const UsersAdmin = lazy(() => import("./components/admin/UsersAdmin"));
 const SettingsAdmin = lazy(() => import("./components/admin/SettingsAdmin"));
 const ControllersAdmin = lazy(() => import("./components/admin/ControllersAdmin"));
@@ -78,6 +79,7 @@ const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: st
   "/play/": ["Playing", PlayPage, []],
   "/search/": ["Search", Search, ["q"]],
   "/bios/": ["BIOS files", BiosPage, []],
+  "/admin/overview/": ["Overview", OverviewAdmin, []],
   "/admin/": ["Library", LibraryAdmin, []],
   "/admin/users/": ["Users", UsersAdmin, []],
   "/admin/settings/": ["Settings", SettingsAdmin, ["id"]],

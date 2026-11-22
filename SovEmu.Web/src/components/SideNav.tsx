@@ -151,7 +151,12 @@ function MenuEntry({
           align={shape === "dock" ? "center" : "end"}
           sideOffset={12}
           collisionPadding={8}
-          className={cn(PANE, shape === "bar" && "max-h-[70dvh] overflow-y-auto")}
+          // Never taller than the room the screen has (the admin menu's many pages): it scrolls.
+          className={cn(
+            PANE,
+            "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto",
+            shape === "bar" && "max-h-[70dvh]",
+          )}
         >
           <DropdownMenu.Label className={HEADING}>{heading}</DropdownMenu.Label>
           <div className="pt-1">{children}</div>

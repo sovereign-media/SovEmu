@@ -10,6 +10,7 @@ export const SCREEN_PATHS = [
   "/play/",
   "/search/",
   "/bios/",
+  "/admin/overview/",
   "/admin/",
   "/admin/users/",
   "/admin/settings/",
