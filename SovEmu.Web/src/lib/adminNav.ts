@@ -22,10 +22,11 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
+import type { ScreenPath } from "./screens";
 
 export interface AdminNavItem {
-  /** The page (with its trailing slash, as the router's paths have it). */
-  href: string;
+  /** The page: one of the router's paths (`screens.ts`). */
+  href: ScreenPath;
   label: string;
   /** What the page is for, as its tooltip. */
   title: string;
