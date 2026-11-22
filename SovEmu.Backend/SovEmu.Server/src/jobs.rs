@@ -702,10 +702,17 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
 /// One round of upkeep (see the module's notes).
 async fn maintain(state: AppState) -> anyhow::Result<String> {
     let samples = crate::resources::prune(&state.db, state.config.resource_history_days).await?;
+    let events = crate::client_events::prune(
+        &state.db,
+        state.config.client_event_days,
+        crate::client_events::now_unix(),
+    )
+    .await?;
     let (expired, pruned) =
         maintain_db(&state.db, &state.identity, state.config.job_history_days).await?;
     Ok(format!(
-        "{expired} expired sign-ins deleted, {pruned} old job runs and {samples} old resource samples pruned"
+        "{expired} expired sign-ins deleted, {pruned} old job runs, {samples} old resource \
+         samples and {events} old client errors pruned"
     ))
 }
 

@@ -251,7 +251,8 @@ pub struct Config {
     pub password_sign_in: bool,
 
     /// Whether what goes wrong on a client (a connection that failed, a stalled picture, a
-    /// screen that crashed), sent with `reportClientEvents`, is logged. Off, they are dropped.
+    /// screen that crashed), sent with `reportClientEvents`, is logged and kept for the admin
+    /// Client errors page. Off, they are dropped.
     #[arg(long, env = "SOVEMU_CLIENT_EVENTS", default_value_t = true, action = clap::ArgAction::Set)]
     pub client_events: bool,
 
@@ -348,6 +349,11 @@ pub struct Config {
     /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
     #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
     pub job_history_days: u32,
+
+    /// Days of client errors kept (what the apps reported, on the admin Client errors page);
+    /// maintenance deletes older ones (0: kept for ever).
+    #[arg(long, env = "SOVEMU_CLIENT_EVENT_DAYS", default_value_t = 30)]
+    pub client_event_days: u32,
 
     /// Seconds between readings of the container's CPU and memory, for the admin Resources page
     /// and the OpenTelemetry gauges (0: not read).

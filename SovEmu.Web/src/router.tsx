@@ -45,6 +45,7 @@ const LibraryAdmin = lazy(() => import("./components/admin/LibraryAdmin"));
 const UsersAdmin = lazy(() => import("./components/admin/UsersAdmin"));
 const SettingsAdmin = lazy(() => import("./components/admin/SettingsAdmin"));
 const ControllersAdmin = lazy(() => import("./components/admin/ControllersAdmin"));
+const ClientErrorsAdmin = lazy(() => import("./components/admin/ClientErrorsAdmin"));
 const JobsAdmin = lazy(() => import("./components/admin/JobsAdmin"));
 const SessionsAdmin = lazy(() => import("./components/admin/SessionsAdmin"));
 const ResourcesAdmin = lazy(() => import("./components/admin/ResourcesAdmin"));
@@ -76,6 +77,7 @@ const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: st
   "/admin/users/": ["Users", UsersAdmin, []],
   "/admin/settings/": ["Settings", SettingsAdmin, ["id"]],
   "/admin/controllers/": ["Controllers", ControllersAdmin, []],
+  "/admin/client-errors/": ["Client errors", ClientErrorsAdmin, []],
   "/admin/resources/": ["Resources", ResourcesAdmin, []],
   "/admin/sessions/": ["Sessions", SessionsAdmin, []],
   "/admin/jobs/": ["Jobs", JobsAdmin, []],

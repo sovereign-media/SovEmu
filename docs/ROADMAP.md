@@ -205,6 +205,11 @@ held 59.93 fps over 300 frames with no resyncs.
       codec, encoder and its fallbacks with why, audio, run-ahead) goes to the client on the input
       channel (`0x82`) for its stats panel, and to the server, whose admin Sessions page lists
       every game being played with the worker's live numbers (`activeSessions`)
+- [x] The admin Client errors page: what the apps report (`reportClientEvents`: failed or lost
+      connections, stalled pictures, screen errors, unknown controllers) is kept in
+      `client_events` (migration 0022, pruned after `SOVEMU_CLIENT_EVENT_DAYS`) and grouped by
+      kind and by app and device, each group opening onto its events with the game they
+      happened in
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
       reading it back with `glReadPixels`
 - [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)
