@@ -48,6 +48,16 @@ impl SystemNode {
     async fn color(&self) -> &str {
         self.0.system.color
     }
+    /// A photo of its hardware for its card (a transparent cut-out): SovEmu's, or the admin's own
+    /// from `<data>/systems/<id>.webp`. A URL signed for this user; null when it has none.
+    async fn photo_url(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let user = user(ctx).await?;
+        let id = self.0.system.id;
+        Ok(state(ctx)
+            .appearance()
+            .photo(id)
+            .map(|_| state(ctx).assets.sign(user.id, &format!("/media/systems/{id}"))))
+    }
     async fn game_count(&self) -> i64 {
         self.0.game_count
     }
