@@ -60,6 +60,10 @@ held 59.93 fps over 300 frames with no resyncs.
       migration 0024), and a week, month or year shows the totals, time played per day (per
       week over a year), the most played games, each account's and system's time, and the most
       favourited games, each figure one query over the window by start time
+- [x] The admin Logs page: the server's recent log kept in memory (`SOVEMU_LOG_BUFFER_LINES`, 0
+      off) by a `tracing` layer behind the same filter as stderr, with its game sessions' worker
+      lines (through `sovemu_sessions`' observer) tagged by session; filtered by level, session
+      and text, followed live and paused
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

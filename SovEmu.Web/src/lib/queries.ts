@@ -1232,6 +1232,27 @@ export const PlayStatisticsQuery = graphql(`
   }
 `);
 
+export const LogsQuery = graphql(`
+  query Logs($level: LogLevel, $session: String, $text: String) {
+    logs(level: $level, session: $session, text: $text) {
+      enabled
+      lines {
+        id
+        at
+        level
+        target
+        message
+        fields {
+          key
+          value
+        }
+        session
+      }
+      cursor
+    }
+  }
+`);
+
 export const ClearCacheMutation = graphql(`
   mutation ClearCache {
     clearCache

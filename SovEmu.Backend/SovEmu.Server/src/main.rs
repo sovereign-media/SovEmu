@@ -28,6 +28,7 @@ mod home;
 mod http_tests;
 mod jobs;
 mod library;
+mod logs;
 mod metadata;
 mod ops;
 mod patches;
@@ -358,6 +359,11 @@ pub struct Config {
     /// admin Activity page); maintenance deletes older entries (0: kept for ever).
     #[arg(long, env = "SOVEMU_ACTIVITY_HISTORY_DAYS", default_value_t = 90)]
     pub activity_history_days: u32,
+
+    /// Lines of the server's log kept in memory for the admin Logs page (its own and its game
+    /// sessions'); 0 keeps none and turns the page's view off. Lines go to stderr regardless.
+    #[arg(long, env = "SOVEMU_LOG_BUFFER_LINES", default_value_t = 2000)]
+    pub log_buffer_lines: usize,
 
     /// Days of client errors kept (what the apps reported, on the admin Client errors page);
     /// maintenance deletes older ones (0: kept for ever).
@@ -708,6 +714,8 @@ pub struct AppState {
     pub(crate) failures: Arc<failures::Failures>,
     /// Who did what, and when (`activity`).
     pub(crate) activity: activity::Activity,
+    /// The server's recent log, when `SOVEMU_LOG_BUFFER_LINES` keeps any (`logs`).
+    pub(crate) logs: Option<Arc<logs::LogBuffer>>,
 }
 
 impl AppState {
@@ -826,6 +834,16 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!(summary = %gpu.summary(), "GPU probe");
     let session_failures = Arc::new(failures::Failures::new(config.session_failures));
+    // Told as sessions start and end, and of each worker's log lines.
+    let mut observers: Vec<Arc<dyn sovemu_sessions::Observer>> = vec![
+        Arc::new(telemetry::SessionMetrics),
+        session_failures.clone(),
+        Arc::new(activity.clone()),
+        Arc::new(play_stats::PlayLog::new(db.clone())),
+    ];
+    if let Some(buffer) = logs::installed() {
+        observers.push(buffer);
+    }
     let workers = Workers::new(WorkerConfig {
         worker_bin,
         ports: config.udp_ports,
@@ -848,12 +866,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
-        observer: Arc::new(sovemu_sessions::Observers(vec![
-            Arc::new(telemetry::SessionMetrics),
-            session_failures.clone(),
-            Arc::new(activity.clone()),
-            Arc::new(play_stats::PlayLog::new(db.clone())),
-        ])),
+        observer: Arc::new(sovemu_sessions::Observers(observers)),
     });
     let cache_dir = paths.cache_games();
     move_legacy_cache(&paths);
@@ -990,6 +1003,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         game_counts,
         failures: session_failures,
         activity,
+        logs: logs::installed(),
         jobs,
         resources,
     })
@@ -1073,7 +1087,8 @@ fn main() -> Result<()> {
         println!("decorations: {}", dir.join(decorations::BUILTIN).display());
         return Ok(());
     }
-    let telemetry = telemetry::init(config.log_format, config.otel_endpoint.as_deref())?;
+    let buffer = logs::install(config.log_buffer_lines);
+    let telemetry = telemetry::init(config.log_format, config.otel_endpoint.as_deref(), buffer)?;
     let result =
         tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(config));
     // Outside the runtime: the exporters' HTTP client blocks while it flushes.

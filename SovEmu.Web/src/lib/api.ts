@@ -40,6 +40,7 @@ import {
   HomeQuery as HomeDocument,
   JobsQuery,
   LoadStateMutation,
+  LogsQuery,
   NetworkQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
@@ -97,6 +98,16 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** How much a log line says. */
+export type LogLevel = Enum<"LogLevel">;
+/** One line of the server's log. */
+export type LogLine = ResultOf<typeof LogsQuery>["logs"]["lines"][number];
+/** Which lines of the log a view asks for. */
+export interface LogFilter {
+  level: LogLevel | null;
+  session: string | null;
+  text: string | null;
+}
 /** The window the play statistics cover. */
 export type StatsRange = Enum<"StatsRange">;
 /** What was played over a window. */
@@ -262,6 +273,8 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: the server's recent log, the newest lines the filter keeps. */
+  logs: async (filter: LogFilter) => (await request(LogsQuery, filter)).logs,
   /** Admin: what was played over the last week, month or year. */
   playStatistics: async (range: StatsRange) => (await request(PlayStatisticsQuery, { range })).playStatistics,
   /** Admin: a page of the activity log, newest first; `after` is the last page's `next`. */

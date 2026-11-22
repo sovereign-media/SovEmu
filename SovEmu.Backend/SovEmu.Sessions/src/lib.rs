@@ -24,6 +24,9 @@ use std::time::Duration;
 pub trait Observer: Send + Sync + std::fmt::Debug {
     fn session_started(&self, _system: &str) {}
     fn session_ended(&self, _ended: &Ended<'_>) {}
+    /// A line a session's worker logged (its stderr: its own log and its core's), as it came.
+    /// It also goes on to the server's own stderr, as ever.
+    fn worker_line(&self, _session_id: &str, _line: &str) {}
 }
 
 /// Several observers told in turn, as one (the server's metrics, failures and activity log).
@@ -37,6 +40,10 @@ impl Observer for Observers {
 
     fn session_ended(&self, ended: &Ended<'_>) {
         self.0.iter().for_each(|o| o.session_ended(ended));
+    }
+
+    fn worker_line(&self, session_id: &str, line: &str) {
+        self.0.iter().for_each(|o| o.worker_line(session_id, line));
     }
 }
 

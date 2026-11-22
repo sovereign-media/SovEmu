@@ -1358,6 +1358,68 @@ type LibraryStatus {
 }
 
 """
+One of a line's fields.
+"""
+type LogField {
+	key: String!
+	value: String!
+}
+
+"""
+How much a line says.
+"""
+enum LogLevel {
+	TRACE
+	DEBUG
+	INFO
+	WARN
+	ERROR
+}
+
+"""
+One line of the log.
+"""
+type LogLineNode {
+	"""
+	Its place in the buffer.
+	"""
+	id: Float!
+	"""
+	When (Unix seconds).
+	"""
+	at: Float!
+	level: LogLevel!
+	"""
+	The module that logged it, or `worker` for a game session's worker.
+	"""
+	target: String!
+	message: String!
+	fields: [LogField!]!
+	"""
+	The game session it belongs to, if any.
+	"""
+	session: String
+}
+
+"""
+Lines of the log, and where to read on from.
+"""
+type LogPage {
+	"""
+	Whether the server keeps its log for this view (`SOVEMU_LOG_BUFFER_LINES` above 0).
+	"""
+	enabled: Boolean!
+	"""
+	Oldest first.
+	"""
+	lines: [LogLineNode!]!
+	"""
+	Give as `after` to read only what comes next.
+	"""
+	cursor: Float!
+}
+
+"""
 Where a mapping comes from.
 """
 enum MappingSource {
@@ -2052,6 +2114,12 @@ type Query {
 	most played games, each account's and each system's time, and the most favourited games.
 	"""
 	playStatistics(range: StatsRange!): PlayStatistics!
+	"""
+	Admins: the server's recent log, its own lines and its game sessions': the newest
+	`limit` (1000 at most) at `level` and above, of one `session`, holding `text`, after line
+	`after`. Follow it by asking again with the last `cursor`.
+	"""
+	logs(after: Float, level: LogLevel, session: String, text: String, limit: Int! = 300): LogPage!
 }
 
 enum Rendering {

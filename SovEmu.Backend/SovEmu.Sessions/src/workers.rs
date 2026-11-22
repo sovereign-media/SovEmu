@@ -287,7 +287,12 @@ struct LastWords {
 const LAST_WORDS: usize = 20;
 
 impl LastWords {
-    fn follow(stderr: tokio::process::ChildStderr) -> Self {
+    /// Follows session `id`'s worker's stderr, passing each line to `observer` too.
+    fn follow(
+        stderr: tokio::process::ChildStderr,
+        id: String,
+        observer: Arc<dyn Observer>,
+    ) -> Self {
         let lines = Arc::new(Mutex::new(std::collections::VecDeque::with_capacity(LAST_WORDS)));
         let kept = lines.clone();
         let reader = tokio::spawn(async move {
@@ -295,6 +300,7 @@ impl LastWords {
             while let Ok(Some(line)) = stderr.next_line().await {
                 // Still in the container's log, as when the worker wrote to it directly.
                 eprintln!("{line}");
+                observer.worker_line(&id, &line);
                 let mut kept = kept.lock().unwrap_or_else(|e| e.into_inner());
                 if kept.len() == LAST_WORDS {
                     kept.pop_front();
@@ -690,7 +696,11 @@ impl Workers {
         let told = Arc::new(Mutex::new(Told::default()));
         // Held until this start returns, however it does.
         let (_settling, settled) = oneshot::channel::<()>();
-        let last_words = LastWords::follow(child.stderr.take().expect("piped"));
+        let last_words = LastWords::follow(
+            child.stderr.take().expect("piped"),
+            id.clone(),
+            self.config.observer.clone(),
+        );
         let process = Process::reap(
             child,
             id.clone(),
@@ -1275,6 +1285,40 @@ exit 2
             assert!(ended(reason, None).failed(), "{reason:?}");
         }
         assert!(ended(EndReason::Exited, Some("exited while loading")).failed());
+    }
+
+    /// Remembers each worker line, with its session.
+    #[derive(Debug, Default)]
+    struct Lines(Mutex<Vec<(String, String)>>);
+
+    impl Observer for Lines {
+        fn worker_line(&self, session_id: &str, line: &str) {
+            self.0.lock().unwrap().push((session_id.to_owned(), line.to_owned()));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_workers_lines_reach_the_observer_with_its_session() {
+        let dir = dir("worker-lines");
+        let lines = Arc::new(Lines::default());
+        let script = r#"#!/bin/sh
+echo '{"type":"ready","udp_port":1,"core":"fake","width":320,"height":240,"fps":60.0}'
+echo "INFO core: loaded the game" >&2
+exit 0
+"#;
+        let workers = workers_with(&dir, script, Duration::from_secs(5), lines.clone());
+        let session = workers.start(launch(&dir, 1, 1)).await.unwrap();
+        for _ in 0..100 {
+            if !lines.0.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            lines.0.lock().unwrap().as_slice(),
+            [(session.id.clone(), "INFO core: loaded the game".to_owned())]
+        );
+        settle(&workers, 2).await;
     }
 
     #[tokio::test]

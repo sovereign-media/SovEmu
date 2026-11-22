@@ -1291,6 +1291,46 @@ async fn a_game_played_counts_in_the_play_statistics() {
 }
 
 #[tokio::test]
+async fn admins_read_and_follow_the_log() {
+    use sovemu_sessions::Observer;
+    const LOGS: &str = "query($a: Float, $l: LogLevel, $s: String, $t: String) {
+        logs(after: $a, level: $l, session: $s, text: $t) {
+            enabled lines { level target message session } cursor } }";
+    let mut h = Harness::new("logs", false).await;
+    h.sign_up_admin().await;
+    // Off (`SOVEMU_LOG_BUFFER_LINES=0`, and in this harness): the page says so.
+    let off = h.ok(LOGS, json!({})).await["logs"].clone();
+    assert_eq!((off["enabled"].clone(), off["lines"].clone()), (json!(false), json!([])));
+
+    let buffer = std::sync::Arc::new(crate::logs::LogBuffer::new(100));
+    h.state.logs = Some(buffer.clone());
+    buffer.worker_line("s1", "2026-11-22T12:00:00+00:00  INFO sovemu_worker: the game loaded");
+    buffer.worker_line("s2", "2026-11-22T12:00:01+00:00 ERROR sovemu_worker: the core crashed");
+    let page = h.ok(LOGS, json!({})).await["logs"].clone();
+    assert_eq!(page["enabled"], true);
+    assert_eq!(page["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(page["lines"][1]["level"], "ERROR");
+    let errors = h.ok(LOGS, json!({"l": "WARN"})).await["logs"]["lines"].clone();
+    assert_eq!(
+        errors,
+        json!([{"level": "ERROR", "target": "worker",
+        "message": "2026-11-22T12:00:01+00:00 ERROR sovemu_worker: the core crashed", "session": "s2"}])
+    );
+    assert_eq!(h.ok(LOGS, json!({"s": "s1"})).await["logs"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        h.ok(LOGS, json!({"t": "CRASHED"})).await["logs"]["lines"].as_array().unwrap().len(),
+        1
+    );
+
+    // Following: only what came after the cursor.
+    let cursor = page["cursor"].as_f64().unwrap();
+    buffer.worker_line("s1", "INFO a third line");
+    let next = h.ok(LOGS, json!({"a": cursor})).await["logs"]["lines"].clone();
+    assert_eq!(next.as_array().unwrap().len(), 1);
+    assert_eq!(next[0]["message"], "INFO a third line");
+}
+
+#[tokio::test]
 async fn declared_users_are_reconciled_and_pruned() {
     let mut h = Harness::new("env-users", false).await;
     h.sign_up_admin().await;
@@ -2251,6 +2291,7 @@ const ADMIN_ONLY: &[&str] = &[
     "{ clientEventGroups { count } }",
     "{ activity { next } }",
     "{ playStatistics(range: WEEK) { from } }",
+    "{ logs { enabled } }",
     "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
@@ -2284,6 +2325,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/client_events.rs"),
         include_str!("graphql/activity.rs"),
         include_str!("graphql/statistics.rs"),
+        include_str!("graphql/logs.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())

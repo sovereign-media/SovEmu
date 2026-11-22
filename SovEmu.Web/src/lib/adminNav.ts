@@ -160,6 +160,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         icon: History,
       },
       {
+        href: "/admin/logs/",
+        label: "Logs",
+        title: "The server's recent log, its own and its game sessions', live",
+        icon: ScrollText,
+      },
+      {
         href: "/admin/jobs/",
         label: "Jobs",
         title: "Scans, syncs, lookups and upkeep: when each runs and how it last went",

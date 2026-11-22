@@ -197,6 +197,26 @@ test("the Statistics page shows a window of plays, a bar for each day", async ({
   await expect(page.getByText(/^Week of /).first()).toBeVisible();
 });
 
+test("the Logs page shows the server's own lines, filters them, and pauses", async ({ page }) => {
+  await page.goto("/admin/logs/");
+  // A line to find: a refused sign-in for a name nobody has, logged as a warning with the name
+  // as a field (the e2e server logs at warn and above, as RUST_LOG says).
+  await page.evaluate(() =>
+    fetch("/oauth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: "sovemu-native", username: "nobody-in-the-logs", password: "x" }),
+    }),
+  );
+  const lines = page.getByRole("list", { name: "Log lines" });
+  await page.getByLabel("Text").fill("nobody-in-the-logs");
+  await expect(lines.getByRole("listitem")).toHaveCount(1);
+  await expect(lines).toContainText("sign-in failed");
+  await expect(lines).toContainText("WARN");
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Follow" })).toBeVisible();
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });
