@@ -74,6 +74,37 @@ test("the Client errors page groups what the apps reported, and opens a group", 
   await expect(page.getByRole("radio", { name: "Day" })).toHaveAttribute("data-state", "on");
 });
 
+test("the Users page adds an account, changes its role and password, and removes it", async ({ page }) => {
+  await page.goto("/admin/users/");
+  await page.getByRole("button", { name: "Add a user" }).click();
+  await page.getByLabel("Username").fill("e2e-player");
+  await page.getByLabel(/^Password/).fill("password123");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  // The account's row, not the toast that says it was added.
+  const row = page.getByRole("listitem").filter({ has: page.getByText("e2e-player", { exact: true }) });
+  await expect(row).toContainText("Viewer");
+
+  await row.getByRole("button", { name: "Actions for e2e-player" }).click();
+  await page.getByRole("menuitem", { name: "Make an admin" }).click();
+  await expect(row).toContainText("Admin");
+
+  await row.getByRole("button", { name: "Actions for e2e-player" }).click();
+  await page.getByRole("menuitem", { name: "Set a password…" }).click();
+  await page.getByLabel(/^New password/).fill("another-password");
+  await page.getByRole("button", { name: "Set the password" }).click();
+  await expect(page.getByText("e2e-player's password is set").first()).toBeVisible();
+
+  await row.getByRole("button", { name: "Actions for e2e-player" }).click();
+  await page.getByRole("menuitem", { name: "Remove…" }).click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(row).toHaveCount(0);
+
+  // The signed-in admin cannot remove themselves.
+  const me = page.getByRole("listitem").filter({ hasText: "(you)" });
+  await me.getByRole("button", { name: /^Actions for / }).click();
+  await expect(page.getByRole("menuitem", { name: "Remove…" })).toHaveAttribute("data-disabled", "");
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

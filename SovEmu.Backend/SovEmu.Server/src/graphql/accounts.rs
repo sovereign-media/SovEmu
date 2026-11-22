@@ -14,13 +14,23 @@ pub(super) enum RoleKind {
 
 /// An account.
 #[derive(SimpleObject)]
-#[graphql(name = "User")]
+#[graphql(name = "User", complex)]
 pub(super) struct Account {
     pub(super) id: i64,
     pub(super) username: String,
     pub(super) role: RoleKind,
     /// Whether the role is `ADMIN`.
     pub(super) is_admin: bool,
+}
+
+#[async_graphql::ComplexObject]
+impl Account {
+    /// The environment declares it (`SOVEMU_ADMIN_USERNAME`, `SOVEMU_USERS__<n>__…`) and sets
+    /// it again at every start: its role and password are changed there, and it is not removed
+    /// here.
+    async fn declared(&self, ctx: &Context<'_>) -> bool {
+        crate::auth::is_declared(&state(ctx).config, &self.username)
+    }
 }
 
 impl From<User> for Account {
@@ -188,5 +198,46 @@ impl AccountsMutation {
             NewUser { username: input.username, password: input.password, role: input.role.into() };
         let user = state(ctx).identity.add_user(&me, &new).await.map_err(|e| gql(e.into()))?;
         Ok(user.into())
+    }
+
+    /// Admins: makes an account an admin or a viewer. Not the last admin, and not an account the
+    /// environment declares.
+    async fn set_user_role(
+        &self,
+        ctx: &Context<'_>,
+        user_id: i64,
+        role: RoleKind,
+    ) -> Result<Account> {
+        let me = admin(ctx).await?;
+        crate::auth::set_role(state(ctx), &me, user_id, role.into()).await.api().map(Into::into)
+    }
+
+    /// Admins: sets an account's password (at least 8 characters), which signs that user out
+    /// everywhere. Not an account the environment declares.
+    async fn set_user_password(
+        &self,
+        ctx: &Context<'_>,
+        user_id: i64,
+        password: String,
+    ) -> Result<bool> {
+        let me = admin(ctx).await?;
+        crate::auth::set_password(state(ctx), &me, user_id, &password).await.api()?;
+        Ok(true)
+    }
+
+    /// Admins: removes an account and signs it out everywhere; everything of theirs in the
+    /// database goes with it, and their saves stay on disk. Not their own, not the last admin,
+    /// and not an account the environment declares.
+    async fn remove_user(&self, ctx: &Context<'_>, user_id: i64) -> Result<bool> {
+        let me = admin(ctx).await?;
+        crate::auth::remove_user(state(ctx), &me, user_id).await.api()?;
+        Ok(true)
+    }
+
+    /// Admins: signs an account out of every browser and app.
+    async fn sign_out_everywhere(&self, ctx: &Context<'_>, user_id: i64) -> Result<bool> {
+        let me = admin(ctx).await?;
+        crate::auth::sign_out_everywhere(state(ctx), &me, user_id).await.api()?;
+        Ok(true)
     }
 }

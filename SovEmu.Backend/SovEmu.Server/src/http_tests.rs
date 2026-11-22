@@ -1051,6 +1051,98 @@ async fn the_admin_comes_from_the_environment() {
 }
 
 #[tokio::test]
+async fn admins_manage_accounts_but_keep_an_admin_and_leave_declared_ones_alone() {
+    const USERS: &str = "{ users { id username role declared } }";
+    const ROLE: &str =
+        "mutation($u: Int!, $r: Role!) { setUserRole(userId: $u, role: $r) { username role } }";
+    const PASSWORD: &str =
+        "mutation($u: Int!, $p: String!) { setUserPassword(userId: $u, password: $p) }";
+    const REMOVE: &str = "mutation($u: Int!) { removeUser(userId: $u) }";
+    let mut h = Harness::new("manage-users", false).await;
+    h.sign_up_admin().await;
+    let me = h.ok("{ viewer { user { id } } }", json!({})).await["viewer"]["user"]["id"]
+        .as_i64()
+        .unwrap();
+    let add = "mutation { addUser(input: {username: \"kid\", password: \"password123\"}) { id } }";
+    let kid = h.ok(add, json!({})).await["addUser"]["id"].as_i64().unwrap();
+
+    // The only admin can be neither demoted nor removed, and nobody removes themselves.
+    let (code, message) = h.err(ROLE, json!({"u": me, "r": "VIEWER"})).await;
+    assert_eq!(code, "CONFLICT");
+    assert!(message.contains("only admin"), "{message}");
+    assert_eq!(h.err(REMOVE, json!({"u": me})).await.0, "CONFLICT");
+    assert_eq!(h.err(REMOVE, json!({"u": 9999})).await.0, "NOT_FOUND");
+
+    // Roles change both ways; with two admins, one may become a viewer.
+    let promoted = h.ok(ROLE, json!({"u": kid, "r": "ADMIN"})).await["setUserRole"].clone();
+    assert_eq!(promoted, json!({"username": "kid", "role": "ADMIN"}));
+    h.ok(ROLE, json!({"u": kid, "r": "VIEWER"})).await;
+
+    // A new password signs the user out everywhere: their token stops working.
+    h.sign_out();
+    h.login("kid", "password123").await.unwrap();
+    let kids_token = h.token.clone();
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    assert_eq!(h.err(PASSWORD, json!({"u": kid, "p": "short"})).await.0, "BAD_REQUEST");
+    assert_eq!(
+        h.ok(PASSWORD, json!({"u": kid, "p": "a-new-password"})).await["setUserPassword"],
+        true
+    );
+    let admins_token = std::mem::replace(&mut h.token, kids_token);
+    assert_eq!(h.err("{ collections { id } }", json!({})).await.0, "UNAUTHENTICATED");
+    h.token = admins_token;
+    h.sign_out();
+    assert!(h.login("kid", "password123").await.is_err(), "the old password is gone");
+    h.login("kid", "a-new-password").await.unwrap();
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+
+    // An account the environment declares is locked here: it would be undone at the next start.
+    let mut config = (*h.state.config).clone();
+    config.users = vec![crate::structured::UserSpec {
+        username: "Kid".into(),
+        password: "a-new-password".into(),
+        role: crate::auth::Role::Viewer,
+    }];
+    h.state.config = std::sync::Arc::new(config);
+    let listed = h.ok(USERS, json!({})).await["users"].clone();
+    assert!(
+        listed
+            .as_array()
+            .unwrap()
+            .contains(&json!({"id": kid, "username": "kid", "role": "VIEWER", "declared": true}))
+    );
+    for (doc, vars) in [
+        (ROLE, json!({"u": kid, "r": "ADMIN"})),
+        (PASSWORD, json!({"u": kid, "p": "another-password"})),
+        (REMOVE, json!({"u": kid})),
+    ] {
+        let (code, message) = h.err(doc, vars).await;
+        assert_eq!(code, "CONFLICT", "{doc}");
+        assert!(message.contains("declared in the environment"), "{message}");
+    }
+    assert_eq!(
+        h.ok("mutation($u: Int!) { signOutEverywhere(userId: $u) }", json!({"u": kid})).await["signOutEverywhere"],
+        true,
+        "changes nothing the environment sets"
+    );
+
+    // Not declared any more: removed, with everything of theirs.
+    let mut config = (*h.state.config).clone();
+    config.users.clear();
+    h.state.config = std::sync::Arc::new(config);
+    assert_eq!(h.ok(REMOVE, json!({"u": kid})).await["removeUser"], true);
+    let names: Vec<String> = h.ok(USERS, json!({})).await["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["username"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["admin"]);
+}
+
+#[tokio::test]
 async fn declared_users_are_reconciled_and_pruned() {
     let mut h = Harness::new("env-users", false).await;
     h.sign_up_admin().await;
@@ -1988,6 +2080,10 @@ const ADMIN_ONLY: &[&str] = &[
     "{ emulatorSettings(system: \"nes\") { __typename } }",
     "{ controllerDefaults { __typename } }",
     "mutation { addUser(input: {username: \"mallory\", password: \"password123\"}) { id } }",
+    "mutation { setUserRole(userId: 1, role: ADMIN) { id } }",
+    "mutation { setUserPassword(userId: 1, password: \"password123\") }",
+    "mutation { removeUser(userId: 1) }",
+    "mutation { signOutEverywhere(userId: 1) }",
     "mutation { scanLibrary { found } }",
     "mutation { syncLibrary }",
     "mutation { fetchMetadata { __typename } }",

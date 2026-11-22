@@ -980,15 +980,13 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
 /// Brings the accounts in line with the environment: the admin and every declared user exist
 /// with their declared passwords, and with `SOVEMU_USERS_PRUNE` nobody else does.
 async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) -> Result<()> {
-    let mut declared = Vec::new();
     if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
         identity.ensure_user(user, password, auth::Role::Admin).await?;
-        declared.push(user.clone());
     }
     for user in &config.users {
         identity.ensure_user(&user.username, &user.password, user.role).await?;
-        declared.push(user.username.clone());
     }
+    let declared = auth::declared_usernames(config);
     if config.users_prune {
         if declared.is_empty() {
             anyhow::bail!(
