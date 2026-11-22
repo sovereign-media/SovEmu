@@ -162,6 +162,10 @@ pub(crate) struct Session {
     /// When the client's last stats were logged (they are logged at most every
     /// [`STATS_SPACING`], however often a client sends them).
     stats_at: Option<Instant>,
+    /// The core has drawn a picture: it is up, and can take a state.
+    drawn: bool,
+    /// A state asked for before that, loaded once it has (its slot and bytes).
+    pending_load: Option<(u32, Vec<u8>)>,
     /// Events for the front end, handed over by the loop after each turn.
     events: Vec<StreamEvent>,
     /// The pipeline last reported, and when it last went to the client (`None`: it must go
@@ -272,6 +276,8 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             stats_at: None,
+            drawn: false,
+            pending_load: None,
             events: Vec::new(),
             pipeline: None,
             pipeline_to_client_at: None,
@@ -363,9 +369,19 @@ impl Session {
                     .map_err(|e| format!("{e:#}"))
             }
             Request::LoadState { slot, .. } => {
-                self.persist.load_state(&mut self.core, *slot).map_err(|e| format!("{e:#}"))?;
-                self.rewind.clear();
-                self.video.request_keyframe();
+                let bytes = self.persist.read_state(*slot).map_err(|e| format!("{e:#}"))?;
+                if self.drawn {
+                    Persist::apply_state(&mut self.core, *slot, &bytes)
+                        .map_err(|e| format!("{e:#}"))?;
+                    self.rewind.clear();
+                    self.video.request_keyframe();
+                } else {
+                    // Continuing from a save: the client asks before the game has run at all.
+                    // Some cores cannot take a state until they are up (PCSX2 showed nothing
+                    // ever after one), so it waits for the first picture (`step`).
+                    tracing::info!(slot = *slot, "state held until the core has drawn a frame");
+                    self.pending_load = Some((*slot, bytes));
+                }
                 Ok(false)
             }
             Request::Offer { .. } => Err("offers are not control requests".into()),
@@ -828,8 +844,26 @@ impl Session {
             self.health.set_fps(av.fps);
         }
 
+        let drew = out.video_updated && out.video.width > 0;
+        if self.pending_load.is_some() {
+            // Nothing of the fresh boot is shown or heard: the player asked to continue.
+            if drew || self.frame >= PENDING_LOAD_FRAMES {
+                let (slot, bytes) = self.pending_load.take().expect("checked above");
+                self.drawn = true;
+                if let Err(e) = Persist::apply_state(&mut self.core, slot, &bytes) {
+                    tracing::warn!(slot, error = %format!("{e:#}"), "held state could not be loaded");
+                }
+                self.rewind.clear();
+                self.video.request_keyframe();
+            }
+            self.health.ticked(behind, now.elapsed());
+            self.health.core(self.core.take_timing());
+            return Ok(());
+        }
+
         let mut picture = None;
-        if out.video_updated && out.video.width > 0 {
+        if drew {
+            self.drawn = true;
             out.video.write_rgba8(&mut self.rgba);
             picture = Some((out.video.width, out.video.height));
         }
@@ -949,6 +983,10 @@ impl Session {
         std::mem::take(&mut self.events)
     }
 }
+
+/// A held state is loaded after this many frames even if the core has drawn nothing (ten seconds
+/// at 60 fps): a core with no picture yet must not hold a save back for ever.
+const PENDING_LOAD_FRAMES: u64 = 600;
 
 /// How often the pipeline goes to the client even when it has not changed: the input channel
 /// does not retransmit, so a lost one is replaced soon.
