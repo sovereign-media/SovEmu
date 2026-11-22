@@ -1258,6 +1258,39 @@ async fn admins_see_each_sign_in_and_end_one() {
 }
 
 #[tokio::test]
+async fn a_game_played_counts_in_the_play_statistics() {
+    const STATS: &str = "{ playStatistics(range: WEEK) { totals { sessions players games }
+        days { sessions } games { gameId title system sessions players }
+        players { username sessions games } systems { system sessions } } }";
+    let mut h = Harness::new("play-stats", true).await;
+    h.sign_up_admin().await;
+    let empty = h.ok(STATS, json!({})).await["playStatistics"].clone();
+    assert_eq!(empty["totals"], json!({"sessions": 0, "players": 0, "games": 0}));
+    let game = h.games("nes").await[0]["id"].as_i64().unwrap();
+    let sid =
+        h.ok(START, json!({"game": game})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    h.ok("mutation($s: ID!) { stopSession(id: $s) }", json!({"s": sid})).await;
+
+    // Written as the worker is reaped, in the background: wait for it.
+    let mut stats = Value::Null;
+    for _ in 0..200 {
+        stats = h.ok(STATS, json!({})).await["playStatistics"].clone();
+        if stats["totals"]["sessions"] == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(stats["totals"], json!({"sessions": 1, "players": 1, "games": 1}), "{stats}");
+    assert_eq!(stats["days"], json!([{"sessions": 1}]));
+    assert_eq!(
+        stats["games"],
+        json!([{"gameId": game, "title": "Test Game", "system": "nes", "sessions": 1, "players": 1}])
+    );
+    assert_eq!(stats["players"], json!([{"username": "admin", "sessions": 1, "games": 1}]));
+    assert_eq!(stats["systems"], json!([{"system": "nes", "sessions": 1}]));
+}
+
+#[tokio::test]
 async fn declared_users_are_reconciled_and_pruned() {
     let mut h = Harness::new("env-users", false).await;
     h.sign_up_admin().await;
@@ -2217,6 +2250,7 @@ const ADMIN_ONLY: &[&str] = &[
     "mutation { testConnection(sdp: \"v=0\") }",
     "{ clientEventGroups { count } }",
     "{ activity { next } }",
+    "{ playStatistics(range: WEEK) { from } }",
     "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
@@ -2249,6 +2283,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/streaming.rs"),
         include_str!("graphql/client_events.rs"),
         include_str!("graphql/activity.rs"),
+        include_str!("graphql/statistics.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())

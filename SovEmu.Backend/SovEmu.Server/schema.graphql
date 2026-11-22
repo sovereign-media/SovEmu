@@ -933,6 +933,16 @@ type ExportResult {
 	failures: Float!
 }
 
+"""
+A game, and how many accounts keep it as a favourite.
+"""
+type FavouriteGame {
+	gameId: Int!
+	title: String!
+	system: String!
+	users: Int!
+}
+
 type Game {
 	id: Int!
 	"""
@@ -1036,6 +1046,21 @@ type Game {
 	This user's cheats for it.
 	"""
 	cheats: [Cheat!]!
+}
+
+"""
+A game's plays in the window.
+"""
+type GamePlays {
+	"""
+	Null for a game since gone from the library.
+	"""
+	gameId: Int
+	title: String!
+	system: String!
+	sessions: Int!
+	seconds: Float!
+	players: Int!
 }
 
 type GameSession {
@@ -1760,6 +1785,77 @@ type Patch {
 	isDefault: Boolean!
 }
 
+"""
+One UTC day's plays.
+"""
+type PlayDay {
+	"""
+	The day's start (UTC midnight), Unix seconds.
+	"""
+	day: Float!
+	sessions: Int!
+	seconds: Float!
+}
+
+"""
+What was played over a window.
+"""
+type PlayStatistics {
+	"""
+	The window, Unix seconds: from its start up to now.
+	"""
+	from: Float!
+	to: Float!
+	totals: PlayTotals!
+	"""
+	Days with plays, oldest first (days without are left out).
+	"""
+	days: [PlayDay!]!
+	"""
+	The most played games first, by time played (the top 10).
+	"""
+	games: [GamePlays!]!
+	"""
+	Every account that played, the most time first.
+	"""
+	players: [PlayerPlays!]!
+	"""
+	Every system played, the most time first.
+	"""
+	systems: [SystemPlays!]!
+	"""
+	The most favourited games, of all time (the top 10).
+	"""
+	favourites: [FavouriteGame!]!
+}
+
+"""
+Plays and time played, totalled.
+"""
+type PlayTotals {
+	sessions: Int!
+	"""
+	Seconds played (a Float: a year of a busy server can pass 2^31).
+	"""
+	seconds: Float!
+	players: Int!
+	games: Int!
+}
+
+"""
+An account's plays in the window.
+"""
+type PlayerPlays {
+	userId: Int!
+	"""
+	Null for an account since deleted.
+	"""
+	username: String
+	sessions: Int!
+	seconds: Float!
+	games: Int!
+}
+
 type Query {
 	"""
 	Where and how to sign in here. Works signed out: an app's first question, which also tells
@@ -1951,6 +2047,11 @@ type Query {
 	for the one after it.
 	"""
 	activity(userId: Int, category: ActivityCategory, after: String, limit: Int! = 100): ActivityPage!
+	"""
+	Admins: what was played over the last week, month or year: totals, plays per day, the
+	most played games, each account's and each system's time, and the most favourited games.
+	"""
+	playStatistics(range: StatsRange!): PlayStatistics!
 }
 
 enum Rendering {
@@ -2294,6 +2395,15 @@ type StartStatus {
 	error: String
 }
 
+"""
+The window the figures cover, ending now.
+"""
+enum StatsRange {
+	WEEK
+	MONTH
+	YEAR
+}
+
 type StorageArea {
 	"""
 	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
@@ -2523,6 +2633,16 @@ type SystemDecoration {
 	or a set that isn't there.
 	"""
 	preview: Decoration
+}
+
+"""
+A system's plays in the window.
+"""
+type SystemPlays {
+	system: String!
+	sessions: Int!
+	seconds: Float!
+	players: Int!
 }
 
 """

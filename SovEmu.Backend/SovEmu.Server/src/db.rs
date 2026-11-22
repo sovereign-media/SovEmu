@@ -25,6 +25,21 @@ pub(crate) async fn open(path: &Path) -> anyhow::Result<SqlitePool> {
 /// another connection committed since this one first read, SQLite cannot upgrade the stale
 /// snapshot and fails at once (`SQLITE_BUSY_SNAPSHOT`, "database is locked", code 517),
 /// whatever the timeout: a rescan while a lookup writes, say.
+/// Runs a write without waiting for it, for an observer: it is told in code that cannot wait,
+/// and must not slow or fail what it observes. A write that fails is logged as `what`. Outside a
+/// runtime (a synchronous test) there is nothing to write with, so nothing is written.
+pub(crate) fn write_in_background(
+    what: &'static str,
+    write: impl std::future::Future<Output = sqlx::Result<()>> + Send + 'static,
+) {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+    runtime.spawn(async move {
+        if let Err(e) = write.await {
+            tracing::warn!(error = %e, what, "a background write failed");
+        }
+    });
+}
+
 pub(crate) async fn write_tx(pool: &SqlitePool) -> sqlx::Result<Transaction<'static, Sqlite>> {
     pool.begin_with("BEGIN IMMEDIATE").await
 }

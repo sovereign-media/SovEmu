@@ -43,6 +43,7 @@ import {
   NetworkQuery,
   type PadLayoutFields,
   PatchesQuery as PatchesDocument,
+  PlayStatisticsQuery,
   RemoveUserMutation,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
@@ -96,6 +97,10 @@ type JobsQueryResult = ResultOf<typeof JobsQuery>;
 /** A game being played, as the admin's sessions page shows it. */
 export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions"][number];
 /** A game that failed to start, or crashed, as the admin's sessions page shows it. */
+/** The window the play statistics cover. */
+export type StatsRange = Enum<"StatsRange">;
+/** What was played over a window. */
+export type PlayStatistics = ResultOf<typeof PlayStatisticsQuery>["playStatistics"];
 /** What kind of thing happened, for the Activity page's filter. */
 export type ActivityCategory = Enum<"ActivityCategory">;
 /** One entry of the activity log. */
@@ -257,6 +262,8 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: what was played over the last week, month or year. */
+  playStatistics: async (range: StatsRange) => (await request(PlayStatisticsQuery, { range })).playStatistics,
   /** Admin: a page of the activity log, newest first; `after` is the last page's `next`. */
   activity: async (filter: ActivityFilter, after: string | null, limit = 100) =>
     (await request(ActivityQuery, { ...filter, after, limit })).activity,
