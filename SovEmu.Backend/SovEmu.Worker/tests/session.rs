@@ -296,6 +296,8 @@ fn streams_video_and_audio_and_acknowledges_input() {
     // several fast-forwarding, so this ratio does not depend on the machine's speed (a rate in
     // frames per second does: a loaded CI runner managed under 1.5 times the normal rate).
     let ff_window = Duration::from_millis(1000);
+    // How long fast-forward gets to show in the latest acks before the test gives up on it.
+    let ff_deadline = Duration::from_secs(6);
     // When fast-forward began, and how many acks had arrived by then.
     let mut ff_start: Option<(Instant, usize)> = None;
     let mut normal_ratio = 0.0f64;
@@ -305,21 +307,27 @@ fn streams_video_and_audio_and_acknowledges_input() {
     // The current 300 ms window while paused: when it began, and the frames seen by then.
     let mut pause_window: Option<(Instant, usize)> = None;
     let mut paused_frames = usize::MAX;
-    while started.elapsed() < Duration::from_secs(15) {
+    while started.elapsed() < Duration::from_secs(25) {
         if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
             normal_ratio = frames_per_shown(&acks, &acks_video, 0, acks.len());
             ff_start = Some((Instant::now(), acks.len()));
         }
         // Enough acks to measure past those first ones, however slowly they arrive (a 100 ms
-        // heartbeat: a loaded CI runner had too few after a second, and measured nothing).
+        // heartbeat: a loaded CI runner had too few after a second, and measured nothing). The
+        // ratio is taken over the latest acks only, and again until fast-forward shows in it or
+        // its deadline passes: on a loaded runner, frames emulated before the hotkey took hold
+        // can still be arriving a second later, and a ratio over every ack since then stayed
+        // near 1 (0.9 and 0.0 against 1.0 in CI) though fast-forward worked.
         if let Some((at, from)) = ff_start
             && pause_start.is_none()
             && at.elapsed() >= ff_window
             && acks.len() >= from + 4 + FF_ACKS
         {
-            // The first acks after the hotkey can still be from before it took hold.
-            ff_ratio = frames_per_shown(&acks, &acks_video, from + 4, acks.len());
-            pause_start = Some((Instant::now(), video_frames));
+            let recent = acks.len().saturating_sub(FF_ACKS + 1).max(from + 4);
+            ff_ratio = frames_per_shown(&acks, &acks_video, recent, acks.len());
+            if ff_ratio >= normal_ratio * 2.0 || at.elapsed() >= ff_deadline {
+                pause_start = Some((Instant::now(), video_frames));
+            }
         }
         // Paused (the client's menu): frames stop. Frames sent before the pause can still be
         // arriving for a while when this test falls behind (a loaded CI machine), so it waits for
