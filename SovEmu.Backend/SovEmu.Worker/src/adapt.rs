@@ -29,8 +29,15 @@ const CUT: f64 = 0.7;
 const GOOD_SAMPLES: u32 = 5;
 /// The step a limit is raised by.
 const RAISE: f64 = 1.25;
-/// A client is behind when it decodes less than this share of the frames sent to it.
+/// A client is behind when it decodes less than this share of the frames sent to it, while its
+/// decoder is busy (see [`BUSY_SHARE`]).
 const DECODED_SHARE: f64 = 0.85;
+/// A decoder is busy when a frame takes it at least this share of a frame's time. Frames lost or
+/// late on the way (a connection that faltered, a burst from a server that fell behind) are not
+/// decoded either, but its decode time stays short: those are the network estimate's to answer,
+/// and cutting for them too stacks a second cut on the first, for a minute after the network
+/// has recovered. (A TV decoding 640×448 in 3-9 ms was cut to the floor that way.)
+const BUSY_SHARE: f64 = 0.75;
 /// A client is behind when it drops more than this share of the frames sent to it.
 const DROPPED_SHARE: f64 = 0.05;
 /// A client's limit lapses when it has sent no stats for this long (it stopped sending them,
@@ -267,8 +274,12 @@ impl Adaptation {
             return None;
         }
         let sent = sent as f64;
+        let frame_ms = elapsed.as_secs_f64() * 1000.0 / sent;
+        // A client that does not report its decode time is taken at its word.
+        let busy = sample.decode_ms.is_none_or(|ms| ms >= frame_ms * BUSY_SHARE);
         if let Some(fps) = sample.fps
             && fps * elapsed.as_secs_f64() < sent * DECODED_SHARE
+            && busy
         {
             return Some(Some(Struggle::Behind));
         }
@@ -277,7 +288,6 @@ impl Adaptation {
         {
             return Some(Some(Struggle::Dropping));
         }
-        let frame_ms = elapsed.as_secs_f64() * 1000.0 / sent;
         if let (Some(ms), Some(best)) = (sample.decode_ms, self.best_decode_ms)
             && ms > frame_ms
             && ms > best * 2.0
@@ -414,10 +424,11 @@ mod tests {
         let mut a = adaptation();
         a.estimate(100_000_000);
         let mut c = Client::new(&mut a);
-        // One bad second is noise; two are a decoder that cannot keep up.
-        assert_eq!(c.second(&mut a, 12_000, Some(40.0), Some(4.0), Some(0)), None);
+        // One bad second is noise; two are a decoder that cannot keep up (14 ms of a 16.7 ms
+        // frame: busy).
+        assert_eq!(c.second(&mut a, 12_000, Some(40.0), Some(14.0), Some(0)), None);
         assert_eq!(
-            c.second(&mut a, 12_000, Some(40.0), Some(4.0), Some(0)),
+            c.second(&mut a, 12_000, Some(40.0), Some(14.0), Some(0)),
             Some(LimitChange::Cut { to_kbps: 8400, why: Struggle::Behind })
         );
         assert_eq!(a.decide(12_000, false, c.now), Some(8400), "under the network's 12000");
@@ -433,6 +444,25 @@ mod tests {
         assert_eq!(c.well(&mut a, 10_500), Some(LimitChange::Lifted));
         assert_eq!(a.client_limit_kbps(), None);
         assert_eq!(a.decide(10_500, false, c.now), Some(12_000));
+    }
+
+    #[test]
+    fn frames_lost_on_the_way_are_not_the_decoders_doing() {
+        // The TV's case: 25 of 60 frames decoded, each in 4-7 ms. The frames never arrived (the
+        // network estimate had just fallen): no client limit on top of the network's.
+        let mut a = adaptation();
+        a.estimate(100_000_000);
+        let mut c = Client::new(&mut a);
+        for decode_ms in [4.0, 6.8, 5.5, 7.0] {
+            assert_eq!(c.second(&mut a, 430, Some(25.0), Some(decode_ms), Some(0)), None);
+        }
+        assert_eq!(a.client_limit_kbps(), None);
+        // A client that reports no decode time is believed when it says it is behind.
+        assert_eq!(c.second(&mut a, 12_000, Some(30.0), None, Some(0)), None);
+        assert!(matches!(
+            c.second(&mut a, 12_000, Some(30.0), None, Some(0)),
+            Some(LimitChange::Cut { why: Struggle::Behind, .. })
+        ));
     }
 
     #[test]
