@@ -31,7 +31,7 @@ pub(crate) async fn refresh(db: &SqlitePool) -> sqlx::Result<usize> {
         })
         .collect();
     let labels = labels(&twins);
-    let mut tx = db.begin().await?;
+    let mut tx = crate::db::write_tx(db).await?;
     sqlx::query("UPDATE games SET release = NULL WHERE release IS NOT NULL")
         .execute(&mut *tx)
         .await?;

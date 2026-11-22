@@ -474,7 +474,7 @@ pub(crate) async fn put_settings(
             _ => {}
         }
     }
-    let mut tx = state.db.begin().await?;
+    let mut tx = crate::db::write_tx(&state.db).await?;
     for (key, value) in &changes {
         match value {
             Some(v) => {

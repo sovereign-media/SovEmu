@@ -28,7 +28,7 @@ pub(crate) struct SystemSummary {
     pub(crate) rendering: Option<sovemu_sessions::gpu::Mode>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub(crate) struct Game {
     pub(crate) id: i64,
     pub(crate) system: String,
@@ -116,16 +116,13 @@ fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
 }
 
 pub(crate) async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
-    let counts: Vec<(String, i64)> =
-        sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system")
-            .fetch_all(&state.db)
-            .await?;
+    let counts = state.game_counts.get();
     let summaries = systems::SYSTEMS
         .iter()
         .filter(|s| enabled(state, s.id))
         .map(|s| SystemSummary {
             system: *s,
-            game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
+            game_count: counts.get(s.id).copied().unwrap_or(0),
             playable: find_core(state, s).is_some()
                 && (!s.needs_gpu || state.gpu.mode != sovemu_sessions::gpu::Mode::Off),
             rendering: s.needs_gpu.then_some(state.gpu.mode),
@@ -687,12 +684,23 @@ pub(crate) async fn game_media(
     if !sovemu_library::scan::MEDIA_KINDS.contains(&kind.as_str()) {
         return Err(ApiError::not_found("media"));
     }
-    let game = fetch_game(&state, user_id, id).await?;
-    let file = match media_relative(&state, &game, &kind) {
-        Some(relative) => {
-            let original = state.config.roms_dir.join(&relative);
-            state.cache.local_or_fetch("media", &relative, &original)
-        }
+    // The row alone: an image needs no favourites or patch (one query per thumbnail, not three).
+    let game = fetch_row(&state, user_id, id).await?;
+    // Probing the library's files (a network share, perhaps) blocks: off the async threads.
+    let found = {
+        let state = state.clone();
+        let (game, kind) = (game.clone(), kind.clone());
+        tokio::task::spawn_blocking(move || {
+            media_relative(&state, &game, &kind).map(|relative| {
+                let original = state.config.roms_dir.join(&relative);
+                state.cache.local_or_fetch("media", &relative, &original)
+            })
+        })
+        .await
+        .map_err(ApiError::internal)?
+    };
+    let file = match found {
+        Some(file) => file,
         // No local artwork: box art a metadata service supplied stands in for the thumb.
         None => match (kind.as_str(), &game.box_art) {
             ("thumb", Some(name)) => state.metadata.media_dir.join(name),
