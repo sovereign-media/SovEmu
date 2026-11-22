@@ -28,6 +28,7 @@ mod patches;
 mod paths;
 #[cfg(test)]
 mod query_plans;
+mod redact;
 mod releases;
 mod resources;
 mod search;
@@ -581,6 +582,7 @@ impl Config {
                 "advertise_ip={}",
                 self.advertise_ip.map_or("(detected)".into(), |ip| ip.to_string())
             ),
+            format!("ice_servers={}", redact::ice_servers(&self.ice_servers)),
             format!(
                 "video_kbps={} ({}-{}) audio_kbps={}",
                 self.video_kbps, self.video_min_kbps, self.video_max_kbps, self.audio_kbps
@@ -630,9 +632,13 @@ impl Config {
             ),
             format!("client_events={}", self.client_events),
             format!(
-                "log_format={} otel_endpoint={}",
+                "log_format={} otel_endpoint={} otel_headers={}",
                 self.log_format.as_arg(),
-                opt(&self.otel_endpoint)
+                self.otel_endpoint.as_deref().map_or("(unset)".into(), redact::url),
+                // Read by the OpenTelemetry SDK, not by `Config`: its values are usually tokens.
+                std::env::var("OTEL_EXPORTER_OTLP_HEADERS").map_or("(unset)".into(), |h| {
+                    format!("({})", redact::header_names(&h).join(","))
+                })
             ),
             format!(
                 "session_days={} login_max_failures={} login_max_failures_per_ip={} \
@@ -1209,7 +1215,20 @@ mod tests {
             "http://collector:4318",
         ]);
         assert_eq!(config.log_format, telemetry::LogFormat::Json);
-        assert!(config.summary().contains("log_format=json otel_endpoint=http://collector:4318"));
+        assert!(config.summary().contains("log_format=json otel_endpoint=http://collector:4318/"));
+        let config = Config::parse_from([
+            "sovemu-server",
+            "--otel-endpoint",
+            "https://user:t0k3n@collector:4318/otlp?api-key=k3y",
+            "--ice-servers",
+            r#"[{"urls":"turn:turn.example:3478","username":"u","credential":"pa55"}]"#,
+        ]);
+        let summary = config.summary();
+        assert!(summary.contains("otel_endpoint=https://***@collector:4318/otlp?***"), "{summary}");
+        assert!(summary.contains("turn:turn.example:3478"), "{summary}");
+        for secret in ["t0k3n", "k3y", "pa55"] {
+            assert!(!summary.contains(secret), "{secret} in {summary}");
+        }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
     }
 

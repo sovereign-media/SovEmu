@@ -26,6 +26,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br"] }
 tracing = "0.1"
+url = "2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "chrono"] }
 tracing-opentelemetry = "0.34"
 opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
@@ -37,7 +38,6 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls", 
 
 [dev-dependencies]
 base64 = "0.22"
-url = "2"
 axum = "0.8"
 http-body-util = "0.1"
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
