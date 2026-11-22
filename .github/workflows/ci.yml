@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  # By hand (Actions → CI → Run workflow): also checks the backend on macOS.
+  # By hand (Actions → CI → Run workflow): runs every job, whatever changed.
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ env:
 # it is unset. The self-hosted image is the stock `ghcr.io/actions/actions-runner` (Ubuntu 24.04,
 # Docker through a dind sidecar, no compilers or SDKs), so each job that builds or caches starts
 # with sovereign-media/actions/setup-runner: it installs only what is missing (zstd among it, so the
-# caches saved here and on GitHub's runners are the same ones), and does nothing on macOS.
+# caches saved here and on GitHub's runners are the same ones).
 
 jobs:
   # Which parts of the repository this push or pull request touched; each job below runs only
@@ -74,22 +74,17 @@ jobs:
   backend:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
-    name: Backend (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        # Linux is the deployment target. macOS is where development happens, and every push is
-        # formatted, linted and tested there first (.claude/rules/rust.md); its runners cost 10x
-        # Linux's on a private repository, so CI checks it only when run by hand.
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
-    # The matrix keeps GitHub's labels so the check names do not change; only Linux moves.
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && (vars.MEDIUM_RUNNER || vars.LARGE_RUNNER) || matrix.os }}
+    # Formatting and clippy only. The tests run once, in the container job, against the libraries
+    # the image ships (Debian's FFmpeg and libvpx) and with Mesa for the GPU tests; running them
+    # here too, against the runner's Ubuntu, covered less and cost a second compile. Linux only:
+    # the image is the one deliverable.
+    name: Backend (lint)
+    runs-on: ${{ vars.MEDIUM_RUNNER || vars.LARGE_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
 
       # SovEmu.Media links the system libvpx, libopus and libavcodec through pkg-config. The C
       # toolchain and libclang (bindgen) are on GitHub's runners but not on the self-hosted image.
-      # On macOS this does nothing; Homebrew installs the codecs below.
       - name: Set up the runner
         uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
         with:
@@ -104,18 +99,11 @@ jobs:
         with:
           workspaces: SovEmu.Backend
 
-      - name: Codec libraries (macOS)
-        if: runner.os == 'macOS'
-        run: brew install libvpx opus ffmpeg pkgconf
-
       - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --workspace
 
   web:
     needs: changes

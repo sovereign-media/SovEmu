@@ -6,7 +6,7 @@
 #   SovEmu.Web/      npm run schema:check, npm run lint, npm test, npm run build
 #                    (also when the server's schema.graphql changes)
 #
-# Anything else (docs, CI, charts) runs nothing. The checks run on the commit being pushed: in
+# Anything else (docs, CI) runs nothing. The checks run on the commit being pushed: in
 # this checkout when that is HEAD with nothing uncommitted under the folder checked, else in a
 # worktree of its own, kept in .git/sovemu-pre-push with its own cargo target (one fixed place:
 # test binaries remember where their sources are, so a worktree that moved or shared this

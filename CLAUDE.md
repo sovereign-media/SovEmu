@@ -254,7 +254,8 @@ with them rather than by hand. First time: `npx playwright install chromium`.
   `web.md` for `SovEmu.Web`.
 - The pre-push hook (`.githooks/pre-push`; once per clone, `git config core.hooksPath .githooks`)
   runs the backend's fmt, clippy and tests, and the web client's schema check, lint, tests and build,
-  for whatever a push changes, and stops the push on a failure. CI's macOS backend job runs only
-  by hand because of it.
+  for whatever a push changes, and stops the push on a failure. CI lints the backend
+  (`Backend (lint)`: fmt and clippy) and runs its tests once, in the container job's `test`
+  stage; nothing in CI runs on macOS.
 - Trunk-based on `main`: branch from a freshly fetched `origin/main` as `feat/`, `fix/`,
   `chore/` or `docs/`, and PR back to `main`.
