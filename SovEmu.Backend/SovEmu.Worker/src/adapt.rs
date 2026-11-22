@@ -2,7 +2,11 @@
 //! two things, staying within the configured floor and ceiling.
 //!
 //! - **The connection**: the send-bandwidth estimate (transport feedback from the client's
-//!   WebRTC), which rises while there is headroom and falls on congestion.
+//!   WebRTC), which rises while there is headroom and falls on congestion. Taken as the median
+//!   of the last [`ESTIMATE_WINDOW`]: on a home network the estimate jumps (0.9 to 17.8 Mbit/s
+//!   within seconds, measured to a TV while a PS2 game ran slow and its frames went out in
+//!   bursts), and following each jump moved the quality up and down every few seconds. A dip or
+//!   a spike alone now moves nothing; a drop that lasts is followed within half the window.
 //! - **The client**: the stats it sends once a second ([`ClientStats`]). The estimate only sees
 //!   the network; a client whose decoder falls behind at a rate the network carries happily
 //!   shows it here, as frames it did not decode, frames it dropped, or a decode time that has
@@ -15,7 +19,13 @@
 //!
 //! [`ClientStats`]: sovemu_protocol::ClientStats
 
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+
+/// The estimates the connection is judged on: those of this long past, by their median.
+const ESTIMATE_WINDOW: Duration = Duration::from_secs(2);
+/// At most this many estimates are kept (str0m reports several a second).
+const ESTIMATES_KEPT: usize = 64;
 
 /// The share of the estimate used for video and audio: headroom for retransmits and noise.
 const ESTIMATE_SHARE: f64 = 0.85;
@@ -136,8 +146,10 @@ pub(crate) enum LimitChange {
 pub(crate) struct Adaptation {
     limits: Limits,
     audio_kbps: u32,
-    /// What the last estimate leaves for video; none before the first one.
+    /// What the estimate leaves for video; none before the first one.
     network_kbps: Option<u32>,
+    /// The recent estimates (when, bit/s), for their median.
+    estimates: VecDeque<(Instant, u64)>,
     /// The bitrate the client last struggled above; none while it has not.
     client_kbps: Option<u32>,
     bad: u32,
@@ -157,6 +169,7 @@ impl Adaptation {
             limits,
             audio_kbps,
             network_kbps: None,
+            estimates: VecDeque::new(),
             client_kbps: None,
             bad: 0,
             good: 0,
@@ -211,9 +224,20 @@ impl Adaptation {
     }
 
     /// Takes a send-bandwidth estimate.
-    pub(crate) fn estimate(&mut self, estimate_bps: u64) {
-        let usable =
-            (estimate_bps as f64 * ESTIMATE_SHARE / 1000.0) as i64 - i64::from(self.audio_kbps);
+    pub(crate) fn estimate(&mut self, estimate_bps: u64, now: Instant) {
+        self.estimates.push_back((now, estimate_bps));
+        while self.estimates.len() > ESTIMATES_KEPT
+            || self
+                .estimates
+                .front()
+                .is_some_and(|(at, _)| now.duration_since(*at) > ESTIMATE_WINDOW)
+        {
+            self.estimates.pop_front();
+        }
+        let mut recent: Vec<u64> = self.estimates.iter().map(|(_, bps)| *bps).collect();
+        recent.sort_unstable();
+        let median = recent[recent.len() / 2];
+        let usable = (median as f64 * ESTIMATE_SHARE / 1000.0) as i64 - i64::from(self.audio_kbps);
         let Limits { min_kbps, max_kbps, .. } = self.limits;
         self.network_kbps = Some(usable.clamp(i64::from(min_kbps), i64::from(max_kbps)) as u32);
     }
@@ -337,6 +361,49 @@ mod tests {
         Adaptation::new(LIMITS, 128)
     }
 
+    /// An estimate on its own: each well after the last, beyond the window, so it alone counts.
+    fn alone(a: &mut Adaptation, bps: u64) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static BASE: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        a.estimate(bps, *BASE + ESTIMATE_WINDOW * 5 * (n as u32 + 1));
+    }
+
+    #[test]
+    fn a_lone_dip_or_spike_moves_nothing_a_lasting_drop_does() {
+        // The TV's session: 4.5 Mbit/s, then one reading of 0.9 and one of 17.8.
+        let mut a = adaptation();
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        for (at, bps) in [(0, 4_500_000), (200, 4_400_000), (400, 900_000), (600, 4_600_000)] {
+            a.estimate(bps, ms(at));
+        }
+        assert_eq!(
+            a.decide(5000, false, ms(600)),
+            Some(3697),
+            "the dip ignored: 85% of 4.5 Mbit/s, less the audio"
+        );
+        a.estimate(17_800_000, ms(800));
+        assert_eq!(a.decide(3697, false, ms(800)), None, "the spike ignored");
+        // Congestion that lasts: followed once it is most of the window (about a second).
+        for at in [1000, 1200, 1400] {
+            a.estimate(1_000_000, ms(at));
+        }
+        assert_eq!(
+            a.decide(3697, false, ms(1400)),
+            None,
+            "not yet: still the median of mostly good"
+        );
+        for at in [1600, 1800] {
+            a.estimate(1_000_000, ms(at));
+        }
+        assert_eq!(a.decide(3697, false, ms(1800)), Some(722), "a drop that lasts is followed");
+        // Old estimates leave the window.
+        a.estimate(6_000_000, ms(5000));
+        assert_eq!(a.decide(722, false, ms(5000)), Some(4972), "only the last 2 s count");
+    }
+
     /// A second of 60 frames sent, and what the client says of it.
     struct Client {
         now: Instant,
@@ -383,20 +450,20 @@ mod tests {
         let t = Instant::now();
         assert_eq!(a.decide(5000, false, t), None, "nothing estimated: stay at the start");
         // 85% of 10 Mbit/s, less the audio: there is headroom, so the rate rises.
-        a.estimate(10_000_000);
+        alone(&mut a, 10_000_000);
         assert_eq!(a.decide(5000, false, t), Some(8372));
-        a.estimate(100_000_000);
+        alone(&mut a, 100_000_000);
         assert_eq!(a.decide(8372, false, t), Some(12_000), "never above the ceiling");
-        a.estimate(2_000_000);
+        alone(&mut a, 2_000_000);
         assert_eq!(a.decide(12_000, false, t), Some(1572));
-        a.estimate(100_000);
+        alone(&mut a, 100_000);
         assert_eq!(a.decide(1572, false, t), Some(300), "never below the floor");
     }
 
     #[test]
     fn small_changes_are_ignored() {
         let mut a = adaptation();
-        a.estimate(6_500_000); // 5397
+        alone(&mut a, 6_500_000); // 5397
         assert_eq!(a.decide(5000, false, Instant::now()), None);
     }
 
@@ -404,25 +471,25 @@ mod tests {
     fn an_encoder_that_reopens_is_raised_rarely_and_cut_at_once() {
         let mut a = adaptation();
         let t = Instant::now();
-        a.estimate(7_000_000); // 5822: a sixth more, not worth a reopen
+        alone(&mut a, 7_000_000); // 5822: a sixth more, not worth a reopen
         assert_eq!(a.decide(5000, true, t), None);
         assert_eq!(a.decide(5000, false, t), Some(5822), "worth it where a change is free");
 
         let mut a = adaptation();
-        a.estimate(4_000_000); // 3272
+        alone(&mut a, 4_000_000); // 3272
         assert_eq!(a.decide(5000, true, t), Some(3272), "a cut is not held back");
-        a.estimate(10_000_000); // 8372
+        alone(&mut a, 10_000_000); // 8372
         assert_eq!(a.decide(3272, true, t + Duration::from_secs(5)), None, "too soon to raise");
-        a.estimate(3_000_000); // 2422
+        alone(&mut a, 3_000_000); // 2422
         assert_eq!(a.decide(3272, true, t + Duration::from_secs(6)), Some(2422));
-        a.estimate(10_000_000);
+        alone(&mut a, 10_000_000);
         assert_eq!(a.decide(2422, true, t + Duration::from_secs(16)), Some(8372));
     }
 
     #[test]
     fn a_client_that_falls_behind_is_given_less_then_more_again() {
         let mut a = adaptation();
-        a.estimate(100_000_000);
+        alone(&mut a, 100_000_000);
         let mut c = Client::new(&mut a);
         // One bad second is noise; two are a decoder that cannot keep up (14 ms of a 16.7 ms
         // frame: busy).
@@ -451,7 +518,7 @@ mod tests {
         // The TV's case: 25 of 60 frames decoded, each in 4-7 ms. The frames never arrived (the
         // network estimate had just fallen): no client limit on top of the network's.
         let mut a = adaptation();
-        a.estimate(100_000_000);
+        alone(&mut a, 100_000_000);
         let mut c = Client::new(&mut a);
         for decode_ms in [4.0, 6.8, 5.5, 7.0] {
             assert_eq!(c.second(&mut a, 430, Some(25.0), Some(decode_ms), Some(0)), None);
@@ -513,7 +580,7 @@ mod tests {
     #[test]
     fn a_limit_lapses_when_the_stats_stop() {
         let mut a = adaptation();
-        a.estimate(100_000_000);
+        alone(&mut a, 100_000_000);
         let mut c = Client::new(&mut a);
         c.second(&mut a, 12_000, Some(30.0), None, None);
         c.second(&mut a, 12_000, Some(30.0), None, None);
@@ -540,7 +607,7 @@ mod tests {
     #[test]
     fn a_fall_for_the_client_says_so() {
         let mut a = adaptation();
-        a.estimate(100_000_000);
+        alone(&mut a, 100_000_000);
         let mut c = Client::new(&mut a);
         a.tell(12_000, c.now);
         c.second(&mut a, 12_000, Some(30.0), None, None);
@@ -552,7 +619,7 @@ mod tests {
     #[test]
     fn a_new_client_starts_afresh() {
         let mut a = adaptation();
-        a.estimate(2_000_000);
+        alone(&mut a, 2_000_000);
         a.reset();
         assert_eq!(a.decide(1572, false, Instant::now()), Some(5000));
     }
