@@ -12,6 +12,17 @@ export function durationLabel(seconds: number): string {
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
 }
 
+/**
+ * Where a frame's time goes, per frame the core ran: `core 24.1 ms · GPU readback 6.3 ms ·
+ * encode 1.8 ms` (no readback for a core that draws on the CPU).
+ */
+export function frameWorkLabel(h: NonNullable<ActiveSession["health"]>): string {
+  const parts = [`core ${h.coreMeanMs.toFixed(1)} ms`];
+  if (h.readbackMeanMs > 0) parts.push(`GPU readback ${h.readbackMeanMs.toFixed(1)} ms`);
+  parts.push(`encode ${h.encodeMeanMs.toFixed(1)} ms`);
+  return parts.join(" · ");
+}
+
 /** A session that runs late on more than this share of its frames is struggling. */
 const STRUGGLING = 0.05;
 

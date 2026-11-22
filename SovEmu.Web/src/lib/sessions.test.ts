@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientSummary, decoderSummary, durationLabel, healthSummary } from "./sessions";
+import { clientSummary, decoderSummary, durationLabel, frameWorkLabel, healthSummary } from "./sessions";
 
 describe("sessions page", () => {
   it("says how long a game has run", () => {
@@ -15,6 +15,8 @@ describe("sessions page", () => {
     paused: 0,
     tickMeanMs: 31,
     encodeMeanMs: 1.74,
+    coreMeanMs: 24.06,
+    readbackMeanMs: 6.3,
     videoKbps: 1820.4,
     videoKbpsTarget: 2500,
     estimateKbps: null,
@@ -35,6 +37,11 @@ describe("sessions page", () => {
       struggling: false,
     });
     expect(healthSummary({ health: null, pipeline: null })).toBeNull();
+  });
+
+  it("splits a frame's time into the core, the GPU readback and encoding", () => {
+    expect(frameWorkLabel(health)).toBe("core 24.1 ms · GPU readback 6.3 ms · encode 1.7 ms");
+    expect(frameWorkLabel({ ...health, readbackMeanMs: 0 })).toBe("core 24.1 ms · encode 1.7 ms");
   });
 
   it("shows the player's view only while their panel is open", () => {

@@ -679,6 +679,8 @@ export const ActiveSessionsQuery = graphql(`
         paused
         tickMeanMs
         encodeMeanMs
+        coreMeanMs
+        readbackMeanMs
         videoKbps
         videoKbpsTarget
         estimateKbps

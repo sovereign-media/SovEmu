@@ -103,6 +103,12 @@ fn runs_frames_with_video_and_audio() {
         assert_eq!(out.audio.len(), SAMPLES_PER_FRAME * 2);
         assert!(out.audio.iter().any(|&s| s != 0));
     }
+    // Every frame's time inside the core is counted; this core draws on the CPU, so no readback.
+    let timing = core.take_timing();
+    assert_eq!(timing.frames, 3);
+    assert!(timing.run >= timing.worst_run && !timing.worst_run.is_zero());
+    assert!(timing.readback.is_zero());
+    assert_eq!(core.take_timing().frames, 0, "taking it starts the count again");
 }
 
 #[test]

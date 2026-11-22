@@ -9,7 +9,7 @@ import type { ActiveSession } from "../../lib/api";
 import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { audioLabel, fallbacksLabel, renderingLabel, runAheadLabel, streamLabel } from "../../lib/pipeline";
-import { clientSummary, decoderSummary, durationLabel, healthSummary } from "../../lib/sessions";
+import { clientSummary, decoderSummary, durationLabel, frameWorkLabel, healthSummary } from "../../lib/sessions";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { panel, Tooltip } from "../ui/primitives";
@@ -58,6 +58,7 @@ function Details({ s }: { s: ActiveSession }) {
   if (h) {
     rows.push(
       ["Frames late", `${Math.round(h.overran * 100)}% (mean frame ${h.tickMeanMs.toFixed(1)} ms)`],
+      ["Frame work", frameWorkLabel(h)],
       [
         "Bitrate",
         `${Math.round(h.videoKbps).toLocaleString("en-US")} of ${h.videoKbpsTarget.toLocaleString("en-US")} kbps target${

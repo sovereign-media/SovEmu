@@ -38,6 +38,7 @@ use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 use crate::runahead::RunAhead;
 use crate::video::{CodecSetting, Video, VideoCodec, VideoSettings};
+use crate::watchdog;
 use sovemu_protocol::ipc::SessionHealth;
 use sovemu_protocol::{AudioPath, Pipeline};
 
@@ -462,7 +463,9 @@ pub(crate) fn run(
     let mut next_frame = Instant::now();
     let mut idle_since = Some(Instant::now());
 
+    watchdog::start();
     loop {
+        watchdog::beat(watchdog::Phase::Network);
         // Commands: a new client replaces the current one; control requests run between frames.
         loop {
             match commands.try_recv() {
@@ -773,6 +776,7 @@ impl Session {
     /// Runs one tick (one frame; several when fast-forwarding; a step back when rewinding) and
     /// sends its video, audio and any input ack to the peer. `behind`: how late it started.
     fn step(&mut self, p: &mut Peer, behind: Duration) -> Result<()> {
+        watchdog::beat(watchdog::Phase::Emulating);
         let now = Instant::now();
         self.lapse_input(now);
         let hotkeys = if now.duration_since(self.hotkeys_at) < INPUT_LAPSE {
@@ -864,6 +868,7 @@ impl Session {
 
         if let Some((w, h)) = picture {
             self.shot_size = (w, h);
+            watchdog::beat(watchdog::Phase::Encoding);
             let encode_from = Instant::now();
             let encoded = self.video.encode(&self.rgba, w, h)?;
             if let Some(encoded) = &encoded {
@@ -888,6 +893,7 @@ impl Session {
         }
         self.persist.tick(&mut self.core, now);
         self.health.ticked(behind, now.elapsed());
+        self.health.core(self.core.take_timing());
         let at = self.health_now();
         if let Some(h) = self.health.report_if_due(Instant::now(), &at) {
             self.events.push(StreamEvent::Health(h));

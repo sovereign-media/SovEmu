@@ -133,6 +133,18 @@ pub struct FrameOutput<'a> {
     pub av_changed: Option<AvInfo>,
 }
 
+/// Where frames' time went since it was last taken ([`Core::take_timing`]): the core's own work
+/// (`retro_run`) and, for a core that renders with OpenGL, reading each frame back from the GPU
+/// (which also waits for the GPU to finish drawing it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameTiming {
+    pub frames: u32,
+    pub run: std::time::Duration,
+    pub worst_run: std::time::Duration,
+    pub readback: std::time::Duration,
+    pub worst_readback: std::time::Duration,
+}
+
 /// The libretro functions every core exports, resolved once at load.
 struct CoreApi {
     api_version: unsafe extern "C" fn() -> c_uint,
@@ -217,6 +229,8 @@ pub struct Core {
     gpu: Option<GpuChoice>,
     /// A GPU core's context and what it asked for.
     hw: Option<(GlContext, HwRequest)>,
+    /// Where frames' time went since it was last taken.
+    timing: FrameTiming,
     /// Declared last so it is dropped last: every function pointer in `api` points into it.
     _library: Library,
 }
@@ -311,6 +325,7 @@ impl Core {
             initialized: false,
             gpu: options.gpu,
             hw: None,
+            timing: FrameTiming::default(),
             _library: library,
         };
 
@@ -464,8 +479,13 @@ impl Core {
         if let Some((ctx, _)) = &self.hw {
             ctx.make_current();
         }
+        let started = std::time::Instant::now();
         // SAFETY: a game is loaded; the callbacks only take the state lock briefly.
         unsafe { (self.api.run)() };
+        let run = started.elapsed();
+        self.timing.frames += 1;
+        self.timing.run += run;
+        self.timing.worst_run = self.timing.worst_run.max(run);
 
         let mut av_changed = false;
         let mut video_updated = false;
@@ -492,7 +512,11 @@ impl Core {
             if av_changed && let Some(av) = &self.av_info {
                 ctx.resize(av.max_width, av.max_height).map_err(Error::Gpu)?;
             }
+            let started = std::time::Instant::now();
             ctx.read(width, height, request.bottom_left_origin, &mut self.video.data);
+            let readback = started.elapsed();
+            self.timing.readback += readback;
+            self.timing.worst_readback = self.timing.worst_readback.max(readback);
             self.video.width = width;
             self.video.height = height;
             self.video.format = PixelFormat::Rgba8888;
@@ -528,6 +552,12 @@ impl Core {
     }
 
     /// The renderer a GPU core is drawing with; `None` for a software core.
+    /// Where frames' time went since the last call (every frame run, run-ahead's included),
+    /// and starts counting again.
+    pub fn take_timing(&mut self) -> FrameTiming {
+        std::mem::take(&mut self.timing)
+    }
+
     pub fn renderer(&self) -> Option<&RendererInfo> {
         self.hw.as_ref().map(|(ctx, _)| &ctx.info)
     }

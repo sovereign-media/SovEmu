@@ -174,6 +174,9 @@ pub struct SessionHealth {
     pub paused: f64,
     pub tick_mean_ms: f64,
     pub encode_mean_ms: f64,
+    /// Inside the core, and reading GPU frames back, per frame the core ran.
+    pub core_mean_ms: f64,
+    pub readback_mean_ms: f64,
     /// What the encoder produced, and what it was aiming for.
     pub video_kbps: f64,
     pub video_kbps_target: u32,
