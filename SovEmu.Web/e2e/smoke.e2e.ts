@@ -20,3 +20,17 @@ test("the admin can rescan the library", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Rescan" })).toBeEnabled();
   await expect(page.getByText("Games").locator("xpath=following-sibling::dd[1]")).toHaveText("4");
 });
+
+test("every screen has one of the backgrounds, and a system's card its photo", async ({ page }) => {
+  await page.goto("/");
+  const background = page.locator("[data-background]");
+  await expect(background).toHaveAttribute("data-background", /^(dither|lattice|screens)$/);
+  // The image is there to draw, not just named.
+  const url = await background.evaluate((el) => getComputedStyle(el).backgroundImage.slice(5, -2));
+  expect((await page.request.get(url)).ok()).toBe(true);
+
+  const photo = page.getByRole("button", { name: /Super Nintendo/ }).locator("img");
+  await expect(photo).toBeVisible();
+  expect(await photo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await page.screenshot({ path: "test-results/home-background.png" });
+});
