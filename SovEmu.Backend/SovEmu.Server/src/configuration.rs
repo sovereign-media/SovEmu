@@ -179,6 +179,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_FAST_FORWARD"
         | "SOVEMU_KEYFRAME_INTERVAL"
         | "SOVEMU_SESSION_HEALTH_SECS"
+        | "SOVEMU_SESSION_FAILURES"
         | "SOVEMU_HOME_FEATURED"
         | "SOVEMU_HOME_ROW"
         | "SOVEMU_GPU" => Streaming,

@@ -1,15 +1,23 @@
 // Active sessions: every game being played now, who is playing it on what, and how its stream
 // is made (the render path, the codec and encoder, any encoder it fell back from and why) with
-// the worker's live numbers. Like Sovereign's active streams; read every 2 s.
+// the worker's live numbers. Like Sovereign's active streams; read every 2 s. Under them, the
+// games that failed lately (to start, or while playing) with the core's last lines.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, CircleAlert, MonitorPlay, Square } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, MonitorPlay, Square, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
-import { type ActiveSession, api } from "../../lib/api";
+import { type ActiveSession, api, type SessionFailure } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { audioLabel, fallbacksLabel, renderingLabel, runAheadLabel, streamLabel } from "../../lib/pipeline";
-import { clientSummary, decoderSummary, durationLabel, frameWorkLabel, healthSummary } from "../../lib/sessions";
+import {
+  clientSummary,
+  decoderSummary,
+  durationLabel,
+  failureLabel,
+  frameWorkLabel,
+  healthSummary,
+} from "../../lib/sessions";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
@@ -90,6 +98,69 @@ function Details({ s }: { s: ActiveSession }) {
         </Fragment>
       ))}
     </dl>
+  );
+}
+
+/** One failed game: what happened, and the core's last words folded under it. */
+function FailureItem({ f }: { f: SessionFailure }) {
+  const when = new Date(f.at * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return (
+    <li className="py-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <a
+          className="font-semibold hover:underline"
+          href={`/system/?id=${encodeURIComponent(f.system)}&game=${f.gameId}`}
+        >
+          {f.title}
+        </a>
+        <span className="text-amber-300">{failureLabel(f)}</span>
+        <span className="text-xs text-slate-400">
+          {f.system.toUpperCase()} · {f.core} · {f.username ?? "(deleted account)"} · {when} · ran{" "}
+          {durationLabel(f.ranSeconds)}
+        </span>
+        <a
+          className="ml-auto text-xs text-slate-400 hover:text-white hover:underline"
+          href={`/admin/settings/?id=${encodeURIComponent(f.system)}`}
+        >
+          Emulator settings
+        </a>
+      </div>
+      {f.lastLines.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-slate-400 hover:text-white">
+            Last {f.lastLines.length === 1 ? "line" : `${f.lastLines.length} lines`} from the emulator
+          </summary>
+          <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-black/40 p-3 text-xs whitespace-pre-wrap text-slate-300">
+            {f.lastLines.join("\n")}
+          </pre>
+        </details>
+      )}
+    </li>
+  );
+}
+
+function Failures() {
+  const failures = useQuery({ ...q.sessionFailures(), refetchInterval: 10_000 });
+  if (!failures.data) return null;
+  return (
+    <section className={panel} aria-labelledby="failures-heading">
+      <h2 id="failures-heading" className="flex items-center gap-2 text-xl font-bold">
+        <TriangleAlert className="size-5 text-slate-400" /> Recent failures
+      </h2>
+      <p className="mt-2 text-sm text-slate-400">
+        Games that would not start, or crashed while playing, newest first, with the emulator's last words: a missing
+        BIOS or an option it cannot run with shows here. Kept until the server restarts.
+      </p>
+      {failures.data.length === 0 ? (
+        <p className="mt-6 text-sm text-slate-400">No game has failed since the server started.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-white/10 text-sm">
+          {failures.data.map((f) => (
+            <FailureItem key={`${f.at}-${f.gameId}`} f={f} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -227,6 +298,7 @@ function Sessions() {
         )}
         {stop.error && <p className="mt-3 text-sm text-amber-300">{stop.error.message}</p>}
       </section>
+      <Failures />
       <Confirm
         open={stopping !== null}
         onOpenChange={(open) => !open && setStopping(null)}

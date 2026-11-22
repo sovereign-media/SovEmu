@@ -1,7 +1,7 @@
 // The admin's sessions page in words: how long a game has run, how its stream is keeping up,
 // and the player's view while their stats panel is open. Labels for the pipeline itself are
 // `pipeline.ts`'s, shared with the stats overlay.
-import type { ActiveSession } from "./api";
+import type { ActiveSession, SessionFailure } from "./api";
 
 /** `45 s`, `12 min`, `1 h 05 min`. */
 export function durationLabel(seconds: number): string {
@@ -78,4 +78,24 @@ export function clientSummary(s: Pick<ActiveSession, "clientStats">): string | n
     c.packetsLost ? `${c.packetsLost} lost` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+const SIGNALS: Record<number, string> = {
+  4: "SIGILL",
+  6: "SIGABRT",
+  7: "SIGBUS",
+  8: "SIGFPE",
+  9: "SIGKILL",
+  11: "SIGSEGV",
+};
+
+/** How a game failed, in words: `Crashed while playing (SIGSEGV)`, `Failed to start (exit 1)`. */
+export function failureLabel(f: Pick<SessionFailure, "whilePlaying" | "reason" | "exitCode" | "signal">): string {
+  let what: string;
+  if (f.reason === "killed") what = f.whilePlaying ? "Would not stop" : "Timed out starting";
+  else if (f.reason === "crashed") what = f.whilePlaying ? "Crashed while playing" : "Crashed starting";
+  else what = f.whilePlaying ? "Failed while playing" : "Failed to start";
+  if (f.signal != null) return `${what} (${SIGNALS[f.signal] ?? `signal ${f.signal}`})`;
+  if (f.exitCode != null) return `${what} (exit ${f.exitCode})`;
+  return what;
 }

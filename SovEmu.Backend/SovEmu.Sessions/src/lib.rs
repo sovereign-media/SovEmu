@@ -23,14 +23,24 @@ pub trait Observer: Send + Sync + std::fmt::Debug {
     fn session_ended(&self, _ended: &Ended<'_>) {}
 }
 
-/// A session that has ended: its system and core, why, and how long it ran.
+/// A session that has ended: whose, which game, its system and core, why, and how long it ran.
 #[derive(Debug, Clone, Copy)]
 pub struct Ended<'a> {
+    pub user_id: i64,
+    pub game_id: i64,
+    pub title: &'a str,
     pub system: &'a str,
     /// The core's file name without its extension (`snes9x_libretro`).
     pub core: &'a str,
     pub reason: EndReason,
     pub ran: Duration,
+    /// The game had loaded (the worker said it was ready): otherwise it ended while starting.
+    pub loaded: bool,
+    /// How the process ended: its exit code, or the signal that killed it.
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+    /// The worker's last lines on stderr (the core's own log, most often), oldest first.
+    pub last_lines: &'a [String],
 }
 
 /// Why a worker exited: what it said as it went, or what the server saw.

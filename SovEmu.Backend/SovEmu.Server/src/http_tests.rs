@@ -1973,6 +1973,7 @@ const ADMIN_ONLY: &[&str] = &[
     "mutation { saveControllerDefault(controller: \"xbox\", bindings: []) { __typename } }",
     "mutation { resetControllerDefault(controller: \"xbox\") }",
     "{ appearance { chosen } }",
+    "{ sessionFailures { title } }",
     "mutation { setBackground(id: \"random\") }",
 ];
 
@@ -2094,6 +2095,45 @@ async fn one_users_sessions_saves_and_lists_are_not_anothers() {
         (json!(true), json!([collection]))
     );
     assert_eq!(theirs["cheats"], json!([{"id": cheat}]));
+}
+
+#[tokio::test]
+async fn admins_see_the_games_that_failed_with_their_last_lines() {
+    let mut h = Harness::new("failures", false).await;
+    h.sign_up_admin().await;
+    assert_eq!(
+        h.ok("{ sessionFailures { title } }", json!({})).await["sessionFailures"],
+        json!([])
+    );
+    // As the workers' observer records it (sovemu-sessions reports how each worker ended).
+    use sovemu_sessions::Observer;
+    let events = crate::failures::SessionEvents { failures: h.state.failures.clone() };
+    let lines = vec!["[pcsx2] missing BIOS".to_owned(), "failed to boot".to_owned()];
+    let ended = |reason| sovemu_sessions::Ended {
+        user_id: 1,
+        game_id: 42,
+        title: "Tony Hawk's Pro Skater 3",
+        system: "ps2",
+        core: "pcsx2_libretro",
+        reason,
+        ran: std::time::Duration::from_millis(1500),
+        loaded: false,
+        code: Some(1),
+        signal: None,
+        last_lines: &lines,
+    };
+    events.session_ended(&ended(sovemu_sessions::EndReason::Stopped));
+    events.session_ended(&ended(sovemu_sessions::EndReason::Error));
+    let q = "{ sessionFailures { username gameId title system core whilePlaying reason exitCode signal lastLines ranSeconds } }";
+    assert_eq!(
+        h.ok(q, json!({})).await["sessionFailures"],
+        json!([{
+            "username": "admin", "gameId": 42, "title": "Tony Hawk's Pro Skater 3", "system": "ps2",
+            "core": "pcsx2_libretro", "whilePlaying": false, "reason": "error", "exitCode": 1,
+            "signal": null, "lastLines": ["[pcsx2] missing BIOS", "failed to boot"], "ranSeconds": 1.5,
+        }]),
+        "a quit is not a failure; the error is"
+    );
 }
 
 #[tokio::test]
