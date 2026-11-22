@@ -57,6 +57,22 @@ export function describeStart(s: StartStatus): LaunchView {
   return { label: p.label, detail: parts.join(" · "), fraction: p.from + (p.to - p.from) * within };
 }
 
+/** After this long without a picture the wait says how to get out of it. */
+const NO_PICTURE_HINT_MS = 20_000;
+
+/**
+ * The last stretch of a start, which the server cannot see: the session is ready, and the game
+ * has yet to draw its first picture (a console's BIOS boots for seconds; a save is loaded once
+ * the game is up). The bar is full; the detail counts the wait.
+ */
+export function describeFirstPicture(waitedMs: number): LaunchView {
+  const seconds = Math.floor(waitedMs / 1000);
+  const parts: string[] = [];
+  if (seconds >= 3) parts.push(`${seconds} s`);
+  if (waitedMs >= NO_PICTURE_HINT_MS) parts.push("still no picture: Escape opens the menu");
+  return { label: "Starting the game", detail: parts.join(" · "), fraction: 1 };
+}
+
 /** Keeps a bar from ever moving backwards (a phase can report less than the one before). */
 export class ForwardOnly {
   private max = 0;
