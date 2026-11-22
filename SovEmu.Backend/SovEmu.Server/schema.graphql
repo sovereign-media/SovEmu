@@ -203,6 +203,71 @@ type ArtworkStatus {
 }
 
 """
+How many of a kind a system has.
+"""
+type AttentionCount {
+	kind: AttentionKind!
+	"""
+	Empty for a folder no system uses.
+	"""
+	system: String!
+	count: Int!
+}
+
+"""
+A game (or file) needing attention.
+"""
+type AttentionItem {
+	"""
+	Null for a file that is not a game.
+	"""
+	gameId: Int
+	"""
+	Empty for a file in a folder no system uses.
+	"""
+	system: String!
+	"""
+	Empty for a file that is not a game.
+	"""
+	title: String!
+	"""
+	Relative to the library.
+	"""
+	path: String!
+	"""
+	Why it has no information, the tags it shares, the parts missing, or why a file was
+	skipped.
+	"""
+	detail: String!
+}
+
+"""
+What needs attention.
+"""
+enum AttentionKind {
+	"""
+	No game information: never looked up, or not found.
+	"""
+	NO_INFORMATION
+	"""
+	No box art, beside it or downloaded.
+	"""
+	NO_BOX_ART
+	"""
+	The same title and tags in two or more files of a system.
+	"""
+	DUPLICATE
+	"""
+	A multi-part game with a part missing.
+	"""
+	MISSING_PARTS
+	"""
+	A file the last scan could not place as a game.
+	"""
+	UNRECOGNISED
+}
+
+"""
 A service SovEmu looks games up in.
 """
 type AttributedService {
@@ -1680,6 +1745,12 @@ type Mutation {
 	are dropped. Returns how many were taken (0 when `SOVEMU_CLIENT_EVENTS` is off).
 	"""
 	reportClientEvents(client: String!, events: [ClientEventInput!]!): Int!
+	"""
+	Admins: looks one game up again (its game information and box art), as a background
+	job (`METADATA`), whether or not it has information already. `CONFLICT` while a lookup
+	runs.
+	"""
+	lookUpGame(gameId: Int!): MetadataStatus!
 }
 
 """
@@ -2114,6 +2185,15 @@ type Query {
 	most played games, each account's and each system's time, and the most favourited games.
 	"""
 	playStatistics(range: StatsRange!): PlayStatistics!
+	"""
+	Admins: the games (or files) of one kind needing attention, one system's or all, by
+	system and title (at most `limit`, up to 1000).
+	"""
+	gamesNeedingAttention(kind: AttentionKind!, system: ID, limit: Int! = 200): [AttentionItem!]!
+	"""
+	Admins: how many games (or files) of each kind need attention, per system.
+	"""
+	attentionCounts: [AttentionCount!]!
 	"""
 	Admins: the server's recent log, its own lines and its game sessions': the newest
 	`limit` (1000 at most) at `level` and above, of one `session`, holding `text`, after line

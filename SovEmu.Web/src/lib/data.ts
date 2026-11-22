@@ -5,6 +5,7 @@
 import { infiniteQueryOptions, QueryClient, queryOptions } from "@tanstack/react-query";
 import {
   type ActivityFilter,
+  type AttentionKind,
   api,
   type ClientEventKind,
   type LogFilter,
@@ -56,6 +57,12 @@ export const q = {
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
   overview: () => queryOptions({ queryKey: ["admin", "overview"], queryFn: api.overview }),
   logs: (filter: LogFilter) => queryOptions({ queryKey: ["admin", "logs", filter], queryFn: () => api.logs(filter) }),
+  attentionCounts: () => queryOptions({ queryKey: ["admin", "attention"], queryFn: api.attentionCounts }),
+  gamesNeedingAttention: (kind: AttentionKind, system: string | null) =>
+    queryOptions({
+      queryKey: ["admin", "attention", kind, system],
+      queryFn: () => api.gamesNeedingAttention(kind, system),
+    }),
   playStatistics: (range: StatsRange) =>
     queryOptions({ queryKey: ["admin", "statistics", range], queryFn: () => api.playStatistics(range) }),
   /** A page at a time: `useInfiniteQuery`, each page's `next` the following page's start. */

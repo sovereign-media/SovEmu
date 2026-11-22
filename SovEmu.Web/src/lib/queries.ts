@@ -1253,6 +1253,37 @@ export const LogsQuery = graphql(`
   }
 `);
 
+// Games needing attention: one kind's games (or files), and how many of each kind per system.
+export const GamesNeedingAttentionQuery = graphql(`
+  query GamesNeedingAttention($kind: AttentionKind!, $system: ID) {
+    gamesNeedingAttention(kind: $kind, system: $system) {
+      gameId
+      system
+      title
+      path
+      detail
+    }
+  }
+`);
+
+export const AttentionCountsQuery = graphql(`
+  query AttentionCounts {
+    attentionCounts {
+      kind
+      system
+      count
+    }
+  }
+`);
+
+export const LookUpGameMutation = graphql(`
+  mutation LookUpGame($gameId: Int!) {
+    lookUpGame(gameId: $gameId) {
+      running
+    }
+  }
+`);
+
 // The admin Overview: one read for every card, each summarising a page it links to.
 export const OverviewQuery = graphql(`
   query Overview {

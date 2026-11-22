@@ -288,8 +288,9 @@ impl LibraryAdminMutation {
         let me = admin(ctx).await?;
         let on =
             system.as_ref().map_or_else(|| "every system".to_owned(), |s| s.as_str().to_owned());
-        let status =
-            crate::admin::metadata_fetch(state(ctx), system.map(|s| s.to_string()), force).api()?;
+        let scope =
+            crate::metadata::Scope { system: system.map(|s| s.to_string()), game: None, force };
+        let status = crate::admin::metadata_fetch(state(ctx), scope).api()?;
         let entry = Entry::new(Kind::JobRun)
             .about(crate::jobs::Job::Metadata.label())
             .detail(format!("{on}{}", if force { ", every game again" } else { "" }));

@@ -702,9 +702,13 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
                 Ok(summary)
             })
             .map(drop),
-        Job::Metadata => {
-            jobs.start(Job::Metadata, Trigger::Admin, admin::lookup(s, None, false)).map(drop)
-        }
+        Job::Metadata => jobs
+            .start(
+                Job::Metadata,
+                Trigger::Admin,
+                admin::lookup(s, crate::metadata::Scope::default()),
+            )
+            .map(drop),
         Job::Maintenance => jobs.start(Job::Maintenance, Trigger::Admin, maintain(s)).map(drop),
     }
 }

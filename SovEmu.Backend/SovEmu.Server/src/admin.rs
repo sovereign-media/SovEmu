@@ -41,26 +41,27 @@ impl Summary for ScanReport {
 /// wait for it.
 pub(crate) async fn after_scan(state: &AppState, trigger: Trigger) {
     if state.config.metadata_auto {
-        let _ = state.jobs.run(Job::Metadata, trigger, lookup(state.clone(), None, false)).await;
+        let _ = state
+            .jobs
+            .run(Job::Metadata, trigger, lookup(state.clone(), metadata::Scope::default()))
+            .await;
     }
 }
 
 /// [`after_scan`] without waiting: a scheduled scan's run ends when the scan does.
 pub(crate) fn after_scan_in_background(state: &AppState) {
     if state.config.metadata_auto {
-        let _ =
-            state.jobs.start(Job::Metadata, Trigger::Schedule, lookup(state.clone(), None, false));
+        let _ = state.jobs.start(
+            Job::Metadata,
+            Trigger::Schedule,
+            lookup(state.clone(), metadata::Scope::default()),
+        );
     }
 }
 
-/// Looks up game information ([`Job::Metadata`]'s work): games without it, or with `force`
-/// every game; one system, or all.
-pub(crate) async fn lookup(
-    state: AppState,
-    system: Option<String>,
-    force: bool,
-) -> anyhow::Result<String> {
-    metadata::run_job(state.clone(), system, force).await;
+/// Looks up game information ([`Job::Metadata`]'s work) for the games `scope` covers.
+pub(crate) async fn lookup(state: AppState, scope: metadata::Scope) -> anyhow::Result<String> {
+    metadata::run_job(state.clone(), scope).await;
     let s = state.metadata.status();
     let mut summary =
         format!("{} found, {} not found, {} to retry", s.found, s.not_found, s.failed);
@@ -151,17 +152,13 @@ pub(crate) fn metadata_status(state: &AppState) -> JobStatus {
 
 /// Starts looking up game information in the background (`system`: one system only; `force`:
 /// look up games that already have it too).
-pub(crate) fn metadata_fetch(
-    state: &AppState,
-    system: Option<String>,
-    force: bool,
-) -> ApiResult<JobStatus> {
-    state.jobs.start(Job::Metadata, Trigger::Admin, lookup(state.clone(), system, force)).map_err(
-        |e| match e {
+pub(crate) fn metadata_fetch(state: &AppState, scope: metadata::Scope) -> ApiResult<JobStatus> {
+    state.jobs.start(Job::Metadata, Trigger::Admin, lookup(state.clone(), scope)).map_err(|e| {
+        match e {
             JobError::Running => ApiError::conflict("a metadata job is already running"),
             e => e.into(),
-        },
-    )?;
+        }
+    })?;
     Ok(state.metadata.status())
 }
 

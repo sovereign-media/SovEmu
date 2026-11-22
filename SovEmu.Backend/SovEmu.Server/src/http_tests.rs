@@ -2301,6 +2301,9 @@ const ADMIN_ONLY: &[&str] = &[
     "{ activity { next } }",
     "{ playStatistics(range: WEEK) { from } }",
     "{ logs { enabled } }",
+    "{ gamesNeedingAttention(kind: DUPLICATE) { path } }",
+    "{ attentionCounts { count } }",
+    "mutation { lookUpGame(gameId: 1) { running } }",
     "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
@@ -2335,6 +2338,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/activity.rs"),
         include_str!("graphql/statistics.rs"),
         include_str!("graphql/logs.rs"),
+        include_str!("graphql/attention.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())
@@ -3122,4 +3126,54 @@ async fn every_page_path_gets_the_web_client_and_its_assets_are_files() {
     // The API's own routes still answer for themselves.
     let health = router(h.state.clone()).oneshot(get("/health")).await.unwrap();
     assert_eq!(health.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
+    let mut h = Harness::new("attention", false).await;
+    h.sign_up_admin().await;
+    for path in [
+        "roms/gba/more/Other.gba",
+        "roms/psx/Big (USA) (Disc 1).chd",
+        "roms/psx/Big (USA) (Disc 3).chd",
+        "roms/nes/notes.abc",
+    ] {
+        std::fs::create_dir_all(h.dir.join(path).parent().unwrap()).unwrap();
+        std::fs::write(h.dir.join(path), [0u8; 16]).unwrap();
+    }
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
+
+    let of = "query ($kind: AttentionKind!, $system: ID) {
+        gamesNeedingAttention(kind: $kind, system: $system) { gameId system title path detail } }";
+    let items = |data: Value| data["gamesNeedingAttention"].as_array().unwrap().clone();
+    let duplicates = items(h.ok(of, json!({"kind": "DUPLICATE"})).await);
+    let paths: Vec<&str> = duplicates.iter().map(|i| i["path"].as_str().unwrap()).collect();
+    assert_eq!(paths, ["gba/Other.gba", "gba/more/Other.gba"]);
+    let missing = items(h.ok(of, json!({"kind": "MISSING_PARTS"})).await);
+    assert_eq!(
+        (missing[0]["title"].as_str(), missing[0]["detail"].as_str()),
+        (Some("Big"), Some("disc 2"))
+    );
+    let skipped = items(h.ok(of, json!({"kind": "UNRECOGNISED", "system": "nes"})).await);
+    assert_eq!(
+        (skipped[0]["path"].as_str(), skipped[0]["gameId"].is_null()),
+        (Some("nes/notes.abc"), true)
+    );
+    let no_art = items(h.ok(of, json!({"kind": "NO_BOX_ART", "system": "nes"})).await);
+    assert!(no_art.is_empty(), "the NES game has box art beside it: {no_art:?}");
+
+    let counts = h.ok("{ attentionCounts { kind system count } }", json!({})).await;
+    assert!(
+        counts["attentionCounts"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"kind": "DUPLICATE", "system": "gba", "count": 2})),
+        "{counts}"
+    );
+
+    let game = duplicates[0]["gameId"].as_i64().unwrap();
+    let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
+    h.ok(look_up, json!({"id": game})).await;
+    let (code, _) = h.err(look_up, json!({"id": 99_999})).await;
+    assert_eq!(code, "NOT_FOUND");
 }
