@@ -1360,6 +1360,11 @@ type Mutation {
 	"""
 	removeUser(userId: Int!): Boolean!
 	"""
+	Admins: signs one browser or app out (`id` from `signIns` or `user`); it must sign in
+	again. The account's other sign-ins stand.
+	"""
+	endSignIn(id: ID!): Boolean!
+	"""
 	Admins: signs an account out of every browser and app.
 	"""
 	signOutEverywhere(userId: Int!): Boolean!
@@ -1681,6 +1686,14 @@ type Query {
 	"""
 	viewer: Viewer!
 	clientConfig: ClientConfig!
+	"""
+	Admins: one account, with its sign-ins, what it has played and its saves.
+	"""
+	user(id: Int!): UserDetails!
+	"""
+	Admins: every browser and app signed in, across accounts, the most recently used first.
+	"""
+	signIns: [SignInNode!]!
 	"""
 	Admins: the accounts.
 	"""
@@ -2098,6 +2111,47 @@ type Shape {
 }
 
 """
+Which client holds a sign-in.
+"""
+enum SignInClient {
+	"""
+	The web client, in a browser.
+	"""
+	WEB
+	"""
+	The Android or iOS app (a phone, a tablet, a TV).
+	"""
+	APP
+	OTHER
+}
+
+"""
+A browser or app signed in as an account: it holds a refresh token, and can be signed out
+on its own (`endSignIn`).
+"""
+type SignInNode {
+	id: ID!
+	userId: Int
+	"""
+	The account's name; null if it has gone.
+	"""
+	username: String
+	client: SignInClient!
+	"""
+	When it signed in, as a Unix time in seconds.
+	"""
+	signedInAt: Float!
+	"""
+	When it last renewed its access: about when it was last in use (Unix seconds).
+	"""
+	lastUsedAt: Float!
+	"""
+	When it lapses unless used again (Unix seconds); null for none.
+	"""
+	expiresAt: Float
+}
+
+"""
 What a game start is doing.
 """
 enum StartPhase {
@@ -2429,6 +2483,35 @@ type User {
 	here.
 	"""
 	declared: Boolean!
+}
+
+"""
+One account, as the admin's user page shows it.
+"""
+type UserDetails {
+	user: User!
+	"""
+	When it was created (UTC, `YYYY-MM-DD HH:MM:SS`).
+	"""
+	joinedAt: String
+	"""
+	Every browser and app signed in as it, the most recently used first.
+	"""
+	signIns: [SignInNode!]!
+	"""
+	Different games it has started, and starts in all.
+	"""
+	gamesPlayed: Int!
+	starts: Int!
+	"""
+	Its latest game start (UTC, `YYYY-MM-DD HH:MM:SS`); null if none yet.
+	"""
+	lastPlayedAt: String
+	"""
+	Its battery saves and states on disk: bytes (a Float: it can pass 2 GiB) and files.
+	"""
+	saveBytes: Float!
+	saveFiles: Int!
 }
 
 type UserStorage {

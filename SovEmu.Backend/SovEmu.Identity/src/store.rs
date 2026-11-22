@@ -25,6 +25,17 @@ use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use sqlx::{SqliteConnection, SqlitePool};
 
+/// A live sign-in, as [`SqliteStorage::sign_ins`] reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredSignIn {
+    pub(crate) family_id: String,
+    pub(crate) client_id: String,
+    pub(crate) subject: Option<String>,
+    pub(crate) signed_in_at: SystemTime,
+    pub(crate) last_used_at: SystemTime,
+    pub(crate) expires_at: Option<SystemTime>,
+}
+
 /// The JSON member each credential-keyed record carries its own credential in.
 const ACCESS_KEY: &str = "access_token";
 const REFRESH_KEY: &str = "refresh_token";
@@ -83,6 +94,62 @@ impl SqliteStorage {
     /// A store over `pool`, which must have had the server's migrations applied.
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
+    }
+
+    /// Every sign-in still live, or one user's (`subject`): a refresh family with an active
+    /// token, its client, when its grant was made, when it last had an access token, and when it
+    /// lapses. Read back into oauth-as's own records (the credential, left out of the stored
+    /// JSON, as an empty placeholder), so no column of theirs is parsed here.
+    pub(crate) async fn sign_ins(
+        &self,
+        subject: Option<&str>,
+    ) -> Result<Vec<StoredSignIn>, StorageError> {
+        let op = "sign_ins";
+        let rows: Vec<String> = sqlx::query_scalar(
+            "SELECT record FROM oauth_refresh_tokens WHERE ?1 IS NULL OR subject = ?1",
+        )
+        .bind(subject)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db(op))?;
+        let mut out = Vec::new();
+        for json in rows {
+            let record: RefreshTokenRecord = decode(&json, Some((REFRESH_KEY, "")))?;
+            if record.state != oauth_as::token::RefreshTokenState::Active {
+                continue;
+            }
+            let issued: Vec<String> =
+                sqlx::query_scalar("SELECT record FROM oauth_access_tokens WHERE family_id = ?")
+                    .bind(&record.family_id)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(db(op))?;
+            let mut last_used_at = record.grant_established_at;
+            for json in issued {
+                let token: IssuedToken = decode(&json, Some((ACCESS_KEY, "")))?;
+                last_used_at = last_used_at.max(token.issued_at);
+            }
+            out.push(StoredSignIn {
+                family_id: record.family_id,
+                client_id: record.client_id.as_str().to_owned(),
+                subject: record.subject,
+                signed_in_at: record.grant_established_at,
+                last_used_at,
+                expires_at: record.expires_at,
+            });
+        }
+        out.sort_by_key(|s| std::cmp::Reverse(s.last_used_at));
+        Ok(out)
+    }
+
+    /// Ends one sign-in (a refresh family) through oauth-as's family revocation: its tokens go,
+    /// and a barrier over `window` refuses a rotation already in flight. Whether there was one.
+    pub(crate) async fn end_sign_in(
+        &self,
+        family_id: &str,
+        window: RevocationWindow,
+    ) -> Result<bool, StorageError> {
+        Ok(self.revoke_token_family(family_id, window).await? > 0)
     }
 
     /// Ends every sign-in of one user (`subject`, the user id as oauth-as records it): deletes
@@ -909,6 +976,46 @@ mod tests {
         assert!(store.put_token(access("at-c", "2")).await.unwrap().is_applied());
 
         assert!(store.revoke_subject("", window(at(10))).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn sign_ins_are_live_refresh_families_with_their_last_use() {
+        let store = fresh_store().await;
+        for (token, subject, family) in [("rt-a", "1", "fa"), ("rt-b", "2", "fb")] {
+            assert!(
+                store
+                    .put_refresh_token(refresh(token, subject, family))
+                    .await
+                    .unwrap()
+                    .is_applied()
+            );
+        }
+        // A rotation left a spent token in family a; its access tokens were issued later.
+        let mut spent = refresh("rt-a-old", "1", "fa");
+        spent.state = oauth_as::token::RefreshTokenState::Spent;
+        assert!(store.put_refresh_token(spent).await.unwrap().is_applied());
+        for (token, issued) in [("at-a1", 100), ("at-a2", 300)] {
+            let mut t = access(token, "1");
+            t.family_id = Some("fa".into());
+            t.issued_at = at(issued);
+            assert!(store.put_token(t).await.unwrap().is_applied());
+        }
+
+        let all = store.sign_ins(None).await.unwrap();
+        assert_eq!(all.len(), 2, "one per live family: {all:?}");
+        assert_eq!(all[0].family_id, "fa", "the most recently used first");
+        assert_eq!((all[0].signed_in_at, all[0].last_used_at), (at(0), at(300)));
+        assert_eq!(all[1].last_used_at, at(0), "no access token since: its grant");
+        assert_eq!(store.sign_ins(Some("2")).await.unwrap().len(), 1);
+
+        assert!(store.end_sign_in("fa", window(at(400))).await.unwrap());
+        assert!(!store.end_sign_in("fa", window(at(400))).await.unwrap(), "already ended");
+        assert!(store.get_refresh_token("rt-a").await.unwrap().is_none());
+        assert_eq!(store.sign_ins(None).await.unwrap().len(), 1);
+        // A rotation in flight for the ended family is refused.
+        assert!(
+            store.put_refresh_token(refresh("rt-a-new", "1", "fa")).await.unwrap().is_refused()
+        );
     }
 
     #[tokio::test]

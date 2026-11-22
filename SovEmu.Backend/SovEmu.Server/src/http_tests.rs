@@ -1143,6 +1143,58 @@ async fn admins_manage_accounts_but_keep_an_admin_and_leave_declared_ones_alone(
 }
 
 #[tokio::test]
+async fn admins_see_each_sign_in_and_end_one() {
+    let mut h = Harness::new("sign-ins", false).await;
+    h.sign_up_admin().await;
+    h.switch_to_new_viewer("kid").await;
+    let kids_token = h.token.clone();
+    let kid = h.ok("{ viewer { user { id } } }", json!({})).await["viewer"]["user"]["id"]
+        .as_i64()
+        .unwrap();
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+
+    // Every sign-in, the admin's own among them; the kid's is the app's (the password grant).
+    let all = h.ok("{ signIns { id username client signedInAt lastUsedAt } }", json!({})).await
+        ["signIns"]
+        .clone();
+    let kids: Vec<&Value> =
+        all.as_array().unwrap().iter().filter(|s| s["username"] == "kid").collect();
+    assert_eq!(kids.len(), 1, "{all}");
+    assert_eq!(kids[0]["client"], "APP");
+    assert!(kids[0]["lastUsedAt"].as_f64() >= kids[0]["signedInAt"].as_f64());
+    let id = kids[0]["id"].as_str().unwrap().to_owned();
+
+    // The kid's page: their sign-in, nothing played or saved yet.
+    let page = h
+        .ok(
+            "query($u: Int!) { user(id: $u) { user { username } joinedAt signIns { id } gamesPlayed starts lastPlayedAt saveBytes saveFiles } }",
+            json!({"u": kid}),
+        )
+        .await["user"]
+        .clone();
+    assert_eq!(page["user"]["username"], "kid");
+    assert!(page["joinedAt"].as_str().is_some_and(|j| j.len() == 19), "{page}");
+    assert_eq!(page["signIns"], json!([{"id": id}]));
+    assert_eq!(
+        (page["gamesPlayed"].clone(), page["starts"].clone(), page["lastPlayedAt"].clone()),
+        (json!(0), json!(0), Value::Null)
+    );
+    assert_eq!((page["saveBytes"].clone(), page["saveFiles"].clone()), (json!(0.0), json!(0)));
+    assert_eq!(h.err("{ user(id: 9999) { joinedAt } }", json!({})).await.0, "NOT_FOUND");
+
+    // Ending it signs that app out; the admin's own sign-in stands.
+    let end = "mutation($id: ID!) { endSignIn(id: $id) }";
+    assert_eq!(h.ok(end, json!({"id": id})).await["endSignIn"], true);
+    assert_eq!(h.err(end, json!({"id": id})).await.0, "NOT_FOUND", "already ended");
+    let admins = std::mem::replace(&mut h.token, kids_token);
+    assert_eq!(h.err("{ collections { id } }", json!({})).await.0, "UNAUTHENTICATED");
+    h.token = admins;
+    let left = h.ok("{ signIns { username } }", json!({})).await["signIns"].clone();
+    assert!(left.as_array().unwrap().iter().all(|s| s["username"] != "kid"), "{left}");
+}
+
+#[tokio::test]
 async fn declared_users_are_reconciled_and_pruned() {
     let mut h = Harness::new("env-users", false).await;
     h.sign_up_admin().await;
@@ -2084,6 +2136,9 @@ const ADMIN_ONLY: &[&str] = &[
     "mutation { setUserPassword(userId: 1, password: \"password123\") }",
     "mutation { removeUser(userId: 1) }",
     "mutation { signOutEverywhere(userId: 1) }",
+    "{ signIns { id } }",
+    "{ user(id: 1) { joinedAt } }",
+    "mutation { endSignIn(id: \"x\") }",
     "mutation { scanLibrary { found } }",
     "mutation { syncLibrary }",
     "mutation { fetchMetadata { __typename } }",

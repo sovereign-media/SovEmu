@@ -22,6 +22,8 @@ export const queryClient = new QueryClient({
 export const q = {
   viewer: () => queryOptions({ queryKey: ["viewer"], queryFn: api.viewer }),
   users: () => queryOptions({ queryKey: ["users"], queryFn: api.users }),
+  signIns: () => queryOptions({ queryKey: ["users", "sign-ins"], queryFn: api.signIns }),
+  userDetails: (id: number) => queryOptions({ queryKey: ["users", id], queryFn: () => api.userDetails(id) }),
   home: () => queryOptions({ queryKey: ["home"], queryFn: api.home }),
   systems: () => queryOptions({ queryKey: ["systems"], queryFn: api.systems }),
   bios: () => queryOptions({ queryKey: ["bios"], queryFn: api.bios }),
