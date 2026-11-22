@@ -438,7 +438,12 @@ fn accept_offer(
         .set_extension(PLAYOUT_DELAY_EXT_ID, Extension::PlayoutDelay)
         .clear_codecs()
         .enable_vp8(codecs.allows(VideoCodec::Vp8))
-        .enable_opus(true, false)
+        // Redundant audio (RED, RFC 2198) where the client offers it: each packet also carries
+        // the one before, so a single lost packet is rebuilt on arrival instead of clicking.
+        // Opus's own in-band FEC cannot do this: it lives in SILK, and the encoder runs CELT only
+        // (restricted low delay). Costs about the audio bitrate again; clients without RED get
+        // plain Opus.
+        .enable_opus(true, true)
         // The estimate starts at the starting rate and probes for more, up to the ceiling.
         .enable_bwe(Some(Bitrate::kbps(u64::from(video.start_kbps))));
     if codecs.allows(VideoCodec::H264) {
