@@ -20,18 +20,6 @@ export const AREA_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-/** Bytes in binary units: "512 B", "3.2 KB", "1.5 GB". */
-export function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let n = bytes;
-  let unit = 0;
-  while (n >= 1024 && unit < units.length - 1) {
-    n /= 1024;
-    unit += 1;
-  }
-  return unit === 0 ? `${n} B` : `${n.toFixed(n >= 100 ? 0 : 1)} ${units[unit]}`;
-}
-
 export interface Segment {
   id: string;
   label: string;

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Lock, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { q } from "../../lib/data";
-import { formatBytes } from "../../lib/storage";
+import { formatBytes } from "../../lib/numbers";
 import { agoFromSqlite } from "../../lib/time";
 import { Pill } from "../ui/primitives";
 import { AdminSection, ErrorNote } from "./AdminPage";

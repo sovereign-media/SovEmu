@@ -2,11 +2,13 @@
 // description, Continue / Start over or Play, save slots and play history. Full height on the
 // right edge, over the page, which dims behind it and never reflows for it. Not modal: the grid
 // stays usable, and choosing another card switches the panel to it.
+
 import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
-import { AUTO_SLOT, formatSize, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
+import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
 import { maxPlayers } from "../../lib/games";
+import { formatBytes } from "../../lib/numbers";
 import { ago, agoFromSqlite } from "../../lib/time";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
@@ -207,7 +209,7 @@ export function GamePanel({
                     ? `Played ${shown.playCount}× · last ${agoFromSqlite(shown.lastPlayedAt)}`
                     : "Not played yet"}
                   {" · "}
-                  <span className="font-mono break-all">{shown.path}</span> · {formatSize(shown.size)}
+                  <span className="font-mono break-all">{shown.path}</span> · {formatBytes(shown.size)}
                 </p>
               </div>
             </>

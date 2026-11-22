@@ -8,13 +8,6 @@ export interface Point {
   max: number;
 }
 
-/** "512 MB", "3.2 GB". */
-export function formatBytes(bytes: number): string {
-  const gb = bytes / 1024 ** 3;
-  if (gb >= 1) return `${gb >= 100 ? gb.toFixed(0) : gb.toFixed(1)} GB`;
-  return `${Math.round(bytes / 1024 ** 2)} MB`;
-}
-
 /** "2 cores", "1.5 cores". */
 export function formatCores(cores: number): string {
   const n = Number.isInteger(cores) ? String(cores) : cores.toFixed(1);

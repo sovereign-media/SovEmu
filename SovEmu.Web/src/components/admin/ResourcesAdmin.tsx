@@ -7,16 +7,8 @@ import { Activity, ChartLine, Cpu, Info } from "lucide-react";
 import { useState } from "react";
 import type { ResourceHistory, ResourceRange, ServerResources } from "../../lib/api";
 import { q } from "../../lib/data";
-import {
-  formatBytes,
-  formatCores,
-  geometry,
-  nearest,
-  type Point,
-  severity,
-  tickLabel,
-  timeTicks,
-} from "../../lib/resources";
+import { formatBytes } from "../../lib/numbers";
+import { formatCores, geometry, nearest, type Point, severity, tickLabel, timeTicks } from "../../lib/resources";
 import { Progress, Segmented } from "../ui/primitives";
 import AdminPage, { AdminSection } from "./AdminPage";
 
