@@ -147,7 +147,7 @@ cargo test --workspace
 | `SovEmu.LibretroFfi` | `sovemu-libretro-ffi` | bindgen over the copy of `libretro.h` in `include/`: types and constants only, plus the C shim that adapts libretro's variadic log callback. Root of the dependency graph. |
 | `SovEmu.RetroHost` | `sovemu-retro-host` | The safe frontend: `Core` loads a core with libloading, answers the environment callback, runs a frame at a time, and returns its video, audio and timing changes. Save states, cheats, core options. |
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core (cdylib) that tests load with dlopen exactly like a real one. Never shipped. |
-| `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420, VP8 (system libvpx) tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus via pkg-config. Knows nothing about libretro. |
+| `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420/NV12, H.264 (libavcodec: VA-API, NVENC or x264, picked at run time, falling back to x264) and VP8 (system libvpx), both tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus/libavcodec via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
 | `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SOVEMU_ASSET_KEY`, else generated into `data/server.json`) and `load_secret`, the same for any server secret kept there (the token key). No HTTP, no database: the server's `/media/…` middleware calls it. |
 | `SovEmu.Identity` | `sovemu-identity` | Accounts and sign-in: users with argon2 passwords and roles, the sign-in throttle, the browser's sign-in cookie, and the provider: `oauth-as` (OAuth 2.1: code flow with PKCE, device grant, rotation, revocation) stored by `SqliteStorage`, one server per `SOVEMU_PUBLIC_URL`, with OpenID Connect over it (discovery, ES256 ID tokens, JWKS, userinfo, end session), the sign-in form's target and the apps' password fallback. `Identity::user_for_request` names a bearer token's user. Its tables are the server's migrations; it knows nothing about GraphQL. |
@@ -167,7 +167,8 @@ Sessions ──► Library, Protocol   (starts workers; never links a core or a 
 Identity  (no workspace references)
 Server ──► Library, Assets, Identity, Sessions, Protocol   (never links a core or a codec)
 
-Worker modules: stream.rs (the loop), session.rs (stdin/stdout IPC), serve.rs (standalone HTTP),
+Worker modules: stream.rs (the loop), video.rs (the codec per client and its encoder), session.rs
+(stdin/stdout IPC), serve.rs (standalone HTTP),
 persist.rs (battery saves and states), patch.rs (IPS/UPS/BPS soft patches), rewind.rs, headless.rs, probe.rs (and standin.rs, the
 stand-in games that make option-on-load cores declare their options).
 ```
@@ -183,12 +184,13 @@ loaded per process.
 client's tests and builds it on `node:<ver>-trixie-slim`; `cores` installs every core in
 `scripts/cores.list` from the libretro stable release with `scripts/install-cores.sh` (refusing
 to build for anything but `linux/amd64`); `toolchain` is `rust:<ver>-trixie` with the sources
-and Debian's libvpx and libopus; `build` compiles the release binaries and `test` runs
+and Debian's libvpx, libopus and libavcodec; `build` compiles the release binaries and `test` runs
 `cargo test --workspace` with Mesa's llvmpipe, both from `toolchain`: compiled side by side, each
 with its own `target/` cache mount, the tests run once the release build is done (some time the
 emulator) (CI builds both at once with `SovEmu.Backend/docker-bake.hcl` and
 keeps the cache mounts between runs); `runtime` is `debian:trixie-slim` with
-`libstdc++6`, `libvpx9`, `libopus0`, `tini`, libglvnd and Mesa (GL, EGL; no Vulkan drivers yet),
+`libstdc++6`, `libvpx9`, `libopus0`, `libavcodec61` (x264 included), libva with Intel's and Mesa's
+VA-API drivers (H.264 encoding), `tini`, libglvnd and Mesa (GL, EGL; no Vulkan drivers yet),
 `libxi6` and `libusb-1.0-0` (the release's Dolphin links them), sets
 `NVIDIA_DRIVER_CAPABILITIES=graphics,video,utility` for NVIDIA's toolkit, has the web client in
 `/opt/sovemu/web`, runs as uid 1000,
@@ -213,7 +215,7 @@ until the NAS library is connected.
 
 ## Running locally (macOS)
 
-Needs `brew install libvpx opus pkgconf` and Node 22.23.4+.
+Needs `brew install libvpx opus ffmpeg pkgconf` and Node 22.23.4+.
 
 ```bash
 scripts/fetch-cores.sh fceumm                         # → cores/fceumm_libretro.dylib

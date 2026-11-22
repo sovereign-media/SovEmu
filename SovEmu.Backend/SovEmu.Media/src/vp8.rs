@@ -8,9 +8,9 @@
 use std::ffi::{CStr, c_int};
 use std::ptr::NonNull;
 
-use crate::Error;
 use crate::ffi;
 use crate::yuv::{I420Planes, rgba_to_i420};
+use crate::{EncodedFrame, Error};
 
 /// Encoder settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,13 +29,6 @@ impl Default for Vp8Config {
     fn default() -> Self {
         Self { bitrate_kbps: 2_500, fps: 60, cpu_used: 8, keyframe_interval: 600 }
     }
-}
-
-/// One encoded frame.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncodedFrame {
-    pub data: Vec<u8>,
-    pub keyframe: bool,
 }
 
 fn vpx_error(op: &'static str, err: ffi::vpx_codec_err_t::Type) -> Error {

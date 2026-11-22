@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use crate::loading::{self, Report};
 use crate::sysdir::SystemDir;
 use anyhow::{Context, Result, anyhow};
-use sovemu_media::{AudioEncoder, Vp8Config, Vp8Encoder};
+use sovemu_media::{AudioEncoder, H264Preference};
 use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
 use sovemu_protocol::ipc::{ExitReason, Request};
 use sovemu_protocol::{
@@ -37,6 +37,7 @@ use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 use crate::runahead::RunAhead;
+use crate::video::{CodecSetting, Video, VideoCodec, VideoSettings};
 
 /// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
 /// Every client resends what is held at least every 100 ms, so a release that never arrives (the
@@ -60,6 +61,13 @@ pub(crate) fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u3
     let usable = (estimate_bps as f64 * 0.85 / 1000.0) as i64 - i64::from(audio_kbps);
     usable.clamp(i64::from(MIN_VIDEO_KBPS.min(max_kbps)), i64::from(max_kbps)) as u32
 }
+
+/// The payload types offered for H.264 and its retransmissions (str0m answers with the
+/// client's own numbers).
+const H264_PT: u8 = 108;
+const H264_RTX_PT: u8 = 109;
+/// `42e01f`: Constrained Baseline, level 3.1.
+const H264_PROFILE_LEVEL_ID: u32 = 0x42e01f;
 
 /// The RTP header extension id offered for playout delay: one str0m's standard map leaves free.
 const PLAYOUT_DELAY_EXT_ID: u8 = 5;
@@ -106,8 +114,10 @@ pub(crate) struct SessionConfig {
     /// Seconds between `session health` log lines while a client is connected (0: none).
     pub health_interval: u32,
     pub keyframe_interval: u32,
-    /// The GPU for OpenGL cores; `None` refuses them.
+    /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
+    pub video_codec: CodecSetting,
+    pub video_encoder: H264Preference,
 }
 
 /// The connected (or connecting) client.
@@ -123,7 +133,7 @@ struct Peer {
 pub(crate) struct Session {
     core: Core,
     fps: f64,
-    video: Vp8Encoder,
+    video: Video,
     audio: AudioEncoder,
     rgba: Vec<u8>,
     frame: u64,
@@ -214,11 +224,16 @@ impl Session {
         );
         Ok(Self {
             _system_dir: system_dir,
-            video: Vp8Encoder::new(Vp8Config {
+            video: Video::new(VideoSettings {
+                codec: config.video_codec,
+                encoder: config.video_encoder,
+                device: match &config.gpu {
+                    Some(sovemu_retro_host::GpuChoice::Device(node)) => Some(node.clone()),
+                    _ => None,
+                },
                 bitrate_kbps: config.video_kbps,
                 fps: av.fps.round() as u32,
                 keyframe_interval: config.keyframe_interval.max(1),
-                ..Vp8Config::default()
             }),
             audio: AudioEncoder::new(av.sample_rate, config.audio_kbps * 1000)?,
             fps: av.fps,
@@ -269,7 +284,8 @@ impl Session {
     /// What the health lines report beside their counts.
     fn health_now(&self) -> health::Now {
         health::Now {
-            video_kbps_target: self.video.config().bitrate_kbps,
+            video_kbps_target: self.video.bitrate_kbps(),
+            video_encoder: self.video.encoder_name(),
             estimate_kbps: self.estimate_kbps,
             run_ahead: self.run_ahead.frames(),
         }
@@ -368,9 +384,10 @@ fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
     max_video_kbps: u32,
+    codecs: CodecSetting,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
-    let mut rtc = RtcConfig::new()
+    let mut config = RtcConfig::new()
         .set_ice_lite(true)
         // Playout delay is not in str0m's standard extensions, so without this the 0/0 delay
         // `step` writes on every video packet is never negotiated and never sent. The receiver's
@@ -380,10 +397,20 @@ fn accept_offer(
         // if the client offers none: str0m takes the client's.
         .set_extension(PLAYOUT_DELAY_EXT_ID, Extension::PlayoutDelay)
         .clear_codecs()
-        .enable_vp8(true)
+        .enable_vp8(codecs.allows(VideoCodec::Vp8))
         .enable_opus(true, false)
-        .enable_bwe(Some(Bitrate::kbps(u64::from(max_video_kbps))))
-        .build(Instant::now());
+        .enable_bwe(Some(Bitrate::kbps(u64::from(max_video_kbps))));
+    if codecs.allows(VideoCodec::H264) {
+        // Constrained Baseline, level 3.1, packetization mode 1: what every WebRTC client
+        // decodes, and the profile the encoder writes.
+        config.codec_config().add_h264(
+            H264_PT.into(),
+            Some(H264_RTX_PT.into()),
+            true,
+            H264_PROFILE_LEVEL_ID,
+        );
+    }
+    let mut rtc = config.build(Instant::now());
     rtc.bwe().set_bitrate(
         Bitrate::kbps(u64::from(MIN_VIDEO_KBPS)),
         Bitrate::kbps(u64::from(max_video_kbps)),
@@ -423,7 +450,12 @@ pub(crate) fn run(
         loop {
             match commands.try_recv() {
                 Ok(Command::Offer { offer, reply }) => {
-                    let result = accept_offer(&offer, advertised, session.max_video_kbps);
+                    let result = accept_offer(
+                        &offer,
+                        advertised,
+                        session.max_video_kbps,
+                        session.video.codec_setting(),
+                    );
                     let answer = match result {
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {
@@ -573,19 +605,29 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
                     return Ok(None);
                 }
-                Event::MediaAdded(m) => {
-                    let codec = if m.kind == MediaKind::Video { Codec::Vp8 } else { Codec::Opus };
-                    let pt = payload_type(&mut p.rtc, m.mid, codec);
-                    match (m.kind, pt) {
-                        (MediaKind::Video, Some(pt)) => p.video = Some((m.mid, pt)),
-                        (MediaKind::Audio, Some(pt)) => p.audio = Some((m.mid, pt)),
-                        (kind, None) => tracing::warn!(
-                            kind = ?kind,
-                            codec = ?codec,
-                            "client offered media without the codec"
+                Event::MediaAdded(m) if m.kind == MediaKind::Video => {
+                    let h264 = payload_type(&mut p.rtc, m.mid, Codec::H264);
+                    let vp8 = payload_type(&mut p.rtc, m.mid, Codec::Vp8);
+                    match session.video.negotiate(h264.is_some(), vp8.is_some()) {
+                        Some(codec) => {
+                            let pt = if codec == VideoCodec::H264 { h264 } else { vp8 };
+                            p.video = pt.map(|pt| (m.mid, pt));
+                            session.video.request_keyframe();
+                            tracing::info!(codec = codec.name(), "video negotiated");
+                        }
+                        None => tracing::warn!(
+                            h264 = h264.is_some(),
+                            vp8 = vp8.is_some(),
+                            "client offered video without a codec in common"
                         ),
                     }
                 }
+                Event::MediaAdded(m) => match payload_type(&mut p.rtc, m.mid, Codec::Opus) {
+                    Some(pt) => p.audio = Some((m.mid, pt)),
+                    None => {
+                        tracing::warn!(kind = ?m.kind, "client offered media without the codec")
+                    }
+                },
                 Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => p.input = Some(id),
                 Event::ChannelClose(id) if Some(id) == p.input => {
                     tracing::warn!("input channel closed: releasing held input");
@@ -689,7 +731,7 @@ impl Session {
     /// Follows the send-bandwidth estimate, ignoring changes under 10%.
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
         let target = target_video_kbps(estimate_bps, self.audio_kbps, self.max_video_kbps);
-        let current = self.video.config().bitrate_kbps;
+        let current = self.video.bitrate_kbps();
         self.estimate_kbps = Some(estimate_bps / 1000);
         if target.abs_diff(current) * 10 > current {
             tracing::debug!(

@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use sovemu_media::{OpusDecoder, Vp8Decoder};
+use sovemu_media::{H264Decoder, OpusDecoder};
 use sovemu_protocol::{Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, SdpKind, SessionDescription};
 use str0m::change::SdpAnswer;
 use str0m::channel::{ChannelConfig, Reliability};
@@ -243,7 +243,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert_eq!(status, 200, "{body}");
     let answer: SessionDescription = serde_json::from_str(&body).unwrap();
     assert_eq!(answer.kind, SdpKind::Answer);
-    assert!(answer.sdp.contains("VP8"), "answer negotiates VP8");
+    assert!(answer.sdp.contains("H264"), "answer negotiates H.264");
     assert!(answer.sdp.to_lowercase().contains("opus"), "answer negotiates Opus");
     let playout_delay = format!(
         "a=extmap:{PLAYOUT_DELAY_ID} http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
@@ -251,7 +251,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert!(answer.sdp.contains(&playout_delay), "answer takes the offered playout delay id");
     rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
 
-    let mut vp8 = Vp8Decoder::new().unwrap();
+    let mut h264 = H264Decoder::new().unwrap();
     let mut opus = OpusDecoder::new().unwrap();
     let (mut video_frames, mut decoded, mut audio_packets, mut audio_samples) = (0, 0, 0, 0);
     // Video packets that ask to be shown at once (playout delay 0/0), so no jitter buffer.
@@ -341,7 +341,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
                         {
                             zero_delay_frames += 1;
                         }
-                        if let Ok(Some(pic)) = vp8.decode(&data.data) {
+                        if let Ok(Some(pic)) = h264.decode(&data.data) {
                             decoded += 1;
                             picture_size = Some((pic.width, pic.height));
                         }
@@ -423,6 +423,28 @@ fn streams_video_and_audio_and_acknowledges_input() {
         paused_frames <= 1,
         "still {paused_frames} video frames per 300 ms, 5 s after pausing: the game kept running"
     );
+}
+
+#[test]
+fn a_client_without_h264_gets_vp8() {
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut worker = Worker::start();
+    let mut rtc = RtcConfig::new()
+        .clear_codecs()
+        .enable_vp8(true)
+        .enable_opus(true, false)
+        .build(Instant::now());
+    rtc.add_local_candidate(Candidate::host("127.0.0.1:9".parse().unwrap(), "udp").unwrap());
+    let mut api = rtc.sdp_api();
+    api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+    let (offer, _) = api.apply().expect("an offer");
+    let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+    let (status, body) =
+        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+    assert_eq!(status, 200, "{body}");
+    let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+    assert!(answer.sdp.contains("VP8"), "answer negotiates VP8");
+    assert!(!answer.sdp.contains("H264"), "and no H.264, which the client did not offer");
 }
 
 /// Emulated frames per video frame received, between the acks `from` and `to` (exclusive): how

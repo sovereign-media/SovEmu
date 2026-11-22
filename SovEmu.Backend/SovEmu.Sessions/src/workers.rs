@@ -50,6 +50,10 @@ pub struct WorkerConfig {
     pub idle_timeout_secs: u64,
     pub video_kbps: u32,
     pub audio_kbps: u32,
+    /// `--video-codec` and `--video-encoder` for workers (`SOVEMU_VIDEO_CODEC`,
+    /// `SOVEMU_VIDEO_ENCODER`).
+    pub video_codec: String,
+    pub video_encoder: String,
     /// How long a worker may take to load its core and game. Generous by default: a disc image
     /// on a remote share takes tens of seconds to open.
     pub start_timeout: Duration,
@@ -533,6 +537,10 @@ impl Workers {
             .arg(self.config.video_kbps.to_string())
             .arg("--audio-kbps")
             .arg(self.config.audio_kbps.to_string())
+            .arg("--video-codec")
+            .arg(&self.config.video_codec)
+            .arg("--video-encoder")
+            .arg(&self.config.video_encoder)
             .arg("--core")
             .arg(&launch.core)
             .arg("--rom")
@@ -874,6 +882,8 @@ done
             idle_timeout_secs: 0,
             video_kbps: 1000,
             audio_kbps: 64,
+            video_codec: "auto".into(),
+            video_encoder: "software".into(),
             start_timeout: Duration::from_secs(10),
             stop_timeout,
             rewind_seconds: 0,

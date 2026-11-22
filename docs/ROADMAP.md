@@ -192,7 +192,12 @@ held 59.93 fps over 300 frames with no resyncs.
       API; roles `viewer` and `admin`
 - [ ] The apps show a sign-in code (the device grant; the server side is done)
 - [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts
-- [ ] H.264 fallback for clients without VP8 decode
+- [x] H.264, preferred when the client offers it (VP8 otherwise; `SOVEMU_VIDEO_CODEC`): libavcodec
+      over VA-API, NVENC or x264 (`SOVEMU_VIDEO_ENCODER`), falling back to x264 when a GPU
+      encoder does not open, fails, or holds frames back
+- [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
+      reading it back with `glReadPixels`
+- [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)
 - [ ] Worker resource limits (cgroups/rlimits per session)
 
 ## Phase 7: 3D systems

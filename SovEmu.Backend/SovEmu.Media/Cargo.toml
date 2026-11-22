@@ -1,6 +1,6 @@
 [package]
 name = "sovemu-media"
-description = "Encoding for the SovEmu stream: RGBA to I420, VP8 (libvpx), Opus (libopus), resampling"
+description = "Encoding for the SovEmu stream: RGBA to YUV, VP8 (libvpx), H.264 (libavcodec), Opus (libopus), resampling"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,3 +17,4 @@ workspace = true
 [dependencies]
 audioadapter-buffers = "5.2.0"
 rubato = "5.1.0"
+tracing = "0.1.44"

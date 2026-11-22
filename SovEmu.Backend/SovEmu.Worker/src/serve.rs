@@ -40,6 +40,8 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             health_interval: args.health_interval,
             keyframe_interval: args.keyframe_interval,
             gpu: args.gpu.0.clone(),
+            video_codec: args.video_codec,
+            video_encoder: args.video_encoder,
             state_dir: Some(args.save_dir.join("states")),
         },
         &crate::loading::ignore,

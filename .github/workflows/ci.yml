@@ -91,14 +91,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # SovEmu.Media links the system libvpx and libopus through pkg-config. The C toolchain and
-      # libclang (bindgen) are on GitHub's runners but not on the self-hosted image. On macOS this
-      # does nothing; Homebrew installs the codecs below.
+      # SovEmu.Media links the system libvpx, libopus and libavcodec through pkg-config. The C
+      # toolchain and libclang (bindgen) are on GitHub's runners but not on the self-hosted image.
+      # On macOS this does nothing; Homebrew installs the codecs below.
       - name: Set up the runner
         uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
         with:
           gh: 'false'
-          apt: build-essential clang libclang-dev libvpx-dev libopus-dev pkg-config
+          apt: build-essential clang libclang-dev libvpx-dev libopus-dev libavcodec-dev libavutil-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -110,7 +110,7 @@ jobs:
 
       - name: Codec libraries (macOS)
         if: runner.os == 'macOS'
-        run: brew install libvpx opus pkgconf
+        run: brew install libvpx opus ffmpeg pkgconf
 
       - name: Format
         run: cargo fmt --all --check
