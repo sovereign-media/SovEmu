@@ -3,14 +3,12 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { go } from "../../lib/go";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
-import { Confirm, Progress, panel } from "../ui/primitives";
+import { Confirm, Progress } from "../ui/primitives";
+import AdminPage, { AdminSection } from "./AdminPage";
 
 const MODES: Record<LibraryStatus["mode"], [string, string]> = {
   DIRECT: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
@@ -23,31 +21,6 @@ const MODES: Record<LibraryStatus["mode"], [string, string]> = {
     "A full local copy of the library is kept in sync in the background, and games are played from it.",
   ],
 };
-
-function Card({
-  title,
-  icon,
-  actions,
-  children,
-}: {
-  title: string;
-  icon: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className={panel}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
-          {icon}
-          {title}
-        </h2>
-        <div className="flex gap-2">{actions}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function syncText(m: NonNullable<LibraryStatus["mirror"]>): string {
   if (m.error) return m.error;
@@ -65,11 +38,6 @@ function Library() {
   const metadata: MetadataStatus | null = status.data?.metadataStatus ?? null;
   const [confirm, setConfirm] = useState(false);
   const refresh = useCallback(() => invalidate(["admin", "status"]), []);
-
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
 
   // A rescan changes what every screen lists.
   const scanning_ = useMutation({
@@ -91,8 +59,8 @@ function Library() {
   const art = metadata.artwork;
   const artPct = art.total ? (100 * art.done) / art.total : 0;
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
-      <Card
+    <>
+      <AdminSection
         title="Library"
         icon={<HardDrive />}
         actions={
@@ -114,10 +82,10 @@ function Library() {
           )}
         </dl>
         <p className="mt-3 text-sm text-slate-400">{help}</p>
-      </Card>
+      </AdminSection>
 
       {m && (
-        <Card
+        <AdminSection
           title="Mirror"
           icon={<FolderSync />}
           actions={
@@ -134,10 +102,10 @@ function Library() {
         >
           <Progress className="mt-4" value={syncPct} label="Mirror sync" />
           <p className="mt-2 text-sm text-slate-300">{syncText(m)}</p>
-        </Card>
+        </AdminSection>
       )}
 
-      <Card
+      <AdminSection
         title="Game information"
         icon={<Info />}
         actions={
@@ -187,7 +155,7 @@ function Library() {
             ))}
           </ul>
         )}
-      </Card>
+      </AdminSection>
 
       <Confirm
         open={confirm}
@@ -197,17 +165,14 @@ function Library() {
         action="Refresh all"
         onAction={() => fetchMetadata(true)}
       />
-    </main>
+    </>
   );
 }
 
 export default function LibraryAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Library />
-      </div>
-    </Shell>
+    <AdminPage>
+      <Library />
+    </AdminPage>
   );
 }

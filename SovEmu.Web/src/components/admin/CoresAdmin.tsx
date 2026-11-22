@@ -8,14 +8,10 @@ import { useState } from "react";
 import { CORE_STATE_TEXT, type CoreState, coreState, coresSummary, filterCores } from "../../lib/cores";
 import { q } from "../../lib/data";
 import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import { Pill, type PillTone, panel } from "../ui/primitives";
+import AdminPage, { ErrorNote, Licence } from "./AdminPage";
 
-const STATE_TONE: Record<CoreState, string> = {
-  loaded: "bg-emerald-500/15 text-emerald-300",
-  failed: "bg-red-500/20 text-red-300",
-  missing: "bg-white/10 text-slate-400",
-};
+const STATE_TONE: Record<CoreState, PillTone> = { loaded: "good", failed: "bad", missing: "muted" };
 
 function Cores() {
   const cores = useQuery(q.cores());
@@ -85,18 +81,9 @@ function Cores() {
                     {c.error && <p className="mt-1 text-sm break-words text-red-300">{c.error}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", STATE_TONE[state])}>
-                      {CORE_STATE_TEXT[state]}
-                    </span>
+                    <Pill tone={STATE_TONE[state]}>{CORE_STATE_TEXT[state]}</Pill>
                     {c.licence ? (
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                          c.nonCommercial ? "bg-amber-500/15 text-amber-300" : "bg-white/10 text-slate-300",
-                        )}
-                      >
-                        {c.licence}
-                      </span>
+                      <Licence nonCommercial={c.nonCommercial}>{c.licence}</Licence>
                     ) : (
                       <span className="text-xs text-muted">Not shipped</span>
                     )}

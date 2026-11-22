@@ -15,7 +15,7 @@ test("home and the Systems menu list the library's systems", async ({ page }) =>
 
 test("the admin can rescan the library", async ({ page }) => {
   await page.goto("/admin/");
-  await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Library", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Rescan" }).click();
   await expect(page.getByRole("button", { name: "Rescan" })).toBeEnabled();
   await expect(page.getByText("Games").locator("xpath=following-sibling::dd[1]")).toHaveText("4");

@@ -6,17 +6,15 @@
 // stays reproducible without this page.
 
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, SlidersHorizontal, Terminal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Copy, Cpu, Gauge, Info, Lock, RotateCcw, Search, Terminal } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { api, type CoreSetting, type SystemSettings, type SystemSummary } from "../../lib/api";
 import { q, queryClient } from "../../lib/data";
-import { go } from "../../lib/go";
 import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadge } from "../../lib/settings";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, value: string | null) => void }) {
   const badge = sourceBadge(s.source);
@@ -158,11 +156,6 @@ function Settings() {
   const saved = (system: string, now: SystemSettings) =>
     queryClient.setQueryData(q.systemSettings(system).queryKey, now);
 
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
-
   const change = async (key: string, value: string | null) => {
     if (!current) return;
     try {
@@ -208,40 +201,30 @@ function Settings() {
   const changed = loaded?.settings.filter((s) => s.source === "ADMIN").length ?? 0;
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-6 px-6 pt-16 pb-16">
-      <section className={panel}>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-bold">
-              <SlidersHorizontal className="size-5 text-slate-400" /> Emulator settings
-            </h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Rendering, resolution, sound, controls and more. Changes apply to the next game started.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Select
-              label="System"
-              value={current?.id ?? ""}
-              options={systems.map((s) => ({ value: s.id, label: s.name }))}
-              onChange={(id) => {
-                const s = systems.find((x) => x.id === id);
-                if (s) void select(s);
-              }}
-              className="h-9 w-64 text-base font-semibold"
+    <>
+      <section className={panel} aria-label="System">
+        <div className="flex flex-wrap items-center gap-3">
+          <Select
+            label="System"
+            value={current?.id ?? ""}
+            options={systems.map((s) => ({ value: s.id, label: s.name }))}
+            onChange={(id) => {
+              const s = systems.find((x) => x.id === id);
+              if (s) void select(s);
+            }}
+            className="h-9 w-64 text-base font-semibold"
+          />
+          <label className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-500" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              className="h-9 w-56 max-w-full rounded-md border border-edge bg-black/30 pr-3 pl-8 text-sm outline-none focus:border-accent"
             />
-            <label className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-500" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search settings"
-                aria-label="Search settings"
-                className="h-9 w-56 max-w-full rounded-md border border-edge bg-black/30 pr-3 pl-8 text-sm outline-none focus:border-accent"
-              />
-            </label>
-          </div>
+          </label>
         </div>
         {current && (
           <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400">
@@ -335,17 +318,17 @@ function Settings() {
           </div>
         </div>
       )}
-    </main>
+    </>
   );
 }
 
 export default function SettingsAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Settings />
-      </div>
-    </Shell>
+    <AdminPage
+      width="max-w-6xl"
+      description="Rendering, resolution, sound, controls and more. Changes apply to the next game started."
+    >
+      <Settings />
+    </AdminPage>
   );
 }

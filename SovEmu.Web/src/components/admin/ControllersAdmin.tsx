@@ -7,7 +7,7 @@
 // admin's can be copied out as environment lines.
 
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Gamepad2, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
+import { Check, Copy, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type ControllerDefaults, type PadLayout, type SystemControls, type SystemSummary } from "../../lib/api";
 import {
@@ -31,11 +31,10 @@ import { invalidate, q } from "../../lib/data";
 import { captureInput } from "../../lib/input";
 import type { ButtonName } from "../../lib/protocol";
 import { PadDiagram } from "../PadDiagram";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
+import AdminPage from "./AdminPage";
 
 const NOT_BOUND = "";
 
@@ -239,28 +238,17 @@ function Controllers() {
         : "Built-in default";
 
   return (
-    <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 pt-16 pb-16">
-      <section className={panel}>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-bold">
-              <Gamepad2 className="size-5 text-slate-400" /> Controllers
-            </h2>
-            <p className="mt-1 max-w-prose text-sm text-slate-400">
-              The buttons every player starts with, per controller model. Players can still remap their own in a game's
-              Controls menu, which wins over these.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
-            <Select
-              label="System"
-              value={system}
-              options={[{ value: "", label: "Every system" }, ...systems.map((s) => ({ value: s.id, label: s.name }))]}
-              onChange={chooseSystem}
-              className="w-64"
-            />
-          </div>
+    <>
+      <section className={panel} aria-label="Controller">
+        <div className="flex flex-wrap gap-2">
+          <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
+          <Select
+            label="System"
+            value={system}
+            options={[{ value: "", label: "Every system" }, ...systems.map((s) => ({ value: s.id, label: s.name }))]}
+            onChange={chooseSystem}
+            className="w-64"
+          />
         </div>
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-400">
           {locked && <Lock className="size-4 text-amber-300" />}
@@ -355,17 +343,17 @@ function Controllers() {
           </pre>
         </section>
       )}
-    </main>
+    </>
   );
 }
 
 export default function ControllersAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Controllers />
-      </div>
-    </Shell>
+    <AdminPage
+      width="max-w-6xl"
+      description="The buttons every player starts with, per controller model. Players can still remap their own in a game's Controls menu, which wins over these."
+    >
+      <Controllers />
+    </AdminPage>
   );
 }

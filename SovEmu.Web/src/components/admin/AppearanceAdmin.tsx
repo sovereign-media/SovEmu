@@ -9,8 +9,7 @@ import type { ReactNode } from "react";
 import { api } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
 import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
-import AdminPage, { EnvLine, ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 
 function Choice({
   label,
@@ -68,10 +67,7 @@ function Appearance() {
     <>
       <ErrorNote error={appearance.error ?? choose.error} />
       {a && (
-        <section className={panel} aria-labelledby="background-heading">
-          <h2 id="background-heading" className="text-lg font-bold">
-            Background
-          </h2>
+        <AdminSection title="Background">
           <p className="mt-1 text-sm text-slate-400">
             Behind every screen, for everyone, on the web, the Android app and the TV. Apps pick up a change when they
             next start.
@@ -118,7 +114,7 @@ function Appearance() {
             it. Your own system photos: <code>systems/&lt;system id&gt;.webp</code> in the data folder. Both are found
             by the next library scan.
           </p>
-        </section>
+        </AdminSection>
       )}
     </>
   );

@@ -4,10 +4,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ChartLine, Cpu, Info } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { useState } from "react";
 import type { ResourceHistory, ResourceRange, ServerResources } from "../../lib/api";
 import { q } from "../../lib/data";
-import { go } from "../../lib/go";
 import {
   formatBytes,
   formatCores,
@@ -18,9 +17,8 @@ import {
   tickLabel,
   timeTicks,
 } from "../../lib/resources";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
-import { Progress, panel, Segmented } from "../ui/primitives";
+import { Progress, Segmented } from "../ui/primitives";
+import AdminPage, { AdminSection } from "./AdminPage";
 
 const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "HOUR", label: "Hour" },
@@ -28,31 +26,6 @@ const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "WEEK", label: "Week" },
   { value: "MONTH", label: "Month" },
 ];
-
-function Card({
-  title,
-  icon,
-  actions,
-  children,
-}: {
-  title: string;
-  icon: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className={panel}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
-          {icon}
-          {title}
-        </h2>
-        {actions}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function Host({ host }: { host: ServerResources["host"] }) {
   const cpus =
@@ -295,10 +268,6 @@ function Chart({
 }
 
 function Resources() {
-  const viewer = useQuery(q.viewer());
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
   const [range, setRange] = useState<ResourceRange>("HOUR");
   const resources = useQuery({
     ...q.serverResources(),
@@ -312,19 +281,19 @@ function Resources() {
   const series = (kind: "CPU" | "MEMORY") => history.data?.series.find((s) => s.resource === kind)?.points ?? [];
   const u = r.usage;
   return (
-    <main className="mx-auto grid max-w-4xl gap-6 px-6 pt-16 pb-16">
-      <Card title="Host" icon={<Cpu />}>
+    <>
+      <AdminSection title="Host" icon={<Cpu />}>
         <Host host={r.host} />
-      </Card>
+      </AdminSection>
 
-      <Card title="In use now" icon={<Activity />}>
+      <AdminSection title="In use now" icon={<Activity />}>
         <p className="mt-2 text-sm text-slate-400">
           The container's whole use: the server and every game session running in it.
         </p>
         <Usage r={r} />
-      </Card>
+      </AdminSection>
 
-      <Card
+      <AdminSection
         title="History"
         icon={<ChartLine />}
         actions={<Segmented label="Time range" value={range} options={RANGES} onChange={setRange} />}
@@ -354,18 +323,15 @@ function Resources() {
             peak are kept for <code>SOVEMU_RESOURCE_HISTORY_DAYS</code> days.
           </span>
         </p>
-      </Card>
-    </main>
+      </AdminSection>
+    </>
   );
 }
 
 export default function ResourcesAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <Resources />
-      </div>
-    </Shell>
+    <AdminPage>
+      <Resources />
+    </AdminPage>
   );
 }

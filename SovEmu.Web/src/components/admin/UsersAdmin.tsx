@@ -3,32 +3,22 @@
 // `SOVEMU_USERS__<n>__…`).
 
 import { useQuery } from "@tanstack/react-query";
-import { Shield, User as UserIcon, Users } from "lucide-react";
-import { useEffect } from "react";
-import { adminDocumentTitle } from "../../lib/adminNav";
+import { Shield, User as UserIcon } from "lucide-react";
 import type { api } from "../../lib/api";
 import { q } from "../../lib/data";
-import { go } from "../../lib/go";
 import { initials } from "../../lib/systems";
-import Shell from "../Shell";
-import SideNav, { NAV_SPACE } from "../SideNav";
-import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
+import { Pill, panel } from "../ui/primitives";
+import AdminPage, { ErrorNote } from "./AdminPage";
 
 type Account = Awaited<ReturnType<typeof api.users>>[number];
 
 function RoleBadge({ role }: { role: Account["role"] }) {
   const admin = role === "ADMIN";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold [&_svg]:size-3.5",
-        admin ? "bg-accent/20 text-accent" : "bg-white/10 text-slate-300",
-      )}
-    >
+    <Pill tone={admin ? "accent" : "neutral"}>
       {admin ? <Shield aria-hidden /> : <UserIcon aria-hidden />}
       {admin ? "Admin" : "Viewer"}
-    </span>
+    </Pill>
   );
 }
 
@@ -37,30 +27,10 @@ function UsersList() {
   const me = viewer.data?.user ?? null;
   const listed = useQuery(q.users());
   const users: Account[] | null = listed.data ?? null;
-  const error = listed.error?.message ?? null;
-
-  useEffect(() => {
-    document.title = `${adminDocumentTitle(location.pathname)} · SovEmu`;
-  }, []);
-  useEffect(() => {
-    if (viewer.data && !viewer.data.user?.isAdmin) go("/", { replace: true });
-  }, [viewer.data]);
 
   return (
-    <main className="mx-auto grid max-w-3xl gap-6 p-6">
-      <header>
-        <h1 className="flex items-center gap-2 text-2xl font-black tracking-tight [&_svg]:size-6 [&_svg]:text-slate-400">
-          <Users aria-hidden /> Users
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          Everyone with an account here. Admins also run the server; viewers play.
-        </p>
-      </header>
-      {error && (
-        <p role="alert" className="rounded-md bg-red-500/15 px-3 py-2 text-sm text-red-300">
-          {error}
-        </p>
-      )}
+    <>
+      <ErrorNote error={listed.error} />
       {users && (
         <section className={panel} aria-label="Accounts">
           <p className="mb-3 text-sm text-muted">
@@ -85,17 +55,14 @@ function UsersList() {
           </ul>
         </section>
       )}
-    </main>
+    </>
   );
 }
 
 export default function UsersAdmin() {
   return (
-    <Shell>
-      <SideNav section="admin" />
-      <div className={NAV_SPACE}>
-        <UsersList />
-      </div>
-    </Shell>
+    <AdminPage width="max-w-3xl" description="Everyone with an account here. Admins also run the server; viewers play.">
+      <UsersList />
+    </AdminPage>
   );
 }

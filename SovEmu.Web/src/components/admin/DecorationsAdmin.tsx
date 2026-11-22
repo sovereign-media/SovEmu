@@ -7,8 +7,8 @@ import type { DecorationsReport } from "../../lib/api";
 import { q } from "../../lib/data";
 import { systemDecorationEnv, windowInsets } from "../../lib/decoration";
 import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
-import AdminPage, { EnvLine, ErrorNote } from "./AdminPage";
+import { Pill, panel } from "../ui/primitives";
+import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 
 type SystemDecoration = DecorationsReport["systems"][number];
 
@@ -54,15 +54,12 @@ function SystemCard({ entry }: { entry: SystemDecoration }) {
         <span className="min-w-0 flex-1 truncate font-semibold" title={entry.system.name}>
           {entry.system.name}
         </span>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-semibold",
-            entry.perSystem ? "bg-accent/20 text-accent" : "bg-white/10 text-slate-300",
-          )}
+        <Pill
+          tone={entry.perSystem ? "accent" : "neutral"}
           title={entry.perSystem ? "Chosen for this system" : "The default set"}
         >
           {entry.set}
-        </span>
+        </Pill>
       </div>
       {entry.perSystem && <EnvLine>{systemDecorationEnv(entry.system.id, entry.set)}</EnvLine>}
     </li>
@@ -77,10 +74,7 @@ function Decorations() {
       <ErrorNote error={report.error} />
       {data && (
         <>
-          <section className={panel} aria-labelledby="sets-heading">
-            <h2 id="sets-heading" className="text-lg font-bold">
-              Sets
-            </h2>
+          <AdminSection title="Sets">
             <p className="mt-1 text-sm text-slate-400">
               Games are framed with <EnvLine>SOVEMU_DECORATION={data.default}</EnvLine>, or per system with{" "}
               <EnvLine>{systemDecorationEnv("<id>", "<set>")}</EnvLine> (<code>none</code> for no frame). Sets use
@@ -126,7 +120,7 @@ function Decorations() {
                 Add folders with <code>SOVEMU_DECORATIONS_DIRS</code>.
               </p>
             </details>
-          </section>
+          </AdminSection>
           <section aria-labelledby="systems-heading">
             <h2 id="systems-heading" className="mb-3 text-lg font-bold">
               Systems

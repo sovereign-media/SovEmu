@@ -10,7 +10,7 @@ import { environmentLines, filterSettings, GROUP_LABELS, groupSettings } from ".
 import { q } from "../../lib/data";
 import { Button } from "../ui/button";
 import { panel } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
 function Configuration() {
@@ -60,16 +60,13 @@ function Configuration() {
         </p>
       </section>
       {groups.map((g) => (
-        <section key={g.group} className={panel} aria-labelledby={`config-${g.group}`}>
-          <h2 id={`config-${g.group}`} className="text-lg font-bold">
-            {GROUP_LABELS[g.group]}
-          </h2>
+        <AdminSection key={g.group} title={GROUP_LABELS[g.group]}>
           <ul className="mt-1 divide-y divide-white/5">
             {g.settings.map((s) => (
               <SettingRow key={s.name} setting={s} />
             ))}
           </ul>
-        </section>
+        </AdminSection>
       ))}
       {config.data && groups.length === 0 && <p className="text-sm text-muted">No setting matches.</p>}
     </>

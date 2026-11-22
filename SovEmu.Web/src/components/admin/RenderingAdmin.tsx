@@ -6,8 +6,8 @@ import { CircleAlert, CircleCheck, CircleOff } from "lucide-react";
 import { q } from "../../lib/data";
 import { deviceName, deviceState, probedText, type Tone, verdict } from "../../lib/rendering";
 import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
-import AdminPage, { EnvLine, ErrorNote } from "./AdminPage";
+import { Pill, type PillTone, panel } from "../ui/primitives";
+import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 
 const TONE_TEXT: Record<Tone, string> = {
   good: "text-emerald-300",
@@ -15,11 +15,7 @@ const TONE_TEXT: Record<Tone, string> = {
   off: "text-slate-400",
 };
 
-const TONE_BADGE: Record<Tone, string> = {
-  good: "bg-emerald-500/15 text-emerald-300",
-  warn: "bg-amber-500/15 text-amber-300",
-  off: "bg-white/10 text-slate-300",
-};
+const TONE_PILL: Record<Tone, PillTone> = { good: "good", warn: "warn", off: "neutral" };
 
 function ToneIcon({ tone }: { tone: Tone }) {
   if (tone === "good") return <CircleCheck aria-hidden className="size-6 shrink-0 text-emerald-400" />;
@@ -69,10 +65,7 @@ function Rendering() {
             <p className="mt-3 text-xs text-muted">{probedText(gpu.data.probedAt)}</p>
           </section>
 
-          <section className={panel} aria-labelledby="devices-heading">
-            <h2 id="devices-heading" className="text-lg font-bold">
-              Devices
-            </h2>
+          <AdminSection title="Devices">
             {gpu.data.devices.length === 0 ? (
               <p className="mt-2 text-sm text-muted">
                 {gpu.data.mode === "OFF" && gpu.data.probedAt == null
@@ -97,23 +90,18 @@ function Rendering() {
                           </div>
                         )}
                       </div>
-                      <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", TONE_BADGE[state.tone])}>
-                        {state.label}
-                      </span>
+                      <Pill tone={TONE_PILL[state.tone]}>{state.label}</Pill>
                     </li>
                   );
                 })}
               </ul>
             )}
-          </section>
+          </AdminSection>
         </>
       )}
 
       {threeD.length > 0 && (
-        <section className={panel} aria-labelledby="systems-heading">
-          <h2 id="systems-heading" className="text-lg font-bold">
-            3D systems
-          </h2>
+        <AdminSection title="3D systems">
           <ul className="mt-3 divide-y divide-white/5">
             {threeD.map((s) => (
               <li key={s.id} className="flex items-center gap-3 py-2.5">
@@ -127,7 +115,7 @@ function Rendering() {
               </li>
             ))}
           </ul>
-        </section>
+        </AdminSection>
       )}
     </>
   );
