@@ -28,6 +28,7 @@ mod standin;
 mod stream;
 mod sysdir;
 mod video;
+mod watchdog;
 mod web;
 
 use std::net::{IpAddr, SocketAddr};

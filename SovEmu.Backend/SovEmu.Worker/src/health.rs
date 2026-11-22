@@ -26,6 +26,13 @@ pub(crate) struct Stats {
     pub(crate) encode_time: Duration,
     pub(crate) worst_encode: Duration,
     pub(crate) video_bytes: u64,
+    /// Frames the core ran (run-ahead's and fast-forward's included), the time inside the core,
+    /// and reading GPU frames back (which waits for the GPU to finish drawing).
+    pub(crate) core_frames: u64,
+    pub(crate) core_time: Duration,
+    pub(crate) worst_core: Duration,
+    pub(crate) readback_time: Duration,
+    pub(crate) worst_readback: Duration,
     /// Controller packets applied (newer than the last one).
     pub(crate) inputs: u64,
     /// Ticks held because the client's menu was open.
@@ -45,6 +52,11 @@ impl Stats {
         self.encode_time += other.encode_time;
         self.worst_encode = self.worst_encode.max(other.worst_encode);
         self.video_bytes += other.video_bytes;
+        self.core_frames += other.core_frames;
+        self.core_time += other.core_time;
+        self.worst_core = self.worst_core.max(other.worst_core);
+        self.readback_time += other.readback_time;
+        self.worst_readback = self.worst_readback.max(other.worst_readback);
         self.inputs += other.inputs;
         self.paused += other.paused;
         self.span += other.span;
@@ -64,6 +76,16 @@ impl Stats {
 
     pub(crate) fn mean_encode_ms(&self) -> f64 {
         mean_ms(self.encode_time, self.encoded)
+    }
+
+    /// Time inside the core per frame it ran.
+    pub(crate) fn mean_core_ms(&self) -> f64 {
+        mean_ms(self.core_time, self.core_frames)
+    }
+
+    /// Reading a GPU frame back per frame the core ran (0 for cores that draw on the CPU).
+    pub(crate) fn mean_readback_ms(&self) -> f64 {
+        mean_ms(self.readback_time, self.core_frames)
     }
 }
 
@@ -155,6 +177,16 @@ impl Health {
         w.video_bytes += bytes as u64;
     }
 
+    /// Adds a tick's frames: the core's time and the GPU readback's.
+    pub(crate) fn core(&mut self, t: sovemu_retro_host::FrameTiming) {
+        let w = &mut self.window;
+        w.core_frames += u64::from(t.frames);
+        w.core_time += t.run;
+        w.worst_core = w.worst_core.max(t.worst_run);
+        w.readback_time += t.readback;
+        w.worst_readback = w.worst_readback.max(t.worst_readback);
+    }
+
     pub(crate) fn input(&mut self) {
         self.window.inputs += 1;
     }
@@ -182,6 +214,8 @@ impl Health {
             },
             tick_mean_ms: window.mean_tick_ms(),
             encode_mean_ms: window.mean_encode_ms(),
+            core_mean_ms: window.mean_core_ms(),
+            readback_mean_ms: window.mean_readback_ms(),
             video_kbps: window.video_kbps(),
             video_kbps_target: at.video_kbps_target,
             estimate_kbps: at.estimate_kbps,
@@ -247,6 +281,10 @@ fn log_health(w: &Stats, at: &Now) {
                 tick_worst_ms = ms(w.worst_tick),
                 encode_mean_ms = w.mean_encode_ms(),
                 encode_worst_ms = ms(w.worst_encode),
+                core_mean_ms = w.mean_core_ms(),
+                core_worst_ms = ms(w.worst_core),
+                readback_mean_ms = w.mean_readback_ms(),
+                readback_worst_ms = ms(w.worst_readback),
                 video_kbps = w.video_kbps(),
                 video_kbps_target = at.video_kbps_target,
                 video_encoder = at.video_encoder,

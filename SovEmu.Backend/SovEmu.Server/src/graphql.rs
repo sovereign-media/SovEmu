@@ -1035,6 +1035,10 @@ struct StreamHealth {
     paused: f64,
     tick_mean_ms: f64,
     encode_mean_ms: f64,
+    /// Inside the core, per frame it ran (run-ahead's included).
+    core_mean_ms: f64,
+    /// Reading a GPU frame back, per frame the core ran (0 for cores that draw on the CPU).
+    readback_mean_ms: f64,
     /// What the encoder produced, and what it aimed for, kbit/s.
     video_kbps: f64,
     video_kbps_target: i32,
@@ -1050,6 +1054,8 @@ impl From<&sovemu_protocol::ipc::SessionHealth> for StreamHealth {
             paused: h.paused,
             tick_mean_ms: h.tick_mean_ms,
             encode_mean_ms: h.encode_mean_ms,
+            core_mean_ms: h.core_mean_ms,
+            readback_mean_ms: h.readback_mean_ms,
             video_kbps: h.video_kbps,
             video_kbps_target: h.video_kbps_target as i32,
             estimate_kbps: h.estimate_kbps.map(|k| k as f64),

@@ -1535,6 +1535,14 @@ type StreamHealth {
 	tickMeanMs: Float!
 	encodeMeanMs: Float!
 	"""
+	Inside the core, per frame it ran (run-ahead's included).
+	"""
+	coreMeanMs: Float!
+	"""
+	Reading a GPU frame back, per frame the core ran (0 for cores that draw on the CPU).
+	"""
+	readbackMeanMs: Float!
+	"""
 	What the encoder produced, and what it aimed for, kbit/s.
 	"""
 	videoKbps: Float!
