@@ -52,6 +52,11 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Auth: local accounts (argon2, HttpOnly session cookie), first-run admin setup, admin adds
       users, changes their roles and passwords, signs them out everywhere and removes them (never
       the last admin, nor an account the environment declares, which shows locked)
+- [x] Admins see every browser and app signed in (a live refresh family: its client, when it
+      signed in and was last used, when it lapses) on the Devices page and each account's own
+      page, with what that account has played and its saves, and sign one out through oauth-as's
+      family revocation (`signIns`, `user`, `endSignIn`)
+- [ ] The apps name themselves when they sign in (app, version, device), so a sign-in shows it
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
 - [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per

@@ -143,6 +143,13 @@ pub(crate) async fn user_with_hash(
     Ok(row.map(|(id, username, role, hash)| (User { id, username, role }, hash)))
 }
 
+pub(crate) async fn joined(pool: &SqlitePool, id: i64) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar("SELECT created_at FROM users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?)
+}
+
 pub(crate) async fn list_users(pool: &SqlitePool) -> Result<Vec<User>> {
     Ok(sqlx::query_as::<_, User>("SELECT id, username, role FROM users ORDER BY username")
         .fetch_all(pool)

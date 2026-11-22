@@ -135,6 +135,30 @@ fn measure(
     (by_area, by_user)
 }
 
+/// One user's saves on disk, every system's: bytes and files. Walks only that folder, so a page
+/// about one user need not measure the whole data folder.
+pub(crate) async fn user_saves(state: &AppState, user_id: i64) -> ApiResult<(u64, u64)> {
+    let dir = state.config.paths().user_saves(user_id);
+    tokio::task::spawn_blocking(move || {
+        let mut tally = (0, 0);
+        let mut stack = vec![dir];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let Ok(kind) = entry.file_type() else { continue };
+                if kind.is_dir() {
+                    stack.push(entry.path());
+                } else if let Ok(meta) = entry.metadata() {
+                    tally = (tally.0 + meta.len(), tally.1 + 1);
+                }
+            }
+        }
+        tally
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("measuring saves: {e}")))
+}
+
 /// The data folder's filesystem: total and free (to unprivileged users) bytes.
 fn filesystem(path: &Path) -> (Option<u64>, Option<u64>) {
     match rustix::fs::statvfs(path) {
@@ -165,12 +189,7 @@ pub(crate) async fn report(state: &AppState, refresh: bool) -> ApiResult<Storage
             .await
             .map_err(|e| ApiError::internal(format!("measuring the data folder: {e}")))?
     };
-    let names: BTreeMap<i64, String> =
-        sqlx::query_as::<_, (i64, String)>("SELECT id, username FROM users")
-            .fetch_all(&state.db)
-            .await?
-            .into_iter()
-            .collect();
+    let names = crate::api::usernames(state).await?;
     let mut out: Vec<Area> = areas
         .iter()
         .map(|(id, path)| {

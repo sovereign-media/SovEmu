@@ -148,6 +148,60 @@ export const UsersQuery = graphql(`
   }
 `);
 
+export const SignInFields = graphql(`
+  fragment SignInFields on SignInNode {
+    id
+    userId
+    username
+    client
+    signedInAt
+    lastUsedAt
+    expiresAt
+  }
+`);
+
+export const SignInsQuery = graphql(
+  `
+  query SignIns {
+    signIns {
+      ...SignInFields
+    }
+  }
+`,
+  [SignInFields],
+);
+
+export const UserDetailsQuery = graphql(
+  `
+  query UserDetails($id: Int!) {
+    user(id: $id) {
+      user {
+        id
+        username
+        role
+        declared
+      }
+      joinedAt
+      signIns {
+        ...SignInFields
+      }
+      gamesPlayed
+      starts
+      lastPlayedAt
+      saveBytes
+      saveFiles
+    }
+  }
+`,
+  [SignInFields],
+);
+
+export const EndSignInMutation = graphql(`
+  mutation EndSignIn($id: ID!) {
+    endSignIn(id: $id)
+  }
+`);
+
 export const AddUserMutation = graphql(`
   mutation AddUser($input: NewUserInput!) {
     addUser(input: $input) {

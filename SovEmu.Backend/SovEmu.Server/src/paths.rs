@@ -61,7 +61,12 @@ impl DataPaths {
 
     /// A user's battery saves for a system; states are in `states/<game>/` below it.
     pub fn saves(&self, user_id: i64, system: &str) -> PathBuf {
-        self.all_saves().join(user_id.to_string()).join(system)
+        self.user_saves(user_id).join(system)
+    }
+
+    /// One user's saves, every system's (a folder named by the user's id).
+    pub fn user_saves(&self, user_id: i64) -> PathBuf {
+        self.all_saves().join(user_id.to_string())
     }
 
     /// What the server makes or copies for itself, and can make again: the folders below.
