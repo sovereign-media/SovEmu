@@ -766,12 +766,14 @@ mod tests {
         jobs.run(Job::Maintenance, Trigger::Admin, async { Ok(()) }).await.unwrap();
         go.send(()).unwrap();
         assert_eq!(first.await.unwrap().unwrap(), "did it");
-        let rows = outcomes(&db).await;
+        // Each run writes its row from its own task, so the two rows may land in either order.
+        let mut rows = outcomes(&db).await;
+        rows.sort();
         assert_eq!(
             rows,
             [
-                ("scan".into(), "succeeded".into(), Some("did it".into())),
                 ("maintenance".into(), "succeeded".into(), None),
+                ("scan".into(), "succeeded".into(), Some("did it".into())),
             ]
         );
         // Not running any more, so it can start again.
