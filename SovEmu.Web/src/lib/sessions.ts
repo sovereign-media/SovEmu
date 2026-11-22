@@ -37,12 +37,20 @@ export function healthSummary(s: Pick<ActiveSession, "health" | "pipeline">): He
   };
 }
 
-/** `~45 ms button→pixel · decode 3.1 ms`, or null while the player's stats panel is closed. */
+/**
+ * `39 ms button→frame · ~47 ms est. · decode 3.1 ms` (measured where the client measures, else
+ * its estimate alone), or null while the player's stats panel is closed.
+ */
 export function clientSummary(s: Pick<ActiveSession, "clientStats">): string | null {
   const c = s.clientStats;
   if (!c) return null;
   const parts = [
-    c.estimateMs != null ? `~${Math.round(c.estimateMs)} ms button→pixel` : null,
+    c.inputToFrameMs != null ? `${Math.round(c.inputToFrameMs)} ms button→frame` : null,
+    c.estimateMs != null
+      ? c.inputToFrameMs != null
+        ? `~${Math.round(c.estimateMs)} ms est.`
+        : `~${Math.round(c.estimateMs)} ms button→pixel`
+      : null,
     c.decodeMs != null ? `decode ${c.decodeMs.toFixed(1)} ms` : null,
     c.packetsLost ? `${c.packetsLost} lost` : null,
   ].filter(Boolean);

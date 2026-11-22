@@ -2,6 +2,7 @@
 // no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
 // the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
 import type { InputState } from "./input";
+import { LatencyMeter } from "./latency";
 import {
   type Analog,
   analogEqual,
@@ -37,6 +38,8 @@ export class Session {
   readonly pc: RTCPeerConnection;
   /** Recent input round trips (send -> server applies on a frame -> ack), in ms. */
   readonly inputRtts: number[] = [];
+  /** Button to frame, measured from acks and the frames shown after them. */
+  readonly latency = new LatencyMeter();
   /** How the worker makes the stream, as it last said (null until it has). */
   pipeline: Pipeline | null = null;
   private channel: RTCDataChannel;
@@ -49,6 +52,7 @@ export class Session {
   private sentAnalog: Analog[] = [];
   private lastAnalogSend = 0;
   private raf = 0;
+  private frameCallback = 0;
 
   /** While true, the controller state is withheld (a menu is open): nothing is pressed. */
   suspended = false;
@@ -70,6 +74,16 @@ export class Session {
 
     const stream = new MediaStream();
     video.srcObject = stream;
+    // Each frame as it reaches the screen (its presentation time, on performance.now()'s clock
+    // like the inputs' sent times), for the measured latency. Browsers without the callback
+    // (older Firefox) just measure nothing.
+    if (video.requestVideoFrameCallback) {
+      const shown: VideoFrameRequestCallback = (now, frame) => {
+        this.latency.frameShown(Math.floor(frame.presentationTime ?? now) >>> 0);
+        this.frameCallback = video.requestVideoFrameCallback(shown);
+      };
+      this.frameCallback = video.requestVideoFrameCallback(shown);
+    }
     this.pc.ontrack = (e) => {
       // Ask for the smallest jitter buffer the browser allows: latency over smoothness.
       const receiver = e.receiver as RTCRtpReceiver & { jitterBufferTarget?: number; playoutDelayHint?: number };
@@ -101,6 +115,7 @@ export class Session {
 
   close(): void {
     cancelAnimationFrame(this.raf);
+    this.video.cancelVideoFrameCallback?.(this.frameCallback);
     this.pc.close();
   }
 
@@ -163,6 +178,7 @@ export class Session {
     }
     const ack = decodeAck(data);
     if (!ack) return;
+    this.latency.acked(ack.clientTimeMs);
     this.inputRtts.push((now32() - ack.clientTimeMs) >>> 0);
     if (this.inputRtts.length > 60) this.inputRtts.shift();
   }

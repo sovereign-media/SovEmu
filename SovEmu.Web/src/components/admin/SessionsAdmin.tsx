@@ -69,6 +69,8 @@ function Details({ s }: { s: ActiveSession }) {
   const c = s.clientStats;
   if (c) {
     const ms = (x: number | null | undefined) => (x == null ? "–" : `${x.toFixed(1)} ms`);
+    if (c.inputToFrameMs != null)
+      rows.push(["Button→frame", `${ms(c.inputToFrameMs)} measured on the player's device`]);
     rows.push([
       "Player's view",
       `input round trip ${ms(c.inputRttMs)} · network ${ms(c.netRttMs)} · decode ${ms(c.decodeMs)}`,

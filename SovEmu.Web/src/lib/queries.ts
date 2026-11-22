@@ -685,6 +685,7 @@ export const ActiveSessionsQuery = graphql(`
       }
       clientStats {
         estimateMs
+        inputToFrameMs
         inputRttMs
         netRttMs
         decodeMs

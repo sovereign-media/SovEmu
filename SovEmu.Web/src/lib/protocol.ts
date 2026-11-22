@@ -117,6 +117,8 @@ export function encodeAnalog(packet: { seq: number; ports: Analog[] }): ArrayBuf
 export interface ClientStats {
   client?: string;
   estimate_ms?: number;
+  /** Button to frame, measured (`latency.ts`). */
+  input_to_frame_ms?: number;
   input_rtt_p50_ms?: number;
   input_rtt_p95_ms?: number;
   net_rtt_ms?: number;
@@ -129,11 +131,13 @@ export interface ClientStats {
   packets_lost?: number;
   game_mode?: boolean;
   wifi_lock?: boolean;
+  low_latency_decode?: boolean;
 }
 
 const STATS_KEYS: (keyof ClientStats)[] = [
   "client",
   "estimate_ms",
+  "input_to_frame_ms",
   "input_rtt_p50_ms",
   "input_rtt_p95_ms",
   "net_rtt_ms",
@@ -146,6 +150,7 @@ const STATS_KEYS: (keyof ClientStats)[] = [
   "packets_lost",
   "game_mode",
   "wifi_lock",
+  "low_latency_decode",
 ];
 
 /** `0x04`, the version, then the known values as a JSON object (unknown and non-finite ones left out). */

@@ -67,6 +67,7 @@ export class StatsSampler {
     const p95 = percentile(session.inputRtts, 95);
     const numbers: ClientStats = {
       estimate_ms: estimate,
+      input_to_frame_ms: session.latency.medianMs,
       input_rtt_p50_ms: inputRtt,
       input_rtt_p95_ms: p95,
       net_rtt_ms: netRtt,
@@ -80,6 +81,7 @@ export class StatsSampler {
     };
     const items = [
       { label: "Estimated button→pixel", value: fmt(estimate, " ms") },
+      { label: "Measured button→frame", value: fmt(session.latency.medianMs, " ms") },
       { label: "Input round trip", value: fmt(inputRtt, " ms") },
       { label: "Network RTT", value: fmt(netRtt, " ms", 1) },
       { label: "Jitter buffer", value: fmt(jitterMs, " ms", 1) },

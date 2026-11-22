@@ -1063,6 +1063,8 @@ impl From<&sovemu_protocol::ipc::SessionHealth> for StreamHealth {
 struct ClientStreamStats {
     /// Button to pixel, as the client estimates it.
     estimate_ms: Option<f64>,
+    /// Button to frame, as the client measures it (the display's own lag comes on top).
+    input_to_frame_ms: Option<f64>,
     input_rtt_ms: Option<f64>,
     net_rtt_ms: Option<f64>,
     jitter_ms: Option<f64>,
@@ -1077,6 +1079,7 @@ impl From<&sovemu_protocol::ClientStats> for ClientStreamStats {
     fn from(s: &sovemu_protocol::ClientStats) -> Self {
         Self {
             estimate_ms: s.estimate_ms,
+            input_to_frame_ms: s.input_to_frame_ms,
             input_rtt_ms: s.input_rtt_p50_ms,
             net_rtt_ms: s.net_rtt_ms,
             jitter_ms: s.jitter_ms,

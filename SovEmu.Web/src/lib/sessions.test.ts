@@ -40,6 +40,7 @@ describe("sessions page", () => {
   it("shows the player's view only while their panel is open", () => {
     const stats = {
       estimateMs: 44.6,
+      inputToFrameMs: null as number | null,
       inputRttMs: 22,
       netRttMs: 4,
       decodeMs: 3.14,
@@ -50,6 +51,9 @@ describe("sessions page", () => {
     expect(clientSummary({ clientStats: stats })).toBe("~45 ms button→pixel · decode 3.1 ms");
     expect(clientSummary({ clientStats: { ...stats, packetsLost: 3 } })).toBe(
       "~45 ms button→pixel · decode 3.1 ms · 3 lost",
+    );
+    expect(clientSummary({ clientStats: { ...stats, inputToFrameMs: 38.6 } })).toBe(
+      "39 ms button→frame · ~45 ms est. · decode 3.1 ms",
     );
     expect(clientSummary({ clientStats: null })).toBeNull();
   });
