@@ -1586,6 +1586,21 @@ async fn admins_see_whether_telemetry_is_exported() {
 }
 
 #[tokio::test]
+async fn everyone_sees_the_build_and_admins_the_attributions() {
+    let mut h = Harness::new("about", false).await;
+    h.sign_up_admin().await;
+    let build =
+        h.ok("{ buildInfo { version libretroRelease } }", json!({})).await["buildInfo"].clone();
+    assert_eq!(build["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(build["libretroRelease"], sovemu_library::cores::LIBRETRO_RELEASE);
+    let q = "{ attributions { fbneoCommit services { name licence } components { name commit } } }";
+    let a = h.ok(q, json!({})).await["attributions"].clone();
+    assert_eq!(a["services"][0], json!({"name": "ScreenScraper", "licence": "CC BY-NC-SA 4.0"}));
+    assert_eq!(a["fbneoCommit"].as_str().unwrap().len(), 40);
+    assert!(a["components"].as_array().unwrap().iter().any(|c| c["commit"].is_string()));
+}
+
+#[tokio::test]
 async fn admins_see_every_core_with_its_licence() {
     let mut h = Harness::new("cores", true).await;
     h.sign_up_admin().await;

@@ -135,3 +135,12 @@ test("the Telemetry page says how to turn export on", async ({ page }) => {
   await expect(page.getByText("SOVEMU_OTEL_ENDPOINT=http://otel-collector:4318")).toBeVisible();
   await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_LOG_FORMAT" })).toBeVisible();
 });
+
+test("the About page names the build and credits what SovEmu uses", async ({ page }) => {
+  await page.goto("/admin/about/");
+  await expect(page.getByRole("heading", { name: "About", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^SovEmu \d+\.\d+\.\d+/ })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Snes9x" })).toContainText("Non-commercial");
+  await expect(page.getByRole("listitem").filter({ hasText: "ScreenScraper" })).toContainText("CC BY-NC-SA 4.0");
+  await expect(page.getByRole("listitem").filter({ hasText: "Mesa" })).toContainText("MIT");
+});

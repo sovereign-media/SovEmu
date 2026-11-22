@@ -78,6 +78,11 @@ COPY SovEmu.Backend/ ./
 
 ## ---- build: the release binaries ------------------------------------------------------------------
 FROM toolchain AS build
+# Which build this is, for the admin About page (`option_env!` in sovemu-server): the commit and
+# its time, which CI passes (docker-bake.hcl). Empty in a local build. Declared here, not in
+# `toolchain`, so the test stage's compile does not change with every commit.
+ARG SOVEMU_REVISION=""
+ARG SOVEMU_BUILT=""
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-release,target=/src/target \
     cargo build --release --locked -p sovemu-worker -p sovemu-server \

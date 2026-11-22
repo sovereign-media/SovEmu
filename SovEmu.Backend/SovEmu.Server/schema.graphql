@@ -91,6 +91,39 @@ type ArtworkStatus {
 }
 
 """
+A service SovEmu looks games up in.
+"""
+type AttributedService {
+	name: String!
+	"""
+	What SovEmu takes from it.
+	"""
+	provides: String!
+	url: String!
+	"""
+	The data's licence, where the service states one.
+	"""
+	licence: String
+	licenceUrl: String
+	"""
+	What its terms ask of an app, or that they state nothing.
+	"""
+	terms: String!
+}
+
+"""
+What the server draws on and ships with (the cores are `cores`).
+"""
+type Attributions {
+	services: [AttributedService!]!
+	components: [BundledComponent!]!
+	"""
+	The FinalBurn Neo commit whose DAT files name arcade games.
+	"""
+	fbneoCommit: String!
+}
+
+"""
 One input driving one button.
 """
 type Binding {
@@ -258,6 +291,42 @@ type BootstrapConfig {
 	`scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
 	"""
 	passwordEndpoint: String
+}
+
+"""
+Which build of the server this is.
+"""
+type BuildInfoNode {
+	"""
+	The server's version.
+	"""
+	version: String!
+	"""
+	The commit it was built from; null for a local build.
+	"""
+	revision: String
+	"""
+	That commit's time (ISO 8601); null for a local build.
+	"""
+	built: String
+	"""
+	The libretro stable release its cores come from.
+	"""
+	libretroRelease: String!
+}
+
+"""
+A component the image ships besides the cores.
+"""
+type BundledComponent {
+	name: String!
+	what: String!
+	licence: String!
+	url: String!
+	"""
+	The commit it is taken from, when pinned.
+	"""
+	commit: String
 }
 
 """
@@ -1473,6 +1542,10 @@ type Query {
 	"""
 	bootstrapConfig: BootstrapConfig!
 	"""
+	Which build of the server this is, for anyone signed in (an app can show it).
+	"""
+	buildInfo: BuildInfoNode!
+	"""
 	Who is signed in, and whether first-run setup is needed. Works signed out.
 	"""
 	viewer: Viewer!
@@ -1516,6 +1589,11 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: the game-information services and the components the image ships, with their
+	licences and terms.
+	"""
+	attributions: Attributions!
 	"""
 	Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
 	export went.

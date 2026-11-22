@@ -38,6 +38,7 @@ export const q = {
   search: (text: string) => queryOptions({ queryKey: ["search", text], queryFn: () => api.search(text) }),
   adminStatus: () => queryOptions({ queryKey: ["admin", "status"], queryFn: api.adminStatus }),
   jobs: () => queryOptions({ queryKey: ["admin", "jobs"], queryFn: api.jobs }),
+  about: () => queryOptions({ queryKey: ["admin", "about"], queryFn: api.about, staleTime: Infinity }),
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),

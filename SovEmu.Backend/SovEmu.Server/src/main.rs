@@ -4,6 +4,7 @@
 //! its own `sovemu-worker session` process (see [`workers`]), which streams to the browser over
 //! WebRTC on a UDP port of its own.
 
+mod about;
 mod admin;
 mod api;
 mod assets;

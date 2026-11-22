@@ -4,6 +4,7 @@
 import type { Enum, ResultOf } from "./gql";
 import { onUnload, request } from "./graphql";
 import {
+  AboutQuery,
   ActiveSessionsQuery,
   AddCheatMutation,
   AdminPatchesQuery,
@@ -131,6 +132,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type About = ResultOf<typeof AboutQuery>;
 export type TelemetryReport = ResultOf<typeof TelemetryQuery>["telemetry"];
 export type StorageReport = ResultOf<typeof StorageQuery>["storage"];
 export type NetworkReport = ResultOf<typeof NetworkQuery>["network"];
@@ -181,6 +183,8 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: the server's build, the services it uses and what the image ships. */
+  about: () => request(AboutQuery),
   /** Admin: OpenTelemetry export, and how each signal's last export went. */
   telemetry: async () => (await request(TelemetryQuery)).telemetry,
   /** Admin: where the data folder's space goes (`refresh`: measure now). */

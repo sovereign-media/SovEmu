@@ -1044,3 +1044,32 @@ export const TelemetryQuery = graphql(`
     }
   }
 `);
+
+export const AboutQuery = graphql(`
+  query About {
+    buildInfo {
+      version
+      revision
+      built
+      libretroRelease
+    }
+    attributions {
+      fbneoCommit
+      services {
+        name
+        provides
+        url
+        licence
+        licenceUrl
+        terms
+      }
+      components {
+        name
+        what
+        licence
+        url
+        commit
+      }
+    }
+  }
+`);

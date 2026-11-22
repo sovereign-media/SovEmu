@@ -837,6 +837,53 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// Which build of the server this is.
+#[derive(SimpleObject)]
+struct BuildInfoNode {
+    /// The server's version.
+    version: String,
+    /// The commit it was built from; null for a local build.
+    revision: Option<String>,
+    /// That commit's time (ISO 8601); null for a local build.
+    built: Option<String>,
+    /// The libretro stable release its cores come from.
+    libretro_release: String,
+}
+
+/// A service SovEmu looks games up in.
+#[derive(SimpleObject)]
+struct AttributedService {
+    name: String,
+    /// What SovEmu takes from it.
+    provides: String,
+    url: String,
+    /// The data's licence, where the service states one.
+    licence: Option<String>,
+    licence_url: Option<String>,
+    /// What its terms ask of an app, or that they state nothing.
+    terms: String,
+}
+
+/// A component the image ships besides the cores.
+#[derive(SimpleObject)]
+struct BundledComponent {
+    name: String,
+    what: String,
+    licence: String,
+    url: String,
+    /// The commit it is taken from, when pinned.
+    commit: Option<String>,
+}
+
+/// What the server draws on and ships with (the cores are `cores`).
+#[derive(SimpleObject)]
+struct Attributions {
+    services: Vec<AttributedService>,
+    components: Vec<BundledComponent>,
+    /// The FinalBurn Neo commit whose DAT files name arcade games.
+    fbneo_commit: String,
+}
+
 /// OpenTelemetry export: whether it is on, where to, and how it has gone.
 #[derive(SimpleObject)]
 struct TelemetryReport {
@@ -2097,6 +2144,18 @@ impl Query {
         }
     }
 
+    /// Which build of the server this is, for anyone signed in (an app can show it).
+    async fn build_info(&self, ctx: &Context<'_>) -> Result<BuildInfoNode> {
+        user(ctx).await?;
+        let b = crate::about::BUILD;
+        Ok(BuildInfoNode {
+            version: b.version.to_owned(),
+            revision: b.revision.map(str::to_owned),
+            built: b.built.map(str::to_owned),
+            libretro_release: b.libretro_release.to_owned(),
+        })
+    }
+
     /// Who is signed in, and whether first-run setup is needed. Works signed out.
     async fn viewer(&self, ctx: &Context<'_>) -> Result<Viewer> {
         let setup_required =
@@ -2223,6 +2282,37 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: the game-information services and the components the image ships, with their
+    /// licences and terms.
+    async fn attributions(&self, ctx: &Context<'_>) -> Result<Attributions> {
+        admin(ctx).await?;
+        let own = |s: &str| s.to_owned();
+        Ok(Attributions {
+            services: crate::about::SERVICES
+                .iter()
+                .map(|s| AttributedService {
+                    name: own(s.name),
+                    provides: own(s.provides),
+                    url: own(s.url),
+                    licence: s.licence.map(own),
+                    licence_url: s.licence_url.map(own),
+                    terms: own(s.terms),
+                })
+                .collect(),
+            components: crate::about::COMPONENTS
+                .iter()
+                .map(|c| BundledComponent {
+                    name: own(c.name),
+                    what: own(c.what),
+                    licence: own(c.licence),
+                    url: own(c.url),
+                    commit: c.commit.map(own),
+                })
+                .collect(),
+            fbneo_commit: own(sovemu_library::info::fbneo::FBNEO_COMMIT),
+        })
     }
 
     /// Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
