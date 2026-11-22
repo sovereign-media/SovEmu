@@ -26,7 +26,8 @@ if (!existsSync(server)) throw new Error(`${server} is missing: build it, or uns
 const data = join(web, "test-results/e2e-data");
 rmSync(data, { recursive: true, force: true });
 const games = {
-  nes: ["Stand-in Quest (USA).nes", "Another Stand-in (Europe).nes"],
+  // A file no system plays: "Needs attention" lists it under Not games.
+  nes: ["Stand-in Quest (USA).nes", "Another Stand-in (Europe).nes", "stand-in notes.abc"],
   // A soft patch named like its game: its default (the Patches page lists it).
   snes: ["Super Stand-in (USA).sfc", "Super Stand-in (USA).ips"],
   gb: ["Pocket Stand-in (Japan).gb"],

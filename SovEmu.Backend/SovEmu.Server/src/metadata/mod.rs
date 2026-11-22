@@ -148,7 +148,19 @@ fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -
 /// Looks up every game without metadata, and every game no service found while a service it was
 /// not asked is now configured (all of a system's, or every game with `force`), one at a time,
 /// and stores what it finds. Returns at once if a job is already running.
-pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool) {
+/// Which games a lookup covers.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Scope {
+    /// One system's, or every system's.
+    pub(crate) system: Option<String>,
+    /// One game only (the admin's "look it up again").
+    pub(crate) game: Option<i64>,
+    /// Games that have information already, too.
+    pub(crate) force: bool,
+}
+
+pub(crate) async fn run_job(state: AppState, scope: Scope) {
+    let Scope { system, game, force } = scope;
     let meta = state.metadata.clone();
     {
         let mut s = meta.status.lock().unwrap_or_else(|e| e.into_inner());
@@ -175,11 +187,13 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
         "SELECT g.id, g.system, g.path, g.title, g.size, m.status, m.tried FROM games g
          LEFT JOIN game_metadata m ON m.game_id = g.id
          WHERE (?1 IS NULL OR g.system = ?1)
+           AND (?3 IS NULL OR g.id = ?3)
            AND (?2 OR m.game_id IS NULL OR m.status = 'not_found')
          ORDER BY g.system, g.title",
     )
     .bind(&system)
     .bind(force)
+    .bind(game)
     .fetch_all(&state.db)
     .await
     .unwrap_or_default()

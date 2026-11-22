@@ -68,6 +68,10 @@ held 59.93 fps over 300 frames with no resyncs.
       the library and its last scan, game information, BIOS gaps, rendering, the disk, failed
       games and today's client errors, the version and uptime (`serverResources.startedAt`),
       each card linking to its page
+- [x] Games needing attention (`/admin/attention/`): games without information or box art,
+      duplicates (the same title and tags twice in a system), games missing a disc (the scan
+      keeps `games.missing_parts`) and the files no system plays (`scan_skipped`, migration
+      0025), each counted per system, and a game looked up again on its own (`lookUpGame`)
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

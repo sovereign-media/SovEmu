@@ -5,6 +5,7 @@ import {
   Activity,
   BarChart3,
   Bug,
+  CircleAlert,
   FileDiff,
   Frame,
   Gamepad,
@@ -68,6 +69,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Library",
         title: "Scanning, the mirror or cache, and game information",
         icon: Library,
+      },
+      {
+        href: "/admin/attention/",
+        label: "Needs attention",
+        title: "Games without information or box art, duplicates, missing discs and files no system plays",
+        icon: CircleAlert,
       },
       {
         href: "/admin/patches/",

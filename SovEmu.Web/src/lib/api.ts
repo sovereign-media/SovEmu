@@ -12,6 +12,7 @@ import {
   AdminPatchesQuery,
   AdminStatusQuery as AdminStatusDocument,
   AppearanceQuery,
+  AttentionCountsQuery,
   BackgroundQuery,
   BiosDirQuery,
   BiosQuery,
@@ -36,11 +37,13 @@ import {
   FetchMetadataMutation,
   type GameFields,
   GameQuery,
+  GamesNeedingAttentionQuery,
   GpuQuery,
   HomeQuery as HomeDocument,
   JobsQuery,
   LoadStateMutation,
   LogsQuery,
+  LookUpGameMutation,
   NetworkQuery,
   OverviewQuery,
   type PadLayoutFields,
@@ -103,6 +106,9 @@ export type ActiveSession = ResultOf<typeof ActiveSessionsQuery>["activeSessions
 export type Overview = ResultOf<typeof OverviewQuery>;
 /** How much a log line says. */
 export type LogLevel = Enum<"LogLevel">;
+export type AttentionKind = Enum<"AttentionKind">;
+export type AttentionItem = ResultOf<typeof GamesNeedingAttentionQuery>["gamesNeedingAttention"][number];
+export type AttentionCount = ResultOf<typeof AttentionCountsQuery>["attentionCounts"][number];
 /** One line of the server's log. */
 export type LogLine = ResultOf<typeof LogsQuery>["logs"]["lines"][number];
 /** Which lines of the log a view asks for. */
@@ -280,6 +286,13 @@ export const api = {
   overview: () => request(OverviewQuery),
   /** Admin: the server's recent log, the newest lines the filter keeps. */
   logs: async (filter: LogFilter) => (await request(LogsQuery, filter)).logs,
+  /** Admin: one kind's games (or files) needing attention, one system's or all. */
+  gamesNeedingAttention: async (kind: AttentionKind, system: string | null) =>
+    (await request(GamesNeedingAttentionQuery, { kind, system })).gamesNeedingAttention,
+  /** Admin: how many games (or files) of each kind need attention, per system. */
+  attentionCounts: async () => (await request(AttentionCountsQuery)).attentionCounts,
+  /** Admin: looks one game up again, in the background. */
+  lookUpGame: async (gameId: number) => (await request(LookUpGameMutation, { gameId })).lookUpGame,
   /** Admin: what was played over the last week, month or year. */
   playStatistics: async (range: StatsRange) => (await request(PlayStatisticsQuery, { range })).playStatistics,
   /** Admin: a page of the activity log, newest first; `after` is the last page's `next`. */

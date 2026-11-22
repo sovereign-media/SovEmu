@@ -29,6 +29,9 @@ pub struct Found {
     pub patches: Vec<FoundPatch>,
     /// What a multi-part game's [`Found::discs`] are (discs, disks, tapes…); none for one file.
     pub parts: Option<PartKind>,
+    /// A multi-part game's part numbers that are not there: a gap in its numbering (discs 1
+    /// and 3), or the parts before a lone later one (only disc 2).
+    pub missing_parts: Vec<u32>,
 }
 
 /// A soft patch for a game: beside it with its name (`Game.bps`, applied by default, as
@@ -49,11 +52,44 @@ pub(crate) const PATCH_EXTENSIONS: &[&str] = &["bps", "ups", "ips"];
 const DISC_EXTENSIONS: &[&str] =
     &["chd", "cue", "gdi", "iso", "cso", "pbp", "m3u", "rvz", "gcz", "wbfs", "cdi", "ccd", "ciso"];
 
-/// The patches for each game: listed with the files, matched to games afterwards.
+/// The patches for each game: listed with the files, matched to games afterwards; and the files
+/// no system plays.
 #[derive(Default)]
 struct Listing {
     candidates: Vec<Candidate>,
     patches: Vec<PathBuf>,
+    skipped: Vec<Skipped>,
+}
+
+/// What a walk found: the games, and the files in the library it could not place.
+#[derive(Debug, Default)]
+pub struct Walk {
+    pub found: Vec<Found>,
+    pub skipped: Vec<Skipped>,
+}
+
+/// A file in a system's folder (or a folder no system uses) that is not a game for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skipped {
+    /// Relative to the ROM directory, with `/` separators.
+    pub path: String,
+    /// The folder's system, if the folder is one's.
+    pub system: Option<&'static str>,
+    /// Why, in words.
+    pub reason: String,
+}
+
+/// Files that sit beside games and are not meant as one: notes, pictures, lists, saves. A
+/// library holds many, and they are not worth an admin's attention.
+const NOT_GAMES: &[&str] = &[
+    "txt", "nfo", "md", "pdf", "htm", "html", "xml", "json", "jpg", "jpeg", "png", "gif", "bmp",
+    "webp", "mp4", "mkv", "srm", "sav", "state", "ini", "cfg", "db", "log", "sfv", "md5", "sha1",
+    "url", "lnk", "ds_store",
+];
+
+fn worth_listing(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| !NOT_GAMES.contains(&e.to_string_lossy().to_ascii_lowercase().as_str()))
 }
 
 fn patch_extension(path: &Path) -> Option<String> {
@@ -196,6 +232,13 @@ fn split_part(title: &str, tags: &[&str]) -> Option<(PartKind, u32, String, Stri
     Some((kind, order, name.trim().to_owned(), tags.join(", ")))
 }
 
+/// The part numbers from 1 to the highest of `present` that are not in it.
+fn missing(present: impl Iterator<Item = u32>) -> Vec<u32> {
+    let present: std::collections::BTreeSet<u32> = present.collect();
+    let last = present.last().copied().unwrap_or(0);
+    (1..last).filter(|n| !present.contains(n)).collect()
+}
+
 /// What makes files one game: system, folder, title, the tags before the part's, and its kind.
 type DiscGroup = (String, String, String, String, PartKind);
 
@@ -242,8 +285,9 @@ pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
     }
     for ((_, _, title, rest, kind), mut parts) in groups {
         parts.sort_by_key(|(n, f)| (*n, f.path.clone()));
+        let missing_parts = missing(parts.iter().map(|(order, _)| order / 4));
         if parts.len() == 1 {
-            out.push(parts.remove(0).1);
+            out.push(Found { missing_parts, ..parts.remove(0).1 });
             continue;
         }
         let size = parts.iter().map(|(_, f)| f.size).sum();
@@ -257,6 +301,7 @@ pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
             modified,
             discs: paths,
             parts: Some(kind),
+            missing_parts,
             ..first
         });
     }
@@ -294,17 +339,19 @@ struct Candidate {
 /// run side by side.
 const STAT_THREADS: usize = 16;
 
-/// Walks `root` and returns every file that belongs to a known system. An error when `root`
+/// Walks `root` and returns every file that belongs to a known system, and the files it could
+/// not place (see [`Skipped`]). An error when `root`
 /// itself cannot be read (a share that went away): never an empty library, which a caller would
 /// take as every game removed.
 ///
 /// Two stages, both parallel, because on an SMB/NFS library the cost is round trips: list every
 /// folder (one thread per top-level folder, no per-file requests), then read the size and date
 /// of only the files that are ROMs.
-pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
+pub fn walk(root: &Path) -> std::io::Result<Walk> {
     let entries = std::fs::read_dir(root).map_err(|e| unreadable(root, e))?;
     let mut candidates = Vec::new();
     let mut patches = Vec::new();
+    let mut skipped = Vec::new();
     let mut folders = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| unreadable(root, e))?;
@@ -337,6 +384,7 @@ pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
             let listing = handle.join().map_err(panicked)??;
             candidates.extend(listing.candidates);
             patches.extend(listing.patches);
+            skipped.extend(listing.skipped);
         }
         Ok(())
     })?;
@@ -359,7 +407,14 @@ pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
         Ok(found)
     })?;
     found.sort_by(|a, b| (a.system, &a.title, &a.path).cmp(&(b.system, &b.title, &b.path)));
-    Ok(found)
+    // Listed with full paths; given relative to the library, as games are.
+    for s in &mut skipped {
+        if let Ok(relative) = Path::new(&s.path).strip_prefix(root) {
+            s.path = relative.to_string_lossy().replace('\\', "/");
+        }
+    }
+    skipped.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(Walk { found, skipped })
 }
 
 /// Lists `dir` into `found`. A folder that cannot be read, or whose listing breaks off, is an
@@ -407,9 +462,20 @@ fn walk_dir(
                 .collect::<Vec<_>>()
                 .join(",");
             found.candidates.push(Candidate { path, system: sys, media, patches: Vec::new() });
+        } else if worth_listing(&path) {
+            let reason = match system {
+                Some(sys) => format!("{} games are not .{} files", sys.name, extension(&path)),
+                None => "in a folder no system uses, and no system plays its kind of file".into(),
+            };
+            let path = path.to_string_lossy().into_owned();
+            found.skipped.push(Skipped { path, system: system.map(|s| s.id), reason });
         }
     }
     Ok(())
+}
+
+fn extension(path: &Path) -> String {
+    path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
 /// An error naming the folder it happened in.
@@ -493,6 +559,7 @@ fn to_found(root: &Path, c: &Candidate) -> Option<Found> {
         discs: Vec::new(),
         patches,
         parts: None,
+        missing_parts: Vec::new(),
     })
 }
 
@@ -549,6 +616,34 @@ mod tests {
     }
 
     #[test]
+    fn lists_the_files_no_system_plays_but_not_notes_and_pictures() {
+        let root = std::env::temp_dir().join(format!("sovemu-skipped-{}", rand_suffix()));
+        for path in [
+            "snes/Game (USA).sfc",
+            "snes/Game (USA).xyz",
+            "snes/notes.txt",
+            "snes/box.png",
+            "snes/Game (USA).srm",
+            "oddities/Thing.abc",
+        ] {
+            let p = root.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, [0u8; 4]).unwrap();
+        }
+        let walked = walk(&root).unwrap();
+        std::fs::remove_dir_all(&root).ok();
+        assert_eq!(walked.found.len(), 1);
+        let skipped: Vec<(&str, Option<&str>)> =
+            walked.skipped.iter().map(|s| (s.path.as_str(), s.system)).collect();
+        assert_eq!(skipped, [("oddities/Thing.abc", None), ("snes/Game (USA).xyz", Some("snes"))]);
+        assert!(
+            walked.skipped[1].reason.ends_with("games are not .xyz files"),
+            "{:?}",
+            walked.skipped
+        );
+    }
+
+    #[test]
     fn finds_patches_beside_a_game_and_in_its_folder() {
         let root = std::env::temp_dir().join(format!("sovemu-patches-{}", rand_suffix()));
         for path in [
@@ -567,7 +662,7 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, [0u8; 4]).unwrap();
         }
-        let found = walk(&root).unwrap();
+        let found = walk(&root).unwrap().found;
         std::fs::remove_dir_all(&root).ok();
         let paths: Vec<_> = found.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
@@ -634,6 +729,37 @@ mod tests {
     }
 
     #[test]
+    fn a_set_with_a_part_missing_says_which() {
+        let found = |path: &str| {
+            let stem = Path::new(path).file_stem().unwrap().to_string_lossy().into_owned();
+            let (title, tags) = systems::parse_title(&stem);
+            Found {
+                system: "psx",
+                path: path.into(),
+                title,
+                tags,
+                size: 1,
+                modified: 0,
+                media: String::new(),
+                discs: Vec::new(),
+                patches: Vec::new(),
+                parts: None,
+                missing_parts: Vec::new(),
+            }
+        };
+        let grouped = group_discs(vec![
+            found("psx/Epic (USA) (Disc 1).chd"),
+            found("psx/Epic (USA) (Disc 3).chd"),
+            found("psx/Whole (USA) (Disc 1).chd"),
+            found("psx/Whole (USA) (Disc 2).chd"),
+            found("psx/Late (USA) (Disc 2).chd"),
+        ]);
+        let missing: Vec<(&str, &[u32])> =
+            grouped.iter().map(|f| (f.title.as_str(), f.missing_parts.as_slice())).collect();
+        assert_eq!(missing, [("Epic", &[2][..]), ("Late", &[1][..]), ("Whole", &[][..])]);
+    }
+
+    #[test]
     fn groups_disks_tapes_and_titled_discs_too() {
         let found = |path: &str| {
             let stem = Path::new(path).file_stem().unwrap().to_string_lossy().into_owned();
@@ -649,6 +775,7 @@ mod tests {
                 discs: Vec::new(),
                 patches: Vec::new(),
                 parts: None,
+                missing_parts: Vec::new(),
             }
         };
         let games = group_discs(vec![
@@ -686,8 +813,10 @@ mod tests {
     #[test]
     fn folds_a_multi_disc_game_into_one() {
         let root = library();
-        let psx: Vec<_> =
-            group_discs(walk(&root).unwrap()).into_iter().filter(|f| f.system == "psx").collect();
+        let psx: Vec<_> = group_discs(walk(&root).unwrap().found)
+            .into_iter()
+            .filter(|f| f.system == "psx")
+            .collect();
         std::fs::remove_dir_all(&root).ok();
         let paths: Vec<_> = psx.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
@@ -732,7 +861,7 @@ mod tests {
         let root = library();
         // The multi-disc files are the next test's.
         let found: Vec<_> =
-            walk(&root).unwrap().into_iter().filter(|f| f.system != "psx").collect();
+            walk(&root).unwrap().found.into_iter().filter(|f| f.system != "psx").collect();
         let summary: Vec<_> =
             found.iter().map(|f| (f.system, f.path.as_str(), f.title.as_str())).collect();
         assert_eq!(

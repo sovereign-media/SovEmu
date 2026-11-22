@@ -24,11 +24,22 @@ pub(crate) struct ScanReport {
 /// folder.
 pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanReport> {
     let dir = root.to_owned();
-    let found = tokio::task::spawn_blocking(move || walk(&dir).map(group_discs))
+    let walked = tokio::task::spawn_blocking(move || walk(&dir))
         .await
         .context("the library walk stopped")?
         .with_context(|| format!("reading the library at {}", root.display()))?;
+    let found = group_discs(walked.found);
     let mut tx = crate::db::write_tx(pool).await?;
+    // What the walk could not place, for the admin: this scan's, replacing the last one's.
+    sqlx::query("DELETE FROM scan_skipped").execute(&mut *tx).await?;
+    for s in &walked.skipped {
+        sqlx::query("INSERT OR IGNORE INTO scan_skipped (path, system, reason) VALUES (?, ?, ?)")
+            .bind(&s.path)
+            .bind(s.system)
+            .bind(&s.reason)
+            .execute(&mut *tx)
+            .await?;
+    }
     let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&mut *tx).await?;
     if found.is_empty() && before > 0 {
         anyhow::bail!(
@@ -47,11 +58,13 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanR
     sqlx::query("DELETE FROM seen_patches").execute(&mut *tx).await?;
     for f in &found {
         sqlx::query(
-            "INSERT INTO games (system, path, title, tags, size, modified, media, parts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO games
+               (system, path, title, tags, size, modified, media, parts, missing_parts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(path) DO UPDATE SET system = excluded.system, title = excluded.title,
                tags = excluded.tags, size = excluded.size, modified = excluded.modified,
-               media = excluded.media, parts = excluded.parts",
+               media = excluded.media, parts = excluded.parts,
+               missing_parts = excluded.missing_parts",
         )
         .bind(f.system)
         .bind(&f.path)
@@ -61,6 +74,7 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanR
         .bind(f.modified)
         .bind(&f.media)
         .bind(f.parts.map(PartKind::as_str))
+        .bind(f.missing_parts.iter().map(u32::to_string).collect::<Vec<_>>().join(","))
         .execute(&mut *tx)
         .await?;
         sqlx::query("INSERT OR IGNORE INTO seen (path) VALUES (?)")

@@ -26,6 +26,7 @@ export const SCREEN_PATHS = [
   "/admin/rendering/",
   "/admin/bios/",
   "/admin/decorations/",
+  "/admin/attention/",
   "/admin/patches/",
   "/admin/cores/",
   "/admin/configuration/",

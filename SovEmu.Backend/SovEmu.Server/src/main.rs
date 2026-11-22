@@ -10,6 +10,7 @@ mod admin;
 mod api;
 mod appearance;
 mod assets;
+mod attention;
 mod auth;
 mod cheats;
 mod client_events;

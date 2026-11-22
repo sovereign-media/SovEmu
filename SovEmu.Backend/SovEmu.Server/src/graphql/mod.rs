@@ -34,6 +34,7 @@ use crate::error::ApiError;
 mod accounts;
 mod activity;
 mod appearance;
+mod attention;
 mod client_events;
 mod controllers;
 mod jobs;
@@ -309,6 +310,7 @@ pub(crate) struct Query(
     client_events::ClientEventsQuery,
     activity::ActivityQuery,
     statistics::StatisticsQuery,
+    attention::AttentionQuery,
     logs::LogsQuery,
 );
 
@@ -325,6 +327,7 @@ pub(crate) struct Mutation(
     appearance::AppearanceMutation,
     streaming::StreamingMutation,
     client_events::ClientEventsMutation,
+    attention::AttentionMutation,
 );
 
 #[cfg(test)]

@@ -217,6 +217,26 @@ test("the Logs page shows the server's own lines, filters them, and pauses", asy
   await expect(page.getByRole("button", { name: "Follow" })).toBeVisible();
 });
 
+test("Needs attention lists games by kind and system, keeping both in the URL", async ({ page }) => {
+  await page.goto("/admin/attention/");
+  const games = page.getByRole("list", { name: "Games" });
+  // Nothing is looked up in a test run: every game lacks information, and can be looked up again
+  // (not clicked: that would ask an outside service).
+  await expect(games.getByRole("listitem").filter({ hasText: "Stand-in Quest" })).toContainText("Never looked up");
+  await expect(games.getByRole("button", { name: "Look it up again" }).first()).toBeVisible();
+  await page.getByRole("radio", { name: /^Not games \(1\)/ }).click();
+  await expect(games).toContainText("stand-in notes.abc");
+  await expect(games.getByRole("button", { name: "Look it up again" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^Nintendo Entertainment System/ }).click();
+  await expect(page).toHaveURL(/\?kind=UNRECOGNISED&system=nes$/);
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Nintendo Entertainment System/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(games).toContainText("stand-in notes.abc");
+});
+
 test("the Overview sums up the server, each card leading to its page", async ({ page }) => {
   await page.goto("/admin/overview/");
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
