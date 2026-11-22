@@ -13,6 +13,8 @@
 //!   climbed. That lowers a limit on the bitrate, which is raised again in steps while the
 //!   client stays well. A client that sends no stats has no limit.
 //!
+//! Cuts happen at once; raises wait [`RAISE_HOLD`] after a cut, come [`RAISE_SPACING`] apart and
+//! go a quarter at a time, so a wavering connection does not whip the quality up and down.
 //! Changes smaller than a tenth are ignored. Where a change reopens the encoder (VA-API and
 //! NVENC take their rate at open, and a reopen costs a keyframe), a raise must also be worth a
 //! quarter and wait [`REOPEN_HOLD`] after the last change; a cut is never held back.
@@ -21,6 +23,12 @@
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+
+/// The most one raise takes the bitrate to: a quarter more (rounded up, so it is always worth
+/// an encoder's reopen).
+fn raise_step(kbps: u32) -> u32 {
+    kbps.saturating_add(kbps.div_ceil(4))
+}
 
 /// The estimates the connection is judged on: those of this long past, by their median.
 const ESTIMATE_WINDOW: Duration = Duration::from_secs(2);
@@ -31,6 +39,12 @@ const ESTIMATES_KEPT: usize = 64;
 const ESTIMATE_SHARE: f64 = 0.85;
 /// How long after a change an encoder that reopens for one is left alone before a raise.
 const REOPEN_HOLD: Duration = Duration::from_secs(10);
+/// After the bitrate is cut, it is not raised again for this long. Cuts answer congestion at
+/// once (a queue is lag); raises wait, so a connection that wavers does not send the quality up
+/// and down (down, straight back up, down again).
+const RAISE_HOLD: Duration = Duration::from_secs(10);
+/// Raises are at least this far apart, each at most a quarter more ([`raise_step`]).
+const RAISE_SPACING: Duration = Duration::from_secs(2);
 /// Samples in a row a client must be struggling before the bitrate is cut for it.
 const BAD_SAMPLES: u32 = 2;
 /// The cut: to this share of the bitrate the client was struggling at.
@@ -159,6 +173,9 @@ pub(crate) struct Adaptation {
     /// The sample before this one: when, the frames sent by then, the frames dropped by then.
     last: Option<(Instant, u64, Option<u64>)>,
     changed_at: Option<Instant>,
+    /// When the bitrate was last cut, and last raised.
+    cut_at: Option<Instant>,
+    raised_at: Option<Instant>,
     /// The bitrate the player was last told of, why, and when; none before the first.
     told: Option<(u32, LimitedBy, Instant)>,
 }
@@ -176,6 +193,8 @@ impl Adaptation {
             best_decode_ms: None,
             last: None,
             changed_at: None,
+            cut_at: None,
+            raised_at: None,
             told: None,
         }
     }
@@ -336,16 +355,32 @@ impl Adaptation {
     /// The bitrate to change to, if the change is worth making. `reopens`: the encoder in use
     /// reopens (with a keyframe) to change its rate.
     pub(crate) fn decide(&mut self, current_kbps: u32, reopens: bool, now: Instant) -> Option<u32> {
-        let target = self.target(now);
+        let mut target = self.target(now);
+        // Before the first estimate the target is the starting rate, taken at once (a new client
+        // starts afresh); after it, raises are held and stepped.
+        if target > current_kbps && self.network_kbps.is_some() {
+            let since = |at: Option<Instant>| at.map(|at| now.duration_since(at));
+            if since(self.cut_at).is_some_and(|d| d < RAISE_HOLD)
+                || since(self.raised_at).is_some_and(|d| d < RAISE_SPACING)
+            {
+                return None;
+            }
+            target = target.min(raise_step(current_kbps));
+        }
         let diff = target.abs_diff(current_kbps);
         let worth = if reopens && target > current_kbps {
-            diff * 4 > current_kbps
+            diff * 4 >= current_kbps
                 && self.changed_at.is_none_or(|at| now.duration_since(at) >= REOPEN_HOLD)
         } else {
             diff * 10 > current_kbps
         };
         worth.then(|| {
             self.changed_at = Some(now);
+            if target < current_kbps {
+                self.cut_at = Some(now);
+            } else {
+                self.raised_at = Some(now);
+            }
             target
         })
     }
@@ -399,9 +434,10 @@ mod tests {
             a.estimate(1_000_000, ms(at));
         }
         assert_eq!(a.decide(3697, false, ms(1800)), Some(722), "a drop that lasts is followed");
-        // Old estimates leave the window.
+        // Old estimates leave the window; the rise waits 10 s after the cut, then a quarter.
         a.estimate(6_000_000, ms(5000));
-        assert_eq!(a.decide(722, false, ms(5000)), Some(4972), "only the last 2 s count");
+        assert_eq!(a.decide(722, false, ms(5000)), None, "too soon after the cut");
+        assert_eq!(a.decide(722, false, ms(11_800)), Some(903), "then a quarter at a time");
     }
 
     /// A second of 60 frames sent, and what the client says of it.
@@ -449,15 +485,21 @@ mod tests {
         let mut a = adaptation();
         let t = Instant::now();
         assert_eq!(a.decide(5000, false, t), None, "nothing estimated: stay at the start");
-        // 85% of 10 Mbit/s, less the audio: there is headroom, so the rate rises.
+        // 85% of 10 Mbit/s, less the audio, is 8372: there is headroom, so the rate rises, a
+        // quarter at a time.
         alone(&mut a, 10_000_000);
-        assert_eq!(a.decide(5000, false, t), Some(8372));
+        assert_eq!(a.decide(5000, false, t), Some(6250));
         alone(&mut a, 100_000_000);
-        assert_eq!(a.decide(8372, false, t), Some(12_000), "never above the ceiling");
+        let s = |n: u64| t + Duration::from_secs(n);
+        assert_eq!(a.decide(6250, false, s(1)), None, "raises are 2 s apart");
+        assert_eq!(a.decide(6250, false, s(2)), Some(7813));
+        assert_eq!(a.decide(7813, false, s(4)), Some(9767));
+        assert_eq!(a.decide(9767, false, s(6)), Some(12_000), "never above the ceiling");
+        // Cuts are taken at once, all the way.
         alone(&mut a, 2_000_000);
-        assert_eq!(a.decide(12_000, false, t), Some(1572));
+        assert_eq!(a.decide(12_000, false, s(7)), Some(1572));
         alone(&mut a, 100_000);
-        assert_eq!(a.decide(1572, false, t), Some(300), "never below the floor");
+        assert_eq!(a.decide(1572, false, s(8)), Some(300), "never below the floor");
     }
 
     #[test]
@@ -483,7 +525,8 @@ mod tests {
         alone(&mut a, 3_000_000); // 2422
         assert_eq!(a.decide(3272, true, t + Duration::from_secs(6)), Some(2422));
         alone(&mut a, 10_000_000);
-        assert_eq!(a.decide(2422, true, t + Duration::from_secs(16)), Some(8372));
+        // 10 s after the last cut, a quarter more (always worth a reopen).
+        assert_eq!(a.decide(2422, true, t + Duration::from_secs(16)), Some(3028));
     }
 
     #[test]
@@ -585,7 +628,8 @@ mod tests {
         c.second(&mut a, 12_000, Some(30.0), None, None);
         c.second(&mut a, 12_000, Some(30.0), None, None);
         assert_eq!(a.client_limit_kbps(), Some(8400));
-        assert_eq!(a.decide(8400, false, c.now + Duration::from_secs(11)), Some(12_000));
+        // The limit lapses: back towards the network's 12000, a quarter at a time.
+        assert_eq!(a.decide(8400, false, c.now + Duration::from_secs(11)), Some(10_500));
         assert_eq!(a.client_limit_kbps(), None);
     }
 
@@ -614,6 +658,32 @@ mod tests {
         c.second(&mut a, 12_000, Some(30.0), None, None);
         let later = c.now + Duration::from_secs(15);
         assert_eq!(a.tell(8400, later), (8400, LimitedBy::Client));
+    }
+
+    #[test]
+    fn a_wavering_connection_is_followed_down_at_once_and_up_slowly() {
+        let mut a = adaptation();
+        let t = Instant::now();
+        let s = |n: u64| t + Duration::from_secs(n);
+        alone(&mut a, 7_000_000); // 5822
+        assert_eq!(a.decide(5000, false, s(0)), Some(5822));
+        // Down (2 Mbit/s: 1572), straight back up (7 Mbit/s): held, so no whiplash.
+        alone(&mut a, 2_000_000);
+        assert_eq!(a.decide(5822, false, s(1)), Some(1572), "down at once");
+        alone(&mut a, 7_000_000);
+        for n in [2, 4, 6, 8, 10] {
+            assert_eq!(a.decide(1572, false, s(n)), None, "held at {n} s");
+        }
+        // Then up in steps, 2 s apart: 1965, 2457, 3072, 3840, 4800, 5822.
+        let mut kbps = 1572;
+        let mut steps = Vec::new();
+        for n in (11..30).step_by(2) {
+            if let Some(next) = a.decide(kbps, false, s(n)) {
+                steps.push(next);
+                kbps = next;
+            }
+        }
+        assert_eq!(steps, [1965, 2457, 3072, 3840, 4800, 5822]);
     }
 
     #[test]
