@@ -264,3 +264,89 @@ jobs:
             docker push "$IMAGE:$tag"
           done
           echo "Published \`$IMAGE:bleeding-$stamp\` ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
+
+  coverage:
+    # The backend's test coverage, reported, never required: the `coverage` bake target runs the
+    # suite under cargo-llvm-cov in the test stage's image (Mesa included, so the GPU tests count),
+    # puts the per-file summary in the run's summary, and keeps the reports (HTML, lcov) as an
+    # artifact. On main and by hand only: it is a second full compile, instrumented.
+    needs: changes
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.ref == 'refs/heads/main' && needs.changes.outputs.backend == 'true')
+    name: Coverage
+    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        working-directory: .
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+
+      - uses: actions/checkout@v7
+
+      - name: Set up the runner
+        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
+        with:
+          gh: 'false'
+
+      - uses: docker/setup-buildx-action@v4
+        id: buildx
+
+      # The registry the image job saves (read only here: this job's instrumented target/ is
+      # its own, and not worth the cache's space).
+      - name: Cargo registry cache (restore)
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: cache-mount
+          key: cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            cargo-mounts-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}-
+            cargo-mounts-
+
+      - name: Cargo registry into the builder
+        continue-on-error: true
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          skip-extraction: true
+          cache-map: |
+            {
+              "cache-mount/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" }
+            }
+
+      - name: Test suite under coverage
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: SovEmu.Backend/docker-bake.hcl
+          targets: coverage
+
+      - name: Summary
+        working-directory: .
+        run: |
+          {
+            echo "### Backend coverage"
+            echo
+            echo '```'
+            grep -E '^(Filename|TOTAL)' coverage/summary.txt
+            echo '```'
+            echo
+            echo "<details><summary>Per file</summary>"
+            echo
+            echo '```'
+            cat coverage/summary.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 30

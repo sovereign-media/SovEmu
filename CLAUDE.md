@@ -143,7 +143,14 @@ cd SovEmu.Backend
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+../scripts/coverage.sh            # line coverage → ../coverage/ (summary, lcov, HTML)
 ```
+
+Coverage is `cargo-llvm-cov` (once: `rustup component add llvm-tools-preview && cargo install
+cargo-llvm-cov --locked`). It reports, never gates: CI's **Coverage** job (on `main` and by hand)
+runs the suite instrumented in the container (`docker buildx bake -f SovEmu.Backend/docker-bake.hcl
+coverage`, Dockerfile `coverage` stage), puts the per-file summary in the run's summary and keeps
+the HTML and lcov as an artifact. A new module with little coverage is a test to write.
 
 | Project | Crate | Purpose |
 |---|---|---|

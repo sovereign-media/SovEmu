@@ -92,7 +92,7 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     && strip --strip-debug /out/sovemu-worker /out/sovemu-server
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
-FROM toolchain AS test
+FROM toolchain AS test-base
 # Files tests check the sources against, at the places they sit relative to the sources in the
 # repository: the core list (SovEmu.Library's licence table, `cores.rs`) and the README (every
 # setting has a row in its table, SovEmu.Server's `configuration.rs`).
@@ -103,6 +103,8 @@ COPY README.md /README.md
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
+
+FROM test-base AS test
 # Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
 # must be several times faster than normal play), and a release link on the same cores would
 # slow them. Copying from `build` makes BuildKit wait for it before the tests run.
@@ -113,6 +115,30 @@ COPY --from=build /out/sovemu-server /tmp/release-built
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
     rm /tmp/release-built && cargo test --workspace --locked
+
+## ---- coverage: the test suite's line coverage (CI's Coverage job; not part of the image) -------
+# The same tests as `test`, instrumented by cargo-llvm-cov, in a target cache of their own. It
+# reports, never gates: a test that fails here (an instrumented build is slower, and some tests
+# time the emulator) still leaves a report, and `test` is what must pass.
+FROM test-base AS coverage-run
+ARG CARGO_LLVM_COV_VERSION=0.9.2
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    rustup component add llvm-tools-preview \
+    && cargo install cargo-llvm-cov --locked --version "${CARGO_LLVM_COV_VERSION}"
+# The stand-in core the tests load (SovEmu.TestCore) is test equipment: left out of the reports.
+ENV COVERAGE_IGNORE='SovEmu\.TestCore/'
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=target-coverage,target=/src/target \
+    mkdir -p /out \
+    && cargo llvm-cov --workspace --locked --ignore-run-fail \
+         --ignore-filename-regex "$COVERAGE_IGNORE" --lcov --output-path /out/lcov.info \
+    && cargo llvm-cov report --ignore-filename-regex "$COVERAGE_IGNORE" --summary-only \
+         > /out/summary.txt \
+    && cargo llvm-cov report --ignore-filename-regex "$COVERAGE_IGNORE" --html --output-dir /out
+
+# Only the reports: `docker buildx bake coverage` writes them to ./coverage.
+FROM scratch AS coverage
+COPY --from=coverage-run /out/ /
 
 ## ---- runtime ------------------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime

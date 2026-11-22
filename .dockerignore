@@ -27,3 +27,4 @@ SovEmu.Web/e2e/.auth
 SovEmu.Android
 SovEmu.iOS
 .env
+coverage
