@@ -7,7 +7,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { DatabaseBackup, Download, History, Lock, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { api } from "../../lib/api";
+import { api, type JobState } from "../../lib/api";
 import { restoreLine, scheduleText } from "../../lib/backups";
 import { invalidate, q } from "../../lib/data";
 import { lastRunText } from "../../lib/jobs";
@@ -16,10 +16,16 @@ import { Button } from "../ui/button";
 import { Confirm, Pill } from "../ui/primitives";
 import AdminPage, { AdminSection, CopyButton, EnvLine, ErrorNote } from "./AdminPage";
 
+/**
+ * Whether a backup is under way: the job says it runs, or its last run has not ended yet (the
+ * run is recorded as ended a moment after the job stops running).
+ */
+const backingUp = (job: JobState | undefined) => !!job && (job.running || job.lastRun?.outcome === "RUNNING");
+
 function Backups() {
   const jobs = useQuery({
     ...q.jobs(),
-    refetchInterval: (query) => (query.state.data?.find((j) => j.name === "BACKUP")?.running ? 1000 : false),
+    refetchInterval: (query) => (backingUp(query.state.data?.find((j) => j.name === "BACKUP")) ? 1000 : false),
   });
   const job = jobs.data?.find((j) => j.name === "BACKUP");
   const backups = useQuery(q.backups(job?.lastRun?.finishedAt ?? null));
@@ -39,8 +45,8 @@ function Backups() {
         title="Backups"
         description="The accounts, sign-ins, settings, controller mappings, collections and history, the signing keys, and every save. The library, its game information and the cache are made again by a scan, so they are left out."
         actions={
-          <Button onClick={() => start.mutate()} disabled={start.isPending || job?.running}>
-            <DatabaseBackup /> {job?.running ? "Backing up…" : "Back up now"}
+          <Button onClick={() => start.mutate()} disabled={start.isPending || backingUp(job)}>
+            <DatabaseBackup /> {backingUp(job) ? "Backing up…" : "Back up now"}
           </Button>
         }
       >

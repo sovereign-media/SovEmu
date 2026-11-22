@@ -143,10 +143,12 @@ pub(super) struct JobState {
 
 /// Every job this server has, as [`JobState`]s.
 pub(super) async fn job_states(state: &AppState) -> Result<Vec<JobState>> {
+    // Which are running first, then their runs: a run's end is recorded before its job stops
+    // running, so read in this order a job never shows as stopped while its last run still
+    // reads as running (read the other way round, a run ending in between did).
+    let info = state.jobs.info(state);
     let mut last = state.jobs.last_runs().await.map_err(|e| gql(e.into()))?;
-    Ok(state
-        .jobs
-        .info(state)
+    Ok(info
         .into_iter()
         .map(|i| JobState {
             name: i.job.into(),
