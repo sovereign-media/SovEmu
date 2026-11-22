@@ -9,7 +9,7 @@ import type { ActiveSession } from "../../lib/api";
 import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { audioLabel, fallbacksLabel, renderingLabel, runAheadLabel, streamLabel } from "../../lib/pipeline";
-import { clientSummary, durationLabel, healthSummary } from "../../lib/sessions";
+import { clientSummary, decoderSummary, durationLabel, healthSummary } from "../../lib/sessions";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { panel, Tooltip } from "../ui/primitives";
@@ -71,6 +71,8 @@ function Details({ s }: { s: ActiveSession }) {
     const ms = (x: number | null | undefined) => (x == null ? "–" : `${x.toFixed(1)} ms`);
     if (c.inputToFrameMs != null)
       rows.push(["Button→frame", `${ms(c.inputToFrameMs)} measured on the player's device`]);
+    const decoder = decoderSummary(s);
+    if (decoder) rows.push(["Player's decoder", decoder]);
     rows.push([
       "Player's view",
       `input round trip ${ms(c.inputRttMs)} · network ${ms(c.netRttMs)} · decode ${ms(c.decodeMs)}`,

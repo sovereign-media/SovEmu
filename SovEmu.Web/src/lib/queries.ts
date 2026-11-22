@@ -692,6 +692,8 @@ export const ActiveSessionsQuery = graphql(`
         fps
         kbps
         packetsLost
+        decoder
+        lowLatencyDecode
       }
     }
   }

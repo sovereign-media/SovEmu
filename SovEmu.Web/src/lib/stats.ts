@@ -78,6 +78,7 @@ export class StatsSampler {
       fps: v.framesPerSecond,
       kbps,
       packets_lost: lost,
+      decoder: typeof v.decoderImplementation === "string" ? v.decoderImplementation : undefined,
     };
     const items = [
       { label: "Estimated button→pixel", value: fmt(estimate, " ms") },

@@ -305,6 +305,14 @@ type ClientStreamStats {
 	Packets lost since the stream began.
 	"""
 	packetsLost: Float
+	"""
+	The player's video decoder.
+	"""
+	decoder: String
+	"""
+	Whether that decoder runs in low-latency mode; null where the client cannot tell.
+	"""
+	lowLatencyDecode: Boolean
 }
 
 type Collection {
