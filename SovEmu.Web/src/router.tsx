@@ -8,6 +8,7 @@ import { createRootRoute, createRoute, createRouter, Outlet, useRouterState } fr
 import { type ComponentType, lazy, Suspense, useLayoutEffect, useRef } from "react";
 import { pathOf, screenKey, setNavigator } from "./lib/go";
 import { followLinks } from "./lib/links";
+import { SCREEN_PATHS, type ScreenPath } from "./lib/screens";
 
 /** A screen, titled, and remounted when the URL changes (see above), but for `own` parameters. */
 function screen(path: string, title: string, Screen: ComponentType, own: readonly string[]) {
@@ -59,45 +60,49 @@ const TelemetryAdmin = lazy(() => import("./components/admin/TelemetryAdmin"));
 const AboutAdmin = lazy(() => import("./components/admin/AboutAdmin"));
 const AppearanceAdmin = lazy(() => import("./components/admin/AppearanceAdmin"));
 
-/** Path, title, screen, and the URL parameters the screen updates itself (with `history`). */
-const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[]][] = [
-  ["/", "Home", Home, []],
-  ["/login/", "Sign in", LoginPage, []],
-  ["/auth/callback/", "Signing in", AuthCallback, []],
-  ["/system/", "Games", SystemPage, ["game"]],
-  ["/play/", "Playing", PlayPage, []],
-  ["/search/", "Search", Search, ["q"]],
-  ["/bios/", "BIOS files", BiosPage, []],
-  ["/admin/", "Library", LibraryAdmin, []],
-  ["/admin/users/", "Users", UsersAdmin, []],
-  ["/admin/settings/", "Settings", SettingsAdmin, ["id"]],
-  ["/admin/controllers/", "Controllers", ControllersAdmin, []],
-  ["/admin/resources/", "Resources", ResourcesAdmin, []],
-  ["/admin/sessions/", "Sessions", SessionsAdmin, []],
-  ["/admin/jobs/", "Jobs", JobsAdmin, []],
-  ["/admin/rendering/", "Rendering", RenderingAdmin, []],
-  ["/admin/bios/", "BIOS", BiosAdmin, []],
-  ["/admin/decorations/", "Decorations", DecorationsAdmin, []],
-  ["/admin/patches/", "Patches", PatchesAdmin, []],
-  ["/admin/cores/", "Cores", CoresAdmin, []],
-  ["/admin/configuration/", "Configuration", ConfigurationAdmin, []],
-  ["/admin/network/", "Network", NetworkAdmin, []],
-  ["/admin/storage/", "Storage", StorageAdmin, []],
-  ["/admin/telemetry/", "Telemetry", TelemetryAdmin, []],
-  ["/admin/about/", "About", AboutAdmin, []],
-  ["/admin/appearance/", "Appearance", AppearanceAdmin, []],
-];
+/**
+ * Each screen's title, component, and the URL parameters it updates itself (with `history`), by
+ * its path. Keyed by every path in `SCREEN_PATHS`, no more and no fewer.
+ */
+const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: string[]]> = {
+  "/": ["Home", Home, []],
+  "/login/": ["Sign in", LoginPage, []],
+  "/auth/callback/": ["Signing in", AuthCallback, []],
+  "/system/": ["Games", SystemPage, ["game"]],
+  "/play/": ["Playing", PlayPage, []],
+  "/search/": ["Search", Search, ["q"]],
+  "/bios/": ["BIOS files", BiosPage, []],
+  "/admin/": ["Library", LibraryAdmin, []],
+  "/admin/users/": ["Users", UsersAdmin, []],
+  "/admin/settings/": ["Settings", SettingsAdmin, ["id"]],
+  "/admin/controllers/": ["Controllers", ControllersAdmin, []],
+  "/admin/resources/": ["Resources", ResourcesAdmin, []],
+  "/admin/sessions/": ["Sessions", SessionsAdmin, []],
+  "/admin/jobs/": ["Jobs", JobsAdmin, []],
+  "/admin/rendering/": ["Rendering", RenderingAdmin, []],
+  "/admin/bios/": ["BIOS", BiosAdmin, []],
+  "/admin/decorations/": ["Decorations", DecorationsAdmin, []],
+  "/admin/patches/": ["Patches", PatchesAdmin, []],
+  "/admin/cores/": ["Cores", CoresAdmin, []],
+  "/admin/configuration/": ["Configuration", ConfigurationAdmin, []],
+  "/admin/network/": ["Network", NetworkAdmin, []],
+  "/admin/storage/": ["Storage", StorageAdmin, []],
+  "/admin/telemetry/": ["Telemetry", TelemetryAdmin, []],
+  "/admin/about/": ["About", AboutAdmin, []],
+  "/admin/appearance/": ["Appearance", AppearanceAdmin, []],
+};
 
-const routes = SCREENS.map(([path, title, Screen, own]) =>
-  createRoute({ getParentRoute: () => root, path, component: screen(path, title, Screen, own) }),
-);
+const routes = SCREEN_PATHS.map((path) => {
+  const [title, Screen, own] = SCREENS[path];
+  return createRoute({ getParentRoute: () => root, path, component: screen(path, title, Screen, own) });
+});
 
 export const router = createRouter({
   routeTree: root.addChildren(routes),
   trailingSlash: "always",
   // An unknown path goes home, as the server's old 404 page would have been no use.
   defaultNotFoundComponent: () => {
-    router.navigate({ to: "/", replace: true });
+    router.history.replace("/");
     return null;
   },
 });

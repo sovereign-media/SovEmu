@@ -2,7 +2,6 @@
 
 use super::*;
 
-/// Where a 3D system renders on this server.
 /// What went wrong on a client (`reportClientEvents`).
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClientEventKind {
@@ -49,9 +48,9 @@ impl From<ClientEventInput> for crate::client_events::Event {
 /// A running game: one worker streaming over WebRTC.
 pub(super) struct SessionNode(pub(super) sovemu_sessions::workers::SessionInfo);
 
-/// A game being played, as the admin's sessions page shows it.
-/// A game that failed: it ended with an error while starting, or crashed, errored or had to be
-/// killed while playing. The newest the server keeps (`SOVEMU_SESSION_FAILURES`).
+/// A game that failed: the server refused to start it, it failed to start, or it crashed,
+/// errored or had to be killed while playing. The newest the server keeps
+/// (`SOVEMU_SESSION_FAILURES`).
 #[derive(SimpleObject)]
 pub(super) struct SessionFailure {
     /// When it ended (Unix seconds).
@@ -61,13 +60,18 @@ pub(super) struct SessionFailure {
     pub(super) game_id: i64,
     pub(super) title: String,
     pub(super) system: String,
-    /// The core's file name without its extension (`pcsx2_libretro`).
-    pub(super) core: String,
+    /// The core's file name without its extension (`pcsx2_libretro`); null for a start refused
+    /// before a core was found.
+    pub(super) core: Option<String>,
     /// It had loaded: it failed while playing; else while starting.
     pub(super) while_playing: bool,
-    /// `error`, `crashed` (a signal: in the core, most often) or `killed` (it would not stop, or
-    /// its start timed out).
+    /// `refused` (the server would not start it: no core, a missing file, no 3D rendering, every
+    /// port in use), `error`, `crashed` (a signal: in the core, most often), `killed` (it would
+    /// not stop, or its start timed out) or `exited` (it left while loading without saying why).
     pub(super) reason: String,
+    /// What went wrong, in words: why the server refused it, or why its start failed; null for
+    /// a failure while playing (its last lines say what there is).
+    pub(super) message: Option<String>,
     pub(super) exit_code: Option<i32>,
     pub(super) signal: Option<i32>,
     /// The worker's last log lines (the core's own, most often), oldest first.
@@ -76,6 +80,7 @@ pub(super) struct SessionFailure {
     pub(super) ran_seconds: f64,
 }
 
+/// A game being played, as the admin's sessions page shows it.
 pub(super) struct ActiveSessionNode(pub(super) crate::api::ActiveSession);
 
 #[Object(name = "ActiveSession")]
@@ -400,7 +405,8 @@ impl SessionsQuery {
                 system: f.system,
                 core: f.core,
                 while_playing: f.loaded,
-                reason: f.reason.as_str().to_owned(),
+                reason: f.reason.map_or("refused", |r| r.as_str()).to_owned(),
+                message: f.message,
                 exit_code: f.code,
                 signal: f.signal,
                 last_lines: f.last_lines,

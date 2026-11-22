@@ -699,7 +699,6 @@ impl AppState {
         self.decorations.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Lists the decoration folders again (a set may have been added).
     /// The backgrounds and system photos as last listed.
     pub(crate) fn appearance(&self) -> Arc<appearance::Appearance> {
         self.appearance.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -714,6 +713,7 @@ impl AppState {
         *self.appearance.write().unwrap_or_else(|e| e.into_inner()) = fresh;
     }
 
+    /// Lists the decoration folders again (a set may have been added).
     pub fn reload_decorations(&self) {
         let fresh = Arc::new(decorations::Decorations::load(&self.config.decoration_dirs()));
         *self.decorations.write().unwrap_or_else(|e| e.into_inner()) = fresh;

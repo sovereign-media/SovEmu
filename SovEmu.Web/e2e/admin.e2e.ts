@@ -22,6 +22,19 @@ test("the Sessions page says when nothing is being played", async ({ page }) => 
   await expect(page.getByText("No games are being played.")).toBeVisible();
 });
 
+test("a game the server will not start is listed under the Sessions page's failures", async ({ page }) => {
+  // The e2e server has no cores, so a start is refused before any emulator runs.
+  const started = page.waitForResponse(
+    (r) => r.url().endsWith("/graphql") && (r.request().postData() ?? "").includes("startSession"),
+  );
+  await page.goto("/play/?game=1");
+  await started;
+  await page.goto("/admin/sessions/");
+  const failures = page.getByRole("region", { name: "Recent failures" });
+  await expect(failures.getByText("Refused to start").first()).toBeVisible();
+  await expect(failures.getByText(/^no core installed for /).first()).toBeVisible();
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

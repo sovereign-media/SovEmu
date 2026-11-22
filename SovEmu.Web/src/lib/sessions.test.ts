@@ -86,5 +86,6 @@ describe("sessions page", () => {
       "Timed out starting (SIGKILL)",
     );
     expect(failureLabel({ ...f, reason: "killed", signal: null })).toBe("Would not stop");
+    expect(failureLabel({ ...f, whilePlaying: false, reason: "refused", signal: null })).toBe("Refused to start");
   });
 });

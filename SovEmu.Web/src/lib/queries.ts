@@ -656,6 +656,7 @@ export const SessionFailuresQuery = graphql(`
       core
       whilePlaying
       reason
+      message
       exitCode
       signal
       lastLines
