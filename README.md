@@ -343,7 +343,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
 | `SOVEMU_VIDEO_KBPS` | `2500` | Video bitrate cap (adaptation stays below it) |
-| `SOVEMU_VIDEO_CODEC` | `auto` | `auto` (H.264 when the client offers it, else VP8), `h264` or `vp8` |
+| `SOVEMU_VIDEO_CODEC` | `vp8` | `vp8`, `h264`, or `auto` (H.264 when the client offers it, else VP8). VP8 is encoded on the CPU; H.264 on the GPU where there is one. VP8 is the default because a TV's hardware H.264 decoder can be far slower than its VP8 one (23 ms against 3.6 ms a frame at 640×448 on an Amlogic TV): try `auto` where your clients decode H.264 quickly, and compare "Measured button→frame" |
 | `SOVEMU_VIDEO_ENCODER` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
 | `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |
 | `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
