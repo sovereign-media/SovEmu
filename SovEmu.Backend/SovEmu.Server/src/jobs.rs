@@ -752,15 +752,18 @@ mod tests {
         let jobs = Jobs::new(db).await.unwrap();
         let order = Arc::new(Mutex::new(Vec::new()));
         let (go, wait) = tokio::sync::oneshot::channel::<()>();
+        let (inside, holding) = tokio::sync::oneshot::channel::<()>();
         let o = order.clone();
         let sync = jobs
             .start(Job::MirrorSync, Trigger::Admin, async move {
+                inside.send(()).ok();
                 wait.await.ok();
                 o.lock().unwrap().push("sync");
                 Ok(())
             })
             .unwrap();
-        tokio::task::yield_now().await;
+        // The sync's work runs only once it holds the lane.
+        holding.await.unwrap();
         let o = order.clone();
         let scan = jobs
             .start(Job::Scan, Trigger::Admin, async move {
