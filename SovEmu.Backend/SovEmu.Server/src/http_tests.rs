@@ -1943,6 +1943,7 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
 const ADMIN_ONLY: &[&str] = &[
     "{ users { id } }",
     "{ activeSessions { id } }",
+    "{ sessionFailures { at } }",
     "{ libraryStatus { __typename } }",
     "{ metadataStatus { __typename } }",
     "{ attributions { __typename } }",
@@ -2094,6 +2095,42 @@ async fn one_users_sessions_saves_and_lists_are_not_anothers() {
         (json!(true), json!([collection]))
     );
     assert_eq!(theirs["cheats"], json!([{"id": cheat}]));
+}
+
+#[tokio::test]
+async fn admins_stop_anyones_session_and_see_the_starts_that_failed() {
+    let mut h = Harness::new("admin-stop", true).await;
+    h.sign_up_admin().await;
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+
+    // A viewer plays; the admin stops their game (its saves written first, by `Workers::stop`).
+    h.switch_to_new_viewer("kid").await;
+    let sid =
+        h.ok(START, json!({"game": id})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    let listed = h.ok("{ activeSessions { id username } }", json!({})).await;
+    assert_eq!(listed["activeSessions"], json!([{"id": sid, "username": "kid"}]));
+    h.ok("mutation($s: ID!) { stopSession(id: $s) }", json!({"s": sid})).await;
+    assert_eq!(h.state.workers.count(), 0);
+    let failures = "{ sessionFailures { username title system core phase reason message \
+                    exitCode signal lastLines } }";
+    assert_eq!(
+        h.ok(failures, json!({})).await["sessionFailures"],
+        json!([]),
+        "a stop is no failure"
+    );
+
+    // A start the server refuses is kept, with why, for "why won't this game run".
+    std::fs::remove_file(h.state.config.roms_dir.join("nes/Test Game (USA).nes")).unwrap();
+    assert_eq!(h.err(START, json!({"game": id})).await.0, "GONE");
+    let kept = h.ok(failures, json!({})).await["sessionFailures"].clone();
+    assert_eq!(kept.as_array().unwrap().len(), 1, "{kept}");
+    let f = &kept[0];
+    assert_eq!((f["username"].clone(), f["phase"].clone()), (json!("admin"), json!("STARTING")));
+    assert_eq!((f["reason"].clone(), f["system"].clone()), (Value::Null, json!("nes")));
+    assert!(f["core"].as_str().unwrap().starts_with("fceumm_libretro"), "{f}");
+    assert!(f["message"].as_str().unwrap().contains("missing"), "{f}");
 }
 
 #[tokio::test]

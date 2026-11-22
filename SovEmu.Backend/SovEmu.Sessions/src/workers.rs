@@ -208,13 +208,35 @@ impl std::fmt::Debug for Session {
     }
 }
 
-/// What the reaper needs to say why a worker ended.
+/// What the reaper needs to say what a worker was playing and why it ended.
 struct Exit {
+    user_id: i64,
+    game_id: i64,
+    title: String,
     system: String,
     core: String,
-    /// What the worker said as it went ([`Reply::Exiting`]), if it did.
-    reported: Arc<Mutex<Option<ExitReason>>>,
+    told: Arc<Mutex<Told>>,
+    /// Closes once the start has settled (ready, failed or abandoned), so [`Told`] says how it
+    /// went: the worker's exit and the start's outcome arrive in either order.
+    settled: oneshot::Receiver<()>,
     last_words: LastWords,
+}
+
+/// What the server learnt from a worker while it ran, for its reaper.
+#[derive(Debug, Default)]
+struct Told {
+    /// It said it was ready: its game loaded.
+    loaded: bool,
+    /// Why its start failed, if it did.
+    start_error: Option<String>,
+    /// What it said as it went ([`Reply::Exiting`]), if it did.
+    exiting: Option<ExitReason>,
+}
+
+impl Told {
+    fn change(told: &Mutex<Self>, change: impl FnOnce(&mut Self)) {
+        change(&mut told.lock().unwrap_or_else(|e| e.into_inner()));
+    }
 }
 
 /// Why a worker ended: the server's own kill first, then what the worker said, then how the
@@ -331,10 +353,12 @@ impl Process {
                 let ran = started.elapsed();
                 // Its last lines (on stderr, after its exit) come in a moment after the exit.
                 let last_words = exit.last_words.finish().await;
-                let reported = *exit.reported.lock().unwrap_or_else(|e| e.into_inner());
+                let _ = exit.settled.await;
+                let told =
+                    std::mem::take(&mut *exit.told.lock().unwrap_or_else(|e| e.into_inner()));
                 let signal = status.as_ref().ok().and_then(signal_of);
                 let code = status.as_ref().ok().and_then(std::process::ExitStatus::code);
-                let reason = end_reason(we_killed, reported, signal, code);
+                let reason = end_reason(we_killed, told.exiting, signal, code);
                 if matches!(reason, EndReason::Crashed | EndReason::Killed) {
                     tracing::warn!(
                         reason = reason.as_str(),
@@ -355,9 +379,18 @@ impl Process {
                     );
                 }
                 workers.config.observer.session_ended(&Ended {
+                    session_id: &id,
+                    user_id: exit.user_id,
+                    game_id: exit.game_id,
+                    title: &exit.title,
                     system: &exit.system,
                     core: &exit.core,
                     reason,
+                    loaded: told.loaded,
+                    start_error: told.start_error.as_deref(),
+                    code,
+                    signal,
+                    last_lines: &last_words,
                     ran,
                 });
                 let _ = exit_tx.send(true);
@@ -670,7 +703,9 @@ impl Workers {
         };
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
-        let reported = Arc::new(Mutex::new(None));
+        let told = Arc::new(Mutex::new(Told::default()));
+        // Held until this start returns, however it does.
+        let (_settling, settled) = oneshot::channel::<()>();
         let last_words = LastWords::follow(child.stderr.take().expect("piped"));
         let process = Process::reap(
             child,
@@ -680,9 +715,13 @@ impl Workers {
             after_exit,
             span.clone(),
             Exit {
+                user_id: launch.user_id,
+                game_id: launch.game_id,
+                title: launch.title.clone(),
                 system: launch.system.clone(),
                 core: core_name(&launch.core),
-                reported: reported.clone(),
+                told: told.clone(),
+                settled,
                 last_words,
             },
         );
@@ -717,20 +756,18 @@ impl Workers {
             Err(Error::Exited)
         })
         .await;
-        let ready = match ready {
-            Ok(Ok(ready)) => ready,
-            Ok(Err(e)) => {
-                tracing::warn!(
-                    parent: &span,
-                    error = %e,
-                    load_ms = started.elapsed().as_millis() as u64,
-                    "session failed to start"
-                );
-                return Err(e);
+        let ready = match ready
+            .unwrap_or(Err(Error::Timeout("the worker took too long to load the game")))
+        {
+            Ok(ready) => {
+                Told::change(&told, |t| t.loaded = true);
+                ready
             }
-            Err(_) => {
-                process.kill();
-                let e = Error::Timeout("the worker took too long to load the game");
+            Err(e) => {
+                Told::change(&told, |t| t.start_error = Some(e.to_string()));
+                if matches!(e, Error::Timeout(_)) {
+                    process.kill();
+                }
                 tracing::warn!(
                     parent: &span,
                     error = %e,
@@ -796,9 +833,7 @@ impl Workers {
             while let Ok(Some(line)) = lines.next_line().await {
                 let Ok(reply) = serde_json::from_str::<Reply>(&line) else { continue };
                 match reply {
-                    Reply::Exiting { reason } => {
-                        *reported.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
-                    }
+                    Reply::Exiting { reason } => Told::change(&told, |t| t.exiting = Some(reason)),
                     Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
                     Reply::ClientDisconnected => {
                         reader.connected.store(false, Ordering::Relaxed);
@@ -923,23 +958,46 @@ done
         workers_with(dir, &WORKER.replace("THEN", then), stop_timeout, Arc::new(()))
     }
 
-    /// Remembers why each session ended, and its core.
+    /// What an observer was told about one session's end.
+    #[derive(Debug, Clone)]
+    struct Report {
+        reason: EndReason,
+        core: String,
+        loaded: bool,
+        failed: bool,
+        start_error: Option<String>,
+        last_lines: Vec<String>,
+    }
+
+    /// Remembers what it was told about each session's end.
     #[derive(Debug, Default)]
-    struct Recorder(Mutex<Vec<(EndReason, String)>>);
+    struct Recorder(Mutex<Vec<Report>>);
 
     impl Observer for Recorder {
         fn session_ended(&self, ended: &Ended<'_>) {
-            self.0.lock().unwrap().push((ended.reason, ended.core.to_owned()));
+            self.0.lock().unwrap().push(Report {
+                reason: ended.reason,
+                core: ended.core.to_owned(),
+                loaded: ended.loaded,
+                failed: ended.failed(),
+                start_error: ended.start_error.map(str::to_owned),
+                last_lines: ended.last_lines.to_vec(),
+            });
         }
     }
 
     impl Recorder {
         /// The reasons recorded, once `n` sessions have ended.
         async fn ended(&self, n: usize) -> Vec<EndReason> {
+            self.reports(n).await.into_iter().map(|r| r.reason).collect()
+        }
+
+        /// What was recorded, once `n` sessions have ended.
+        async fn reports(&self, n: usize) -> Vec<Report> {
             for _ in 0..200 {
                 let ended = self.0.lock().unwrap().clone();
                 if ended.len() >= n {
-                    return ended.into_iter().map(|(reason, _)| reason).collect();
+                    return ended;
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
@@ -1078,7 +1136,64 @@ done
         workers.start(launch(&dir, 1, 1)).await.unwrap();
         workers.stop_all().await;
         assert_eq!(recorder.ended(1).await, [EndReason::Stopped]);
-        assert_eq!(recorder.0.lock().unwrap()[0].1, "core", "the core's file name");
+        let report = &recorder.reports(1).await[0];
+        assert_eq!(report.core, "core", "the core's file name");
+        assert!(report.loaded && !report.failed, "{report:?}");
+    }
+
+    #[tokio::test]
+    async fn a_worker_that_fails_to_load_reports_why_and_its_last_lines() {
+        let dir = dir("loadfail");
+        let recorder = Arc::new(Recorder::default());
+        let script = r#"#!/bin/sh
+echo "no BIOS found" >&2
+echo '{"type":"failed","message":"the core could not load the game"}'
+exit 1
+"#;
+        let workers = workers_with(&dir, script, Duration::from_secs(5), recorder.clone());
+        let e = workers.start(launch(&dir, 1, 1)).await.unwrap_err();
+        assert!(!e.before_worker(), "a worker ran: it reports the failure itself");
+        let report = &recorder.reports(1).await[0];
+        assert!(report.failed && !report.loaded, "{report:?}");
+        assert_eq!(report.start_error.as_deref(), Some("the core could not load the game"));
+        assert_eq!(report.last_lines, ["no BIOS found"]);
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_missing_worker_fails_before_any_worker_runs() {
+        let dir = dir("nobin");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let workers = Workers::new(WorkerConfig {
+            worker_bin: dir.join("missing"),
+            ..workers.config.clone()
+        });
+        let e = workers.start(launch(&dir, 1, 1)).await.unwrap_err();
+        assert!(e.before_worker(), "{e}");
+        settle(&workers, 2).await;
+    }
+
+    #[test]
+    fn observers_are_all_told() {
+        let (a, b) = (Arc::new(Recorder::default()), Arc::new(Recorder::default()));
+        let both = crate::Observers(vec![a.clone(), b.clone()]);
+        both.session_ended(&Ended {
+            session_id: "s",
+            user_id: 1,
+            game_id: 2,
+            title: "t",
+            system: "nes",
+            core: "core",
+            reason: EndReason::Crashed,
+            loaded: true,
+            start_error: None,
+            code: None,
+            signal: Some(11),
+            last_lines: &[],
+            ran: Duration::ZERO,
+        });
+        assert_eq!((a.0.lock().unwrap().len(), b.0.lock().unwrap().len()), (1, 1));
+        assert!(a.0.lock().unwrap()[0].failed, "a crash is a failure");
     }
 
     #[tokio::test]
@@ -1093,6 +1208,9 @@ kill -SEGV $$
         let workers = workers_with(&dir, crash, Duration::from_secs(5), recorder.clone());
         workers.start(launch(&dir, 1, 1)).await.unwrap();
         assert_eq!(recorder.ended(1).await, [EndReason::Crashed]);
+        let report = &recorder.reports(1).await[0];
+        assert!(report.loaded && report.failed, "{report:?}");
+        assert_eq!(report.last_lines, ["the core's last words"]);
         settle(&workers, 2).await;
     }
 

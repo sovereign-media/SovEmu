@@ -281,27 +281,35 @@ async fn launch(
     let state = state.clone();
     let game = fetch_game(&state, user.id, game_id).await?;
     let system = system_by_id(&state, &game.system)?;
+    let refuse =
+        |core: Option<&std::path::Path>, error: ApiError| refused(&state, user, &game, core, error);
     if system.needs_gpu && state.gpu.mode == sovemu_sessions::gpu::Mode::Off {
-        return Err(ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!(
-                "{} needs 3D rendering, which is unavailable on this server ({})",
-                system.name,
-                state.gpu.note.as_deref().unwrap_or("SOVEMU_GPU")
+        return Err(refuse(
+            None,
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!(
+                    "{} needs 3D rendering, which is unavailable on this server ({})",
+                    system.name,
+                    state.gpu.note.as_deref().unwrap_or("SOVEMU_GPU")
+                ),
             ),
         ));
     }
     let core = find_core(&state, system).ok_or_else(|| {
-        ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            format!("no core installed for {}", system.name),
+        refuse(
+            None,
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("no core installed for {}", system.name),
+            ),
         )
     })?;
     let original = state.config.roms_dir.join(&game.path);
     if !original.is_file() {
-        return Err(ApiError::new(
-            StatusCode::GONE,
-            "the game file is missing; rescan the library",
+        return Err(refuse(
+            Some(&core),
+            ApiError::new(StatusCode::GONE, "the game file is missing; rescan the library"),
         ));
     }
     let (save_dir, state_dir) = save_dirs(&state, user.id, &game);
@@ -357,7 +365,11 @@ async fn launch(
             start_id,
         })
         .await
-        .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}")))?;
+        .map_err(|e| {
+            let error = ApiError::new(StatusCode::SERVICE_UNAVAILABLE, format!("{e:#}"));
+            // A worker that ran reports its own failure (`failures`, as an observer).
+            if e.before_worker() { refuse(Some(&core), error) } else { error }
+        })?;
     if let Some(declared) = session.take_declared() {
         crate::settings::remember(&state.db, &core, &declared).await;
     }
@@ -379,6 +391,25 @@ async fn launch(
     .execute(&state.db)
     .await?;
     Ok(session.info())
+}
+
+/// Keeps a start the server refused, before any worker ran, for the admin's failures list.
+fn refused(
+    state: &AppState,
+    user: &User,
+    game: &Game,
+    core: Option<&std::path::Path>,
+    error: ApiError,
+) -> ApiError {
+    let start = crate::failures::Refused {
+        user_id: user.id,
+        game_id: game.id,
+        title: &game.title,
+        system: &game.system,
+        core,
+    };
+    state.failures.refused(start, &error.message);
+    error
 }
 
 /// Writes `<data>/cache/discs/<game>.m3u`, listing a multi-disc game's files (absolute paths,
@@ -437,14 +468,18 @@ pub(crate) struct ActiveSession {
     pub(crate) live: sovemu_sessions::workers::Live,
 }
 
+/// Every account's name by its id, for the admin's lists of sessions.
+async fn usernames(state: &AppState) -> ApiResult<std::collections::HashMap<i64, String>> {
+    Ok(state.identity.users().await?.into_iter().map(|u| (u.id, u.username)).collect())
+}
+
 /// Every running session, oldest first, with what its worker and client last reported.
 pub(crate) async fn active_sessions(state: &AppState) -> ApiResult<Vec<ActiveSession>> {
     let sessions = state.workers.all();
     if sessions.is_empty() {
         return Ok(Vec::new());
     }
-    let names: std::collections::HashMap<i64, String> =
-        state.identity.users().await?.into_iter().map(|u| (u.id, u.username)).collect();
+    let names = usernames(state).await?;
     Ok(sessions
         .into_iter()
         .map(|s| ActiveSession {
@@ -454,6 +489,25 @@ pub(crate) async fn active_sessions(state: &AppState) -> ApiResult<Vec<ActiveSes
             started_at: s.started_at(),
             live: s.live(),
         })
+        .collect())
+}
+
+/// A session that went wrong, with its player's name (none if the account has gone).
+pub(crate) struct FailedSession {
+    pub(crate) failure: crate::failures::Failure,
+    pub(crate) username: Option<String>,
+}
+
+/// The last sessions that went wrong, newest first.
+pub(crate) async fn session_failures(state: &AppState) -> ApiResult<Vec<FailedSession>> {
+    let failures = state.failures.recent();
+    if failures.is_empty() {
+        return Ok(Vec::new());
+    }
+    let names = usernames(state).await?;
+    Ok(failures
+        .into_iter()
+        .map(|failure| FailedSession { username: names.get(&failure.user_id).cloned(), failure })
         .collect())
 }
 
@@ -503,8 +557,22 @@ pub(crate) async fn reset(state: &AppState, user: &User, id: &str) -> ApiResult<
     Ok(())
 }
 
+/// Ends a session: the player's own, or anyone's for an admin. Its worker writes the saves
+/// first (`Workers::stop`); the player's client sees the stream end, as after an idle timeout.
 pub(crate) async fn stop_session(state: &AppState, user: &User, id: &str) -> ApiResult<()> {
-    owned_session(state, user.id, id)?;
+    let session = state
+        .workers
+        .get(id)
+        .filter(|s| s.user_id == user.id || user.is_admin())
+        .ok_or_else(|| ApiError::not_found("session"))?;
+    if session.user_id != user.id {
+        tracing::info!(
+            session.id = %id,
+            player.id = session.user_id,
+            admin = %user.username,
+            "an admin stopped a session"
+        );
+    }
     state.workers.stop(id).await;
     Ok(())
 }

@@ -1,7 +1,7 @@
 // The admin's sessions page in words: how long a game has run, how its stream is keeping up,
-// and the player's view while their stats panel is open. Labels for the pipeline itself are
-// `pipeline.ts`'s, shared with the stats overlay.
-import type { ActiveSession } from "./api";
+// the player's view while their stats panel is open, and what went wrong with a session that
+// failed. Labels for the pipeline itself are `pipeline.ts`'s, shared with the stats overlay.
+import type { ActiveSession, SessionFailure } from "./api";
 
 /** `45 s`, `12 min`, `1 h 05 min`. */
 export function durationLabel(seconds: number): string {
@@ -78,4 +78,46 @@ export function clientSummary(s: Pick<ActiveSession, "clientStats">): string | n
     c.packetsLost ? `${c.packetsLost} lost` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+/** When a failed session went wrong. */
+export const FAILURE_PHASE: Record<SessionFailure["phase"], string> = {
+  STARTING: "Refused",
+  LOADING: "While loading",
+  RUNNING: "While playing",
+};
+
+/** The signals a worker most often dies of, by number (Linux). */
+const SIGNALS: Record<number, string> = {
+  4: "illegal instruction",
+  6: "aborted",
+  7: "bus error",
+  8: "arithmetic error",
+  9: "killed",
+  11: "segmentation fault",
+};
+
+/**
+ * What went wrong, in a line: the server's refusal or the start's error where there is one,
+ * else what the exit says (`Crashed: segmentation fault (signal 11)`).
+ */
+export function failureSummary(
+  f: Pick<SessionFailure, "phase" | "reason" | "message" | "exitCode" | "signal">,
+): string {
+  if (f.message && f.reason !== "CRASHED") return f.message;
+  switch (f.reason) {
+    case "CRASHED": {
+      if (f.signal == null) return "Crashed: killed by a signal";
+      const name = SIGNALS[f.signal];
+      return `Crashed: ${name ? `${name} (signal ${f.signal})` : `signal ${f.signal}`}`;
+    }
+    case "KILLED":
+      return f.phase === "LOADING"
+        ? "Took too long to load, and was stopped"
+        : "Did not stop when asked, and was killed";
+    case "ERROR":
+      return f.exitCode != null ? `Failed (exit code ${f.exitCode})` : "Failed";
+    default:
+      return f.phase === "LOADING" ? "Ended while loading" : "Ended unexpectedly";
+  }
 }

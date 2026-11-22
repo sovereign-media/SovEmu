@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { clientSummary, decoderSummary, durationLabel, frameWorkLabel, healthSummary } from "./sessions";
+import {
+  clientSummary,
+  decoderSummary,
+  durationLabel,
+  failureSummary,
+  frameWorkLabel,
+  healthSummary,
+} from "./sessions";
 
 describe("sessions page", () => {
   it("says how long a game has run", () => {
@@ -73,5 +80,33 @@ describe("sessions page", () => {
     expect(decoderSummary({ clientStats: { ...stats, decoder: "c2.qti.avc.decoder", lowLatencyDecode: true } })).toBe(
       "c2.qti.avc.decoder · low latency: on",
     );
+  });
+});
+
+describe("session failures", () => {
+  const failure = { phase: "RUNNING", reason: null, message: null, exitCode: null, signal: null } as const;
+
+  it("says why the server refused a start, or why a start failed", () => {
+    const refused = { ...failure, phase: "STARTING", message: "no core installed for PlayStation" } as const;
+    expect(failureSummary(refused)).toBe("no core installed for PlayStation");
+    const failed = { ...failure, phase: "LOADING", reason: "ERROR", message: "no BIOS", exitCode: 1 } as const;
+    expect(failureSummary(failed)).toBe("no BIOS");
+  });
+
+  it("names the signal a crash died of", () => {
+    expect(failureSummary({ ...failure, reason: "CRASHED", signal: 11 })).toBe(
+      "Crashed: segmentation fault (signal 11)",
+    );
+    expect(failureSummary({ ...failure, reason: "CRASHED", signal: 31 })).toBe("Crashed: signal 31");
+    expect(failureSummary({ ...failure, reason: "CRASHED", message: "ignored" })).toBe("Crashed: killed by a signal");
+  });
+
+  it("tells a slow load from a worker that would not stop", () => {
+    expect(failureSummary({ ...failure, phase: "LOADING", reason: "KILLED" })).toBe(
+      "Took too long to load, and was stopped",
+    );
+    expect(failureSummary({ ...failure, reason: "KILLED" })).toBe("Did not stop when asked, and was killed");
+    expect(failureSummary({ ...failure, reason: "ERROR", exitCode: 2 })).toBe("Failed (exit code 2)");
+    expect(failureSummary({ ...failure, phase: "LOADING", reason: "EXITED" })).toBe("Ended while loading");
   });
 });

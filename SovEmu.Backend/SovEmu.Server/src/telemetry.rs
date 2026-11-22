@@ -276,7 +276,6 @@ pub(crate) struct Metrics {
     pub job_duration: Histogram<f64>,
 }
 
-/// The instruments, made on first use (after [`init`] has installed the exporter, if any).
 /// Session metrics, as `sovemu_sessions` reports sessions starting and ending.
 #[derive(Debug)]
 pub(crate) struct SessionMetrics;
@@ -301,6 +300,7 @@ impl sovemu_sessions::Observer for SessionMetrics {
     }
 }
 
+/// The instruments, made on first use (after [`init`] has installed the exporter, if any).
 pub(crate) fn metrics() -> &'static Metrics {
     static METRICS: OnceLock<Metrics> = OnceLock::new();
     METRICS.get_or_init(|| {

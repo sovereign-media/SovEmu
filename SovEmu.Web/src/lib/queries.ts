@@ -703,6 +703,25 @@ export const ActiveSessionsQuery = graphql(`
   }
 `);
 
+export const SessionFailuresQuery = graphql(`
+  query SessionFailures {
+    sessionFailures {
+      at
+      username
+      gameId
+      title
+      system
+      core
+      phase
+      reason
+      message
+      exitCode
+      signal
+      lastLines
+    }
+  }
+`);
+
 export const JobsQuery = graphql(
   `
   query Jobs {

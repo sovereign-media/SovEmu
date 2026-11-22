@@ -204,7 +204,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] How each stream is made, shown to players and admins: the worker's pipeline (renderer,
       codec, encoder and its fallbacks with why, audio, run-ahead) goes to the client on the input
       channel (`0x82`) for its stats panel, and to the server, whose admin Sessions page lists
-      every game being played with the worker's live numbers (`activeSessions`)
+      every game being played with the worker's live numbers (`activeSessions`); an admin stops
+      any of them (`stopSession`, saves written first), and sees the last sessions that failed
+      (`sessionFailures`, `SOVEMU_SESSION_FAILURES` kept in memory): starts the server refused,
+      loads that failed, crashes and killed workers, with the worker's last lines
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
       reading it back with `glReadPixels`
 - [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)

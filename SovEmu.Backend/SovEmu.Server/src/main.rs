@@ -20,6 +20,7 @@ mod controls;
 mod cores;
 mod db;
 mod error;
+mod failures;
 mod graphql;
 mod home;
 #[cfg(test)]
@@ -372,6 +373,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_WORKER_STOP_TIMEOUT", default_value_t = 15)]
     pub worker_stop_timeout: u64,
 
+    /// Game sessions that failed (a start refused or that failed to load, a crash, a worker
+    /// killed) kept for the admin Sessions page, newest first; in memory only (0: none kept).
+    #[arg(long, env = "SOVEMU_SESSION_FAILURES", default_value_t = 50)]
+    pub session_failures: usize,
+
     /// Rewind history per session, seconds (0 turns rewind off).
     #[arg(long, env = "SOVEMU_REWIND_SECONDS", default_value_t = 60)]
     pub rewind_seconds: u32,
@@ -682,6 +688,8 @@ pub struct AppState {
     pub(crate) storage: Arc<storage::StorageCache>,
     /// Games per system, counted when the library changes (`library`).
     pub(crate) game_counts: Arc<library::GameCounts>,
+    /// The last game sessions that went wrong, for the admin Sessions page (`failures`).
+    pub(crate) failures: Arc<failures::SessionFailures>,
 }
 
 impl AppState {
@@ -690,7 +698,6 @@ impl AppState {
         self.decorations.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Lists the decoration folders again (a set may have been added).
     /// The backgrounds and system photos as last listed.
     pub(crate) fn appearance(&self) -> Arc<appearance::Appearance> {
         self.appearance.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -705,6 +712,7 @@ impl AppState {
         *self.appearance.write().unwrap_or_else(|e| e.into_inner()) = fresh;
     }
 
+    /// Lists the decoration folders again (a set may have been added).
     pub fn reload_decorations(&self) {
         let fresh = Arc::new(decorations::Decorations::load(&self.config.decoration_dirs()));
         *self.decorations.write().unwrap_or_else(|e| e.into_inner()) = fresh;
@@ -798,6 +806,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!(summary = %gpu.summary(), "GPU probe");
+    let failures = Arc::new(failures::SessionFailures::new(config.session_failures));
     let workers = Workers::new(WorkerConfig {
         worker_bin,
         ports: config.udp_ports,
@@ -820,7 +829,10 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
-        observer: Arc::new(telemetry::SessionMetrics),
+        observer: Arc::new(sovemu_sessions::Observers(vec![
+            Arc::new(telemetry::SessionMetrics),
+            failures.clone(),
+        ])),
     });
     let cache_dir = paths.cache_games();
     move_legacy_cache(&paths);
@@ -954,6 +966,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         client_events: Arc::default(),
         storage: Arc::default(),
         game_counts,
+        failures,
         jobs,
         resources,
     })

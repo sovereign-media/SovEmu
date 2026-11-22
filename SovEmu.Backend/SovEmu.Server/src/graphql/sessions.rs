@@ -2,7 +2,6 @@
 
 use super::*;
 
-/// Where a 3D system renders on this server.
 /// What went wrong on a client (`reportClientEvents`).
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ClientEventKind {
@@ -101,6 +100,110 @@ impl ActiveSessionNode {
     /// The client's own view of the stream, as it last reported it (once a second while playing).
     async fn client_stats(&self) -> Option<ClientStreamStats> {
         self.0.live.client_stats.as_ref().map(|(s, _)| ClientStreamStats::from(s))
+    }
+}
+
+/// How far a failed session got.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionFailurePhase {
+    /// The server refused it before any worker ran (no core, a missing file, no 3D rendering,
+    /// every port in use).
+    Starting,
+    /// Its worker ended before the game had loaded.
+    Loading,
+    /// It had been playing.
+    Running,
+}
+
+/// Why a game's worker ended.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionEndReason {
+    /// Asked to (a player quit, an admin stopped it, the server stopping).
+    Stopped,
+    /// No client for its idle timeout.
+    Idle,
+    /// The server stopped talking to it.
+    ControllerGone,
+    /// It failed and said so, or exited with an error.
+    Error,
+    /// Killed by a signal the server did not send: most often a crash in the core.
+    Crashed,
+    /// Killed by the server: it did not stop when asked, or took too long to load.
+    Killed,
+    /// Exited without saying why.
+    Exited,
+}
+
+impl From<sovemu_sessions::EndReason> for SessionEndReason {
+    fn from(r: sovemu_sessions::EndReason) -> Self {
+        use sovemu_sessions::EndReason as R;
+        match r {
+            R::Stopped => Self::Stopped,
+            R::Idle => Self::Idle,
+            R::ControllerGone => Self::ControllerGone,
+            R::Error => Self::Error,
+            R::Crashed => Self::Crashed,
+            R::Killed => Self::Killed,
+            R::Exited => Self::Exited,
+        }
+    }
+}
+
+/// A game session that went wrong, as the admin's Sessions page lists it.
+pub(super) struct SessionFailureNode(pub(super) crate::api::FailedSession);
+
+#[Object(name = "SessionFailure")]
+impl SessionFailureNode {
+    /// When, as a Unix time in seconds.
+    async fn at(&self) -> f64 {
+        self.0.failure.at
+    }
+    async fn user_id(&self) -> i64 {
+        self.0.failure.user_id
+    }
+    /// The player; null if the account has been deleted since.
+    async fn username(&self) -> Option<&str> {
+        self.0.username.as_deref()
+    }
+    async fn game_id(&self) -> i64 {
+        self.0.failure.game_id
+    }
+    async fn title(&self) -> &str {
+        &self.0.failure.title
+    }
+    async fn system(&self) -> &str {
+        &self.0.failure.system
+    }
+    /// The core's file name without its extension; null if the server found none.
+    async fn core(&self) -> Option<&str> {
+        self.0.failure.core.as_deref()
+    }
+    async fn phase(&self) -> SessionFailurePhase {
+        match self.0.failure.phase {
+            crate::failures::Phase::Starting => SessionFailurePhase::Starting,
+            crate::failures::Phase::Loading => SessionFailurePhase::Loading,
+            crate::failures::Phase::Running => SessionFailurePhase::Running,
+        }
+    }
+    /// Why its worker ended; null for a start the server refused.
+    async fn reason(&self) -> Option<SessionEndReason> {
+        self.0.failure.reason.map(Into::into)
+    }
+    /// What went wrong, in words: why the server refused it, or why its start failed.
+    async fn message(&self) -> Option<&str> {
+        self.0.failure.message.as_deref()
+    }
+    /// The worker's exit code, if it exited.
+    async fn exit_code(&self) -> Option<i32> {
+        self.0.failure.code
+    }
+    /// The signal that ended the worker, if one did (11 is a segfault).
+    async fn signal(&self) -> Option<i32> {
+        self.0.failure.signal
+    }
+    /// The worker's last lines on stderr (its log and its core's), oldest first.
+    async fn last_lines(&self) -> &[String] {
+        &self.0.failure.last_lines
     }
 }
 
@@ -359,6 +462,15 @@ impl SessionsQuery {
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
     }
+
+    /// Admins: the last game sessions that went wrong, newest first: starts refused or that
+    /// failed to load, crashes, and workers that had to be killed (`SOVEMU_SESSION_FAILURES`
+    /// are kept, in memory).
+    async fn session_failures(&self, ctx: &Context<'_>) -> Result<Vec<SessionFailureNode>> {
+        admin(ctx).await?;
+        let failures = crate::api::session_failures(state(ctx)).await.api()?;
+        Ok(failures.into_iter().map(SessionFailureNode).collect())
+    }
 }
 
 #[derive(Default)]
@@ -404,7 +516,9 @@ impl SessionsMutation {
             .map(SessionNode)
     }
 
-    /// Ends a session; the worker writes the battery save and the auto save first.
+    /// Ends a session; the worker writes the battery save and the auto save first. A player
+    /// ends their own; an admin may end anyone's (the player's stream then ends, as after an
+    /// idle timeout).
     async fn stop_session(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
         let user = user(ctx).await?;
         crate::api::stop_session(state(ctx), &user, &id).await.api()?;

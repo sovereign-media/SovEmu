@@ -1,5 +1,5 @@
-// The admin's server pages: the menu that reaches them, the active sessions, the background jobs,
-// and the resources.
+// The admin's server pages: the menu that reaches them, the active sessions and failures, the
+// background jobs, and the resources.
 
 import { expect, test } from "@playwright/test";
 import { ADMIN_NAV_GROUPS } from "../src/lib/adminNav";
@@ -20,6 +20,20 @@ test("the Sessions page says when nothing is being played", async ({ page }) => 
   await page.goto("/admin/sessions/");
   await expect(page.getByRole("heading", { name: "Active sessions" })).toBeVisible();
   await expect(page.getByText("No games are being played.")).toBeVisible();
+});
+
+test("a game that cannot start is listed under the Sessions page's failures", async ({ page }) => {
+  // A stand-in game never plays: no core is installed, or a core cannot load a few bytes.
+  await page.goto("/play/?game=1");
+  await expect(page.getByText(/^Could not start/)).toBeVisible({ timeout: 30_000 });
+  await page.goto("/admin/sessions/");
+  const failures = page.locator("section").filter({ has: page.getByRole("heading", { name: "Failures" }) });
+  await expect(failures.getByRole("row")).not.toHaveCount(0);
+  await failures
+    .getByRole("button", { name: /^Show details for / })
+    .first()
+    .click();
+  await expect(failures.getByRole("link", { name: /^Emulator settings for / }).first()).toBeVisible();
 });
 
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {

@@ -52,6 +52,7 @@ export const q = {
   decorations: () => queryOptions({ queryKey: ["admin", "decorations"], queryFn: api.decorations }),
   gpu: () => queryOptions({ queryKey: ["admin", "gpu"], queryFn: api.gpu, staleTime: Infinity }),
   activeSessions: () => queryOptions({ queryKey: ["admin", "sessions"], queryFn: api.activeSessions }),
+  sessionFailures: () => queryOptions({ queryKey: ["admin", "sessions", "failures"], queryFn: api.sessionFailures }),
   serverResources: () => queryOptions({ queryKey: ["admin", "resources"], queryFn: api.serverResources }),
   resourceHistory: (range: ResourceRange) =>
     queryOptions({ queryKey: ["admin", "resources", "history", range], queryFn: () => api.resourceHistory(range) }),

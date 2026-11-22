@@ -114,7 +114,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/sessions/",
         label: "Sessions",
-        title: "Games being played now, and how each stream is made",
+        title: "Games being played now, how each stream is made, and the ones that failed",
         icon: MonitorPlay,
       },
       {

@@ -174,6 +174,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_IDLE_TIMEOUT"
         | "SOVEMU_WORKER_START_TIMEOUT"
         | "SOVEMU_WORKER_STOP_TIMEOUT"
+        | "SOVEMU_SESSION_FAILURES"
         | "SOVEMU_REWIND_SECONDS"
         | "SOVEMU_REWIND_MAX_MB"
         | "SOVEMU_FAST_FORWARD"
