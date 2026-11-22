@@ -742,6 +742,25 @@ impl Config {
     }
 }
 
+/// Moves copies from where the cache kept them before it had a folder of its own (beside the
+/// disc playlists and the built-in decorations, which its eviction then deleted) into
+/// `cache/games`, so nothing is copied again. A rename: the same filesystem.
+fn move_legacy_cache(paths: &paths::DataPaths) {
+    for old in paths.legacy_cache_kinds() {
+        let Some(kind) = old.file_name() else { continue };
+        let new = paths.cache_games().join(kind);
+        if !old.is_dir() || new.exists() {
+            continue;
+        }
+        let moved =
+            std::fs::create_dir_all(paths.cache_games()).and_then(|()| std::fs::rename(&old, &new));
+        match moved {
+            Ok(()) => tracing::info!(from = %old.display(), to = %new.display(), "cache moved"),
+            Err(e) => tracing::warn!(from = %old.display(), error = %e, "cache not moved"),
+        }
+    }
+}
+
 fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
     let value: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("not JSON: {e}"))?;
     let ok =
@@ -911,7 +930,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         log_format: config.log_format.as_arg(),
         observer: Arc::new(telemetry::SessionMetrics),
     });
-    let cache_dir = paths.cache();
+    let cache_dir = paths.cache_games();
+    move_legacy_cache(&paths);
     let cache_bytes = match config.library_mode {
         LibraryMode::Cache => config.cache_gb.unwrap_or(20).saturating_mul(1 << 30),
         _ => 0,
@@ -1230,6 +1250,23 @@ mod tests {
             assert!(!summary.contains(secret), "{secret} in {summary}");
         }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
+    }
+
+    #[test]
+    fn copies_move_out_of_the_shared_cache_folder() {
+        let root = std::env::temp_dir().join(format!("sovemu-legacy-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let paths = paths::DataPaths::new(&root);
+        std::fs::create_dir_all(paths.cache().join("roms/nes")).unwrap();
+        std::fs::write(paths.cache().join("roms/nes/a.nes"), [1u8]).unwrap();
+        std::fs::create_dir_all(paths.disc_playlists()).unwrap();
+        std::fs::write(paths.disc_playlists().join("g.m3u"), "x").unwrap();
+        move_legacy_cache(&paths);
+        assert!(paths.cache_games().join("roms/nes/a.nes").exists());
+        assert!(!paths.cache().join("roms").exists());
+        assert!(paths.disc_playlists().join("g.m3u").exists(), "playlists stay where they are");
+        move_legacy_cache(&paths); // nothing left to move
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

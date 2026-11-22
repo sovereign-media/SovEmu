@@ -203,7 +203,7 @@ Choose how the server uses the share with `SOVEMU_LIBRARY_MODE`:
 | Mode | When | What happens |
 |---|---|---|
 | `direct` (default) | The NAS is on the same network | Games and artwork are read straight from the share |
-| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games and seen artwork are kept in `data/cache` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. Opening a system prefetches its box art. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
+| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games and seen artwork are kept in `data/cache/games` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. Opening a system prefetches its box art. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
 | `mirror` | You want a full local copy | A background sync copies the library and its artwork into `data/library`, copying only what changed and removing what was deleted. Games are played from the copy. `SOVEMU_MIRROR_SYSTEMS=nes,snes` limits it. Start a sync from the Library page. |
 
 The scanner picks up box art, composite images, marquees and video snaps

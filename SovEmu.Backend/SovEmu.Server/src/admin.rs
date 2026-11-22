@@ -107,7 +107,7 @@ pub(crate) struct LibraryStatus {
 pub(crate) async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
     let games: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&state.db).await?;
     let cache_bytes = (state.config.library_mode == LibraryMode::Cache).then(|| {
-        let dir = state.config.paths().cache();
+        let dir = state.config.paths().cache_games();
         let mut total = 0u64;
         let mut stack = vec![dir];
         while let Some(d) = stack.pop() {

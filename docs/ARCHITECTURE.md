@@ -150,7 +150,7 @@ few MB/s. Three things keep the slowness away from playing:
   network.
 - **Disc games:** a disc is read during play on the core's own CD thread (PCSX-ReARMed, read-ahead
   256 sectors).
-- **The cache:** `data/cache` holds what has been played and seen:
+- **The cache:** `data/cache/games` holds what has been played and seen:
   - a game is served from its copy once it has been played;
   - small files are copied straight away; disc images are copied after their first session;
   - least recently used files go first;

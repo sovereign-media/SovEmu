@@ -9,7 +9,7 @@
 //!   bios/<system>/        BIOS files, unless SOVEMU_BIOS_DIR points elsewhere
 //!   saves/<user>/<system>/<game>.srm            battery saves
 //!   saves/<user>/<system>/states/<game>/        save states and their screenshots
-//!   cache/                mode `cache`: games copied from the library as they are played
+//!   cache/games/          mode `cache`: games and art copied from the library as they are used
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
@@ -59,9 +59,21 @@ impl DataPaths {
         self.root.join("saves").join(user_id.to_string()).join(system)
     }
 
-    /// Mode `cache`'s copies of games.
+    /// What the server makes or copies for itself, and can make again: the folders below.
     pub fn cache(&self) -> PathBuf {
         self.root.join("cache")
+    }
+
+    /// Mode `cache`'s copies of games and their art. Its own folder, since the cache evicts
+    /// everything in it: never put anything else there.
+    pub fn cache_games(&self) -> PathBuf {
+        self.cache().join("games")
+    }
+
+    /// Where copies were kept before they had a folder of their own (`cache/roms`,
+    /// `cache/media`), moved into [`Self::cache_games`] at startup.
+    pub fn legacy_cache_kinds(&self) -> [PathBuf; 2] {
+        [self.cache().join("roms"), self.cache().join("media")]
     }
 
     /// Playlists generated for multi-disc games.
@@ -102,5 +114,19 @@ mod tests {
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
         assert_eq!(p.launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
+        assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
+    }
+
+    #[test]
+    fn the_game_cache_holds_nothing_else() {
+        // The cache evicts every file under its folder: nothing else may live there.
+        let p = DataPaths::new("/data");
+        for other in [p.disc_playlists(), p.builtin_decorations(), p.database(), p.metadata()] {
+            assert!(
+                !other.starts_with(p.cache_games()),
+                "{} is in the game cache",
+                other.display()
+            );
+        }
     }
 }
