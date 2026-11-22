@@ -134,13 +134,7 @@ pub(crate) async fn choose(
     game_id: i64,
     patch_id: Option<i64>,
 ) -> ApiResult<()> {
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM games WHERE id = ?")
-        .bind(game_id)
-        .fetch_optional(&state.db)
-        .await?;
-    if exists.is_none() {
-        return Err(ApiError::not_found("game"));
-    }
+    crate::api::require_game(state, game_id).await?;
     if let Some(id) = patch_id {
         let belongs: Option<i64> =
             sqlx::query_scalar("SELECT id FROM game_patches WHERE id = ? AND game_id = ?")

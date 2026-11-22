@@ -1579,7 +1579,14 @@ type Query {
 	`startSession` waits.
 	"""
 	startProgress(startId: String!): StartStatus!
+	"""
+	Admins: how the library is played (direct, cache or mirror), its size, and the mirror's
+	sync. Its errors can name the share's paths.
+	"""
 	libraryStatus: LibraryStatus!
+	"""
+	Admins: the game-information lookup's progress and its notes.
+	"""
 	metadataStatus: MetadataStatus!
 	"""
 	Admins: the accounts.

@@ -217,6 +217,14 @@ impl Harness {
         Ok(self.ok(VIEWER, json!({})).await["viewer"]["user"].clone())
     }
 
+    /// As the signed-in admin: adds a viewer, then signs in as them.
+    async fn switch_to_new_viewer(&mut self, username: &str) {
+        let add = "mutation($u: String!) { addUser(input: {username: $u, password: \"password123\"}) { id } }";
+        self.ok(add, json!({"u": username})).await;
+        self.sign_out();
+        self.login(username, "password123").await.unwrap();
+    }
+
     /// Forgets the access token and the browser sign-in.
     fn sign_out(&mut self) {
         self.cookie = None;
@@ -1813,6 +1821,200 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     h.sign_up_admin().await;
     let id = h.games("nes").await[0]["id"].as_i64().unwrap();
     assert_eq!(h.ok(q, json!({"id": id})).await["game"]["decoration"], Value::Null);
+}
+
+// --- Access: admins only, and each user's own data ------------------------------------------
+
+/// Every admin-only query and mutation, with arguments that would otherwise be accepted.
+const ADMIN_ONLY: &[&str] = &[
+    "{ users { id } }",
+    "{ activeSessions { id } }",
+    "{ libraryStatus { __typename } }",
+    "{ metadataStatus { __typename } }",
+    "{ attributions { __typename } }",
+    "{ telemetry { __typename } }",
+    "{ storage { __typename } }",
+    "{ network { __typename } }",
+    "{ configuration { name } }",
+    "{ cores { name } }",
+    "{ libretroRelease }",
+    "{ patches { id } }",
+    "{ decorations { __typename } }",
+    "{ biosDir }",
+    "{ gpu { __typename } }",
+    "{ jobs { __typename } }",
+    "{ jobRuns { __typename } }",
+    "{ serverResources { __typename } }",
+    "{ resourceHistory(range: HOUR) { __typename } }",
+    "{ emulatorSettings(system: \"nes\") { __typename } }",
+    "{ controllerDefaults { __typename } }",
+    "mutation { addUser(input: {username: \"mallory\", password: \"password123\"}) { id } }",
+    "mutation { scanLibrary { found } }",
+    "mutation { syncLibrary }",
+    "mutation { fetchMetadata { __typename } }",
+    "mutation { runJob(job: MAINTENANCE) { __typename } }",
+    "mutation { changeEmulatorSettings(system: \"nes\", changes: []) { __typename } }",
+    "mutation { setRunAhead(system: \"nes\", frames: 1) { __typename } }",
+    "mutation { clearCache }",
+    "mutation { saveControllerDefault(controller: \"xbox\", bindings: []) { __typename } }",
+    "mutation { resetControllerDefault(controller: \"xbox\") }",
+];
+
+#[tokio::test]
+async fn viewers_and_strangers_are_refused_every_admin_resolver() {
+    let mut h = Harness::new("admin-only", false).await;
+    h.sign_up_admin().await;
+    h.switch_to_new_viewer("kid").await;
+    for doc in ADMIN_ONLY {
+        assert_eq!(h.err(doc, json!({})).await.0, "FORBIDDEN", "a viewer ran {doc}");
+    }
+    h.sign_out();
+    for doc in ADMIN_ONLY {
+        assert_eq!(h.err(doc, json!({})).await.0, "UNAUTHENTICATED", "no one ran {doc}");
+    }
+    // Every admin resolver is in the list: a new one must be added to it.
+    let in_source = include_str!("graphql.rs").matches("admin(ctx).await?").count();
+    assert_eq!(ADMIN_ONLY.len(), in_source, "ADMIN_ONLY lists every admin(ctx) resolver");
+}
+
+#[tokio::test]
+async fn one_users_sessions_saves_and_lists_are_not_anothers() {
+    let mut h = Harness::new("per-user", true).await;
+    h.sign_up_admin().await;
+    let game = h.games("nes").await[0]["id"].as_i64().unwrap();
+
+    // The admin plays, saves, collects, favourites and cheats.
+    let sid =
+        h.ok(START, json!({"game": game})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    let slot = |s: &str, slot: i64| json!({"s": s, "slot": slot});
+    h.ok("mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }", slot(&sid, 2))
+        .await;
+    let collection = h.ok("mutation { createCollection(name: \"Mine\") { id } }", json!({})).await
+        ["createCollection"]["id"]
+        .as_i64()
+        .unwrap();
+    let set_in = "mutation($c: Int!, $g: Int!, $m: Boolean!) { setInCollection(collectionId: $c, gameId: $g, member: $m) }";
+    h.ok(set_in, json!({"c": collection, "g": game, "m": true})).await;
+    h.ok("mutation($g: Int!) { setFavourite(gameId: $g, favourite: true) }", json!({"g": game}))
+        .await;
+    let cheat = h
+        .ok(
+            "mutation($g: Int!) { addCheat(gameId: $g, code: \"ABCD-1234\") { id } }",
+            json!({"g": game}),
+        )
+        .await["addCheat"][0]["id"]
+        .as_i64()
+        .unwrap();
+
+    h.switch_to_new_viewer("kid").await;
+    // Their session: not found, and still running.
+    for doc in
+        ["mutation($s: ID!) { stopSession(id: $s) }", "mutation($s: ID!) { resetSession(id: $s) }"]
+    {
+        assert_eq!(h.err(doc, json!({"s": sid})).await.0, "NOT_FOUND", "{doc}");
+    }
+    for doc in [
+        "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }",
+        "mutation($s: ID!, $slot: Int!) { loadState(sessionId: $s, slot: $slot) }",
+    ] {
+        assert_eq!(h.err(doc, slot(&sid, 2)).await.0, "NOT_FOUND", "{doc}");
+    }
+    assert!(h.state.workers.get(&sid).is_some(), "the admin's game plays on");
+
+    // Their saves, lists, favourites, cheats and history: none of them show, none change.
+    let mine = "query($g: Int!) { game(id: $g) { saves { slot } favourite collectionIds cheats { id } playCount } }";
+    assert_eq!(
+        h.ok(mine, json!({"g": game})).await["game"],
+        json!({"saves": [], "favourite": false, "collectionIds": [], "cheats": [], "playCount": 0})
+    );
+    assert_eq!(h.ok("{ collections { id } }", json!({})).await["collections"], json!([]));
+    assert_eq!(
+        h.ok("{ home { recent { id } favourites { id } } }", json!({})).await["home"],
+        json!({"recent": [], "favourites": []})
+    );
+    let delete_save = "mutation($g: Int!) { deleteSave(gameId: $g, slot: 2) }";
+    assert_eq!(h.err(delete_save, json!({"g": game})).await.0, "NOT_FOUND");
+    for (doc, vars) in [
+        (
+            "mutation($c: Int!) { renameCollection(id: $c, name: \"Ours\") }",
+            json!({"c": collection}),
+        ),
+        ("mutation($c: Int!) { deleteCollection(id: $c) }", json!({"c": collection})),
+        (set_in, json!({"c": collection, "g": game, "m": false})),
+        (
+            "mutation($g: Int!, $c: Int!) { setCheatEnabled(gameId: $g, cheatId: $c, enabled: false) { id } }",
+            json!({"g": game, "c": cheat}),
+        ),
+        (
+            "mutation($g: Int!, $c: Int!) { deleteCheat(gameId: $g, cheatId: $c) }",
+            json!({"g": game, "c": cheat}),
+        ),
+    ] {
+        assert_eq!(h.err(doc, vars).await.0, "NOT_FOUND", "{doc}");
+    }
+
+    // Back as the admin: everything as it was.
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    let theirs = h.ok(mine, json!({"g": game})).await["game"].clone();
+    assert!(theirs["saves"].as_array().unwrap().contains(&json!({"slot": 2})));
+    assert_eq!(
+        (theirs["favourite"].clone(), theirs["collectionIds"].clone()),
+        (json!(true), json!([collection]))
+    );
+    assert_eq!(theirs["cheats"], json!([{"id": cheat}]));
+}
+
+#[tokio::test]
+async fn a_hidden_systems_games_cannot_be_reached_by_id() {
+    let mut h = Harness::new_with("hidden-by-id", false, Vec::new()).await;
+    h.sign_up_admin().await;
+    let gba = h.games("gba").await[0]["id"].as_i64().unwrap();
+    let mut config = (*h.state.config).clone();
+    config.systems = crate::structured::systems(&[(
+        "SOVEMU_SYSTEMS__gba__ENABLED".to_owned(),
+        "false".to_owned(),
+    )])
+    .unwrap();
+    h.state.config = std::sync::Arc::new(config);
+
+    assert_eq!(
+        h.err("query($g: Int!) { game(id: $g) { id } }", json!({"g": gba})).await.0,
+        "NOT_FOUND"
+    );
+    for doc in [
+        "mutation($g: Int!) { setFavourite(gameId: $g, favourite: true) }",
+        "mutation($g: Int!) { addCheat(gameId: $g, code: \"X\") { id } }",
+        "mutation($g: Int!) { setPatch(gameId: $g, patchId: null) }",
+    ] {
+        assert_eq!(h.err(doc, json!({"g": gba})).await.0, "NOT_FOUND", "{doc}");
+    }
+    assert_eq!(h.err(START, json!({"game": gba})).await.0, "NOT_FOUND", "nor started");
+    let thumb = h.signed(1, &format!("/media/games/{gba}/thumb"));
+    assert_eq!(h.call("GET", &thumb, None).await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn save_slots_are_checked() {
+    let mut h = Harness::new("slots", true).await;
+    h.sign_up_admin().await;
+    let game = h.games("nes").await[0]["id"].as_i64().unwrap();
+    let sid =
+        h.ok(START, json!({"game": game})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
+    let load = "mutation($s: ID!, $slot: Int!) { loadState(sessionId: $s, slot: $slot) }";
+    // The auto save is the worker's; a slot past the last would never be listed.
+    for slot in [0, 10, 4_000_000] {
+        assert_eq!(
+            h.err(save, json!({"s": sid, "slot": slot})).await.0,
+            "BAD_REQUEST",
+            "save {slot}"
+        );
+    }
+    assert_eq!(h.err(load, json!({"s": sid, "slot": 10})).await.0, "BAD_REQUEST");
+    let delete = "mutation($g: Int!, $slot: Int!) { deleteSave(gameId: $g, slot: $slot) }";
+    assert_eq!(h.err(delete, json!({"g": game, "slot": 10})).await.0, "BAD_REQUEST");
+    h.ok(save, json!({"s": sid, "slot": 9})).await;
 }
 
 // --- Sign-in (sovemu_identity: oauth-as with OpenID Connect over it) --------------------------
