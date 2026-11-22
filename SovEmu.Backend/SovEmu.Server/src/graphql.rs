@@ -834,6 +834,28 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// A soft patch in the library, as the admin sees it.
+#[derive(SimpleObject)]
+struct AdminPatch {
+    id: i64,
+    /// From its file: "BPS patch" beside the game, else the file's name.
+    name: String,
+    /// The file, relative to the ROM folder.
+    file: String,
+    /// `IPS`, `UPS` or `BPS`.
+    format: String,
+    /// Named like its game, so applied unless a player chose otherwise.
+    is_default: bool,
+    game_id: i64,
+    game_title: String,
+    /// The game's system, by id.
+    system: String,
+    /// Players who chose this patch.
+    chosen_by: i32,
+    /// Players who chose the original for its game, over the default.
+    original_by: i32,
+}
+
 #[Object(name = "Patch")]
 impl PatchNode {
     async fn id(&self) -> i64 {
@@ -1958,6 +1980,27 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: every soft patch in the library, with its game and how many players chose it.
+    async fn patches(&self, ctx: &Context<'_>) -> Result<Vec<AdminPatch>> {
+        admin(ctx).await?;
+        let all = crate::patches::all(state(ctx)).await.api()?;
+        Ok(all
+            .into_iter()
+            .map(|p| AdminPatch {
+                format: p.format(),
+                id: p.id,
+                name: p.name,
+                file: p.path,
+                is_default: p.is_default,
+                game_id: p.game_id,
+                game_title: p.game_title,
+                system: p.system,
+                chosen_by: p.chosen_by as i32,
+                original_by: p.original_by as i32,
+            })
+            .collect())
     }
 
     /// Admins: the decoration sets found, and the set each system's games are framed with.

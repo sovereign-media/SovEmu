@@ -885,3 +885,20 @@ export const DecorationsQuery = graphql(`
     }
   }
 `);
+
+export const AdminPatchesQuery = graphql(`
+  query AdminPatches {
+    patches {
+      id
+      name
+      file
+      format
+      isDefault
+      gameId
+      gameTitle
+      system
+      chosenBy
+      originalBy
+    }
+  }
+`);

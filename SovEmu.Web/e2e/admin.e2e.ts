@@ -76,3 +76,13 @@ test("the Decorations page lists the sets and frames each system", async ({ page
   await expect(page.getByRole("heading", { name: "Systems" })).toBeVisible();
   await expect(page.getByRole("listitem").filter({ hasText: "Nintendo Entertainment System" })).toBeVisible();
 });
+
+test("the Patches page explains how a patch becomes the default", async ({ page }) => {
+  await page.goto("/admin/patches/");
+  await expect(page.getByRole("heading", { name: "Patches", level: 1 })).toBeVisible();
+  await expect(page.getByText("1 patch for 1 game")).toBeVisible();
+  const game = page.getByRole("listitem").filter({ hasText: "Super Stand-in" }).first();
+  await expect(game).toContainText("IPS");
+  await expect(game).toContainText("Default");
+  await expect(game).toContainText("snes/Super Stand-in (USA).ips");
+});

@@ -1558,6 +1558,26 @@ async fn soft_patches_apply_by_default_and_can_be_chosen() {
 
     let (code, _) = h.err(set, json!({"g": id, "p": 99_999})).await;
     assert_eq!(code, "NOT_FOUND", "a patch of another game, or none");
+
+    // The admin's list: every patch with its game, and who chose it.
+    let all = h
+        .ok(
+            "{ patches { name file format isDefault gameId gameTitle system chosenBy originalBy } }",
+            json!({}),
+        )
+        .await["patches"]
+        .clone();
+    assert_eq!(
+        all,
+        json!([
+            {"name": "IPS patch", "file": "nes/Test Game (USA).ips", "format": "IPS",
+             "isDefault": true, "gameId": id, "gameTitle": "Test Game", "system": "nes",
+             "chosenBy": 0, "originalBy": 0},
+            {"name": "Hard Mode", "file": "nes/Test Game (USA)/Hard Mode.bps", "format": "BPS",
+             "isDefault": false, "gameId": id, "gameTitle": "Test Game", "system": "nes",
+             "chosenBy": 1, "originalBy": 0},
+        ])
+    );
 }
 
 #[tokio::test]

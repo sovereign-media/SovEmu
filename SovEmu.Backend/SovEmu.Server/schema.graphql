@@ -40,6 +40,43 @@ type ActiveSession {
 }
 
 """
+A soft patch in the library, as the admin sees it.
+"""
+type AdminPatch {
+	id: Int!
+	"""
+	From its file: "BPS patch" beside the game, else the file's name.
+	"""
+	name: String!
+	"""
+	The file, relative to the ROM folder.
+	"""
+	file: String!
+	"""
+	`IPS`, `UPS` or `BPS`.
+	"""
+	format: String!
+	"""
+	Named like its game, so applied unless a player chose otherwise.
+	"""
+	isDefault: Boolean!
+	gameId: Int!
+	gameTitle: String!
+	"""
+	The game's system, by id.
+	"""
+	system: String!
+	"""
+	Players who chose this patch.
+	"""
+	chosenBy: Int!
+	"""
+	Players who chose the original for its game, over the default.
+	"""
+	originalBy: Int!
+}
+
+"""
 Box art being downloaded after a lookup, for the games that have no local thumb.
 """
 type ArtworkStatus {
@@ -1279,6 +1316,10 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: every soft patch in the library, with its game and how many players chose it.
+	"""
+	patches: [AdminPatch!]!
 	"""
 	Admins: the decoration sets found, and the set each system's games are framed with.
 	"""

@@ -2,6 +2,7 @@
 // between groups. One list drives the menu, the page headings and the document titles, so a new
 // page is one entry here.
 import {
+  FileDiff,
   Frame,
   Gamepad,
   Gauge,
@@ -41,6 +42,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Library",
         title: "Scanning, the mirror or cache, and game information",
         icon: Library,
+      },
+      {
+        href: "/admin/patches/",
+        label: "Patches",
+        title: "The soft patches found beside games, and which apply by default",
+        icon: FileDiff,
       },
     ],
   },
