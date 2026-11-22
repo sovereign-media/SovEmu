@@ -1344,6 +1344,26 @@ type Mutation {
 	"""
 	addUser(input: NewUserInput!): User!
 	"""
+	Admins: makes an account an admin or a viewer. Not the last admin, and not an account the
+	environment declares.
+	"""
+	setUserRole(userId: Int!, role: Role!): User!
+	"""
+	Admins: sets an account's password (at least 8 characters), which signs that user out
+	everywhere. Not an account the environment declares.
+	"""
+	setUserPassword(userId: Int!, password: String!): Boolean!
+	"""
+	Admins: removes an account and signs it out everywhere; everything of theirs in the
+	database goes with it, and their saves stay on disk. Not their own, not the last admin,
+	and not an account the environment declares.
+	"""
+	removeUser(userId: Int!): Boolean!
+	"""
+	Admins: signs an account out of every browser and app.
+	"""
+	signOutEverywhere(userId: Int!): Boolean!
+	"""
 	Adds a game to this user's favourites, or takes it out.
 	"""
 	setFavourite(gameId: Int!, favourite: Boolean!): Boolean!
@@ -2377,6 +2397,12 @@ type User {
 	Whether the role is `ADMIN`.
 	"""
 	isAdmin: Boolean!
+	"""
+	The environment declares it (`SOVEMU_ADMIN_USERNAME`, `SOVEMU_USERS__<n>__…`) and sets
+	it again at every start: its role and password are changed there, and it is not removed
+	here.
+	"""
+	declared: Boolean!
 }
 
 type UserStorage {

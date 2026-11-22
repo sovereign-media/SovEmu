@@ -51,16 +51,7 @@ impl From<sqlx::Error> for ApiError {
 
 impl From<sovemu_identity::Error> for ApiError {
     fn from(err: sovemu_identity::Error) -> Self {
-        use sovemu_identity::Error as E;
-        let status = match &err {
-            E::BadRequest(_) => StatusCode::BAD_REQUEST,
-            E::Unauthorized(_) => StatusCode::UNAUTHORIZED,
-            E::Forbidden(_) => StatusCode::FORBIDDEN,
-            E::Conflict(_) => StatusCode::CONFLICT,
-            E::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
-            E::Config(_) | E::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        Self::new(status, err.message())
+        Self::new(err.status(), err.message())
     }
 }
 
