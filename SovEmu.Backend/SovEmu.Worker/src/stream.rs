@@ -852,6 +852,16 @@ impl Session {
             picture = Some(ahead);
         }
 
+        // The ack goes out before this frame's video, so the first frame a client draws after the
+        // ack is the one that shows the input: timing from the press to that frame measures
+        // button to frame, decoding and any frames the decoder holds included.
+        if let (Some((seq, client_time_ms)), Some(id)) = (self.pending_ack.take(), p.input)
+            && let Some(mut channel) = p.rtc.channel(id)
+        {
+            let ack = InputAck { seq, client_time_ms, frame: frame as u32 };
+            let _ = channel.write(true, &ack.encode());
+        }
+
         if let Some((w, h)) = picture {
             self.shot_size = (w, h);
             let encode_from = Instant::now();
@@ -872,12 +882,6 @@ impl Session {
             }
         }
 
-        if let (Some((seq, client_time_ms)), Some(id)) = (self.pending_ack.take(), p.input)
-            && let Some(mut channel) = p.rtc.channel(id)
-        {
-            let ack = InputAck { seq, client_time_ms, frame: frame as u32 };
-            let _ = channel.write(true, &ack.encode());
-        }
         if !hotkeys.rewind {
             let core = &mut self.core;
             self.rewind.record(|| core.serialize());
@@ -952,6 +956,7 @@ fn log_client_stats(s: &ClientStats) {
     tracing::info!(
         client = s.client.as_deref(),
         estimate_ms = s.estimate_ms,
+        input_to_frame_ms = s.input_to_frame_ms,
         input_rtt_p50_ms = s.input_rtt_p50_ms,
         input_rtt_p95_ms = s.input_rtt_p95_ms,
         net_rtt_ms = s.net_rtt_ms,
@@ -964,6 +969,7 @@ fn log_client_stats(s: &ClientStats) {
         packets_lost = s.packets_lost,
         game_mode = s.game_mode,
         wifi_lock = s.wifi_lock,
+        low_latency_decode = s.low_latency_decode,
         "client stats"
     );
 }

@@ -69,7 +69,10 @@
 //! | 10 | 4 | `frame`: the emulated frame that first saw this input |
 //!
 //! Sent after the frame that consumed the input has run, so `now - client_time_ms` on the
-//! client is the input round trip up to emulation: network both ways plus frame alignment.
+//! client is the input round trip up to emulation: network both ways plus frame alignment. It
+//! goes out just before that frame's video, so the first frame the client draws after the ack
+//! is the one showing the input: the client measures button to frame from it
+//! (`input_to_frame_ms` in its stats).
 //!
 //! ## Worker → client: [`Pipeline`]
 //!
@@ -282,6 +285,11 @@ pub struct ClientStats {
     /// Button to pixel, as the overlay estimates it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimate_ms: Option<f64>,
+    /// Button to frame, measured: from sending an input to the first frame handed to the
+    /// screen after its ack (which the worker sends just before that frame's video). Median of
+    /// recent inputs; the display's own lag comes on top.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_to_frame_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_rtt_p50_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -309,6 +317,9 @@ pub struct ClientStats {
     pub game_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wifi_lock: Option<bool>,
+    /// The client asked its video decoder for low-latency mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low_latency_decode: Option<bool>,
 }
 
 /// The longest [`Pipeline`] message, header included.

@@ -291,6 +291,10 @@ type ClientStreamStats {
 	Button to pixel, as the client estimates it.
 	"""
 	estimateMs: Float
+	"""
+	Button to frame, as the client measures it (the display's own lag comes on top).
+	"""
+	inputToFrameMs: Float
 	inputRttMs: Float
 	netRttMs: Float
 	jitterMs: Float

@@ -55,6 +55,7 @@ import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../l
 import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
 import { captureInput, InputState } from "../../lib/input";
+import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
 import { describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
@@ -67,6 +68,7 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Dialog, Field, inputClass, Progress } from "../ui/primitives";
 import { useToast } from "../ui/toast";
+import { LatencyGraph } from "./LatencyGraph";
 
 const ICONS: Record<string, LucideIcon> = {
   play: Play,
@@ -140,6 +142,8 @@ function Player() {
   const screen = useScreen();
   const [filtered, setFiltered] = useState(false);
   const [stats, setStats] = useState<StatItem[] | null>(null);
+  // The graph's last minute, a copy of `history`'s points per sample so React redraws it.
+  const [graph, setGraph] = useState<{ points: LatencyPoint[]; max: number }>({ points: [], max: 50 });
   // Adding a cheat: a form, while which menus ignore the pad.
   const [cheatForm, setCheatForm] = useState<null | ((code: string, description: string) => void)>(null);
   const formOpen = useRef(false);
@@ -157,6 +161,7 @@ function Player() {
     let stalledFor = 0;
     const input = new InputState();
     const sampler = new StatsSampler();
+    const history = new LatencyHistory();
     const filter = new VideoFilter(video.current!, canvas.current!);
     let filterMode = (localStorage.getItem(FILTER_KEY) as FilterMode) || "sharp";
     const timers: number[] = [];
@@ -683,6 +688,8 @@ function Player() {
           if (!statsOn) return;
           const { items, numbers } = await sampler.sample(session);
           setStats(items);
+          history.push({ measured: numbers.input_to_frame_ms ?? NaN, estimate: numbers.estimate_ms ?? NaN });
+          setGraph({ points: [...history.points], max: history.scaleMax });
           // Logged by the worker beside its own health lines, for reading back later.
           session.sendStats({ ...numbers, client: clientName() });
         }, 1000),
@@ -918,15 +925,30 @@ function Player() {
       </Dialog>
 
       {stats && (
-        <dl className="pointer-events-none absolute top-4 left-4 grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 rounded-lg bg-black/70 px-3 py-2 font-mono text-xs">
-          {stats.map(({ label, value }) => (
-            <div key={label} className="contents">
-              <dt className="text-slate-400">{label}</dt>
-              <dd className="text-right tabular-nums">{value}</dd>
-            </div>
-          ))}
-          <p className="col-span-2 mt-1 max-w-56 font-sans text-[10px] text-slate-400">{STATS_WARNING}</p>
-        </dl>
+        <div className="pointer-events-none absolute top-4 left-4 w-max max-w-[calc(100%-2rem)] rounded-lg bg-black/70 px-3 py-2 font-mono text-xs">
+          {/* Two columns, the first filled before the second, to keep the panel short. */}
+          <dl className="grid grid-cols-[auto_auto_auto_auto] gap-x-3 gap-y-0.5">
+            {twoColumns(stats).map(([left, right]) => (
+              <div key={left.label} className="contents">
+                <dt className="text-slate-400">{left.label}</dt>
+                <dd className="pr-3 text-right whitespace-nowrap tabular-nums">{left.value}</dd>
+                {right ? (
+                  <>
+                    <dt className="text-slate-400">{right.label}</dt>
+                    <dd className="text-right whitespace-nowrap tabular-nums">{right.value}</dd>
+                  </>
+                ) : (
+                  <div className="col-span-2" />
+                )}
+              </div>
+            ))}
+          </dl>
+          <LatencyGraph points={graph.points} capacity={60} max={graph.max} />
+          <p className="mt-1 font-sans text-[10px] text-slate-400">
+            <span className="text-sky-300">━</span> measured button→frame <span className="text-slate-400">━</span>{" "}
+            estimated button→pixel, last minute. {STATS_WARNING}
+          </p>
+        </div>
       )}
     </main>
   );
