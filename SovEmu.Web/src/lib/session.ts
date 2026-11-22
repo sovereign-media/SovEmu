@@ -25,6 +25,20 @@ import {
 const HEARTBEAT_MS = 100;
 const ICE_GATHER_TIMEOUT_MS = 1500;
 
+/**
+ * Resolves once `pc` has gathered its ICE candidates (or after a moment, with what it has): the
+ * server answers an offer once, so the offer must carry them all (no trickle).
+ */
+export function iceGathered(pc: RTCPeerConnection): Promise<void> {
+  if (pc.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    pc.addEventListener("icegatheringstatechange", () => {
+      if (pc.iceGatheringState === "complete") resolve();
+    });
+    setTimeout(resolve, ICE_GATHER_TIMEOUT_MS);
+  });
+}
+
 export type SessionState = RTCPeerConnectionState | "idle";
 
 export interface SessionEvents {
@@ -108,7 +122,7 @@ export class Session {
 
   async connect(): Promise<void> {
     await this.pc.setLocalDescription(await this.pc.createOffer());
-    await this.iceGathered();
+    await iceGathered(this.pc);
     const answer = await this.signal(this.pc.localDescription?.sdp ?? "");
     await this.pc.setRemoteDescription({ type: "answer", sdp: answer });
     this.video.play().catch(() => {
@@ -121,16 +135,6 @@ export class Session {
     cancelAnimationFrame(this.raf);
     this.video.cancelVideoFrameCallback?.(this.frameCallback);
     this.pc.close();
-  }
-
-  private iceGathered(): Promise<void> {
-    if (this.pc.iceGatheringState === "complete") return Promise.resolve();
-    return new Promise((resolve) => {
-      this.pc.addEventListener("icegatheringstatechange", () => {
-        if (this.pc.iceGatheringState === "complete") resolve();
-      });
-      setTimeout(resolve, ICE_GATHER_TIMEOUT_MS);
-    });
   }
 
   /** Sends this client's view of the stream to the worker (see `encodeStats`). */
