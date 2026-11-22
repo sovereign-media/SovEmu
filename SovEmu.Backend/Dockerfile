@@ -86,20 +86,26 @@ RUN curl -sSfL --retry 5 -o /tmp/cargo-about.tar.gz \
 WORKDIR /src
 COPY SovEmu.Backend/ ./
 
+## ---- notices: the crates' licences, listed again from the lockfile --------------------------------
+# cargo-about (`about.toml`'s accepted licences: any other fails the build) writes the list the
+# server builds in, so the image always ships the current one; the committed copy is a local
+# build's. Its own stage and registry cache: its `cargo metadata` unpacks crates for every
+# platform, and sharing `build` and `test`'s cache while they compile raced them.
+FROM toolchain AS notices
+RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registry \
+    cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
+
 ## ---- build: the release binaries ------------------------------------------------------------------
 FROM toolchain AS build
+COPY --from=notices /out/third-party-notices.json SovEmu.Server/third-party-notices.json
 # Which build this is, for the admin About page (`option_env!` in sovemu-server): the commit and
 # its time, which CI passes (docker-bake.hcl). Empty in a local build. Declared here, not in
 # `toolchain`, so the test stage's compile does not change with every commit.
 ARG SOVEMU_REVISION=""
 ARG SOVEMU_BUILT=""
-# The third-party notices are listed again from the lockfile first, so the image always ships
-# the current list (the committed copy is a local build's): a crate under a licence about.toml
-# does not accept fails the build here.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-release,target=/src/target \
-    cargo about generate --locked -c about.toml about.hbs -o SovEmu.Server/third-party-notices.json \
-    && cargo build --release --locked -p sovemu-worker -p sovemu-server \
+    cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
     && install -D target/release/sovemu-server /out/sovemu-server \
     # Drop the line tables (most of the binaries' size) but keep symbol names for backtraces.
