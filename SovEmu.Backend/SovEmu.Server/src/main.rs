@@ -643,7 +643,7 @@ pub struct AppState {
     /// What each core offers as settings, probed once.
     pub core_info: Arc<settings::CoreInfoCache>,
     /// The GraphQL schema (cheap to clone: shared).
-    pub schema: graphql::ApiSchema,
+    pub(crate) schema: graphql::ApiSchema,
     /// Signs the file URLs the API hands out, and checks them on `/media/…`.
     pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
@@ -658,6 +658,8 @@ pub struct AppState {
     pub(crate) resources: Arc<resources::Monitor>,
     /// The data folder's last measurement, for the Storage page (`storage`).
     pub(crate) storage: Arc<storage::StorageCache>,
+    /// Games per system, counted when the library changes (`library`).
+    pub(crate) game_counts: Arc<library::GameCounts>,
 }
 
 impl AppState {
@@ -892,6 +894,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     );
     let resources = Arc::new(resources::Monitor::new(host, config.resource_sample_seconds));
     let core_info = Arc::new(settings::CoreInfoCache::from_manifest(&config.cores_dir));
+    let game_counts = Arc::new(library::GameCounts::load(&db).await?);
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -907,6 +910,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         identity,
         client_events: Arc::default(),
         storage: Arc::default(),
+        game_counts,
         jobs,
         resources,
     })

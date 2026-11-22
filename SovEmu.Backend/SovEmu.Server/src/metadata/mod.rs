@@ -158,6 +158,9 @@ pub(crate) async fn run_job(state: AppState, system: Option<String>, force: bool
         let sources = std::mem::take(&mut s.sources);
         *s = JobStatus { running: true, sources, ..JobStatus::default() };
     }
+    // Clears `running` however the job ends: a panic (which `Jobs` records as a failed run)
+    // would otherwise leave every later lookup returning at once.
+    let _running = scopeguard(meta.clone(), |m| m.update(|s| s.running = false));
     let mut available = vec!["fbneo"];
     if meta.launchbox.is_some() {
         available.push("launchbox");
@@ -376,25 +379,83 @@ async fn store(
     Ok(())
 }
 
-/// Downloads box art into the media directory; returns its file name.
+/// Box art larger than this is not an image anyone meant to send: refused rather than kept.
+const MAX_BOX_ART_BYTES: usize = 32 << 20;
+
+/// The image format of `bytes`, from its first bytes (PNG, JPEG or WebP); none for anything
+/// else (an HTML error page sent with a 200, say).
+fn image_extension(bytes: &[u8]) -> Option<&'static str> {
+    match bytes {
+        [0x89, b'P', b'N', b'G', ..] => Some("png"),
+        [0xFF, 0xD8, 0xFF, ..] => Some("jpg"),
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("webp"),
+        _ => None,
+    }
+}
+
+/// Downloads box art into the media directory; returns its file name. Only an image, of a sane
+/// size, written whole (a temp file, then a rename); a copy kept under another format goes.
 async fn download_box_art(meta: &Metadata, game_id: i64, url: &str) -> Option<String> {
-    let response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
-    let ext =
-        match response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
-            Some(t) if t.contains("jpeg") => "jpg",
-            Some(t) if t.contains("webp") => "webp",
-            _ => "png",
-        };
-    let bytes = response.bytes().await.ok()?;
+    let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
+    if response.content_length().is_some_and(|n| n > MAX_BOX_ART_BYTES as u64) {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if bytes.len() + chunk.len() > MAX_BOX_ART_BYTES {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let ext = image_extension(&bytes)?;
     let name = format!("{game_id}-box.{ext}");
     tokio::fs::create_dir_all(&meta.media_dir).await.ok()?;
-    tokio::fs::write(meta.media_dir.join(&name), &bytes).await.ok()?;
+    let temp = meta.media_dir.join(format!("{name}.part"));
+    tokio::fs::write(&temp, &bytes).await.ok()?;
+    tokio::fs::rename(&temp, meta.media_dir.join(&name)).await.ok()?;
+    for other in ["png", "jpg", "webp"].into_iter().filter(|e| *e != ext) {
+        let _ = tokio::fs::remove_file(meta.media_dir.join(format!("{game_id}-box.{other}"))).await;
+    }
     Some(name)
+}
+
+/// Runs `f(value)` when dropped: on return, `?`, or a panic unwinding.
+pub(crate) fn scopeguard<T, F: FnOnce(&T)>(value: T, f: F) -> impl Drop {
+    struct Guard<T, F: FnOnce(&T)>(T, Option<F>);
+    impl<T, F: FnOnce(&T)> Drop for Guard<T, F> {
+        fn drop(&mut self) {
+            if let Some(f) = self.1.take() {
+                f(&self.0);
+            }
+        }
+    }
+    Guard(value, Some(f))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn box_art_is_told_by_its_bytes() {
+        assert_eq!(image_extension(b"\x89PNG\r\n\x1a\n...."), Some("png"));
+        assert_eq!(image_extension(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0]), Some("jpg"));
+        assert_eq!(image_extension(b"RIFF\0\0\0\0WEBPVP8 "), Some("webp"));
+        assert_eq!(image_extension(b"<!DOCTYPE html><html>"), None, "an error page");
+        assert_eq!(image_extension(b""), None);
+    }
+
+    #[test]
+    fn a_scope_guard_runs_on_panic_too() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static RAN: AtomicBool = AtomicBool::new(false);
+        let unwound = std::panic::catch_unwind(|| {
+            let _g = scopeguard((), |_| RAN.store(true, Ordering::SeqCst));
+            panic!("a job that panics");
+        });
+        assert!(unwound.is_err());
+        assert!(RAN.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn asks_again_only_when_a_new_service_could_answer() {

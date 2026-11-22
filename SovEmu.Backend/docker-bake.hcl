@@ -55,3 +55,14 @@ target "image" {
   cache-from = ["type=gha,scope=image", "type=gha,scope=test"]
   cache-to   = ["type=gha,scope=image,mode=max"]
 }
+
+# The test suite's line coverage (Dockerfile `coverage`): the reports, written to ./coverage
+# (`summary.txt`, `lcov.info`, `html/`). CI's Coverage job runs it on main; locally,
+# scripts/coverage.sh is quicker.
+target "coverage" {
+  inherits   = ["_common"]
+  target     = "coverage"
+  output     = ["type=local,dest=coverage"]
+  cache-from = ["type=gha,scope=coverage", "type=gha,scope=test"]
+  cache-to   = ["type=gha,scope=coverage,mode=max"]
+}

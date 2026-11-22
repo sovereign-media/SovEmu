@@ -27,3 +27,8 @@ headless-out/
 
 # Local secrets for compose (NAS credentials); see .env.example
 /.env
+
+# Coverage reports (scripts/coverage.sh, `docker buildx bake coverage`)
+/coverage/
+# Coverage profiles from an instrumented run that lost its LLVM_PROFILE_FILE
+*.profraw

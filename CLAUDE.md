@@ -57,7 +57,7 @@ instead (as Sovereign's server takes its SPA).
   static files (one `index.html` and its assets, no Node in the image), and the Rust side serves
   them next to `/graphql`, answering every other page path with `index.html` for the client's
   router. Never add a Node server or server-side rendering.
-- **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql.rs`, async-graphql):
+- **The API is GraphQL, and only GraphQL** (`SovEmu.Server/src/graphql/`, async-graphql: one module per area, each with its types and its part of the `Query` and `Mutation` roots, joined in `mod.rs`):
   `POST /graphql` for every client (web, Android, iOS), GraphiQL at `GET /graphql`. Never add a
   REST route. Plain HTTP is only for files the API hands out URLs to (`/media/…`: artwork,
   videos, save screenshots, decorations), for sign-in (the OpenID Connect routes OAuth defines,
@@ -143,7 +143,16 @@ cd SovEmu.Backend
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+../scripts/coverage.sh            # line coverage → ../coverage/ (summary, lcov, HTML)
 ```
+
+Coverage is `cargo-llvm-cov` (once: `rustup component add llvm-tools-preview && cargo install
+cargo-llvm-cov --locked`), run through `scripts/coverage.sh`, never bare: the script gives it a
+target folder of its own (`target/coverage`), as cargo would otherwise reuse its instrumented
+builds in a plain `cargo test`, which then writes `*.profraw` files everywhere. It reports, never gates: CI's **Coverage** job (on `main` and by hand)
+runs the suite instrumented in the container (`docker buildx bake -f SovEmu.Backend/docker-bake.hcl
+coverage`, Dockerfile `coverage` stage), puts the per-file summary in the run's summary and keeps
+the HTML and lcov as an artifact. A new module with little coverage is a test to write.
 
 | Project | Crate | Purpose |
 |---|---|---|

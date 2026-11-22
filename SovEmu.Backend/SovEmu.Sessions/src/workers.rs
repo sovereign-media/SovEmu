@@ -93,6 +93,10 @@ pub(crate) const WORKER_ENV: &[&str] = &[
     "MESA_LOADER_DRIVER_OVERRIDE",
     "GALLIUM_DRIVER",
     "LP_NUM_THREADS",
+    // Where an instrumented build writes its coverage (cargo-llvm-cov sets it for test runs):
+    // without it a worker started by a test writes `default_*.profraw` into the working folder,
+    // and its coverage is lost.
+    "LLVM_PROFILE_FILE",
     "LIBGL_ALWAYS_SOFTWARE",
 ];
 

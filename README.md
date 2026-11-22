@@ -470,6 +470,11 @@ leaves your machine, it runs the checks for whatever the push changes:
   tests and the build (which checks every GraphQL document against the schema).
 - **Docs or CI:** nothing.
 
+Test coverage: `scripts/coverage.sh` (needs `cargo-llvm-cov`: `rustup component add
+llvm-tools-preview && cargo install cargo-llvm-cov --locked`) writes a summary, an lcov file and
+an HTML report to `coverage/`; `--open` opens the report, `-p <crate>` limits it to one crate.
+CI's Coverage job publishes the same for `main`, measured in the container.
+
 On a failure it names the step and gives the command to rerun it. `git push --no-verify` skips
 it. CI lints the backend on Linux and runs its tests once, inside the container build, against
 the libraries the image ships; nothing in CI runs on macOS.

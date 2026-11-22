@@ -278,7 +278,7 @@ fn rollup(readings: &[Reading]) -> Vec<Figure> {
 }
 
 async fn write_rollup(db: &SqlitePool, at: f64, figures: &[Figure]) -> sqlx::Result<()> {
-    let mut tx = db.begin().await?;
+    let mut tx = crate::db::write_tx(db).await?;
     for (resource, average, max) in figures {
         sqlx::query(
             "INSERT INTO resource_samples (resource, at, average, max) VALUES (?, ?, ?, ?)",

@@ -23,7 +23,7 @@ paths:
 - **Server.** `SovEmu.Server` depends on `Library`, `Assets`, `Identity`, `Sessions` and `Protocol` only; neither it nor
   `Sessions` ever links `RetroHost` or `Media`. Database access is plain
   `sqlx::query` / `query_as` with bound parameters (never format values into SQL); schema changes are new
-  files in `migrations/`. The API is GraphQL (`graphql.rs`): resolvers check access with
+  files in `migrations/`. The API is GraphQL (`graphql/`, a module per area merged into the roots in `mod.rs`; a new area is a module and a part of `Query`/`Mutation`): resolvers check access with
   `user(ctx)` / `admin(ctx)` and call plain functions (`&AppState`, `&User`, arguments) in the
   other modules; never add a REST route. After changing the schema, regenerate
   `schema.graphql` (`UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file`) and the clients.

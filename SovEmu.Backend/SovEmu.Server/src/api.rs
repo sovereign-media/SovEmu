@@ -28,7 +28,7 @@ pub(crate) struct SystemSummary {
     pub(crate) rendering: Option<sovemu_sessions::gpu::Mode>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub(crate) struct Game {
     pub(crate) id: i64,
     pub(crate) system: String,
@@ -106,7 +106,7 @@ pub(crate) fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
 }
 
 /// Whether a system is offered (`SOVEMU_SYSTEMS__<id>__ENABLED=false` hides it).
-fn enabled(state: &AppState, id: &str) -> bool {
+pub(crate) fn enabled(state: &AppState, id: &str) -> bool {
     state.config.systems.get(id).and_then(|s| s.enabled).unwrap_or(true)
 }
 
@@ -116,16 +116,13 @@ fn system_by_id(state: &AppState, id: &str) -> ApiResult<&'static System> {
 }
 
 pub(crate) async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
-    let counts: Vec<(String, i64)> =
-        sqlx::query_as("SELECT system, COUNT(*) FROM games GROUP BY system")
-            .fetch_all(&state.db)
-            .await?;
+    let counts = state.game_counts.get();
     let summaries = systems::SYSTEMS
         .iter()
         .filter(|s| enabled(state, s.id))
         .map(|s| SystemSummary {
             system: *s,
-            game_count: counts.iter().find(|(id, _)| id == s.id).map_or(0, |(_, n)| *n),
+            game_count: counts.get(s.id).copied().unwrap_or(0),
             playable: find_core(state, s).is_some()
                 && (!s.needs_gpu || state.gpu.mode != sovemu_sessions::gpu::Mode::Off),
             rendering: s.needs_gpu.then_some(state.gpu.mode),
@@ -191,14 +188,27 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
     Ok(game)
 }
 
+/// One game's row. A game of a hidden system (`SOVEMU_SYSTEMS__<id>__ENABLED=false`) is not
+/// found, as its system is not: by id as by list.
 async fn fetch_row(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
     sqlx::query_as::<_, Game>(&games_sql(ONE_GAME))
         .bind(user_id)
         .bind(id)
         .fetch_optional(&state.db)
         .await?
+        .filter(|g| enabled(state, &g.system))
         .map(Game::with_box_art)
         .ok_or_else(|| ApiError::not_found("game"))
+}
+
+/// That a game exists and its system is offered, for a change that names it (a favourite, a
+/// collection entry, a cheat, a patch choice).
+pub(crate) async fn require_game(state: &AppState, id: i64) -> ApiResult<()> {
+    let system: Option<String> = sqlx::query_scalar("SELECT system FROM games WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+    system.filter(|s| enabled(state, s)).map(|_| ()).ok_or_else(|| ApiError::not_found("game"))
 }
 
 pub(crate) async fn get_game(state: &AppState, user: &User, id: i64) -> ApiResult<Game> {
@@ -310,7 +320,8 @@ async fn launch(
     // (disc images) only once this session ends, so the copy never competes with the game.
     let cached =
         if discs.is_empty() { state.cache.cached("roms", &game.path, &original) } else { None };
-    let large = game.size.max(0).unsigned_abs() > state.config.cache_large_game_mb << 20;
+    let large =
+        game.size.max(0).unsigned_abs() > state.config.cache_large_game_mb.saturating_mul(1 << 20);
     let rom = match &cached {
         _ if !discs.is_empty() => write_playlist(&state, game.id, &discs)
             .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?,
@@ -385,10 +396,19 @@ fn write_playlist(
         text.push('\n');
     }
     let path = dir.join(format!("{game_id}.m3u"));
-    let temp = dir.join(format!("{game_id}.m3u.tmp"));
+    // Its own temp file per writer: two players starting the same game at once each write
+    // theirs, and the last rename wins with the same content.
+    let temp = dir.join(format!("{game_id}.m3u.{}.tmp", uuid_like()));
     std::fs::write(&temp, text)?;
     std::fs::rename(&temp, &path)?;
     Ok(path)
+}
+
+/// A name unique to this process and moment, for a temp file.
+fn uuid_like() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{}-{n}", std::process::id())
 }
 
 /// Changes a multi-disc game's disc (1-based), as a player swaps discs when the game asks.
@@ -552,6 +572,7 @@ pub(crate) async fn delete_state(
     id: i64,
     slot: u32,
 ) -> ApiResult<()> {
+    check_slot(slot)?;
     let game = fetch_game(state, user.id, id).await?;
     let (_, dir) = save_dirs(state, user.id, &game);
     let state_file = dir.join(format!("slot{slot}.state"));
@@ -574,12 +595,32 @@ async fn session_request(
     Ok(())
 }
 
+/// Slots a player saves to: 1 to [`MAX_SLOT`]. Slot 0 is the auto save, which only the worker
+/// writes (as a session ends); a slot above the last is never listed, so a save there is lost.
+fn check_save_slot(slot: u32) -> ApiResult<()> {
+    if (1..=MAX_SLOT).contains(&slot) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(format!("save slots are 1 to {MAX_SLOT}")))
+    }
+}
+
+/// Slots a player loads or deletes: the auto save (0) too.
+fn check_slot(slot: u32) -> ApiResult<()> {
+    if slot <= MAX_SLOT {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(format!("slots are 0 to {MAX_SLOT}")))
+    }
+}
+
 pub(crate) async fn save_state(
     state: &AppState,
     user: &User,
     id: &str,
     slot: u32,
 ) -> ApiResult<()> {
+    check_save_slot(slot)?;
     session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::SaveState {
         id: rid,
         slot,
@@ -593,6 +634,7 @@ pub(crate) async fn load_state(
     id: &str,
     slot: u32,
 ) -> ApiResult<()> {
+    check_slot(slot)?;
     session_request(state, user.id, id, |rid| sovemu_protocol::ipc::Request::LoadState {
         id: rid,
         slot,
@@ -642,12 +684,23 @@ pub(crate) async fn game_media(
     if !sovemu_library::scan::MEDIA_KINDS.contains(&kind.as_str()) {
         return Err(ApiError::not_found("media"));
     }
-    let game = fetch_game(&state, user_id, id).await?;
-    let file = match media_relative(&state, &game, &kind) {
-        Some(relative) => {
-            let original = state.config.roms_dir.join(&relative);
-            state.cache.local_or_fetch("media", &relative, &original)
-        }
+    // The row alone: an image needs no favourites or patch (one query per thumbnail, not three).
+    let game = fetch_row(&state, user_id, id).await?;
+    // Probing the library's files (a network share, perhaps) blocks: off the async threads.
+    let found = {
+        let state = state.clone();
+        let (game, kind) = (game.clone(), kind.clone());
+        tokio::task::spawn_blocking(move || {
+            media_relative(&state, &game, &kind).map(|relative| {
+                let original = state.config.roms_dir.join(&relative);
+                state.cache.local_or_fetch("media", &relative, &original)
+            })
+        })
+        .await
+        .map_err(ApiError::internal)?
+    };
+    let file = match found {
+        Some(file) => file,
         // No local artwork: box art a metadata service supplied stands in for the thumb.
         None => match (kind.as_str(), &game.box_art) {
             ("thumb", Some(name)) => state.metadata.media_dir.join(name),
