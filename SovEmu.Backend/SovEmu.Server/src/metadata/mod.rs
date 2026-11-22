@@ -73,7 +73,7 @@ impl std::fmt::Debug for Metadata {
 
 impl Metadata {
     pub fn new(
-        dir: PathBuf,
+        paths: &crate::paths::DataPaths,
         launchbox: Option<launchbox::LaunchBox>,
         screenscraper: Option<screenscraper::ScreenScraper>,
         thegamesdb: Option<thegamesdb::TheGamesDb>,
@@ -91,11 +91,11 @@ impl Metadata {
             sources.push("thegamesdb");
         }
         Arc::new(Self {
-            fbneo: fbneo::FbNeoDats::new(dir.join("fbneo")),
+            fbneo: fbneo::FbNeoDats::new(paths.fbneo_dats()),
             launchbox,
             screenscraper,
             thegamesdb,
-            media_dir: dir.join("media"),
+            media_dir: paths.artwork(),
             status: Mutex::new(JobStatus { sources, ..JobStatus::default() }),
             artwork: Mutex::new(artwork::ArtworkStatus::default()),
             artwork_downloads,

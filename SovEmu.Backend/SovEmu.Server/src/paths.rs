@@ -13,7 +13,10 @@
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
-//!   metadata/             game information: LaunchBox's dump, FBNeo's DATs, downloaded art
+//!   metadata/             game information:
+//!   metadata/launchbox/   LaunchBox's database dump
+//!   metadata/fbneo/       FBNeo's DATs, by commit
+//!   metadata/media/       downloaded box art
 //! ```
 //!
 //! A new file or folder in the data directory gets its method here.
@@ -56,7 +59,7 @@ impl DataPaths {
 
     /// A user's battery saves for a system; states are in `states/<game>/` below it.
     pub fn saves(&self, user_id: i64, system: &str) -> PathBuf {
-        self.root.join("saves").join(user_id.to_string()).join(system)
+        self.all_saves().join(user_id.to_string()).join(system)
     }
 
     /// What the server makes or copies for itself, and can make again: the folders below.
@@ -99,6 +102,21 @@ impl DataPaths {
     /// LaunchBox's database dump.
     pub fn launchbox(&self) -> PathBuf {
         self.metadata().join("launchbox")
+    }
+
+    /// FBNeo's DAT files (arcade names), one folder per pinned commit.
+    pub fn fbneo_dats(&self) -> PathBuf {
+        self.metadata().join("fbneo")
+    }
+
+    /// Box art downloaded by the game-information lookup.
+    pub fn artwork(&self) -> PathBuf {
+        self.metadata().join("media")
+    }
+
+    /// The saves of every user, one folder per user id.
+    pub fn all_saves(&self) -> PathBuf {
+        self.root.join("saves")
     }
 }
 

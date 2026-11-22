@@ -977,3 +977,33 @@ export const NetworkQuery = graphql(`
     }
   }
 `);
+
+export const StorageQuery = graphql(`
+  query Storage($refresh: Boolean) {
+    storage(refresh: $refresh) {
+      measuredAt
+      dataDir
+      totalBytes
+      freeBytes
+      cacheLimitBytes
+      areas {
+        id
+        path
+        bytes
+        files
+      }
+      saves {
+        userId
+        username
+        bytes
+        files
+      }
+    }
+  }
+`);
+
+export const ClearCacheMutation = graphql(`
+  mutation ClearCache {
+    clearCache
+  }
+`);

@@ -1543,6 +1543,33 @@ async fn admins_see_how_the_server_is_reached() {
 }
 
 #[tokio::test]
+async fn admins_see_where_the_space_goes() {
+    let mut h = Harness::new("storage", true).await;
+    h.sign_up_admin().await;
+    let id = h.games("nes").await[0]["id"].as_i64().unwrap();
+    let sid =
+        h.ok(START, json!({"game": id})).await["startSession"]["id"].as_str().unwrap().to_owned();
+    let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
+    h.ok(save, json!({"s": sid, "slot": 1})).await;
+
+    let q = "query($r: Boolean) { storage(refresh: $r) { measuredAt totalBytes freeBytes \
+             areas { id bytes files } saves { userId username bytes files } } }";
+    let r = h.ok(q, json!({"r": true})).await["storage"].clone();
+    let area = |id: &str| r["areas"].as_array().unwrap().iter().find(|a| a["id"] == id).cloned();
+    assert!(area("database").unwrap()["bytes"].as_f64().unwrap() > 0.0);
+    assert!(area("saves").unwrap()["files"].as_f64().unwrap() >= 1.0);
+    assert!(area("other").is_some());
+    assert_eq!(r["saves"][0]["userId"], 1);
+    assert!(r["saves"][0]["username"].is_string(), "named from the users table");
+    assert!(r["totalBytes"].as_f64().unwrap() >= r["freeBytes"].as_f64().unwrap());
+    // Kept a few minutes: the same measurement unless refreshed.
+    let again = h.ok(q, json!({"r": false})).await["storage"]["measuredAt"].clone();
+    assert_eq!(again, r["measuredAt"]);
+    // Direct mode keeps no copies: nothing to clear.
+    assert_eq!(h.ok("mutation { clearCache }", json!({})).await["clearCache"], json!(0.0));
+}
+
+#[tokio::test]
 async fn admins_see_every_core_with_its_licence() {
     let mut h = Harness::new("cores", true).await;
     h.sign_up_admin().await;

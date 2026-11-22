@@ -837,6 +837,42 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// Where the data folder's space goes.
+#[derive(SimpleObject)]
+struct StorageReport {
+    /// When it was measured (Unix seconds): measurements are kept a few minutes.
+    measured_at: f64,
+    data_dir: String,
+    /// The parts of the data folder, largest first. `other` is what no part claims.
+    areas: Vec<StorageArea>,
+    /// Each user's saves, largest first.
+    saves: Vec<UserStorage>,
+    /// The data folder's filesystem, in bytes.
+    total_bytes: Option<f64>,
+    free_bytes: Option<f64>,
+    /// `cache` mode: the cache's cap, in bytes (`SOVEMU_CACHE_GB`).
+    cache_limit_bytes: Option<f64>,
+}
+
+#[derive(SimpleObject)]
+struct StorageArea {
+    /// `database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
+    /// `decorations`, `builtin_decorations`, `roms`, `bios` or `other`.
+    id: String,
+    path: String,
+    bytes: f64,
+    files: f64,
+}
+
+#[derive(SimpleObject)]
+struct UserStorage {
+    user_id: i64,
+    /// Null for a user that has been deleted (their saves are left behind).
+    username: Option<String>,
+    bytes: f64,
+    files: f64,
+}
+
 /// How browsers and apps reach the server and its game streams.
 #[derive(SimpleObject)]
 struct NetworkReport {
@@ -2141,6 +2177,46 @@ impl Query {
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
     }
 
+    /// Admins: where the data folder's space goes. Measured at most every few minutes, unless
+    /// `refresh` asks for a measurement now.
+    async fn storage(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default)] refresh: bool,
+    ) -> Result<StorageReport> {
+        admin(ctx).await?;
+        let state = state(ctx);
+        let r = crate::storage::report(state, refresh).await.api()?;
+        Ok(StorageReport {
+            measured_at: r.measured_at,
+            data_dir: r.data_dir.display().to_string(),
+            areas: r
+                .areas
+                .into_iter()
+                .map(|a| StorageArea {
+                    id: a.id.to_owned(),
+                    path: a.path.display().to_string(),
+                    bytes: a.bytes as f64,
+                    files: a.files as f64,
+                })
+                .collect(),
+            saves: r
+                .saves
+                .into_iter()
+                .map(|u| UserStorage {
+                    user_id: u.user_id,
+                    username: u.username,
+                    bytes: u.bytes as f64,
+                    files: u.files as f64,
+                })
+                .collect(),
+            total_bytes: r.total_bytes.map(|b| b as f64),
+            free_bytes: r.free_bytes.map(|b| b as f64),
+            cache_limit_bytes: (state.config.library_mode == crate::LibraryMode::Cache)
+                .then(|| state.config.cache_gb.unwrap_or(20).saturating_mul(1 << 30) as f64),
+        })
+    }
+
     /// Admins: how browsers and apps reach the server and its game streams.
     async fn network(&self, ctx: &Context<'_>) -> Result<NetworkReport> {
         admin(ctx).await?;
@@ -2637,6 +2713,13 @@ impl Mutation {
     }
     /// Plays a game with one of its soft patches from now on (`Game.patches`), or the original
     /// (`patchId` null). Its next session loads it so; a patched game keeps its own saves.
+    /// Admins: deletes the game cache's copies (mode `cache`), but those of games being played;
+    /// the bytes freed. Games are copied again as they are played.
+    async fn clear_cache(&self, ctx: &Context<'_>) -> Result<f64> {
+        admin(ctx).await?;
+        Ok(crate::storage::clear_cache(state(ctx)).await.api()? as f64)
+    }
+
     async fn set_patch(
         &self,
         ctx: &Context<'_>,

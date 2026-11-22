@@ -12,6 +12,7 @@ import {
   BiosQuery,
   ChangeEmulatorSettingsMutation,
   CheatsQuery as CheatsDocument,
+  ClearCacheMutation,
   ClientConfigQuery,
   CollectionIdsQuery,
   CollectionsQuery as CollectionsDocument,
@@ -59,6 +60,7 @@ import {
   StartProgressQuery as StartProgressDocument,
   StartSessionMutation,
   StopSessionMutation,
+  StorageQuery,
   SyncLibraryMutation,
   SystemControlsQuery,
   type SystemFields,
@@ -128,6 +130,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type StorageReport = ResultOf<typeof StorageQuery>["storage"];
 export type NetworkReport = ResultOf<typeof NetworkQuery>["network"];
 export type ConfigSetting = ResultOf<typeof ConfigurationQuery>["configuration"][number];
 export type CoreReport = ResultOf<typeof CoresQuery>["cores"][number];
@@ -176,6 +179,10 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: where the data folder's space goes (`refresh`: measure now). */
+  storage: async (refresh = false) => (await request(StorageQuery, { refresh })).storage,
+  /** Admin: deletes the game cache's copies, but those being played; the bytes freed. */
+  clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
   /** Admin: the server's effective configuration, credentials masked. */

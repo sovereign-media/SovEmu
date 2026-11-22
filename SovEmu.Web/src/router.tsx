@@ -54,6 +54,7 @@ const PatchesAdmin = lazy(() => import("./components/admin/PatchesAdmin"));
 const CoresAdmin = lazy(() => import("./components/admin/CoresAdmin"));
 const ConfigurationAdmin = lazy(() => import("./components/admin/ConfigurationAdmin"));
 const NetworkAdmin = lazy(() => import("./components/admin/NetworkAdmin"));
+const StorageAdmin = lazy(() => import("./components/admin/StorageAdmin"));
 
 /** Path, title, screen, and the URL parameters the screen updates itself (with `history`). */
 const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[]][] = [
@@ -78,6 +79,7 @@ const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[
   ["/admin/cores/", "Cores", CoresAdmin, []],
   ["/admin/configuration/", "Configuration", ConfigurationAdmin, []],
   ["/admin/network/", "Network", NetworkAdmin, []],
+  ["/admin/storage/", "Storage", StorageAdmin, []],
 ];
 
 const routes = SCREENS.map(([path, title, Screen, own]) =>

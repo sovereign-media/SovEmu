@@ -35,6 +35,7 @@ mod releases;
 mod resources;
 mod search;
 mod settings;
+mod storage;
 mod structured;
 mod telemetry;
 
@@ -654,6 +655,8 @@ pub struct AppState {
     pub(crate) jobs: jobs::Jobs,
     /// The host's facts and the container's CPU and memory readings (`resources`).
     pub(crate) resources: Arc<resources::Monitor>,
+    /// The data folder's last measurement, for the Storage page (`storage`).
+    pub(crate) storage: Arc<storage::StorageCache>,
 }
 
 impl AppState {
@@ -837,7 +840,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         )
     });
     let metadata = metadata::Metadata::new(
-        paths.metadata(),
+        &paths,
         launchbox,
         screenscraper,
         thegamesdb,
@@ -902,6 +905,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         assets,
         identity,
         client_events: Arc::default(),
+        storage: Arc::default(),
         jobs,
         resources,
     })

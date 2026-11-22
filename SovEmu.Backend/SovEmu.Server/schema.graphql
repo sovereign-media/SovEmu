@@ -1223,7 +1223,10 @@ type Mutation {
 	"""
 	Plays a game with one of its soft patches from now on (`Game.patches`), or the original
 	(`patchId` null). Its next session loads it so; a patched game keeps its own saves.
+	Admins: deletes the game cache's copies (mode `cache`), but those of games being played;
+	the bytes freed. Games are copied again as they are played.
 	"""
+	clearCache: Float!
 	setPatch(gameId: Int!, patchId: Int): Boolean!
 	"""
 	Creates a collection (CONFLICT if this user already has one by that name).
@@ -1496,6 +1499,11 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: where the data folder's space goes. Measured at most every few minutes, unless
+	`refresh` asks for a measurement now.
+	"""
+	storage(refresh: Boolean! = false): StorageReport!
 	"""
 	Admins: how browsers and apps reach the server and its game streams.
 	"""
@@ -1822,6 +1830,45 @@ type StartStatus {
 	error: String
 }
 
+type StorageArea {
+	"""
+	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
+	`decorations`, `builtin_decorations`, `roms`, `bios` or `other`.
+	"""
+	id: String!
+	path: String!
+	bytes: Float!
+	files: Float!
+}
+
+"""
+Where the data folder's space goes.
+"""
+type StorageReport {
+	"""
+	When it was measured (Unix seconds): measurements are kept a few minutes.
+	"""
+	measuredAt: Float!
+	dataDir: String!
+	"""
+	The parts of the data folder, largest first. `other` is what no part claims.
+	"""
+	areas: [StorageArea!]!
+	"""
+	Each user's saves, largest first.
+	"""
+	saves: [UserStorage!]!
+	"""
+	The data folder's filesystem, in bytes.
+	"""
+	totalBytes: Float
+	freeBytes: Float
+	"""
+	`cache` mode: the cache's cap, in bytes (`SOVEMU_CACHE_GB`).
+	"""
+	cacheLimitBytes: Float
+}
+
 """
 A session's last `session health` interval.
 """
@@ -2006,6 +2053,16 @@ type User {
 	Whether the role is `ADMIN`.
 	"""
 	isAdmin: Boolean!
+}
+
+type UserStorage {
+	userId: Int!
+	"""
+	Null for a user that has been deleted (their saves are left behind).
+	"""
+	username: String
+	bytes: Float!
+	files: Float!
 }
 
 type Viewer {

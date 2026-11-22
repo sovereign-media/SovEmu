@@ -114,3 +114,15 @@ test("the Network page shows where streams go and how this request arrived", asy
   await expect(page.getByText(/Signing in does not work/)).toHaveCount(0);
   await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
 });
+
+test("the Storage page shows where the space goes", async ({ page }) => {
+  await page.goto("/admin/storage/");
+  await expect(page.getByRole("heading", { name: "Storage", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /free of/ })).toBeVisible();
+  await expect(page.getByRole("img", { name: "How the data folder's disk is used" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Database / })).toBeVisible();
+  // Direct mode: an empty cache, so nothing to clear.
+  await expect(page.getByRole("button", { name: "Clear the cache" })).toBeDisabled();
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.getByRole("heading", { name: /free of/ })).toBeVisible();
+});

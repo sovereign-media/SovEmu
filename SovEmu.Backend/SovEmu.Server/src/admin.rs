@@ -107,21 +107,28 @@ pub(crate) struct LibraryStatus {
 
 pub(crate) async fn library_status(state: &AppState) -> ApiResult<LibraryStatus> {
     let games: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&state.db).await?;
-    let cache_bytes = (state.config.library_mode == LibraryMode::Cache).then(|| {
+    let cache_bytes = if state.config.library_mode == LibraryMode::Cache {
+        // A walk of the cache: off the async threads.
         let dir = state.config.paths().cache_games();
-        let mut total = 0u64;
-        let mut stack = vec![dir];
-        while let Some(d) = stack.pop() {
-            for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
-                match e.metadata() {
-                    Ok(m) if m.is_dir() => stack.push(e.path()),
-                    Ok(m) => total += m.len(),
-                    Err(_) => {}
+        tokio::task::spawn_blocking(move || {
+            let mut total = 0u64;
+            let mut stack = vec![dir];
+            while let Some(d) = stack.pop() {
+                for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                    match e.metadata() {
+                        Ok(m) if m.is_dir() => stack.push(e.path()),
+                        Ok(m) => total += m.len(),
+                        Err(_) => {}
+                    }
                 }
             }
-        }
-        total
-    });
+            total
+        })
+        .await
+        .ok()
+    } else {
+        None
+    };
     let mirror = (state.config.library_mode == LibraryMode::Mirror)
         .then(|| state.mirror.lock().unwrap_or_else(|e| e.into_inner()).clone());
     Ok(LibraryStatus { mode: state.config.library_mode, games, cache_bytes, mirror })
