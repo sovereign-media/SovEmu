@@ -14,7 +14,6 @@ and iOS clients.
 | `SovEmu.Backend/` | The Rust workspace: libretro bindings, the frontend, the worker, the test core |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) |
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
-| `charts/sovemu/` | The Helm chart |
 | `SovEmu.Web/` | The web client: Vite + React + TanStack Router, Tailwind, Radix UI and Lucide icons, served by the Rust server |
 | `SovEmu.Android/`, `SovEmu.iOS/` | Native clients, as submodules (`git submodule update --init --remote`) |
 
@@ -408,32 +407,23 @@ the server at startup with the variable's name.
 
 ### Kubernetes
 
-[`charts/sovemu`](charts/sovemu) is a Helm chart that turns its values into these variables, so a
-deployment is reproduced from one values file and its secrets. It covers:
+The Helm chart that deploys SovEmu is kept with the cluster's other charts, outside this
+repository, and turns its values into these variables. What any deployment needs from SovEmu:
 
-- `settings` (any variable), `secrets` or `existingSecret`;
-- `admin`, `users` (each with a password or a `passwordSecret`), `pruneUsers`, `systems`, and
-  `iceServers`;
-- the library as a read-only NFS volume, an existing claim or a host path;
-- a persistent `/data`;
-- an Ingress (TLS turns on secure cookies).
+- every setting as an environment variable; a secret also as `<VAR>_FILE`;
+- the library mounted read-only, and a persistent `/data`;
+- the media ports (`SOVEMU_UDP_PORTS`, UDP) reachable at `SOVEMU_ADVERTISE_IP`: a UDP
+  `LoadBalancer` Service (MetalLB at home), or host networking;
+- for GPU rendering and encoding, the render node (`/dev/dri`), or NVIDIA's container runtime.
 
-The media ports are a UDP `LoadBalancer` Service (MetalLB at home; `media.advertiseIP`, or the
-pinned `loadBalancerIP`), or `media.hostNetwork`. The pod runs as uid 1000 with a read-only root
-filesystem and no capabilities. On SIGTERM the server stops every session cleanly before
-exiting, so saves are written.
-
-```bash
-helm install sovemu charts/sovemu -f my-values.yaml
-```
+The image runs as uid 1000 and works with a read-only root filesystem and no capabilities. On
+SIGTERM the server stops every session cleanly before exiting, so saves are written.
 
 CI publishes the image to `ghcr.io/sovereign-media/sovemu` (a private package) on every merge to
 `main`, once the test suite and the core probe have passed: `bleeding` follows `main`, and
 `bleeding-<UTC yyyymmddHHMMSS>` pins one build and sorts by time, so an updater can track
-`glob:bleeding-*` (Keel: put its `keel.sh/*` keys in `annotations`, which land on the
-Deployment). Pull it with an `imagePullSecrets` entry holding a token with `read:packages`.
-
-`charts/sovemu/ci/full-values.yaml` uses every option.
+`glob:bleeding-*` (Keel). Pull it with an `imagePullSecrets` entry holding a token with
+`read:packages`.
 
 ### Health and sign-in
 

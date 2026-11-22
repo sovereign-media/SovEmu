@@ -1,7 +1,0 @@
-# An NVIDIA GPU through the device plugin and the NVIDIA runtime class.
-gpu:
-  resources:
-    nvidia.com/gpu: 1
-  runtimeClassName: nvidia
-media:
-  advertiseIP: 192.0.2.10

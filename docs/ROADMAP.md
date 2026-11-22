@@ -183,7 +183,8 @@ held 59.93 fps over 300 frames with no resyncs.
       threads, metadata regions and languages, ScreenScraper pacing)
 - [x] Helm chart (`charts/sovemu`): values become the environment; secrets or existing Secrets;
       NFS, claim or host-path library; UDP LoadBalancer or host networking for media; Ingress;
-      read-only root, uid 1000, no capabilities. Linted and schema-checked in CI
+      read-only root, uid 1000, no capabilities. Since moved out of this repository, to the
+      cluster's charts
 - [x] Graceful shutdown on SIGTERM (Kubernetes, `docker stop`): every session saves first
 - [x] Sign-in: `SovEmu.Identity`, the `oauth-as` OAuth 2.1 server stored in SQLite (conformance
       harness passed) with OpenID Connect over it (discovery, JWKS, ES256 ID tokens, userinfo,
@@ -216,7 +217,7 @@ held 59.93 fps over 300 frames with no resyncs.
       on the BIOS folder) and PS2 (PCSX2), built from source on Alpine
 - [x] Analog sticks and triggers: input message `0x03` in Rust, TypeScript, Kotlin and Swift;
       the left stick stops doubling as the D-pad for 3D systems
-- [x] `compose.gpu.yaml`; Helm `gpu.resources` / `gpu.hostDevice`
+- [x] `compose.gpu.yaml`; the Helm chart's GPU resources or host device
 - [x] Loading progress: the worker reports its phases and the bytes it has read (`progress`
       before `ready`); clients follow a start with `start_id` and
       `GET /api/sessions/starting/{id}`; the web player shows a loading bar
