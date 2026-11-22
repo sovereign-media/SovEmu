@@ -22,7 +22,7 @@ const RECENT = 1;
 const FAVOURITES = 2;
 const SYSTEMS = 3;
 const ADDED = 4;
-/** Each collection's row follows, in name order. */
+/** Each collection's row follows: the shared ones, then the user's own, each in name order. */
 const COLLECTIONS = 5;
 
 const play = (g: Game) => go(`/play/?game=${g.id}`);

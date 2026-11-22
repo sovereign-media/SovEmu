@@ -104,9 +104,15 @@ impl Given {
         self.environment = vars
             .iter()
             .filter(|(k, _)| {
-                ["SOVEMU_USERS__", "SOVEMU_SYSTEMS__", "SOVEMU_CONTROLLERS__", "OTEL_"]
-                    .iter()
-                    .any(|p| k.starts_with(p))
+                [
+                    "SOVEMU_USERS__",
+                    "SOVEMU_SYSTEMS__",
+                    "SOVEMU_CONTROLLERS__",
+                    "SOVEMU_COLLECTIONS__",
+                    "OTEL_",
+                ]
+                .iter()
+                .any(|p| k.starts_with(p))
                     || k == "RUST_LOG"
                     || k == "TZ"
             })
@@ -212,7 +218,10 @@ fn environment_setting(name: &str) -> (Group, bool) {
     if name.starts_with("SOVEMU_USERS__") {
         // `__PASSWORD` is a secret; `__PASSWORD_FILE` is only a path.
         (Group::Accounts, name.ends_with("__PASSWORD"))
-    } else if name.starts_with("SOVEMU_SYSTEMS__") || name.starts_with("SOVEMU_CONTROLLERS__") {
+    } else if ["SOVEMU_SYSTEMS__", "SOVEMU_CONTROLLERS__", "SOVEMU_COLLECTIONS__"]
+        .iter()
+        .any(|p| name.starts_with(p))
+    {
         (Group::Library, false)
     } else {
         (Group::Operations, false)

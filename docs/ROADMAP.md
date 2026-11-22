@@ -72,6 +72,11 @@ held 59.93 fps over 300 frames with no resyncs.
       duplicates (the same title and tags twice in a system), games missing a disc (the scan
       keeps `games.missing_parts`) and the files no system plays (`scan_skipped`, migration
       0025), each counted per system, and a game looked up again on its own (`lookUpGame`)
+- [x] Shared collections (`/admin/collections/`): an admin's collections for everyone, on every
+      Home beside each user's own (`sharedCollections`; one table, `collections.user_id` null,
+      migration 0026), filled from a game's panel; declared as `SOVEMU_COLLECTIONS__<n>__NAME`
+      and `__GAMES__<m>` (`<system>/<file>`), kept in step after each scan and locked, and
+      offered as environment lines
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

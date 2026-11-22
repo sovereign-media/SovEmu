@@ -10,22 +10,15 @@ import { environmentLines, filterSettings, GROUP_LABELS, groupSettings } from ".
 import { q } from "../../lib/data";
 import { Button } from "../ui/button";
 import { panel } from "../ui/primitives";
-import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, CopyButton, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
 function Configuration() {
   const config = useQuery(q.configuration());
   const [text, setText] = useState("");
-  const [copied, setCopied] = useState(false);
   const all = config.data ?? [];
   const groups = groupSettings(filterSettings(all, text));
   const given = all.filter((s) => s.source !== "DEFAULT").length;
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(environmentLines(all).join("\n"));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
 
   return (
     <>
@@ -47,9 +40,7 @@ function Configuration() {
                 className="w-56 bg-transparent outline-none placeholder:text-slate-600"
               />
             </label>
-            <Button variant="outline" onClick={copy} disabled={!config.data}>
-              {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy settings"}
-            </Button>
+            <CopyButton text={environmentLines(all).join("\n")} label="Copy settings" disabled={!config.data} />
           </div>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">

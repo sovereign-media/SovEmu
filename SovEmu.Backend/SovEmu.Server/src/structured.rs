@@ -10,6 +10,10 @@
 //!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` (a
 //!   system id: the default for that system only) and `__NAME`.
 //!
+//! - Shared collections: `SOVEMU_COLLECTIONS__<n>__NAME` and `__GAMES__<m>`, each game as
+//!   `<system id>/<file name>` (`nes/Super Stand-in (USA).nes`, wherever in the system's folders
+//!   it lies).
+//!
 //! Keys after the prefix are case-insensitive except core option names and system ids, which are
 //! passed through as written (lower-cased ids, as option names are).
 
@@ -232,6 +236,67 @@ pub(crate) fn controllers(
     Ok(indexed.into_iter().map(|(_, spec)| spec).collect())
 }
 
+/// A shared collection declared in the environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectionSpec {
+    pub name: String,
+    /// Its games, in order, as (system id, file name).
+    pub games: Vec<(String, String)>,
+}
+
+/// Shared collections from `SOVEMU_COLLECTIONS__<n>__…`, ordered by index.
+pub(crate) fn collections(vars: &[(String, String)]) -> Result<Vec<CollectionSpec>> {
+    let mut indexed: Vec<(u32, CollectionSpec)> = Vec::new();
+    for (key, fields) in group(vars, "SOVEMU_COLLECTIONS__") {
+        let n: u32 = key
+            .parse()
+            .with_context(|| format!("SOVEMU_COLLECTIONS__{key}: the index must be a number"))?;
+        let var = |field: &str| format!("SOVEMU_COLLECTIONS__{n}__{field}");
+        let mut name = String::new();
+        let mut games: Vec<(u32, (String, String))> = Vec::new();
+        for (field, value) in fields {
+            let upper = field.to_ascii_uppercase();
+            if upper == "NAME" {
+                name = value.split_whitespace().collect::<Vec<_>>().join(" ");
+            } else if let Some(m) = upper.strip_prefix("GAMES__") {
+                let m: u32 = m
+                    .parse()
+                    .with_context(|| format!("{}: the index must be a number", var(&field)))?;
+                games.push((m, game_ref(&var(&field), &value)?));
+            } else {
+                bail!("{}: unknown setting {upper:?} (NAME or GAMES__<m>)", var(&field));
+            }
+        }
+        if name.is_empty() {
+            bail!("{} is required", var("NAME"));
+        }
+        if let Some((m, _)) = indexed.iter().find(|(_, c)| c.name == name) {
+            bail!(
+                "SOVEMU_COLLECTIONS__{n}: {name:?} is already declared by SOVEMU_COLLECTIONS__{m}"
+            );
+        }
+        games.sort_by_key(|(m, _)| *m);
+        indexed
+            .push((n, CollectionSpec { name, games: games.into_iter().map(|(_, g)| g).collect() }));
+    }
+    indexed.sort_by_key(|(n, _)| *n);
+    Ok(indexed.into_iter().map(|(_, c)| c).collect())
+}
+
+/// `<system id>/<file name>`.
+fn game_ref(var: &str, value: &str) -> Result<(String, String)> {
+    let (system, file) = value
+        .trim()
+        .split_once('/')
+        .filter(|(s, f)| !s.is_empty() && !f.is_empty() && !f.contains('/'))
+        .with_context(|| format!("{var}: a game as <system id>/<file name>, got {value:?}"))?;
+    let system = system.to_ascii_lowercase();
+    if sovemu_library::systems::by_id(&system).is_none() {
+        bail!("{var}: unknown system {system:?}");
+    }
+    Ok((system, file.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,5 +462,48 @@ mod tests {
             ])
             .contains("already set")
         );
+    }
+
+    #[test]
+    fn collections_are_read_in_order_with_their_games() {
+        let got = collections(&vars(&[
+            ("SOVEMU_COLLECTIONS__1__NAME", "Party  games"),
+            ("SOVEMU_COLLECTIONS__1__GAMES__1", "snes/B (USA).sfc"),
+            ("SOVEMU_COLLECTIONS__1__GAMES__0", "NES/A (USA).nes"),
+            ("SOVEMU_COLLECTIONS__0__NAME", "Classics"),
+        ]))
+        .unwrap();
+        assert_eq!(got[0], CollectionSpec { name: "Classics".into(), games: vec![] });
+        assert_eq!(got[1].name, "Party games");
+        assert_eq!(
+            got[1].games,
+            [("nes".into(), "A (USA).nes".into()), ("snes".into(), "B (USA).sfc".into())]
+        );
+
+        for (bad, says) in [
+            (vec![("SOVEMU_COLLECTIONS__0__GAMES__0", "nes/A.nes")], "NAME is required"),
+            (
+                vec![
+                    ("SOVEMU_COLLECTIONS__0__NAME", "X"),
+                    ("SOVEMU_COLLECTIONS__0__GAMES__0", "A.nes"),
+                ],
+                "<system id>/<file name>",
+            ),
+            (
+                vec![
+                    ("SOVEMU_COLLECTIONS__0__NAME", "X"),
+                    ("SOVEMU_COLLECTIONS__0__GAMES__0", "zx/A.nes"),
+                ],
+                "unknown system",
+            ),
+            (
+                vec![("SOVEMU_COLLECTIONS__0__NAME", "X"), ("SOVEMU_COLLECTIONS__1__NAME", "X")],
+                "already declared",
+            ),
+            (vec![("SOVEMU_COLLECTIONS__0__TITLE", "X")], "unknown setting"),
+        ] {
+            let err = collections(&vars(&bad)).unwrap_err().to_string();
+            assert!(err.contains(says), "{err}");
+        }
     }
 }

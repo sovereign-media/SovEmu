@@ -237,6 +237,34 @@ test("Needs attention lists games by kind and system, keeping both in the URL", 
   await expect(games).toContainText("stand-in notes.abc");
 });
 
+test("a shared collection is filled from a game's panel and reaches everyone's Home", async ({ page }) => {
+  await page.goto("/admin/collections/");
+  await page.getByLabel("New collection").fill("Family night");
+  await page.getByRole("button", { name: "Create" }).click();
+  const shared = page.getByRole("list", { name: "Shared collections" });
+  await expect(shared).toContainText("No games yet");
+
+  // In from the game's panel: an admin's collections menu has the shared ones.
+  await page.goto("/system/?id=nes");
+  await page.getByRole("button", { name: "Stand-in Quest", exact: true }).click();
+  await page.getByRole("button", { name: "Collections" }).click();
+  const choice = page.getByRole("menuitemcheckbox", { name: "Family night" });
+  await choice.click();
+  await expect(choice).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await page.goto("/");
+  await expect(page.getByText("Family night")).toBeVisible();
+
+  // Out again, and as environment lines while it holds the game.
+  await page.goto("/admin/collections/");
+  await expect(page.getByText("SOVEMU_COLLECTIONS__0__GAMES__0=nes/Stand-in Quest (USA).nes")).toBeVisible();
+  await page.getByRole("button", { name: "Take Stand-in Quest out" }).click();
+  await expect(shared).toContainText("No games yet");
+  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("None yet.")).toBeVisible();
+});
+
 test("the Overview sums up the server, each card leading to its page", async ({ page }) => {
   await page.goto("/admin/overview/");
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();

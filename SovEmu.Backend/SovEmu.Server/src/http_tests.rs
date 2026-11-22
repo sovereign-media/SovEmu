@@ -2304,6 +2304,10 @@ const ADMIN_ONLY: &[&str] = &[
     "{ gamesNeedingAttention(kind: DUPLICATE) { path } }",
     "{ attentionCounts { count } }",
     "mutation { lookUpGame(gameId: 1) { running } }",
+    "mutation { createSharedCollection(name: \"x\") { id } }",
+    "mutation { renameSharedCollection(id: 1, name: \"x\") }",
+    "mutation { deleteSharedCollection(id: 1) }",
+    "mutation { setInSharedCollection(collectionId: 1, gameId: 1, member: true) }",
     "{ clientEvents(kind: OTHER, client: \"web\") { at } }",
     "mutation { setBackground(id: \"random\") }",
 ];
@@ -2339,6 +2343,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/statistics.rs"),
         include_str!("graphql/logs.rs"),
         include_str!("graphql/attention.rs"),
+        include_str!("graphql/collections_admin.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())
@@ -3176,4 +3181,85 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
     h.ok(look_up, json!({"id": game})).await;
     let (code, _) = h.err(look_up, json!({"id": 99_999})).await;
     assert_eq!(code, "NOT_FOUND");
+}
+
+#[tokio::test]
+async fn admins_keep_shared_collections_that_everyone_sees_but_only_admins_change() {
+    let mut h = Harness::new("shared-collections", false).await;
+    h.sign_up_admin().await;
+    let game: i64 = sqlx::query_scalar("SELECT id FROM games WHERE system = 'nes'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let made = h
+        .ok(
+            "mutation { createSharedCollection(name: \"Family  night\") { id name shared } }",
+            json!({}),
+        )
+        .await["createSharedCollection"]
+        .clone();
+    assert_eq!(
+        (made["name"].as_str(), made["shared"].as_bool()),
+        (Some("Family night"), Some(true))
+    );
+    let id = made["id"].as_i64().unwrap();
+    let set = "mutation ($c: Int!, $g: Int!) { setInSharedCollection(collectionId: $c, gameId: $g, member: true) }";
+    h.ok(set, json!({"c": id, "g": game})).await;
+    let (code, message) = h
+        .err("mutation { createSharedCollection(name: \"Family night\") { id } }", json!({}))
+        .await;
+    assert_eq!(code, "CONFLICT");
+    assert!(message.contains("already a shared collection"), "{message}");
+
+    // A viewer sees it beside their own, with its games, and cannot change it.
+    h.switch_to_new_viewer("kid").await;
+    let shared = "{ sharedCollections { id name declared games { id sharedCollectionIds } } collections { id } }";
+    let data = h.ok(shared, json!({})).await;
+    assert_eq!(data["collections"], json!([]), "a user's own list stays their own");
+    let first = &data["sharedCollections"][0];
+    assert_eq!(
+        (first["name"].as_str(), first["declared"].as_bool()),
+        (Some("Family night"), Some(false))
+    );
+    assert_eq!(first["games"], json!([{"id": game, "sharedCollectionIds": [id]}]));
+    let mine = "mutation ($c: Int!, $g: Int!) { setInCollection(collectionId: $c, gameId: $g, member: false) }";
+    assert_eq!(h.err(mine, json!({"c": id, "g": game})).await.0, "NOT_FOUND");
+    assert_eq!(
+        h.err("mutation ($c: Int!) { deleteCollection(id: $c) }", json!({"c": id})).await.0,
+        "NOT_FOUND"
+    );
+
+    // Declared in the environment: made and filled after a scan, locked, and gone once it is
+    // no longer declared. A shared collection by the same name is taken over.
+    h.sign_out();
+    h.login("admin", "password123").await.unwrap();
+    let mut config = (*h.state.config).clone();
+    config.collections = crate::structured::collections(&[
+        ("SOVEMU_COLLECTIONS__0__NAME".to_owned(), "Family night".to_owned()),
+        ("SOVEMU_COLLECTIONS__0__GAMES__0".to_owned(), "gba/Other.gba".to_owned()),
+        ("SOVEMU_COLLECTIONS__0__GAMES__1".to_owned(), "nes/Test Game (USA).nes".to_owned()),
+        ("SOVEMU_COLLECTIONS__0__GAMES__2".to_owned(), "nes/Not Here.nes".to_owned()),
+        ("SOVEMU_COLLECTIONS__1__NAME".to_owned(), "Racing".to_owned()),
+    ])
+    .unwrap();
+    h.state.config = std::sync::Arc::new(config.clone());
+    let declared = crate::collections::declare(&h.state.db, &config.collections).await.unwrap();
+    assert_eq!(declared.missing, ["nes/Not Here.nes"]);
+    let list = "{ sharedCollections { id name declared games { path } } }";
+    let data = h.ok(list, json!({})).await["sharedCollections"].clone();
+    assert_eq!(data[0]["id"].as_i64(), Some(id), "taken over");
+    assert_eq!(data[0]["declared"], true);
+    assert_eq!(
+        data[0]["games"],
+        json!([{"path": "gba/Other.gba"}, {"path": "nes/Test Game (USA).nes"}]),
+        "in the order declared"
+    );
+    assert_eq!(data[1]["name"], "Racing");
+    let rename = "mutation ($c: Int!) { renameSharedCollection(id: $c, name: \"x\") }";
+    assert_eq!(h.err(rename, json!({"c": id})).await.0, "CONFLICT");
+    assert_eq!(h.err(set, json!({"c": id, "g": game})).await.0, "CONFLICT");
+
+    crate::collections::declare(&h.state.db, &config.collections[..1]).await.unwrap();
+    let names = h.ok(list, json!({})).await["sharedCollections"].clone();
+    assert_eq!(names.as_array().unwrap().len(), 1, "Racing is no longer declared: {names}");
 }

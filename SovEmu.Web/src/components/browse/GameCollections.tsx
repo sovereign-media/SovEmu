@@ -1,5 +1,6 @@
 // A game's place in this user's lists, on its panel: a heart for favourites, and a menu of
-// collections to put it in or take it out of, with "New collection…" (named in a dialog).
+// collections to put it in or take it out of, with "New collection…" (named in a dialog). An
+// admin's menu also has the shared collections, but for those set in the environment.
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, FolderPlus, Heart, ListPlus } from "lucide-react";
@@ -15,21 +16,59 @@ import { useToast } from "../ui/toast";
 interface CollectionChoice {
   id: number;
   name: string;
+  shared: boolean;
 }
 
 const ITEM =
   "relative flex cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-3 pl-8 text-sm text-slate-200 outline-none select-none data-[highlighted]:bg-white/10 [&_svg]:size-3.5";
+
+/** One collection in the menu, ticked when the game is in it. */
+function Choice({
+  c,
+  checked,
+  onToggle,
+}: {
+  c: CollectionChoice;
+  checked: boolean;
+  onToggle: (c: CollectionChoice) => void;
+}) {
+  return (
+    <DropdownMenu.CheckboxItem
+      checked={checked}
+      onSelect={(e) => {
+        e.preventDefault();
+        onToggle(c);
+      }}
+      className={ITEM}
+    >
+      <DropdownMenu.ItemIndicator className="absolute left-2.5">
+        <Check />
+      </DropdownMenu.ItemIndicator>
+      {c.name}
+    </DropdownMenu.CheckboxItem>
+  );
+}
 
 export function GameCollections({ game, onFavourite }: { game: Game; onFavourite: (favourite: boolean) => void }) {
   const toast = useToast();
   // Its collections are asked for when its panel opens (never for a whole list of games).
   const all = useQuery(q.collections());
   const ids = useQuery(q.collectionIds(game.id));
-  const collections: CollectionChoice[] | null = useMemo(
-    () => (all.data && ids.data ? all.data.map(({ id, name }) => ({ id, name })) : null),
-    [all.data, ids.data],
+  const isAdmin = !!useQuery(q.viewer()).data?.user?.isAdmin;
+  const choices: CollectionChoice[] | null = useMemo(
+    () =>
+      all.data && ids.data
+        ? all.data
+            .filter((c) => !c.shared || (isAdmin && !c.declared))
+            .map(({ id, name, shared }) => ({ id, name, shared }))
+        : null,
+    [all.data, ids.data, isAdmin],
   );
+  const collections = choices?.filter((c) => !c.shared) ?? null;
+  const shared = choices?.filter((c) => c.shared) ?? [];
   const member = useMemo(() => new Set(ids.data ?? []), [ids.data]);
+  /** How many of the menu's collections hold it (not the shared ones a viewer cannot change). */
+  const inMenu = choices?.filter((c) => member.has(c.id)).length ?? 0;
   const idsKey = q.collectionIds(game.id).queryKey;
   /** Shows the game in or out of collections at once; the server's answer follows. */
   const setMember = (next: Set<number>) => queryClient.setQueryData(idsKey, [...next]);
@@ -54,7 +93,7 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
     else next.delete(c.id);
     setMember(next);
     try {
-      await api.setInCollection(c.id, game.id, now);
+      await (c.shared ? api.setInSharedCollection : api.setInCollection)(c.id, game.id, now);
       void invalidate(["collections"], ["home"]);
       toast(now ? `Added to ${c.name}` : `Taken out of ${c.name}`);
     } catch (e) {
@@ -93,7 +132,7 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
         <DropdownMenu.Trigger asChild>
           <Button size="lg" variant="outline" aria-label="Collections">
             <ListPlus />
-            {member.size > 0 && <span className="text-xs tabular-nums">{member.size}</span>}
+            {inMenu > 0 && <span className="text-xs tabular-nums">{inMenu}</span>}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -108,21 +147,19 @@ export function GameCollections({ game, onFavourite }: { game: Game; onFavourite
             {collections === null && <p className="px-3 py-1.5 text-sm text-slate-500">Loading…</p>}
             {collections?.length === 0 && <p className="px-3 py-1.5 text-sm text-slate-500">None yet.</p>}
             {collections?.map((c) => (
-              <DropdownMenu.CheckboxItem
-                key={c.id}
-                checked={member.has(c.id)}
-                onSelect={(e) => {
-                  e.preventDefault();
-                  void toggle(c);
-                }}
-                className={ITEM}
-              >
-                <DropdownMenu.ItemIndicator className="absolute left-2.5">
-                  <Check />
-                </DropdownMenu.ItemIndicator>
-                {c.name}
-              </DropdownMenu.CheckboxItem>
+              <Choice key={c.id} c={c} checked={member.has(c.id)} onToggle={toggle} />
             ))}
+            {shared.length > 0 && (
+              <>
+                <DropdownMenu.Separator className="my-1 h-px bg-edge" />
+                <DropdownMenu.Label className="px-3 pt-1.5 pb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">
+                  Shared with everyone
+                </DropdownMenu.Label>
+                {shared.map((c) => (
+                  <Choice key={c.id} c={c} checked={member.has(c.id)} onToggle={toggle} />
+                ))}
+              </>
+            )}
             <DropdownMenu.Separator className="my-1 h-px bg-edge" />
             <DropdownMenu.Item onSelect={() => setNaming(true)} className={ITEM}>
               <FolderPlus className="absolute left-2.5" /> New collection…

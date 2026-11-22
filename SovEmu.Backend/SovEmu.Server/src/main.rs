@@ -486,6 +486,11 @@ pub struct Config {
     #[arg(skip)]
     pub controllers: Vec<controllers::ControllerSpec>,
 
+    /// Shared collections declared as `SOVEMU_COLLECTIONS__<n>__NAME` / `__GAMES__<m>`, kept in
+    /// step after each scan and locked on the admin page.
+    #[arg(skip)]
+    pub collections: Vec<structured::CollectionSpec>,
+
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
@@ -1111,6 +1116,7 @@ async fn run(mut config: Config) -> Result<()> {
     })?;
     config.systems = structured::systems(&vars)?;
     config.controllers = structured::controllers(&vars)?;
+    config.collections = structured::collections(&vars)?;
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!(summary = %state.config.summary(), "configuration");

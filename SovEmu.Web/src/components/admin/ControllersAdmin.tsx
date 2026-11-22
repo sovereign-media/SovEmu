@@ -34,7 +34,7 @@ import { PadDiagram } from "../PadDiagram";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
-import AdminPage from "./AdminPage";
+import AdminPage, { EnvironmentLines } from "./AdminPage";
 
 const NOT_BOUND = "";
 
@@ -154,7 +154,6 @@ function Controllers() {
   const [said, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   // What a change said, else why the defaults could not be read.
   const message = said ?? (read.error ? { text: read.error.message, error: true } : null);
-  const [copied, setCopied] = useState(false);
   const choices = useChoices(defaults);
   const load = () => invalidate(["admin", "controllerDefaults"]);
 
@@ -220,11 +219,6 @@ function Controllers() {
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
-  };
-  const copy = async () => {
-    await navigator.clipboard.writeText(defaults?.environment.join("\n") ?? "");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
   };
 
   const source = locked
@@ -324,25 +318,10 @@ function Controllers() {
         </aside>
       </div>
 
-      {defaults && defaults.environment.length > 0 && (
-        <section className={panel}>
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="flex items-center gap-2 text-lg font-bold">
-              <Terminal className="size-5 text-slate-400" /> As environment variables
-            </h3>
-            <Button variant="outline" onClick={copy}>
-              {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p className="mt-2 text-sm text-slate-400">
-            The defaults set here, as server settings. Put them in <code>.env</code> or the Helm values to make them
-            part of the configuration; defaults from the environment always win.
-          </p>
-          <pre className="mt-3 overflow-x-auto rounded-lg bg-black/40 p-3 text-xs">
-            {defaults.environment.join("\n")}
-          </pre>
-        </section>
-      )}
+      <EnvironmentLines lines={defaults?.environment ?? []}>
+        The defaults set here, as server settings. Put them in <code>.env</code> or the Helm values to make them part of
+        the configuration; defaults from the environment always win.
+      </EnvironmentLines>
     </>
   );
 }

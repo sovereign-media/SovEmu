@@ -30,8 +30,10 @@ import {
   ControllerMappingsQuery,
   CoresQuery,
   CreateCollectionMutation,
+  CreateSharedCollectionMutation,
   DecorationsQuery,
   DeleteCollectionMutation,
+  DeleteSharedCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
   EndSignInMutation,
   FetchMetadataMutation,
@@ -50,6 +52,7 @@ import {
   PatchesQuery as PatchesDocument,
   PlayStatisticsQuery,
   RemoveUserMutation,
+  RenameSharedCollectionMutation,
   ResetControllerDefaultMutation,
   ResetControllerMappingMutation,
   ResetSessionMutation,
@@ -71,6 +74,7 @@ import {
   SetDiscMutation,
   SetFavouriteMutation,
   SetInCollectionMutation,
+  SetInSharedCollectionMutation,
   SetPatchMutation,
   SetRunAheadMutation,
   SetUserPasswordMutation,
@@ -171,6 +175,8 @@ export type Game = GameFieldsFragment;
 export type SaveSlot = SaveFieldsFragment;
 export type HomeFeed = HomeQuery["home"];
 export type Collection = CollectionsQuery["collections"][number];
+/** A collection's games' places, for its environment lines. */
+export type CollectionGame = Collection["games"][number];
 export type Patch = PatchesQuery["game"]["patches"][number];
 export type RecentGame = HomeFeed["recent"][number];
 export type SessionInfo = SessionFieldsFragment;
@@ -245,21 +251,34 @@ export const api = {
   system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
   game: async (id: number) => (await request(GameQuery, { id })).game,
   saves: async (gameId: number) => (await request(SavesQuery, { id: gameId })).game.saves,
-  /** This user's collections, each with its games. */
-  collections: async () => (await request(CollectionsDocument)).collections,
+  /** The shared collections, then this user's own, each with its games (`shared` tells them apart). */
+  collections: async () => {
+    const r = await request(CollectionsDocument);
+    return [...r.sharedCollections, ...r.collections];
+  },
   /** A game's soft patches, the default first. */
   patches: async (gameId: number) => (await request(PatchesDocument, { id: gameId })).game.patches,
   /** Plays the game with a patch from now on, or the original (`null`). */
   setPatch: (gameId: number, patchId: number | null) => request(SetPatchMutation, { gameId, patchId }),
   /** Games from every system matching every word of `text`, best first. */
   search: async (text: string) => (await request(SearchQuery, { text })).search,
-  /** The ids of this user's collections that hold the game. */
-  collectionIds: async (gameId: number) => (await request(CollectionIdsQuery, { id: gameId })).game.collectionIds,
+  /** The ids of this user's and the shared collections that hold the game (one table: never the same id). */
+  collectionIds: async (gameId: number) => {
+    const { game } = await request(CollectionIdsQuery, { id: gameId });
+    return [...game.sharedCollectionIds, ...game.collectionIds];
+  },
   setFavourite: (gameId: number, favourite: boolean) => request(SetFavouriteMutation, { gameId, favourite }),
   createCollection: async (name: string) => (await request(CreateCollectionMutation, { name })).createCollection,
   deleteCollection: (id: number) => request(DeleteCollectionMutation, { id }),
   setInCollection: (collectionId: number, gameId: number, member: boolean) =>
     request(SetInCollectionMutation, { collectionId, gameId, member }),
+  /** Admins: makes a collection everyone sees. */
+  createSharedCollection: async (name: string) =>
+    (await request(CreateSharedCollectionMutation, { name })).createSharedCollection,
+  renameSharedCollection: (id: number, name: string) => request(RenameSharedCollectionMutation, { id, name }),
+  deleteSharedCollection: (id: number) => request(DeleteSharedCollectionMutation, { id }),
+  setInSharedCollection: (collectionId: number, gameId: number, member: boolean) =>
+    request(SetInSharedCollectionMutation, { collectionId, gameId, member }),
   scan: async () => (await request(ScanLibraryMutation)).scanLibrary,
   /** Admin: library and game-information status together. */
   adminStatus: () => request(AdminStatusDocument),
