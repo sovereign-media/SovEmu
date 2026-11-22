@@ -1,2 +1,6 @@
 node_modules/
 dist/
+# Playwright: results, the HTML report, the saved sign-in.
+test-results/
+playwright-report/
+e2e/.auth/

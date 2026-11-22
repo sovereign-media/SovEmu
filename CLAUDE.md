@@ -150,7 +150,7 @@ cargo test --workspace
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON. |
 | `SovEmu.Sessions` | `sovemu-sessions` | Game sessions: `Workers` starts one `sovemu-worker session` per game with a UDP port from a pool and the allow-listed environment, drives it over JSON lines (`SovEmu.Protocol::ipc`), and stops it so saves are written; `starts` (loading progress) and `gpu` (what `sovemu-worker gpu` reports). Reports sessions to an `Observer` (the server's metrics). Never links a core or a codec. |
 | `SovEmu.Server` | `sovemu-server` | The process the container runs: axum serving `SovEmu.Web` and the GraphQL API at `/graphql`; SQLite (sqlx, WAL, embedded migrations in `migrations/`); accounts and sign-in through `SovEmu.Identity` (mounting its routes; GraphQL asks it who a bearer token is); the library's tables, kept in step with what `SovEmu.Library` finds; game sessions through `SovEmu.Sessions`. |
-| `SovEmu.Web` | (npm `sovemu-web`) | The web client: a Vite single-page app, React with TanStack Router, Tailwind v4, Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests; Biome lints and formats; `tsc` in the build. |
+| `SovEmu.Web` | (npm `sovemu-web`) | The web client: a Vite single-page app, React with TanStack Router, Tailwind v4, Radix UI primitives and Lucide icons, built to static files the Rust server serves. Vitest for unit tests, Playwright for end-to-end tests against a real server (`e2e/`); Biome lints and formats; `tsc` in the build. |
 
 ```
 LibretroFfi  (root — no workspace references)        Media     (no workspace references)
@@ -226,6 +226,13 @@ target/release/sovemu-worker headless --core ../cores/fceumm_libretro.dylib \
 
 For web development, `npm run dev` in `SovEmu.Web` proxies `/graphql` and `/media` to `127.0.0.1:8080`
 (override with `SOVEMU_API`), so run `serve` on that address alongside it.
+
+End-to-end tests drive the built web client against a real server in Chromium (Playwright,
+`SovEmu.Web/e2e/`): `npm run e2e` builds the server and the web client, starts the server on a
+fresh data folder with stand-in games and an admin, signs in once, and runs `e2e/*.e2e.ts`.
+`npm run e2e:ui` is Playwright's UI mode, and `SOVEMU_E2E_URL` runs the tests against a server
+already running instead. Use them to see a change working in the browser, and screenshot pages
+with them rather than by hand. First time: `npx playwright install chromium`.
 
 ## Conventions
 

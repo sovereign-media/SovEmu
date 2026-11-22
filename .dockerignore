@@ -18,6 +18,10 @@ docs
 # The web client is built inside the image from its sources; never send local build output.
 SovEmu.Web/node_modules
 SovEmu.Web/dist
+# Playwright's results, report and saved sign-in.
+SovEmu.Web/test-results
+SovEmu.Web/playwright-report
+SovEmu.Web/e2e/.auth
 
 # The native clients never feed the server image.
 SovEmu.Android
