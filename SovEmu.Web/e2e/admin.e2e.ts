@@ -2,20 +2,12 @@
 // and the resources.
 
 import { expect, test } from "@playwright/test";
+import { ADMIN_NAV_GROUPS } from "../src/lib/adminNav";
 
 test("the admin menu lists every admin page, flat", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Admin", exact: true }).click();
-  for (const name of [
-    "Library",
-    "Users",
-    "Controllers",
-    "Emulator settings",
-    "Rendering",
-    "Sessions",
-    "Resources",
-    "Jobs",
-  ]) {
+  for (const name of ADMIN_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.label))) {
     await expect(page.getByRole("menuitem", { name, exact: true })).toBeVisible();
   }
   // Pages, not group submenus.
@@ -96,4 +88,18 @@ test("the Cores page lists the shipped cores with their licences, and finds one"
   await page.getByRole("searchbox", { name: "Find a core" }).fill("mpl");
   await expect(cores.getByRole("listitem")).toHaveCount(1);
   await expect(cores.getByRole("listitem")).toContainText("mgba");
+});
+
+test("the Configuration page shows every setting and where it came from", async ({ page }) => {
+  await page.goto("/admin/configuration/");
+  await expect(page.getByRole("heading", { name: "Configuration", level: 1 })).toBeVisible();
+  for (const group of ["Accounts", "Library", "Game information", "Streaming", "Operations"]) {
+    await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
+  }
+  // The e2e server is started with an admin from the environment, and its password redacted.
+  const password = page.getByRole("listitem").filter({ hasText: "SOVEMU_ADMIN_PASSWORD" });
+  await expect(password).toContainText("(set)");
+  await page.getByRole("searchbox", { name: "Find a setting" }).fill("udp ports");
+  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toHaveCount(0);
 });

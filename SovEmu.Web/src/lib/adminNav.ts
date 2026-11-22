@@ -13,6 +13,7 @@ import {
   MonitorCog,
   MonitorPlay,
   Package,
+  Settings2,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
@@ -122,6 +123,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Jobs",
         title: "Scans, syncs, lookups and upkeep: when each runs and how it last went",
         icon: ListChecks,
+      },
+      {
+        href: "/admin/configuration/",
+        label: "Configuration",
+        title: "Every setting the server runs with, and where each came from",
+        icon: Settings2,
       },
     ],
   },

@@ -368,6 +368,58 @@ type Collection {
 }
 
 """
+A group of settings, as the README's settings table has them.
+"""
+enum ConfigGroup {
+	ACCOUNTS
+	LIBRARY
+	GAME_INFORMATION
+	STREAMING
+	OPERATIONS
+}
+
+"""
+A setting of the running server.
+"""
+type ConfigSetting {
+	group: ConfigGroup!
+	"""
+	The environment variable that sets it.
+	"""
+	name: String!
+	"""
+	As given, with credentials masked; null when unset. A secret only says `(set)` or
+	`(unset)`.
+	"""
+	value: String
+	"""
+	What the server makes of it, where that differs from the value (an unset
+	`SOVEMU_ROMS_DIR` is `<data>/roms`).
+	"""
+	effective: String
+	source: ConfigSource!
+	secret: Boolean!
+	default: String
+	description: String!
+}
+
+"""
+Where a setting's value comes from.
+"""
+enum ConfigSource {
+	"""
+	Not set: the default.
+	"""
+	DEFAULT
+	ENVIRONMENT
+	"""
+	A secret read from the file `<VAR>_FILE` names.
+	"""
+	FILE
+	COMMAND_LINE
+}
+
+"""
 How much of its CPU and memory the container (server and game sessions) is using.
 """
 type ContainerUsage {
@@ -1368,6 +1420,11 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: the server's effective configuration, every setting with where its value came
+	from, credentials masked (as the startup log prints it).
+	"""
+	configuration: [ConfigSetting!]!
 	"""
 	Admins: every shipped core, then any other in the cores folder: version, whether it
 	loads, the systems it plays, and its licence.

@@ -924,3 +924,18 @@ export const CoresQuery = graphql(`
     }
   }
 `);
+
+export const ConfigurationQuery = graphql(`
+  query Configuration {
+    configuration {
+      group
+      name
+      value
+      effective
+      source
+      secret
+      default
+      description
+    }
+  }
+`);

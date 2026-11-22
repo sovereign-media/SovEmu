@@ -834,6 +834,72 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// A group of settings, as the README's settings table has them.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum ConfigGroup {
+    Accounts,
+    Library,
+    GameInformation,
+    Streaming,
+    Operations,
+}
+
+/// Where a setting's value comes from.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+enum ConfigSource {
+    /// Not set: the default.
+    Default,
+    Environment,
+    /// A secret read from the file `<VAR>_FILE` names.
+    File,
+    CommandLine,
+}
+
+/// A setting of the running server.
+#[derive(SimpleObject)]
+struct ConfigSetting {
+    group: ConfigGroup,
+    /// The environment variable that sets it.
+    name: String,
+    /// As given, with credentials masked; null when unset. A secret only says `(set)` or
+    /// `(unset)`.
+    value: Option<String>,
+    /// What the server makes of it, where that differs from the value (an unset
+    /// `SOVEMU_ROMS_DIR` is `<data>/roms`).
+    effective: Option<String>,
+    source: ConfigSource,
+    secret: bool,
+    default: Option<String>,
+    description: String,
+}
+
+impl From<crate::configuration::Setting> for ConfigSetting {
+    fn from(s: crate::configuration::Setting) -> Self {
+        use crate::configuration::{Group, Source};
+        Self {
+            group: match s.group {
+                Group::Accounts => ConfigGroup::Accounts,
+                Group::Library => ConfigGroup::Library,
+                Group::GameInformation => ConfigGroup::GameInformation,
+                Group::Streaming => ConfigGroup::Streaming,
+                Group::Operations => ConfigGroup::Operations,
+            },
+            source: match s.source {
+                Source::Default => ConfigSource::Default,
+                Source::Environment => ConfigSource::Environment,
+                Source::File => ConfigSource::File,
+                Source::CommandLine => ConfigSource::CommandLine,
+            },
+            name: s.name,
+            value: s.value,
+            effective: s.effective,
+            secret: s.secret,
+            default: s.default,
+            description: s.description,
+        }
+    }
+}
+
 /// A libretro core: shipped in the image, or found in the cores folder.
 #[derive(SimpleObject)]
 struct CoreReport {
@@ -2012,6 +2078,13 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: the server's effective configuration, every setting with where its value came
+    /// from, credentials masked (as the startup log prints it).
+    async fn configuration(&self, ctx: &Context<'_>) -> Result<Vec<ConfigSetting>> {
+        admin(ctx).await?;
+        Ok(crate::configuration::settings(&state(ctx).config).into_iter().map(Into::into).collect())
     }
 
     /// Admins: every shipped core, then any other in the cores folder: version, whether it

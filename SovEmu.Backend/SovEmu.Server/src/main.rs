@@ -12,6 +12,7 @@ mod cheats;
 mod client_events;
 mod client_ip;
 mod collections;
+mod configuration;
 mod controllers;
 mod controls;
 mod cores;
@@ -444,6 +445,10 @@ pub struct Config {
     /// Resolved from `roms` after parsing.
     #[arg(skip)]
     pub roms_dir: PathBuf,
+
+    /// Where each value came from, for the startup log and the admin Configuration page.
+    #[arg(skip)]
+    pub(crate) given: configuration::Given,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
@@ -466,6 +471,19 @@ const SECRETS: &[&str] = &[
 ];
 
 impl Config {
+    /// Parses the command line and the environment, keeping where each value came from.
+    pub fn parse_with_sources<I, T>(args: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        use clap::{CommandFactory, FromArgMatches};
+        let matches = Self::command().get_matches_from(args);
+        let mut config = Self::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+        config.given = configuration::Given::from_matches(&matches);
+        config
+    }
+
     /// The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own on the HTTP
     /// port.
     pub fn public_urls(&self) -> Vec<String> {
@@ -520,6 +538,20 @@ impl Config {
             .unwrap_or_else(|| self.paths().bios())
     }
 
+    /// A secret's value, by its variable.
+    fn secret(&self, var: &str) -> Option<&str> {
+        match var {
+            "SOVEMU_ADMIN_PASSWORD" => &self.admin_password,
+            "SOVEMU_ASSET_KEY" => &self.asset_key,
+            "SOVEMU_TOKEN_KEY" => &self.token_key,
+            "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &self.screenscraper_devpassword,
+            "SOVEMU_SCREENSCRAPER_PASSWORD" => &self.screenscraper_password,
+            "SOVEMU_THEGAMESDB_KEY" => &self.thegamesdb_key,
+            _ => return None,
+        }
+        .as_deref()
+    }
+
     fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
         Some(match var {
             "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
@@ -545,201 +577,16 @@ impl Config {
                 let value = std::fs::read_to_string(&path)
                     .with_context(|| format!("reading {var}_FILE ({path})"))?;
                 *slot = Some(value.trim_end_matches(['\n', '\r']).to_owned());
+                self.given.from_files.push(var);
             }
         }
         Ok(())
     }
 
-    /// The effective settings, one per line, secrets redacted: logged at startup so a
-    /// deployment's configuration can be checked without guessing.
+    /// The effective settings, grouped, secrets redacted: logged at startup so a deployment's
+    /// configuration can be checked without guessing (`configuration::summary`).
     pub fn summary(&self) -> String {
-        let secret = |v: &Option<String>| if v.is_some() { "(set)" } else { "(unset)" };
-        let opt = |v: &Option<String>| v.clone().unwrap_or_else(|| "(unset)".into());
-        let lines = [
-            format!("http={}", self.http),
-            format!("data_dir={}", self.data_dir.display()),
-            format!("roms_dir={}", self.roms_dir.display()),
-            format!("bios_dir={}", self.bios_dir().display()),
-            format!("library_mode={:?}", self.library_mode),
-            format!("cache_gb={}", self.cache_gb.map_or("(default)".into(), |g| g.to_string())),
-            format!(
-                "mirror_systems={}",
-                if self.mirror_systems.is_empty() {
-                    "(all)".into()
-                } else {
-                    self.mirror_systems.join(",")
-                }
-            ),
-            format!("scan_interval_minutes={}", self.scan_interval_minutes),
-            format!("mirror_interval_minutes={}", self.mirror_interval_minutes),
-            format!("metadata_auto={}", self.metadata_auto),
-            format!("cores_dir={}", self.cores_dir.display()),
-            format!(
-                "web_dir={}",
-                self.web_dir.as_ref().map_or("(none)".into(), |d| d.display().to_string())
-            ),
-            format!("udp_ports={}-{}", self.udp_ports.0, self.udp_ports.1),
-            format!(
-                "advertise_ip={}",
-                self.advertise_ip.map_or("(detected)".into(), |ip| ip.to_string())
-            ),
-            format!("ice_servers={}", redact::ice_servers(&self.ice_servers)),
-            format!(
-                "video_kbps={} ({}-{}) audio_kbps={}",
-                self.video_kbps, self.video_min_kbps, self.video_max_kbps, self.audio_kbps
-            ),
-            format!("video_codec={} video_encoder={}", self.video_codec, self.video_encoder),
-            format!("idle_timeout={}s", self.idle_timeout),
-            format!(
-                "admin_username={} admin_password={}",
-                opt(&self.admin_username),
-                secret(&self.admin_password)
-            ),
-            format!(
-                "screenscraper_devid={} devpassword={} user={} password={}",
-                opt(&self.screenscraper_devid),
-                secret(&self.screenscraper_devpassword),
-                opt(&self.screenscraper_user),
-                secret(&self.screenscraper_password)
-            ),
-            format!("thegamesdb_key={}", secret(&self.thegamesdb_key)),
-            format!(
-                "launchbox={} launchbox_url={} launchbox_images_url={} \
-                 launchbox_refresh_hours={}",
-                self.launchbox,
-                self.launchbox_url,
-                self.launchbox_images_url,
-                self.launchbox_refresh_hours
-            ),
-            format!(
-                "decoration={} decorations_dirs={:?} decorations_builtin={}",
-                self.decoration,
-                self.decorations_dirs,
-                self.builtin_decorations().display()
-            ),
-            format!(
-                "asset_key={} asset_url_hours={}",
-                secret(&self.asset_key),
-                self.asset_url_hours
-            ),
-            format!(
-                "token_key={} public_urls={} access_token_minutes={} refresh_retry_seconds={} \
-                 password_sign_in={}",
-                secret(&self.token_key),
-                self.public_urls().join(","),
-                self.access_token_minutes,
-                self.refresh_retry_seconds,
-                self.password_sign_in
-            ),
-            format!("client_events={}", self.client_events),
-            format!(
-                "log_format={} otel_endpoint={} otel_headers={}",
-                self.log_format.as_arg(),
-                self.otel_endpoint.as_deref().map_or("(unset)".into(), redact::url),
-                // Read by the OpenTelemetry SDK, not by `Config`: its values are usually tokens.
-                std::env::var("OTEL_EXPORTER_OTLP_HEADERS").map_or("(unset)".into(), |h| {
-                    format!("({})", redact::header_names(&h).join(","))
-                })
-            ),
-            format!(
-                "session_days={} login_max_failures={} login_max_failures_per_ip={} \
-                 login_lockout_minutes={}",
-                self.session_days,
-                self.login_max_failures,
-                self.login_max_failures_per_ip,
-                self.login_lockout_minutes
-            ),
-            format!(
-                "trusted_proxies={} maintenance_interval_minutes={} job_history_days={} \
-                 resource_sample_seconds={} resource_history_days={}",
-                if self.trusted_proxies.is_empty() {
-                    "(none)".into()
-                } else {
-                    self.trusted_proxies
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                },
-                self.maintenance_interval_minutes,
-                self.job_history_days,
-                self.resource_sample_seconds,
-                self.resource_history_days
-            ),
-            format!(
-                "users={} users_prune={}",
-                if self.users.is_empty() {
-                    "(none declared)".into()
-                } else {
-                    self.users
-                        .iter()
-                        .map(|u| {
-                            format!(
-                                "{}{}",
-                                u.username,
-                                if u.role == auth::Role::Admin { "(admin)" } else { "" }
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",")
-                },
-                self.users_prune
-            ),
-            format!(
-                "controller_defaults={}",
-                if self.controllers.is_empty() {
-                    "(none declared)".into()
-                } else {
-                    self.controllers
-                        .iter()
-                        .map(|c| c.controller.as_str())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                }
-            ),
-            format!(
-                "worker_start_timeout={}s worker_stop_timeout={}s rewind_seconds={} rewind_max_mb={} fast_forward={} \
-                 keyframe_interval={} session_health_secs={}",
-                self.worker_start_timeout,
-                self.worker_stop_timeout,
-                self.rewind_seconds,
-                self.rewind_max_mb,
-                self.fast_forward,
-                self.keyframe_interval,
-                self.session_health_secs
-            ),
-            format!(
-                "gpu={} home_featured={} home_row={}",
-                self.gpu, self.home_featured, self.home_row
-            ),
-            format!(
-                "cache_large_game_mb={} copy_threads={}",
-                self.cache_large_game_mb, self.copy_threads
-            ),
-            format!(
-                "metadata_regions={} metadata_languages={} screenscraper_delay_ms={} \
-                 artwork_downloads={}",
-                self.metadata_regions.join(","),
-                self.metadata_languages.join(","),
-                self.screenscraper_delay_ms,
-                self.artwork_downloads
-            ),
-        ];
-        let mut lines = lines.to_vec();
-        for (id, spec) in &self.systems {
-            let mut parts = Vec::new();
-            if let Some(core) = &spec.core {
-                parts.push(format!("core={core}"));
-            }
-            if let Some(enabled) = spec.enabled {
-                parts.push(format!("enabled={enabled}"));
-            }
-            for (k, v) in &spec.options {
-                parts.push(format!("{k}={v}"));
-            }
-            lines.push(format!("system {id}: {}", parts.join(" ")));
-        }
-        lines.join("\n")
+        configuration::summary(self)
     }
 }
 
@@ -1134,7 +981,7 @@ const JOBS_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(
 
 fn main() -> Result<()> {
     unset_empty_settings();
-    let config = Config::parse();
+    let config = Config::parse_with_sources(std::env::args_os());
     if let Some(dir) = &config.write_decorations {
         decorations::write_builtin(dir).with_context(|| format!("writing {}", dir.display()))?;
         println!("decorations: {}", dir.join(decorations::BUILTIN).display());
@@ -1151,6 +998,7 @@ fn main() -> Result<()> {
 async fn run(mut config: Config) -> Result<()> {
     config.resolve_secrets(|var| std::env::var(var).ok())?;
     let vars: Vec<(String, String)> = std::env::vars().collect();
+    config.given.keep_environment(&vars);
     config.users = structured::users(&vars, |path| {
         std::fs::read_to_string(path)
             .map(|s| s.trim_end_matches(['\n', '\r']).to_owned())
@@ -1215,7 +1063,7 @@ mod tests {
         assert_eq!(config.admin_password.as_deref(), Some("s3cret"), "trailing newline trimmed");
         assert_eq!(config.thegamesdb_key, None, "empty means unset");
         let summary = config.summary();
-        assert!(summary.contains("admin_password=(set)"));
+        assert!(summary.contains("SOVEMU_ADMIN_PASSWORD=(set) (from file)"), "{summary}");
         assert!(!summary.contains("s3cret"));
         let missing = Config::parse_from(["sovemu-server"]).resolve_secrets(|v| {
             (v == "SOVEMU_THEGAMESDB_KEY_FILE").then(|| "/nonexistent/key".to_owned())
@@ -1229,7 +1077,7 @@ mod tests {
         let config = Config::parse_from(["sovemu-server"]);
         assert_eq!(config.log_format, telemetry::LogFormat::Text);
         assert_eq!(config.otel_endpoint, None, "nothing is exported unless asked");
-        let config = Config::parse_from([
+        let config = Config::parse_with_sources([
             "sovemu-server",
             "--log-format",
             "json",
@@ -1237,8 +1085,10 @@ mod tests {
             "http://collector:4318",
         ]);
         assert_eq!(config.log_format, telemetry::LogFormat::Json);
-        assert!(config.summary().contains("log_format=json otel_endpoint=http://collector:4318/"));
-        let config = Config::parse_from([
+        let summary = config.summary();
+        assert!(summary.contains("SOVEMU_LOG_FORMAT=json (command line)"), "{summary}");
+        assert!(summary.contains("SOVEMU_OTEL_ENDPOINT=http://collector:4318/"), "{summary}");
+        let config = Config::parse_with_sources([
             "sovemu-server",
             "--otel-endpoint",
             "https://user:t0k3n@collector:4318/otlp?api-key=k3y",
@@ -1246,7 +1096,10 @@ mod tests {
             r#"[{"urls":"turn:turn.example:3478","username":"u","credential":"pa55"}]"#,
         ]);
         let summary = config.summary();
-        assert!(summary.contains("otel_endpoint=https://***@collector:4318/otlp?***"), "{summary}");
+        assert!(
+            summary.contains("SOVEMU_OTEL_ENDPOINT=https://***@collector:4318/otlp?***"),
+            "{summary}"
+        );
         assert!(summary.contains("turn:turn.example:3478"), "{summary}");
         for secret in ["t0k3n", "k3y", "pa55"] {
             assert!(!summary.contains(secret), "{secret} in {summary}");

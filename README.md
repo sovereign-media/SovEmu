@@ -328,8 +328,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_LAUNCHBOX` | `true` | Use the LaunchBox Games Database dump |
 | `SOVEMU_LAUNCHBOX_REFRESH_HOURS` | `168` | Look for a newer dump when the last check is this old (`0`: never) |
 | `SOVEMU_LAUNCHBOX_URL`, `SOVEMU_LAUNCHBOX_IMAGES_URL` | LaunchBox's | The dump and the image server for its box art |
-| `SOVEMU_SCREENSCRAPER_DEVID`, `_DEVPASSWORD` | unset | ScreenScraper developer credentials |
-| `SOVEMU_SCREENSCRAPER_USER`, `_PASSWORD` | unset | ScreenScraper account (raises the quota) |
+| `SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD` | unset | ScreenScraper developer credentials |
+| `SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |
 | `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
