@@ -1893,7 +1893,21 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         assert_eq!(h.err(doc, json!({})).await.0, "UNAUTHENTICATED", "no one ran {doc}");
     }
     // Every admin resolver is in the list: a new one must be added to it.
-    let in_source = include_str!("graphql.rs").matches("admin(ctx).await?").count();
+    let in_source: usize = [
+        include_str!("graphql/mod.rs"),
+        include_str!("graphql/accounts.rs"),
+        include_str!("graphql/library.rs"),
+        include_str!("graphql/sessions.rs"),
+        include_str!("graphql/library_admin.rs"),
+        include_str!("graphql/server.rs"),
+        include_str!("graphql/jobs.rs"),
+        include_str!("graphql/resources.rs"),
+        include_str!("graphql/settings.rs"),
+        include_str!("graphql/controllers.rs"),
+    ]
+    .iter()
+    .map(|source| source.matches("admin(ctx).await?").count())
+    .sum();
     assert_eq!(ADMIN_ONLY.len(), in_source, "ADMIN_ONLY lists every admin(ctx) resolver");
 }
 

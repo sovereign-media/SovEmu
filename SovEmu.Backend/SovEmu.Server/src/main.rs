@@ -643,7 +643,7 @@ pub struct AppState {
     /// What each core offers as settings, probed once.
     pub core_info: Arc<settings::CoreInfoCache>,
     /// The GraphQL schema (cheap to clone: shared).
-    pub schema: graphql::ApiSchema,
+    pub(crate) schema: graphql::ApiSchema,
     /// Signs the file URLs the API hands out, and checks them on `/media/…`.
     pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
