@@ -111,6 +111,8 @@ pub(crate) struct Now {
     /// The video encoder in use (`vaapi`, `x264`, `libvpx`…), once one has opened.
     pub(crate) video_encoder: Option<&'static str>,
     pub(crate) estimate_kbps: Option<u64>,
+    /// The limit the client's own stats have put on the bitrate, while there is one.
+    pub(crate) client_limit_kbps: Option<u32>,
     pub(crate) run_ahead: u32,
 }
 
@@ -289,6 +291,7 @@ fn log_health(w: &Stats, at: &Now) {
                 video_kbps_target = at.video_kbps_target,
                 video_encoder = at.video_encoder,
                 estimate_kbps = at.estimate_kbps,
+                client_limit_kbps = at.client_limit_kbps,
                 inputs = w.inputs,
                 paused_ticks = w.paused,
                 run_ahead = at.run_ahead,
@@ -314,6 +317,7 @@ mod tests {
             video_kbps_target: 2500,
             video_encoder: Some("x264"),
             estimate_kbps: Some(4000),
+            client_limit_kbps: None,
             run_ahead: 1,
         }
     }

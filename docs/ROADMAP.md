@@ -153,8 +153,11 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 6: hardening
 
-- [x] Adaptive bitrate: str0m's send-bandwidth estimate (TWCC/REMB) drives the VP8 target (85% of
-      the estimate minus audio, between 300 kbit/s and the configured rate, changes over 10% only)
+- [x] Adaptive bitrate: a stream starts at `SOVEMU_VIDEO_KBPS` and moves between
+      `SOVEMU_VIDEO_MIN_KBPS` and `SOVEMU_VIDEO_MAX_KBPS`. str0m's send-bandwidth estimate
+      (TWCC/REMB) drives the target (85% of the estimate minus audio, changes over 10% only), and
+      the stats every client sends once a second lower it while the client's decoder falls
+      behind. Encoders that reopen to change rate (VA-API, NVENC) are raised less often
 - [x] STUN/TURN: `SOVEMU_ICE_SERVERS` is handed to browsers through `/api/config`
 - [x] Sign-in throttling: five failures lock a username out for five minutes
 - [x] `GET /health` for probes

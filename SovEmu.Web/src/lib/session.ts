@@ -1,8 +1,10 @@
 // One WebRTC connection to a game session: receive-only video and audio, plus the unordered,
 // no-retransmit input channel. Signalling is one exchange of the complete offer (non-trickle) for
 // the worker's answer: the `sessionOffer` mutation, passed in as `signal`.
+
 import type { InputState } from "./input";
 import { LatencyMeter } from "./latency";
+import { type QualityNotice, qualityNotice } from "./pipeline";
 import {
   type Analog,
   analogEqual,
@@ -27,6 +29,8 @@ export type SessionState = RTCPeerConnectionState | "idle";
 
 export interface SessionEvents {
   onState?: (state: SessionState) => void;
+  /** The worker changed the stream's quality: the notice to show (`qualityNotice`). */
+  onQuality?: (notice: QualityNotice) => void;
 }
 
 export interface SessionOptions {
@@ -129,7 +133,7 @@ export class Session {
     });
   }
 
-  /** Sends the stats overlay's numbers for the worker's log (see `encodeStats`). */
+  /** Sends this client's view of the stream to the worker (see `encodeStats`). */
   sendStats(stats: ClientStats) {
     if (this.channel.readyState === "open") this.channel.send(encodeStats(stats));
   }
@@ -173,7 +177,9 @@ export class Session {
   private onMessage(data: ArrayBuffer) {
     const pipeline = decodePipeline(data);
     if (pipeline) {
+      const notice = qualityNotice(this.pipeline, pipeline);
       this.pipeline = pipeline;
+      if (notice) this.events.onQuality?.(notice);
       return;
     }
     const ack = decodeAck(data);

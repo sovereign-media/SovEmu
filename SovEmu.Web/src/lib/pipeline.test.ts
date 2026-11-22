@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { decoderLabel, pipelineItems, renderingLabel, streamLabel } from "./pipeline";
+import { decoderLabel, pipelineItems, qualityNotice, renderingLabel, streamLabel } from "./pipeline";
 import type { Pipeline } from "./protocol";
 
 const pipeline = (over: Partial<Pipeline> = {}): Pipeline => ({
   renderer: null,
   rendererSoftware: false,
-  video: { codec: "h264", encoder: "vaapi", hardware: true, fallbacks: [], width: 256, height: 224, fps: 60 },
+  video: {
+    codec: "h264",
+    encoder: "vaapi",
+    hardware: true,
+    fallbacks: [],
+    width: 256,
+    height: 224,
+    fps: 60,
+    kbps: 5000,
+    limitedBy: "",
+  },
   audio: { codec: "opus", sourceHz: 32040.5, kbps: 128 },
   runAhead: 1,
   ...over,
@@ -54,5 +64,33 @@ describe("decoder", () => {
     expect(decoderLabel("libvpx", false)).toBe("libvpx (software)");
     expect(decoderLabel("FFmpeg", undefined)).toBe("FFmpeg");
     expect(decoderLabel(undefined, true)).toBeNull();
+  });
+});
+
+describe("quality notices", () => {
+  const at = (kbps: number, limitedBy = "") => pipeline({ video: { ...pipeline().video, kbps, limitedBy } });
+
+  it("says when the quality rises, and why it fell, as Sovereign words it", () => {
+    expect(qualityNotice(at(5000), at(8400))).toEqual({
+      line: "Connection improved. Playing at a higher quality.",
+      icon: "wifi-up",
+    });
+    expect(qualityNotice(at(5000), at(3300, "connection"))).toEqual({
+      line: "Slow connection. Playing at a lower quality.",
+      icon: "wifi-alert",
+    });
+    expect(qualityNotice(at(5000), at(800, "client"))).toEqual({
+      line: "This device is falling behind. Playing at a lower quality.",
+      icon: "gauge",
+    });
+    // Up again after the device fell behind: the connection did not improve.
+    expect(qualityNotice(at(800, "client"), at(5000))).toEqual({ line: "Playing at a higher quality.", icon: "gauge" });
+  });
+
+  it("says nothing of the first message, an unchanged one, or a server that does not tell", () => {
+    expect(qualityNotice(null, at(5000))).toBeNull();
+    expect(qualityNotice(at(5000), at(5000))).toBeNull();
+    expect(qualityNotice(at(0), at(5000))).toBeNull();
+    expect(qualityNotice(at(5000), at(0))).toBeNull();
   });
 });

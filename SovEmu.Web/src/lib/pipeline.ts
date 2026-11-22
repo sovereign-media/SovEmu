@@ -35,6 +35,33 @@ export function audioLabel(codec: string, kbps: number, sourceHz: number): strin
 export const fallbacksLabel = (fallbacks: { encoder: string; reason: string }[]) =>
   fallbacks.map((f) => `${encoderName(f.encoder)}: ${f.reason}`).join("; ");
 
+/** A change in the stream's quality, as the player is told of it: one line, and the glyph before it. */
+export interface QualityNotice {
+  line: string;
+  /** `wifi-alert` and `wifi-up` (Sovereign's own), or `gauge` for a device that fell behind. */
+  icon: "wifi-alert" | "wifi-up" | "gauge";
+}
+
+/**
+ * The notice for a change in the stream's quality between two pipeline messages, worded and
+ * marked as Sovereign's step-down and step-up notices: the bitrate the worker tells the player
+ * of moved (it only does in steps worth telling). Null when it has not, or when either side
+ * does not know it (the first message, an older server).
+ */
+export function qualityNotice(before: Pipeline | null, now: Pipeline): QualityNotice | null {
+  const [was, is] = [before?.video.kbps ?? 0, now.video.kbps];
+  if (!was || !is || was === is) return null;
+  if (is < was) {
+    return now.video.limitedBy === "client"
+      ? { line: "This device is falling behind. Playing at a lower quality.", icon: "gauge" }
+      : { line: "Slow connection. Playing at a lower quality.", icon: "wifi-alert" };
+  }
+  // Back up from a fall that was the device's: the connection had nothing to do with it.
+  return before?.video.limitedBy === "client"
+    ? { line: "Playing at a higher quality.", icon: "gauge" }
+    : { line: "Connection improved. Playing at a higher quality.", icon: "wifi-up" };
+}
+
 /** The overlay's rows for the server's side of the stream. */
 export function pipelineItems(p: Pipeline): StatItem[] {
   const items: StatItem[] = [{ label: "Stream", value: streamLabel(p.video.codec, p.video.encoder, p.video.hardware) }];

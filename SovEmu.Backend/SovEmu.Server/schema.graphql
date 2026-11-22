@@ -34,7 +34,7 @@ type ActiveSession {
 	"""
 	health: StreamHealth
 	"""
-	What the player's stats panel shows; only while it is open.
+	The client's own view of the stream, as it last reported it (once a second while playing).
 	"""
 	clientStats: ClientStreamStats
 }

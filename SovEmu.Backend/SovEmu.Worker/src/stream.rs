@@ -32,6 +32,7 @@ use str0m::net::{Protocol, Receive};
 use str0m::rtp::Extension;
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
+use crate::adapt::{Adaptation, ClientSample, LimitChange, Limits};
 use crate::health::{self, Health};
 use crate::pacing::Pacer;
 use crate::persist::{Persist, Screenshot};
@@ -40,7 +41,7 @@ use crate::runahead::RunAhead;
 use crate::video::{CodecSetting, Video, VideoCodec, VideoSettings};
 use crate::watchdog;
 use sovemu_protocol::ipc::SessionHealth;
-use sovemu_protocol::{AudioPath, Pipeline};
+use sovemu_protocol::{AudioPath, Pipeline, VideoPath};
 
 /// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
 /// Every client resends what is held at least every 100 ms, so a release that never arrives (the
@@ -53,16 +54,6 @@ const INPUT_LAPSE: Duration = Duration::from_millis(500);
 fn input_lapsed(held: bool, buttons_at: Instant, analog_at: Option<Instant>, now: Instant) -> bool {
     let stale = |at: Instant| now.duration_since(at) >= INPUT_LAPSE;
     (held && stale(buttons_at)) || analog_at.is_some_and(stale)
-}
-
-/// The lowest video bitrate adaptation will choose, kbit/s.
-const MIN_VIDEO_KBPS: u32 = 300;
-
-/// The video bitrate to use for a send-bandwidth estimate: 85% of it (headroom for retransmits
-/// and estimate noise) minus the audio, clamped to `[MIN_VIDEO_KBPS, max_kbps]`.
-pub(crate) fn target_video_kbps(estimate_bps: u64, audio_kbps: u32, max_kbps: u32) -> u32 {
-    let usable = (estimate_bps as f64 * 0.85 / 1000.0) as i64 - i64::from(audio_kbps);
-    usable.clamp(i64::from(MIN_VIDEO_KBPS.min(max_kbps)), i64::from(max_kbps)) as u32
 }
 
 /// The payload types offered for H.264 and its retransmissions (str0m answers with the
@@ -111,7 +102,10 @@ pub(crate) struct SessionConfig {
     pub bios_path: String,
     pub save_dir: PathBuf,
     pub variables: Vec<(String, String)>,
+    /// The video bitrate a stream starts at, and the floor and ceiling it adapts between.
     pub video_kbps: u32,
+    pub video_min_kbps: u32,
+    pub video_max_kbps: u32,
     pub audio_kbps: u32,
     /// Where save states go (`slotN.state` + `slotN.png`); none disables them.
     pub state_dir: Option<PathBuf>,
@@ -159,9 +153,14 @@ pub(crate) struct Session {
     health: Health,
     /// The last send-bandwidth estimate, for the health lines.
     estimate_kbps: Option<u64>,
-    /// When the client's last stats were logged (they are logged at most every
-    /// [`STATS_SPACING`], however often a client sends them).
+    /// When the client's last stats were taken (at most every [`STATS_SPACING`], however
+    /// often a client sends them), and when they were last logged.
     stats_at: Option<Instant>,
+    stats_logged_at: Option<Instant>,
+    /// How often they are logged; `None`: never (as the health lines).
+    stats_log_interval: Option<Duration>,
+    /// Video frames sent to clients.
+    frames_sent: u64,
     /// The core has drawn a picture: it is up, and can take a state.
     drawn: bool,
     /// A state asked for before that, loaded once it has (its slot and bytes).
@@ -172,8 +171,8 @@ pub(crate) struct Session {
     /// now, as when the channel has just opened).
     pipeline: Option<Pipeline>,
     pipeline_to_client_at: Option<Instant>,
-    /// The configured (maximum) video bitrate; adaptation stays at or below it.
-    max_video_kbps: u32,
+    /// The video bitrate, through the stream.
+    adaptation: Adaptation,
     audio_kbps: u32,
     hotkeys: Hotkeys,
     hotkeys_at: Instant,
@@ -241,6 +240,7 @@ impl Session {
             sample_rate = av.sample_rate,
             "game loaded"
         );
+        let limits = Limits::new(config.video_min_kbps, config.video_kbps, config.video_max_kbps);
         Ok(Self {
             _system_dir: system_dir,
             video: Video::new(VideoSettings {
@@ -250,7 +250,7 @@ impl Session {
                     Some(sovemu_retro_host::GpuChoice::Device(node)) => Some(node.clone()),
                     _ => None,
                 },
-                bitrate_kbps: config.video_kbps,
+                bitrate_kbps: limits.start_kbps,
                 fps: av.fps.round() as u32,
                 keyframe_interval: config.keyframe_interval.max(1),
             }),
@@ -276,12 +276,16 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             stats_at: None,
+            stats_logged_at: None,
+            stats_log_interval: (config.health_interval > 0)
+                .then(|| Duration::from_secs(u64::from(config.health_interval))),
+            frames_sent: 0,
             drawn: false,
             pending_load: None,
             events: Vec::new(),
             pipeline: None,
             pipeline_to_client_at: None,
-            max_video_kbps: config.video_kbps,
+            adaptation: Adaptation::new(limits, config.audio_kbps),
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
             last_analog_seq: None,
@@ -312,6 +316,7 @@ impl Session {
             video_kbps_target: self.video.bitrate_kbps(),
             video_encoder: self.video.encoder_name(),
             estimate_kbps: self.estimate_kbps,
+            client_limit_kbps: self.adaptation.client_limit_kbps(),
             run_ahead: self.run_ahead.frames(),
         }
     }
@@ -418,7 +423,7 @@ fn primary_ip() -> Option<IpAddr> {
 fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
-    max_video_kbps: u32,
+    video: Limits,
     codecs: CodecSetting,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
@@ -434,7 +439,8 @@ fn accept_offer(
         .clear_codecs()
         .enable_vp8(codecs.allows(VideoCodec::Vp8))
         .enable_opus(true, false)
-        .enable_bwe(Some(Bitrate::kbps(u64::from(max_video_kbps))));
+        // The estimate starts at the starting rate and probes for more, up to the ceiling.
+        .enable_bwe(Some(Bitrate::kbps(u64::from(video.start_kbps))));
     if codecs.allows(VideoCodec::H264) {
         // Constrained Baseline, level 3.1, packetization mode 1: what every WebRTC client
         // decodes, and the profile the encoder writes.
@@ -447,8 +453,8 @@ fn accept_offer(
     }
     let mut rtc = config.build(Instant::now());
     rtc.bwe().set_bitrate(
-        Bitrate::kbps(u64::from(MIN_VIDEO_KBPS)),
-        Bitrate::kbps(u64::from(max_video_kbps)),
+        Bitrate::kbps(u64::from(video.min_kbps)),
+        Bitrate::kbps(u64::from(video.max_kbps)),
     );
     rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
     let answer = rtc.sdp_api().accept_offer(offer)?;
@@ -490,7 +496,7 @@ pub(crate) fn run(
                     let result = accept_offer(
                         &offer,
                         advertised,
-                        session.max_video_kbps,
+                        session.adaptation.limits(),
                         session.video.codec_setting(),
                     );
                     let answer = match result {
@@ -500,6 +506,7 @@ pub(crate) fn run(
                                 session.health.suspend(Instant::now());
                                 on_event(StreamEvent::ClientDisconnected);
                             }
+                            session.new_client();
                             peer = Some(new_peer);
                             pacer = None;
                             Ok(answer)
@@ -730,8 +737,38 @@ impl Session {
                     return;
                 }
                 self.stats_at = Some(now);
-                log_client_stats(&stats);
-                self.events.push(StreamEvent::ClientStats(stats));
+                let sample = ClientSample {
+                    fps: stats.fps,
+                    decode_ms: stats.decode_ms,
+                    frames_dropped: stats.frames_dropped,
+                    frames_sent: self.frames_sent,
+                };
+                match self.adaptation.client(sample, self.video.bitrate_kbps(), now) {
+                    Some(LimitChange::Cut { to_kbps, why }) => tracing::info!(
+                        to_kbps,
+                        why = why.name(),
+                        fps = stats.fps,
+                        decode_ms = stats.decode_ms,
+                        frames_dropped = stats.frames_dropped,
+                        "client is struggling: video bitrate limited"
+                    ),
+                    Some(LimitChange::Raised { to_kbps }) => {
+                        tracing::debug!(to_kbps, "client is keeping up: bitrate limit raised");
+                    }
+                    Some(LimitChange::Lifted) => {
+                        tracing::info!("client is keeping up: bitrate limit lifted");
+                    }
+                    None => {}
+                }
+                self.apply_bitrate(now);
+                // Every sample goes to the server (the admin's sessions page); the log gets
+                // one as often as it gets a health line.
+                let due = |every| self.stats_logged_at.is_none_or(|at| now - at >= every);
+                if self.stats_log_interval.is_some_and(due) {
+                    self.stats_logged_at = Some(now);
+                    log_client_stats(&stats);
+                }
+                self.events.push(StreamEvent::ClientStats(*stats));
                 return;
             }
             Err(e) => {
@@ -772,22 +809,51 @@ impl Session {
         }
     }
 
-    /// Follows the send-bandwidth estimate, ignoring changes under 10%.
+    /// Takes a send-bandwidth estimate.
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
-        let target = target_video_kbps(estimate_bps, self.audio_kbps, self.max_video_kbps);
-        let current = self.video.bitrate_kbps();
         self.estimate_kbps = Some(estimate_bps / 1000);
-        if target.abs_diff(current) * 10 > current {
+        self.adaptation.estimate(estimate_bps);
+        self.apply_bitrate(Instant::now());
+    }
+
+    /// Changes the encoder's bitrate to what the connection and the client call for now, if
+    /// the change is worth making (see [`Adaptation`]).
+    fn apply_bitrate(&mut self, now: Instant) {
+        let current = self.video.bitrate_kbps();
+        let reopens = self.video.rate_change_reopens();
+        if let Some(target) = self.adaptation.decide(current, reopens, now) {
             tracing::debug!(
                 from_kbps = current,
                 to_kbps = target,
-                estimate_bps,
+                estimate_kbps = self.estimate_kbps,
+                client_limit_kbps = self.adaptation.client_limit_kbps(),
                 "video bitrate changed"
             );
             if let Err(e) = self.video.set_bitrate(target) {
                 tracing::warn!(error = %e, "cannot change the bitrate");
             }
         }
+        // The player is told of a change worth a notice, through the pipeline message.
+        let (told, _) = self.adaptation.told();
+        let (kbps, by) = self.adaptation.tell(self.video.bitrate_kbps(), now);
+        if kbps != told {
+            tracing::info!(
+                from_kbps = told,
+                to_kbps = kbps,
+                limited_by = by.name(),
+                "video quality changed: the player is told"
+            );
+        }
+    }
+
+    /// A new client: its connection and its decoder are unknown, so the stream starts over
+    /// at the starting rate.
+    fn new_client(&mut self) {
+        self.adaptation.reset();
+        self.estimate_kbps = None;
+        self.stats_at = None;
+        self.stats_logged_at = None;
+        self.apply_bitrate(Instant::now());
     }
 
     /// Runs one tick (one frame; several when fast-forwarding; a step back when rewinding) and
@@ -919,6 +985,7 @@ impl Session {
                     rtp_time,
                     encoded.data,
                 )?;
+                self.frames_sent += 1;
             }
         }
 
@@ -929,6 +996,10 @@ impl Session {
         self.persist.tick(&mut self.core, now);
         self.health.ticked(behind, now.elapsed());
         self.health.core(self.core.take_timing());
+        // A client's limit lapses when its stats stop, with nothing else to notice it by.
+        if tick.is_multiple_of(64) {
+            self.apply_bitrate(now);
+        }
         let at = self.health_now();
         if let Some(h) = self.health.report_if_due(Instant::now(), &at) {
             self.events.push(StreamEvent::Health(h));
@@ -944,7 +1015,11 @@ impl Session {
         Pipeline {
             renderer: renderer.map(|r| r.renderer.clone()),
             renderer_software: renderer.is_some_and(|r| r.software),
-            video: self.video.path(width, height, self.fps),
+            video: {
+                let (kbps, by) = self.adaptation.told();
+                let path = self.video.path(width, height, self.fps);
+                VideoPath { kbps, limited_by: by.name().into(), ..path }
+            },
             audio: AudioPath {
                 codec: "opus".into(),
                 source_hz: self.audio.input_rate(),
@@ -992,8 +1067,7 @@ const PENDING_LOAD_FRAMES: u64 = 600;
 /// does not retransmit, so a lost one is replaced soon.
 const PIPELINE_RESEND: Duration = Duration::from_secs(2);
 
-/// Clients send their stats once a second while the overlay is open; any faster is dropped,
-/// so a client cannot fill the log.
+/// Clients send their stats once a second; any faster is dropped.
 const STATS_SPACING: Duration = Duration::from_millis(900);
 
 /// The client's view of the stream, beside the worker's own `session health` lines.
@@ -1012,6 +1086,7 @@ fn log_client_stats(s: &ClientStats) {
         fps = s.fps,
         kbps = s.kbps,
         packets_lost = s.packets_lost,
+        frames_dropped = s.frames_dropped,
         game_mode = s.game_mode,
         wifi_lock = s.wifi_lock,
         low_latency_decode = s.low_latency_decode,
@@ -1062,18 +1137,6 @@ mod tests {
         // A stick pushed over, its heartbeat stopped: released too; a centred one sends none.
         assert!(input_lapsed(false, t, Some(t), late));
         assert!(!input_lapsed(false, t, Some(soon), soon + Duration::from_millis(100)));
-    }
-
-    #[test]
-    fn bitrate_follows_the_estimate_within_bounds() {
-        assert_eq!(target_video_kbps(4_000_000, 128, 2500), 2500, "capped at the configured rate");
-        assert_eq!(target_video_kbps(2_000_000, 128, 2500), 1572);
-        assert_eq!(target_video_kbps(100_000, 128, 2500), 300, "never below the floor");
-        assert_eq!(
-            target_video_kbps(100_000, 128, 200),
-            200,
-            "a floor above the cap yields the cap"
-        );
     }
 
     #[test]

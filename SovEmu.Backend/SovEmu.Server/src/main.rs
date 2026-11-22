@@ -264,9 +264,19 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_METADATA_AUTO", default_value_t = true, action = clap::ArgAction::Set)]
     pub metadata_auto: bool,
 
-    /// Video bitrate cap for game streams, kbit/s (adaptation stays at or below it).
-    #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 2500)]
+    /// Video bitrate a game stream starts at, kbit/s. It then follows the connection (up
+    /// while there is headroom, down on congestion) and the client (down while its decoder
+    /// falls behind), between the floor and the ceiling.
+    #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 5000)]
     pub video_kbps: u32,
+
+    /// The lowest video bitrate a stream adapts down to, kbit/s.
+    #[arg(long, env = "SOVEMU_VIDEO_MIN_KBPS", default_value_t = 300)]
+    pub video_min_kbps: u32,
+
+    /// The highest video bitrate a stream adapts up to, kbit/s (never below the starting rate).
+    #[arg(long, env = "SOVEMU_VIDEO_MAX_KBPS", default_value_t = 12000)]
+    pub video_max_kbps: u32,
 
     /// Video codec for game streams: `vp8`, `h264`, or `auto` (H.264 when the client offers it,
     /// else VP8). VP8 by default: measured on a TV (Amlogic S7D), its software VP8 decoder took
@@ -571,7 +581,10 @@ impl Config {
                 "advertise_ip={}",
                 self.advertise_ip.map_or("(detected)".into(), |ip| ip.to_string())
             ),
-            format!("video_kbps={} audio_kbps={}", self.video_kbps, self.audio_kbps),
+            format!(
+                "video_kbps={} ({}-{}) audio_kbps={}",
+                self.video_kbps, self.video_min_kbps, self.video_max_kbps, self.audio_kbps
+            ),
             format!("video_codec={} video_encoder={}", self.video_codec, self.video_encoder),
             format!("idle_timeout={}s", self.idle_timeout),
             format!(
@@ -876,6 +889,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         bios_dir: config.bios_dir(),
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
+        video_min_kbps: config.video_min_kbps,
+        video_max_kbps: config.video_max_kbps,
         audio_kbps: config.audio_kbps,
         video_codec: config.video_codec.clone(),
         video_encoder: config.video_encoder.clone(),

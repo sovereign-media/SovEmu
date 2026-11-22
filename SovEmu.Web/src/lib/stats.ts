@@ -8,7 +8,7 @@ export interface StatItem {
   value: string;
 }
 
-/** What the overlay shows: its rows, and the same numbers for the worker's log. */
+/** What the overlay shows: its rows, and the same numbers for the worker. */
 export interface StatsSample {
   items: StatItem[];
   numbers: ClientStats;
@@ -78,6 +78,7 @@ export class StatsSampler {
       fps: v.framesPerSecond,
       kbps,
       packets_lost: lost,
+      frames_dropped: v.framesDropped,
       decoder: typeof v.decoderImplementation === "string" ? v.decoderImplementation : undefined,
     };
     const items = [

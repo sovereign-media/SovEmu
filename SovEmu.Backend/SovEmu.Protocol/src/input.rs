@@ -52,8 +52,11 @@
 //! | 1 | 1 | version |
 //! | 2 | rest | a UTF-8 JSON object, at most [`MAX_STATS_LEN`] bytes in all |
 //!
-//! What the client's stats overlay shows, sent once a second while it is open, so the worker
-//! can log the client's view of the stream beside its own (`client stats`). Every key is
+//! The client's view of the stream, sent once a second while it plays (the numbers its stats
+//! overlay shows, whether or not the overlay is open). The worker lowers the video bitrate
+//! for a client that is not keeping up (`fps`, `frames_dropped`, `decode_ms`), which the
+//! send-bandwidth estimate cannot see, and logs the client's view beside its own
+//! (`client stats`). A client that sends none is adapted to by the estimate alone. Every key is
 //! optional and unknown keys are ignored, so clients can send what they measure. JSON rather
 //! than fixed fields because it is a diagnostic, not part of play: it can grow without a new
 //! layout. Added after version 1 without bumping it: workers that predate it drop the type.
@@ -85,7 +88,9 @@
 //! How the worker is making the stream: what renders the picture, the video codec and encoder
 //! (and any encoder it fell back from, with why), the audio, and run-ahead. Sent when the
 //! channel opens and again whenever any of it changes (a fallback, a new resolution), so a
-//! client's stats panel can show the server's side beside its own. JSON, like
+//! client's stats panel can show the server's side beside its own. `video.kbps` is the bitrate
+//! as last told to the player: when it differs from the one before, a client shows a notice
+//! at the top of the screen (quality raised, or lowered and why, from `video.limited_by`). JSON, like
 //! [`ClientStats`]: unknown keys are ignored. Added after version 1 without bumping it:
 //! clients that predate it drop the type.
 
@@ -274,8 +279,8 @@ impl AnalogPacket {
 /// The longest stats message accepted, header included.
 pub const MAX_STATS_LEN: usize = 2048;
 
-/// What the client's stats overlay shows, for the worker's log. Times in milliseconds, rates
-/// in kbit/s; `None` where the client has no value (yet).
+/// The client's view of the stream, for adapting the bitrate to it and for the worker's log.
+/// Times in milliseconds, rates in kbit/s; `None` where the client has no value (yet).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ClientStats {
@@ -312,6 +317,9 @@ pub struct ClientStats {
     /// Video and audio packets lost, since the stream began.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub packets_lost: Option<u64>,
+    /// Video frames dropped (not decoded in time, or not shown), since the stream began.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frames_dropped: Option<u64>,
     /// TV game mode (ALLM) asked for, and the low-latency Wi-Fi lock held.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<bool>,
@@ -362,6 +370,13 @@ pub struct VideoPath {
     pub width: u32,
     pub height: u32,
     pub fps: f64,
+    /// The video bitrate, kbit/s, as last told to the player: it moves in steps worth telling
+    /// (see the worker's `adapt`), not with every small change, so a client shows a notice
+    /// when it differs from the one before. 0: not known (a worker that predates it).
+    pub kbps: u32,
+    /// What held the bitrate down when it last fell: `connection` (the send-bandwidth
+    /// estimate) or `client` (its decoder was falling behind); empty when it has not fallen.
+    pub limited_by: String,
 }
 
 /// An encoder given up, and why.
@@ -421,7 +436,7 @@ pub enum ClientMessage {
     Input(InputPacket),
     Hotkeys(Hotkeys),
     Analog(AnalogPacket),
-    Stats(ClientStats),
+    Stats(Box<ClientStats>),
 }
 
 impl ClientMessage {
@@ -429,7 +444,7 @@ impl ClientMessage {
         match bytes.first() {
             Some(&TYPE_HOTKEYS) => Hotkeys::decode(bytes).map(Self::Hotkeys),
             Some(&TYPE_ANALOG) => AnalogPacket::decode(bytes).map(Self::Analog),
-            Some(&TYPE_STATS) => ClientStats::decode(bytes).map(Self::Stats),
+            Some(&TYPE_STATS) => ClientStats::decode(bytes).map(|s| Self::Stats(Box::new(s))),
             _ => InputPacket::decode(bytes).map(Self::Input),
         }
     }
@@ -521,7 +536,10 @@ mod tests {
         let input = InputPacket { seq: 1, client_time_ms: 2, ports: vec![3] };
         assert_eq!(ClientMessage::decode(&input.encode()), Ok(ClientMessage::Input(input)));
         let stats = ClientStats { jitter_ms: Some(1.5), ..ClientStats::default() };
-        assert_eq!(ClientMessage::decode(&stats.encode()), Ok(ClientMessage::Stats(stats)));
+        assert_eq!(
+            ClientMessage::decode(&stats.encode()),
+            Ok(ClientMessage::Stats(Box::new(stats)))
+        );
         assert_eq!(Hotkeys::decode(&[0x02, 1]), Err(DecodeError::TooShort));
     }
 
@@ -581,10 +599,14 @@ mod tests {
     /// The same bytes as `protocol.test.ts`: only the values known, in declaration order.
     #[test]
     fn stats_are_json_after_the_header() {
-        let stats =
-            ClientStats { jitter_ms: Some(1.5), packets_lost: Some(2), ..Default::default() };
+        let stats = ClientStats {
+            jitter_ms: Some(1.5),
+            packets_lost: Some(2),
+            frames_dropped: Some(3),
+            ..Default::default()
+        };
         let mut expected = vec![0x04, 1];
-        expected.extend_from_slice(br#"{"jitter_ms":1.5,"packets_lost":2}"#);
+        expected.extend_from_slice(br#"{"jitter_ms":1.5,"packets_lost":2,"frames_dropped":3}"#);
         assert_eq!(stats.encode(), expected);
         assert_eq!(ClientStats::decode(&expected), Ok(stats));
     }
@@ -601,7 +623,7 @@ mod tests {
     }
 
     /// The same bytes as `protocol.test.ts` (and the apps' protocol tests decode them too).
-    pub(crate) const PIPELINE_VECTOR: &[u8] = br#"{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}"#;
+    pub(crate) const PIPELINE_VECTOR: &[u8] = br#"{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client"},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}"#;
 
     #[test]
     fn the_pipeline_is_json_after_the_header() {
@@ -616,6 +638,8 @@ mod tests {
                 width: 256,
                 height: 224,
                 fps: 60.0,
+                kbps: 3500,
+                limited_by: "client".into(),
             },
             audio: AudioPath { codec: "opus".into(), source_hz: 32040.0, kbps: 128 },
             run_ahead: 1,

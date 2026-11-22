@@ -10,9 +10,11 @@ describe("input protocol", () => {
 
   it("encodes stats exactly like the Rust reference", () => {
     // `stats_are_json_after_the_header`: only the values known, in the Rust struct's order.
-    const bytes = new Uint8Array(encodeStats({ packets_lost: 2, jitter_ms: 1.5, fps: NaN, kbps: undefined }));
+    const bytes = new Uint8Array(
+      encodeStats({ frames_dropped: 3, packets_lost: 2, jitter_ms: 1.5, fps: NaN, kbps: undefined }),
+    );
     expect([...bytes.slice(0, 2)]).toEqual([0x04, 1]);
-    expect(new TextDecoder().decode(bytes.slice(2))).toBe('{"jitter_ms":1.5,"packets_lost":2}');
+    expect(new TextDecoder().decode(bytes.slice(2))).toBe('{"jitter_ms":1.5,"packets_lost":2,"frames_dropped":3}');
   });
 
   it("encodes hotkeys exactly like the Rust reference", () => {
@@ -65,7 +67,7 @@ describe("input protocol", () => {
 describe("pipeline messages", () => {
   // `PIPELINE_VECTOR` in SovEmu.Protocol/src/input.rs.
   const VECTOR =
-    '{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}';
+    '{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client"},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}';
   const message = (type: number, body: string) => {
     const json = new TextEncoder().encode(body);
     const out = new Uint8Array(2 + json.length);
@@ -86,6 +88,8 @@ describe("pipeline messages", () => {
         width: 256,
         height: 224,
         fps: 60,
+        kbps: 3500,
+        limitedBy: "client",
       },
       audio: { codec: "opus", sourceHz: 32040, kbps: 128 },
       runAhead: 1,

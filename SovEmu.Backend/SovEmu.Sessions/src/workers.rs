@@ -49,7 +49,10 @@ pub struct WorkerConfig {
     /// BIOS files, a folder per system (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
+    /// The video bitrate a stream starts at, and the floor and ceiling it adapts between.
     pub video_kbps: u32,
+    pub video_min_kbps: u32,
+    pub video_max_kbps: u32,
     pub audio_kbps: u32,
     /// `--video-codec` and `--video-encoder` for workers (`SOVEMU_VIDEO_CODEC`,
     /// `SOVEMU_VIDEO_ENCODER`).
@@ -586,6 +589,10 @@ impl Workers {
             .arg("session")
             .arg("--video-kbps")
             .arg(self.config.video_kbps.to_string())
+            .arg("--video-min-kbps")
+            .arg(self.config.video_min_kbps.to_string())
+            .arg("--video-max-kbps")
+            .arg(self.config.video_max_kbps.to_string())
             .arg("--audio-kbps")
             .arg(self.config.audio_kbps.to_string())
             .arg("--video-codec")
@@ -946,6 +953,8 @@ done
             bios_dir: dir.join("bios"),
             idle_timeout_secs: 0,
             video_kbps: 1000,
+            video_min_kbps: 300,
+            video_max_kbps: 2000,
             audio_kbps: 64,
             video_codec: "auto".into(),
             video_encoder: "software".into(),
