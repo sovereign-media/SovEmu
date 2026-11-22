@@ -268,9 +268,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 2500)]
     pub video_kbps: u32,
 
-    /// Video codec for game streams: `auto` (H.264 when the client offers it, else VP8),
-    /// `h264` or `vp8`.
-    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "auto",
+    /// Video codec for game streams: `vp8`, `h264`, or `auto` (H.264 when the client offers it,
+    /// else VP8). VP8 by default: measured on a TV (Amlogic S7D), its software VP8 decoder took
+    /// 3.6 ms a frame at 640×448 where its hardware H.264 decoder took 23 ms, for 2 ms more
+    /// encoding here. H.264 can pay off where the clients decode it quickly.
+    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "vp8",
           value_parser = ["auto", "h264", "vp8"])]
     pub video_codec: String,
 
