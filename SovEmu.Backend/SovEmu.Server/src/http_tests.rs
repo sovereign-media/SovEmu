@@ -1212,17 +1212,24 @@ async fn admins_see_each_sign_in_and_end_one() {
     let kid = h.ok("{ viewer { user { id } } }", json!({})).await["viewer"]["user"]["id"]
         .as_i64()
         .unwrap();
+    // The kid's app names its device, as an app does once signed in.
+    let name = "mutation($n: String!) { nameDevice(name: $n) }";
+    h.ok(name, json!({"n": "  SovEmu for Android 1.4.0 ·\n Mi TV "})).await;
+    assert_eq!(h.err(name, json!({"n": " "})).await.0, "BAD_REQUEST");
     h.sign_out();
+    assert_eq!(h.err(name, json!({"n": "x"})).await.0, "UNAUTHENTICATED");
     h.login("admin", "password123").await.unwrap();
 
     // Every sign-in, the admin's own among them; the kid's is the app's (the password grant).
-    let all = h.ok("{ signIns { id username client signedInAt lastUsedAt } }", json!({})).await
-        ["signIns"]
+    let all = h
+        .ok("{ signIns { id username client signedInAt lastUsedAt device } }", json!({}))
+        .await["signIns"]
         .clone();
     let kids: Vec<&Value> =
         all.as_array().unwrap().iter().filter(|s| s["username"] == "kid").collect();
     assert_eq!(kids.len(), 1, "{all}");
     assert_eq!(kids[0]["client"], "APP");
+    assert_eq!(kids[0]["device"], "SovEmu for Android 1.4.0 · Mi TV");
     assert!(kids[0]["lastUsedAt"].as_f64() >= kids[0]["signedInAt"].as_f64());
     let id = kids[0]["id"].as_str().unwrap().to_owned();
 

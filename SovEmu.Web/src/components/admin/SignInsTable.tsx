@@ -6,7 +6,7 @@ import { Globe, LogOut, MonitorSmartphone } from "lucide-react";
 import { useState } from "react";
 import { api, type SignIn } from "../../lib/api";
 import { invalidate } from "../../lib/data";
-import { CLIENT_LABELS, lapsesText, usedText } from "../../lib/signIns";
+import { lapsesText, signInName, usedText } from "../../lib/signIns";
 import { Button } from "../ui/button";
 import { Confirm } from "../ui/primitives";
 import { ErrorNote } from "./AdminPage";
@@ -32,7 +32,7 @@ export default function SignInsTable({ signIns, showUser }: { signIns: SignIn[];
             )}
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                {CLIENT_LABELS[s.client]}
+                {signInName(s)}
                 {showUser && (
                   <>
                     {" · "}
@@ -53,7 +53,7 @@ export default function SignInsTable({ signIns, showUser }: { signIns: SignIn[];
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Sign out ${CLIENT_LABELS[s.client]}${showUser && s.username ? ` of ${s.username}` : ""}`}
+              aria-label={`Sign out ${signInName(s)}${showUser && s.username ? ` of ${s.username}` : ""}`}
               disabled={end.isPending && end.variables === s.id}
               onClick={() => setEnding(s)}
             >
@@ -65,7 +65,7 @@ export default function SignInsTable({ signIns, showUser }: { signIns: SignIn[];
       <Confirm
         open={ending != null}
         onOpenChange={(open) => !open && setEnding(null)}
-        title={`Sign out ${who(ending)}${ending ? CLIENT_LABELS[ending.client].toLowerCase() : ""}?`}
+        title={`Sign out ${who(ending)}${ending ? signInName(ending, { lower: true }) : ""}?`}
         description="It has to sign in again. Every other browser and app stays signed in."
         action="Sign out"
         onAction={() => ending && end.mutate(ending.id)}

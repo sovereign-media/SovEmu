@@ -66,6 +66,9 @@ pub(super) struct SignInNode {
     pub(super) last_used_at: f64,
     /// When it lapses unless used again (Unix seconds); null for none.
     pub(super) expires_at: Option<f64>,
+    /// What the app calls its device (`nameDevice`); null for a browser, or an app that has not
+    /// said.
+    pub(super) device: Option<String>,
 }
 
 fn unix(t: std::time::SystemTime) -> f64 {
@@ -87,6 +90,7 @@ impl SignInNode {
             signed_in_at: unix(s.signed_in_at),
             last_used_at: unix(s.last_used_at),
             expires_at: s.expires_at.map(unix),
+            device: s.device,
         }
     }
 }
@@ -365,6 +369,20 @@ impl AccountsMutation {
             .about(name.unwrap_or_else(|| "a deleted account".to_owned()))
             .detail(client);
         record(ctx, &me, entry);
+        Ok(true)
+    }
+
+    /// Names this sign-in's device, as the app describes itself ("SovEmu for Android 1.4.0 ·
+    /// Mi TV Stick"), for the admin's lists of sign-ins. An app calls it once signed in, and
+    /// again when its version changes. `BAD_REQUEST` for an empty name or one over 80
+    /// characters.
+    async fn name_device(&self, ctx: &Context<'_>, name: String) -> Result<bool> {
+        user(ctx).await?;
+        state(ctx)
+            .identity
+            .name_device(request_headers(ctx), &name)
+            .await
+            .map_err(|e| gql(e.into()))?;
         Ok(true)
     }
 

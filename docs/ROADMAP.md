@@ -86,7 +86,9 @@ held 59.93 fps over 300 frames with no resyncs.
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's
       family revocation (`signIns`, `user`, `endSignIn`)
-- [ ] The apps name themselves when they sign in (app, version, device), so a sign-in shows it
+- [x] The apps name their device once signed in (`nameDevice`: app, version, device), kept by
+      refresh family in SovEmu's own `sign_in_devices` (migration 0027) beside oauth-as's
+      records, so a sign-in on the Devices page says which device it is
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
 - [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per

@@ -154,6 +154,7 @@ export const SignInFields = graphql(`
     userId
     username
     client
+    device
     signedInAt
     lastUsedAt
     expiresAt

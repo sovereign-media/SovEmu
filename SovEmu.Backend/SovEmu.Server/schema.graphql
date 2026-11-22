@@ -1668,6 +1668,13 @@ type Mutation {
 	"""
 	endSignIn(id: ID!): Boolean!
 	"""
+	Names this sign-in's device, as the app describes itself ("SovEmu for Android 1.4.0 ·
+	Mi TV Stick"), for the admin's lists of sign-ins. An app calls it once signed in, and
+	again when its version changes. `BAD_REQUEST` for an empty name or one over 80
+	characters.
+	"""
+	nameDevice(name: String!): Boolean!
+	"""
 	Admins: signs an account out of every browser and app.
 	"""
 	signOutEverywhere(userId: Int!): Boolean!
@@ -2587,6 +2594,11 @@ type SignInNode {
 	When it lapses unless used again (Unix seconds); null for none.
 	"""
 	expiresAt: Float
+	"""
+	What the app calls its device (`nameDevice`); null for a browser, or an app that has not
+	said.
+	"""
+	device: String
 }
 
 """
