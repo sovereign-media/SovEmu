@@ -15,6 +15,7 @@ use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use sovemu_media::{OpusDecoder, Vp8Decoder};
@@ -86,7 +87,10 @@ impl Worker {
     }
 
     fn start_with(extra: &[&std::ffi::OsStr]) -> Self {
-        let dir = std::env::temp_dir().join(format!("sovemu-serve-{}", std::process::id()));
+        // A folder of its own: the tests run side by side, and each deletes its folder when done.
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("sovemu-serve-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
             .arg("serve")
@@ -198,6 +202,9 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut worker = Worker::start_or_external();
 
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    // Room for a burst: on a loaded machine (a CI runner) this loop falls behind the stream, and
+    // a small receive buffer then drops packets until hardly a frame arrives whole.
+    socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
     let local = socket.local_addr().unwrap();
     // Offers playout delay as libwebrtc does (Android, iOS, browsers), at an id of its own.
     let mut rtc = RtcConfig::new()
@@ -252,16 +259,23 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut picture_size = None;
     let mut channel_open = false;
     let mut acks: Vec<InputAck> = Vec::new();
+    // Video frames received when each ack arrived: with the ack's emulated frame, how many frames
+    // were emulated per frame shown.
+    let mut acks_video: Vec<usize> = Vec::new();
     let mut seq = 0u32;
     let mut last_input = Instant::now();
     let started = Instant::now();
     let mut buf = vec![0u8; 2048];
 
-    // After the basics, hold fast-forward for a while and see the emulated frames speed up.
-    let ff_window = Duration::from_millis(600);
-    let mut ff_start: Option<(Instant, u32)> = None;
-    let mut normal_rate = 0.0f64;
-    let mut ff_rate = 0.0f64;
+    // After the basics, hold fast-forward for a while and see more frames emulated per frame shown.
+    // A tick shows one frame however slow the machine is, and runs one emulated frame normally or
+    // several fast-forwarding, so this ratio does not depend on the machine's speed (a rate in
+    // frames per second does: a loaded CI runner managed under 1.5 times the normal rate).
+    let ff_window = Duration::from_millis(1000);
+    // When fast-forward began, and how many acks had arrived by then.
+    let mut ff_start: Option<(Instant, usize)> = None;
+    let mut normal_ratio = 0.0f64;
+    let mut ff_ratio = 0.0f64;
     // Then pause (the client's menu) and see the frames stop.
     let mut pause_start: Option<(Instant, usize)> = None;
     // The current 300 ms window while paused: when it began, and the frames seen by then.
@@ -269,18 +283,15 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut paused_frames = usize::MAX;
     while started.elapsed() < Duration::from_secs(15) {
         if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
-            let first = acks[0];
-            let last = *acks.last().unwrap();
-            let span = (last.client_time_ms - first.client_time_ms) as f64 / 10.0 * 0.05;
-            normal_rate = (last.frame - first.frame) as f64 / span.max(0.05);
-            ff_start = Some((Instant::now(), last.frame));
+            normal_ratio = frames_per_shown(&acks, &acks_video, 0, acks.len());
+            ff_start = Some((Instant::now(), acks.len()));
         }
-        if let Some((at, frame)) = ff_start
+        if let Some((at, from)) = ff_start
             && pause_start.is_none()
             && at.elapsed() >= ff_window
         {
-            let last = acks.last().unwrap().frame;
-            ff_rate = (last - frame) as f64 / at.elapsed().as_secs_f64();
+            // The first acks after the hotkey can still be from before it took hold.
+            ff_ratio = frames_per_shown(&acks, &acks_video, from + 4, acks.len());
             pause_start = Some((Instant::now(), video_frames));
         }
         // Paused (the client's menu): frames stop. Frames sent before the pause can still be
@@ -341,6 +352,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
                     }
                     Event::ChannelData(data) if data.id == input => {
                         acks.push(InputAck::decode(&data.data).expect("a valid ack"));
+                        acks_video.push(video_frames);
                     }
                     _ => {}
                 }
@@ -353,8 +365,8 @@ fn streams_video_and_audio_and_acknowledges_input() {
             .saturating_duration_since(Instant::now())
             .clamp(Duration::from_millis(1), Duration::from_millis(10));
         socket.set_read_timeout(Some(wait)).unwrap();
-        let input = match socket.recv_from(&mut buf) {
-            Ok((n, source)) => Input::Receive(
+        fn receive(n: usize, source: SocketAddr, local: SocketAddr, buf: &[u8]) -> Input<'_> {
+            Input::Receive(
                 Instant::now(),
                 Receive {
                     proto: Protocol::Udp,
@@ -362,10 +374,21 @@ fn streams_video_and_audio_and_acknowledges_input() {
                     destination: local,
                     contents: buf[..n].try_into().unwrap(),
                 },
-            ),
-            Err(_) => Input::Timeout(Instant::now()),
-        };
-        rtc.handle_input(input).unwrap();
+            )
+        }
+        match socket.recv_from(&mut buf) {
+            Ok((n, source)) => {
+                rtc.handle_input(receive(n, source, local, &buf)).unwrap();
+                // Take whatever else has queued up before going back to the events, so a
+                // backlog drains in one go rather than a packet a turn.
+                socket.set_nonblocking(true).unwrap();
+                while let Ok((n, source)) = socket.recv_from(&mut buf) {
+                    rtc.handle_input(receive(n, source, local, &buf)).unwrap();
+                }
+                socket.set_nonblocking(false).unwrap();
+            }
+            Err(_) => rtc.handle_input(Input::Timeout(Instant::now())).unwrap(),
+        }
     }
 
     assert!(video_frames >= 90, "received {video_frames} video frames");
@@ -387,13 +410,29 @@ fn streams_video_and_audio_and_acknowledges_input() {
         assert_eq!(ack.client_time_ms, ack.seq * 10, "client time echoed");
     }
     assert!(acks.windows(2).all(|w| w[0].frame < w[1].frame), "acks follow the frames");
-    eprintln!("emulated {normal_rate:.0} frames/s normally, {ff_rate:.0} fast-forwarding");
-    // Fast-forward runs several frames a tick, as fast as the CPU allows: well over twice the
-    // normal rate on an idle machine, but a CI runner sharing its node with other builds managed
-    // twice (130 vs 66). "Clearly faster" is what this checks; the exact factor is the machine's.
-    assert!(ff_rate > normal_rate * 1.5, "fast-forward: {ff_rate:.0} vs {normal_rate:.0} frames/s");
+    eprintln!(
+        "emulated {normal_ratio:.1} frames per frame shown normally, {ff_ratio:.1} fast-forwarding"
+    );
+    // Four emulated frames a tick fast-forwarding (`--fast-forward`), one normally. Frames lost on
+    // the way raise both ratios alike, so this compares them rather than expecting 1 and 4.
+    assert!(
+        ff_ratio >= normal_ratio * 2.0,
+        "fast-forward: {ff_ratio:.1} vs {normal_ratio:.1} emulated frames per frame shown"
+    );
     assert!(
         paused_frames <= 1,
         "still {paused_frames} video frames per 300 ms, 5 s after pausing: the game kept running"
     );
+}
+
+/// Emulated frames per video frame received, between the acks `from` and `to` (exclusive): how
+/// far the game moved against how many frames were shown meanwhile. 0 if there are too few.
+fn frames_per_shown(acks: &[InputAck], video: &[usize], from: usize, to: usize) -> f64 {
+    if to < from + 2 || to > acks.len() {
+        return 0.0;
+    }
+    let (first, last) = (from, to - 1);
+    let shown = video[last].saturating_sub(video[first]);
+    let emulated = acks[last].frame.saturating_sub(acks[first].frame);
+    if shown == 0 { 0.0 } else { f64::from(emulated) / shown as f64 }
 }
