@@ -268,6 +268,18 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 2500)]
     pub video_kbps: u32,
 
+    /// Video codec for game streams: `auto` (H.264 when the client offers it, else VP8),
+    /// `h264` or `vp8`.
+    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "auto",
+          value_parser = ["auto", "h264", "vp8"])]
+    pub video_codec: String,
+
+    /// H.264 encoder: `auto` (the GPU's, VA-API or NVENC, else x264), `vaapi`, `nvenc` or
+    /// `software` (x264). One that does not open, or holds frames back, falls back to x264.
+    #[arg(long, env = "SOVEMU_VIDEO_ENCODER", default_value = "auto",
+          value_parser = ["auto", "vaapi", "nvenc", "software"])]
+    pub video_encoder: String,
+
     /// Opus audio bitrate for game streams, kbit/s.
     #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
     pub audio_kbps: u32,
@@ -558,6 +570,7 @@ impl Config {
                 self.advertise_ip.map_or("(detected)".into(), |ip| ip.to_string())
             ),
             format!("video_kbps={} audio_kbps={}", self.video_kbps, self.audio_kbps),
+            format!("video_codec={} video_encoder={}", self.video_codec, self.video_encoder),
             format!("idle_timeout={}s", self.idle_timeout),
             format!(
                 "admin_username={} admin_password={}",
@@ -862,6 +875,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
         audio_kbps: config.audio_kbps,
+        video_codec: config.video_codec.clone(),
+        video_encoder: config.video_encoder.clone(),
         start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
         stop_timeout: std::time::Duration::from_secs(config.worker_stop_timeout),
         rewind_seconds: config.rewind_seconds,

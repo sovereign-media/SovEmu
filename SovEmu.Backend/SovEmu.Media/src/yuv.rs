@@ -1,5 +1,6 @@
-//! RGBA → I420 (planar 4:2:0) with BT.601 limited-range coefficients, which is what VP8 and
-//! H.264 decoders assume when the stream carries no colour metadata.
+//! RGBA → I420 (planar 4:2:0) or NV12 (the same, chroma interleaved) with BT.601 limited-range
+//! coefficients, which is what VP8 and H.264 decoders assume when the stream carries no colour
+//! metadata.
 //!
 //! Chroma is the average of each 2×2 block; with an odd width or height the last column or row
 //! is averaged with itself. At console resolutions (256×224) this costs well under a
@@ -37,6 +38,44 @@ fn chroma(r: i32, g: i32, b: i32) -> (u8, u8) {
 ///
 /// If `rgba` or any plane is too small for the given dimensions and strides.
 pub fn rgba_to_i420(rgba: &[u8], width: usize, height: usize, out: I420Planes<'_>) {
+    let I420Planes { y, y_stride, u, u_stride, v, v_stride } = out;
+    convert(rgba, width, height, y, y_stride, |cx, cy, (cu, cv)| {
+        u[cy * u_stride + cx] = cu;
+        v[cy * v_stride + cx] = cv;
+    });
+}
+
+/// Converts a tightly packed RGBA frame into NV12: the I420 luma plane, then one plane of
+/// interleaved U and V (what hardware encoders take).
+///
+/// # Panics
+///
+/// If `rgba` or either plane is too small for the given dimensions and strides.
+pub fn rgba_to_nv12(
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    y: &mut [u8],
+    y_stride: usize,
+    uv: &mut [u8],
+    uv_stride: usize,
+) {
+    convert(rgba, width, height, y, y_stride, |cx, cy, (cu, cv)| {
+        let i = cy * uv_stride + cx * 2;
+        uv[i] = cu;
+        uv[i + 1] = cv;
+    });
+}
+
+/// Writes luma into `y` and hands each chroma sample (column, row, (U, V)) to `chroma_out`.
+fn convert(
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    y_plane: &mut [u8],
+    y_stride: usize,
+    mut chroma_out: impl FnMut(usize, usize, (u8, u8)),
+) {
     assert!(rgba.len() >= width * height * 4, "rgba buffer too small");
     let px = |x: usize, y: usize| {
         let i = (y * width + x) * 4;
@@ -44,7 +83,7 @@ pub fn rgba_to_i420(rgba: &[u8], width: usize, height: usize, out: I420Planes<'_
     };
 
     for y in 0..height {
-        let row = &mut out.y[y * out.y_stride..y * out.y_stride + width];
+        let row = &mut y_plane[y * y_stride..y * y_stride + width];
         for (x, dst) in row.iter_mut().enumerate() {
             let (r, g, b) = px(x, y);
             *dst = luma(r, g, b);
@@ -62,9 +101,7 @@ pub fn rgba_to_i420(rgba: &[u8], width: usize, height: usize, out: I420Planes<'_
                 g += pg;
                 b += pb;
             }
-            let (u, v) = chroma((r + 2) / 4, (g + 2) / 4, (b + 2) / 4);
-            out.u[cy * out.u_stride + cx] = u;
-            out.v[cy * out.v_stride + cx] = v;
+            chroma_out(cx, cy, chroma((r + 2) / 4, (g + 2) / 4, (b + 2) / 4));
         }
     }
 }
@@ -121,5 +158,19 @@ mod tests {
         let (y, u, _) = convert(&rgba, 2, 2);
         assert_eq!(y, [16, 235, 16, 235]);
         assert_eq!(u, [128]);
+    }
+
+    #[test]
+    fn nv12_is_i420_with_chroma_interleaved() {
+        let (w, h) = (5, 3);
+        let rgba: Vec<u8> =
+            (0..w * h).flat_map(|i| [(i * 17) as u8, (i * 5) as u8, 200, 255]).collect();
+        let (iy, iu, iv) = convert(&rgba, w, h);
+        let cw = chroma_len(w);
+        let (mut y, mut uv) = (vec![0; w * h], vec![0; cw * 2 * chroma_len(h)]);
+        rgba_to_nv12(&rgba, w, h, &mut y, w, &mut uv, cw * 2);
+        assert_eq!(y, iy);
+        let interleaved: Vec<u8> = iu.iter().zip(&iv).flat_map(|(&u, &v)| [u, v]).collect();
+        assert_eq!(uv, interleaved);
     }
 }

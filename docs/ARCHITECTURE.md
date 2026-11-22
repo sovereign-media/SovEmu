@@ -15,7 +15,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |
-| Video | VP8 by default (libvpx realtime, encoded at the console's native resolution); H.264 (x264 `ultrafast` + `zerolatency`) as a negotiated fallback |
+| Video | H.264 when the client offers it (every client decodes it in hardware), VP8 (libvpx realtime) otherwise; encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`, ~1 ms a frame at console sizes): Constrained Baseline, no B-frames, keyframes on demand |
 | Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato` |
 | Input | Unreliable, unordered WebRTC DataChannel; each packet carries a sequence number and the full button state |
 | Designed for, not in v1 | Rewind/fast-forward, cheats, RetroAchievements (rcheevos), per-game controller remapping, client-side shaders |
@@ -215,7 +215,9 @@ exited workers are reaped.
   `/opt/sovemu/cores/manifest.json`. The server will read it to map file extensions to cores.
 - The image runs as uid 1000 and keeps everything mutable under the `/data` volume: `roms/`,
   `bios/` (one folder per system), `saves/`, and later the SQLite database.
-- The runtime image carries `libvpx` and `libopus` for encoding, from Debian.
+- The runtime image carries `libvpx`, `libopus` and FFmpeg's `libavcodec` (with x264) for
+  encoding, and libva with Intel's (`intel-media-va-driver`, from Debian main: low-power encoding
+  only, which is what SovEmu uses) and Mesa's VA-API drivers, from Debian.
 
 ### Draft schema
 

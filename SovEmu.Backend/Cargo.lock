@@ -3666,6 +3666,7 @@ dependencies = [
  "bindgen",
  "pkg-config",
  "rubato",
+ "tracing",
 ]
 
 [[package]]

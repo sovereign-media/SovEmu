@@ -63,10 +63,10 @@ RUN ./install-cores.sh --out /out/cores
 # a target directory, so a shared one would make them take turns); CI keeps the caches between
 # runs (buildkit-cache-dance in .github/workflows/ci.yml).
 FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS toolchain
-# libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev: the codecs
-# SovEmu.Media links.
+# libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev, libavcodec-dev,
+# libavutil-dev: the codecs SovEmu.Media links (libavcodec brings x264 for the H.264 tests).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 clang libclang-dev cmake pkg-config libvpx-dev libopus-dev \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 clang libclang-dev cmake pkg-config libvpx-dev libopus-dev libavcodec-dev libavutil-dev \
     && rm -rf /var/lib/apt/lists/*
 # No incremental compilation (a one-off build gains nothing from it, and its files would bloat the
 # kept cache); tests keep line tables, enough for a backtrace, not full debug info.
@@ -108,7 +108,7 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # libstdc++6, libgomp1: the C++ cores (and flycast's OpenMP). libxi6, libusb-1.0-0: linked by
 # the release's Dolphin (for input devices SovEmu never gives it). libvpx9, libopus0: VP8 and Opus
-# encoding. tini: PID 1, so the per-session workers are reaped. libpng, zstd, xz: the 3D cores'
+# encoding. libavcodec61, libavutil59: H.264 (x264 on the CPU; VA-API and NVENC on a GPU). tini: PID 1, so the per-session workers are reaped. libpng, zstd, xz: the 3D cores'
 # texture and disc-image formats. tzdata: the time zones, so `TZ` (America/Chicago) gives log lines
 # local times.
 # GPU rendering: libglvnd (libegl1, libgl1, libgles2) dispatches to a vendor. Mesa's is here
@@ -116,10 +116,14 @@ FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # software renderer used without a GPU). NVIDIA's is added by the NVIDIA container toolkit when
 # the host has one. Mesa's Vulkan drivers (mesa-vulkan-drivers, ~80 MB) are left out until a
 # shipped core renders with Vulkan.
+# GPU encoding: libva (libva2, libva-drm2) with Intel's driver (intel-media-va-driver, Debian main:
+# its low-power encoder, the one SovEmu uses, without the non-free shaders) and Mesa's
+# (mesa-va-drivers: AMD). NVENC comes with NVIDIA's driver (`video` in its capabilities).
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 ca-certificates tini tzdata libstdc++6 libgomp1 \
         libxi6 libusb-1.0-0 \
-        libvpx9 libopus0 libpng16-16t64 libzstd1 liblzma5 \
+        libvpx9 libopus0 libavcodec61 libavutil59 libpng16-16t64 libzstd1 liblzma5 \
+        libva2 libva-drm2 intel-media-va-driver mesa-va-drivers \
         libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 sovemu \

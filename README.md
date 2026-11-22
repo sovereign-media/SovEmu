@@ -344,6 +344,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
 | `SOVEMU_VIDEO_KBPS` | `2500` | Video bitrate cap (adaptation stays below it) |
+| `SOVEMU_VIDEO_CODEC` | `auto` | `auto` (H.264 when the client offers it, else VP8), `h264` or `vp8` |
+| `SOVEMU_VIDEO_ENCODER` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
 | `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |
 | `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
 | `SOVEMU_WORKER_START_TIMEOUT` | `120` | Seconds a game may take to load (disc images on a slow share) |
@@ -454,11 +456,11 @@ it, except images and videos.
 You need:
 - Rust (stable, 1.89+);
 - libclang, for bindgen;
-- libvpx, opus and pkg-config;
+- libvpx, opus, FFmpeg (libavcodec, libavutil) and pkg-config;
 - Node 22.23.4+ for the web client.
 
-On macOS: Xcode Command Line Tools and `brew install libvpx opus pkgconf`. On Debian/Ubuntu:
-`libclang-dev libvpx-dev libopus-dev pkg-config`.
+On macOS: Xcode Command Line Tools and `brew install libvpx opus ffmpeg pkgconf`. On
+Debian/Ubuntu: `libclang-dev libvpx-dev libopus-dev libavcodec-dev libavutil-dev pkg-config`.
 
 ```bash
 (cd SovEmu.Web && npm ci && npm test && npm run build)

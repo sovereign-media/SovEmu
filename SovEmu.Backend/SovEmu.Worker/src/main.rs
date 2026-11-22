@@ -27,6 +27,7 @@ mod session;
 mod standin;
 mod stream;
 mod sysdir;
+mod video;
 mod web;
 
 use std::net::{IpAddr, SocketAddr};
@@ -153,7 +154,7 @@ struct SessionArgs {
     #[arg(long)]
     state_dir: Option<PathBuf>,
 
-    /// VP8 target bitrate, kbit/s.
+    /// Video target bitrate, kbit/s (adaptation stays at or below it).
     #[arg(long, default_value_t = 2500)]
     video_kbps: u32,
 
@@ -195,9 +196,18 @@ struct SessionArgs {
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
-    /// (`/dev/dri/renderD128`).
+    /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
     gpu: GpuArg,
+
+    /// The video codec: `auto` (H.264 if the client offers it, else VP8), `h264` or `vp8`.
+    #[arg(long, default_value = "auto")]
+    video_codec: video::CodecSetting,
+
+    /// The H.264 encoder: `auto` (the GPU's, else x264), `vaapi`, `nvenc` or `software` (x264).
+    /// One that does not open, or holds frames back, falls back to x264.
+    #[arg(long, default_value = "auto")]
+    video_encoder: sovemu_media::H264Preference,
 }
 
 #[derive(Debug, clap::Args)]
@@ -228,7 +238,7 @@ struct ServeArgs {
     #[arg(long = "advertise-ip", env = "SOVEMU_ADVERTISE_IP")]
     advertise: Option<IpAddr>,
 
-    /// VP8 target bitrate, kbit/s.
+    /// Video target bitrate, kbit/s (adaptation stays at or below it).
     #[arg(long, default_value_t = 2500)]
     video_kbps: u32,
 
@@ -279,9 +289,18 @@ struct ServeArgs {
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
-    /// (`/dev/dri/renderD128`).
+    /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
     gpu: GpuArg,
+
+    /// The video codec: `auto` (H.264 if the client offers it, else VP8), `h264` or `vp8`.
+    #[arg(long, default_value = "auto")]
+    video_codec: video::CodecSetting,
+
+    /// The H.264 encoder: `auto` (the GPU's, else x264), `vaapi`, `nvenc` or `software` (x264).
+    /// One that does not open, or holds frames back, falls back to x264.
+    #[arg(long, default_value = "auto")]
+    video_encoder: sovemu_media::H264Preference,
 }
 
 #[derive(Debug, clap::Args)]
