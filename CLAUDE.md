@@ -147,7 +147,9 @@ cargo test --workspace
 ```
 
 Coverage is `cargo-llvm-cov` (once: `rustup component add llvm-tools-preview && cargo install
-cargo-llvm-cov --locked`). It reports, never gates: CI's **Coverage** job (on `main` and by hand)
+cargo-llvm-cov --locked`), run through `scripts/coverage.sh`, never bare: the script gives it a
+target folder of its own (`target/coverage`), as cargo would otherwise reuse its instrumented
+builds in a plain `cargo test`, which then writes `*.profraw` files everywhere. It reports, never gates: CI's **Coverage** job (on `main` and by hand)
 runs the suite instrumented in the container (`docker buildx bake -f SovEmu.Backend/docker-bake.hcl
 coverage`, Dockerfile `coverage` stage), puts the per-file summary in the run's summary and keeps
 the HTML and lcov as an artifact. A new module with little coverage is a test to write.

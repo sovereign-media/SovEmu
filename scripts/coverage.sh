@@ -33,6 +33,11 @@ done
 # The stand-in core the tests load (SovEmu.TestCore) is test equipment, not code under test.
 args+=(--ignore-filename-regex 'SovEmu\.TestCore/')
 
+# A target folder of its own. cargo-llvm-cov instruments everything it builds, and cargo shares
+# its compiled artifacts between builds that differ only by that: an instrumented build left in
+# target/ is reused by a plain `cargo test`, which then writes coverage profiles everywhere.
+export CARGO_TARGET_DIR="$root/SovEmu.Backend/target/coverage"
+
 mkdir -p "$out"
 # A failing test still leaves a report (and is named in the output); `cargo test` is the gate.
 cargo llvm-cov "${args[@]}" --ignore-run-fail --lcov --output-path "$out/lcov.info"
