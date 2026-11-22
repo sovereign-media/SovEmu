@@ -14,7 +14,7 @@ import { choiceLabel, filterSettings, groupSettings, runAheadChoices, sourceBadg
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
-import AdminPage from "./AdminPage";
+import AdminPage, { EnvironmentLines } from "./AdminPage";
 
 function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, value: string | null) => void }) {
   const badge = sourceBadge(s.source);
@@ -143,7 +143,6 @@ function Settings() {
   const loaded: SystemSettings | null = settings.data ?? null;
   const [query, setQuery] = useState("");
   const [said, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
-  const [copied, setCopied] = useState(false);
   // What a change said, else why the settings could not be read.
   const message = said ?? (settings.error ? { text: settings.error.message, error: true } : null);
 
@@ -186,12 +185,6 @@ function Settings() {
     } catch (e) {
       setMessage({ text: (e as Error).message, error: true });
     }
-  };
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(loaded?.environment.join("\n") ?? "");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
   };
 
   const groups = useMemo(
@@ -296,25 +289,10 @@ function Settings() {
               </section>
             ))}
 
-            {loaded && loaded.environment.length > 0 && (
-              <section className={panel}>
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="flex items-center gap-2 text-lg font-bold">
-                    <Terminal className="size-5 text-slate-400" /> As environment variables
-                  </h3>
-                  <Button variant="outline" onClick={copy}>
-                    {copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-                <p className="mt-2 text-sm text-slate-400">
-                  The changes made here, as server settings. Put them in <code>.env</code> or the Helm values to make
-                  them part of the configuration; settings from the environment always win.
-                </p>
-                <pre className="mt-3 overflow-x-auto rounded-lg bg-black/40 p-3 text-xs">
-                  {loaded.environment.join("\n")}
-                </pre>
-              </section>
-            )}
+            <EnvironmentLines lines={loaded?.environment ?? []}>
+              The changes made here, as server settings. Put them in <code>.env</code> or the Helm values to make them
+              part of the configuration; settings from the environment always win.
+            </EnvironmentLines>
           </div>
         </div>
       )}

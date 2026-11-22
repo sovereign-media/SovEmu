@@ -1,6 +1,7 @@
 //! The library as a player sees it: systems, games, Home, search, collections, favourites, patches, cheats and saves.
 
 use super::*;
+use crate::collections::Owner;
 
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Rendering {
@@ -354,7 +355,12 @@ impl GameNode {
     /// The ids of this user's collections that hold it.
     async fn collection_ids(&self, ctx: &Context<'_>) -> Result<Vec<i64>> {
         let user = user(ctx).await?;
-        crate::collections::of_game(state(ctx), user.id, self.0.id).await.api()
+        crate::collections::of_game(state(ctx), Owner::User(user.id), self.0.id).await.api()
+    }
+    /// The ids of the shared collections that hold it.
+    async fn shared_collection_ids(&self, ctx: &Context<'_>) -> Result<Vec<i64>> {
+        user(ctx).await?;
+        crate::collections::of_game(state(ctx), Owner::Server, self.0.id).await.api()
     }
     /// How many discs (1 for most games): a multi-disc game is one entry, its discs changed in play.
     async fn discs(&self) -> i32 {
@@ -551,6 +557,14 @@ impl CollectionNode {
     async fn game_count(&self) -> i64 {
         self.0.game_count
     }
+    /// Kept by an admin for everyone: everyone sees it, only an admin changes it.
+    async fn shared(&self) -> bool {
+        self.0.shared
+    }
+    /// Declared in the server's environment (`SOVEMU_COLLECTIONS__…`): changed only there.
+    async fn declared(&self) -> bool {
+        self.0.declared
+    }
     /// Its games, most recently added first.
     async fn games(&self, ctx: &Context<'_>) -> Result<Vec<GameNode>> {
         let user = user(ctx).await?;
@@ -561,6 +575,12 @@ impl CollectionNode {
             .map(GameNode)
             .collect())
     }
+}
+
+/// One owner's collections, as nodes.
+pub(super) async fn collections(ctx: &Context<'_>, owner: Owner) -> Result<Vec<CollectionNode>> {
+    let list = crate::collections::list(state(ctx), owner).await.api()?;
+    Ok(list.into_iter().map(CollectionNode).collect())
 }
 
 #[derive(Default)]
@@ -602,12 +622,13 @@ impl LibraryQuery {
     /// This user's collections, by name.
     async fn collections(&self, ctx: &Context<'_>) -> Result<Vec<CollectionNode>> {
         let user = user(ctx).await?;
-        Ok(crate::collections::list(state(ctx), &user)
-            .await
-            .api()?
-            .into_iter()
-            .map(CollectionNode)
-            .collect())
+        collections(ctx, Owner::User(user.id)).await
+    }
+
+    /// The collections an admin keeps for everyone, by name.
+    async fn shared_collections(&self, ctx: &Context<'_>) -> Result<Vec<CollectionNode>> {
+        user(ctx).await?;
+        collections(ctx, Owner::Server).await
     }
 
     /// Every system SovEmu offers (hidden ones left out), in SovEmu's order.
@@ -659,18 +680,21 @@ impl LibraryMutation {
     /// Creates a collection (CONFLICT if this user already has one by that name).
     async fn create_collection(&self, ctx: &Context<'_>, name: String) -> Result<CollectionNode> {
         let user = user(ctx).await?;
-        crate::collections::create(state(ctx), &user, &name).await.api().map(CollectionNode)
+        crate::collections::create(state(ctx), Owner::User(user.id), &name)
+            .await
+            .api()
+            .map(CollectionNode)
     }
 
     async fn rename_collection(&self, ctx: &Context<'_>, id: i64, name: String) -> Result<bool> {
         let user = user(ctx).await?;
-        crate::collections::rename(state(ctx), &user, id, &name).await.api()?;
+        crate::collections::rename(state(ctx), Owner::User(user.id), id, &name).await.api()?;
         Ok(true)
     }
 
     async fn delete_collection(&self, ctx: &Context<'_>, id: i64) -> Result<bool> {
         let user = user(ctx).await?;
-        crate::collections::delete(state(ctx), &user, id).await.api()?;
+        crate::collections::delete(state(ctx), Owner::User(user.id), id).await.api()?;
         Ok(true)
     }
 
@@ -683,9 +707,15 @@ impl LibraryMutation {
         member: bool,
     ) -> Result<bool> {
         let user = user(ctx).await?;
-        crate::collections::set_member(state(ctx), &user, collection_id, game_id, member)
-            .await
-            .api()?;
+        crate::collections::set_member(
+            state(ctx),
+            Owner::User(user.id),
+            collection_id,
+            game_id,
+            member,
+        )
+        .await
+        .api()?;
         Ok(member)
     }
 

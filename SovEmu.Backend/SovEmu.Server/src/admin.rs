@@ -20,6 +20,14 @@ pub(crate) async fn scan(state: AppState) -> anyhow::Result<ScanReport> {
     let started = std::time::Instant::now();
     let r = library::scan(&state.db, &state.config.roms_dir).await?;
     state.game_counts.refresh(&state.db).await?;
+    // Games came or went: the declared collections hold what the library now has.
+    let declared = crate::collections::declare(&state.db, &state.config.collections).await?;
+    if !declared.missing.is_empty() {
+        tracing::warn!(
+            games = %declared.missing.join(", "),
+            "declared collections name games the library does not have"
+        );
+    }
     tracing::info!(
         library = %state.config.roms_dir.display(),
         games = r.found,

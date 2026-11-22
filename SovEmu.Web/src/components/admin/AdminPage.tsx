@@ -2,12 +2,14 @@
 // from the page's entry in the admin menu (`adminNav.ts`), and a non-admin sent home.
 
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useId } from "react";
+import { Check, Copy, Terminal } from "lucide-react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { adminDocumentTitle, findAdminNavItem } from "../../lib/adminNav";
 import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
+import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Pill, panel } from "../ui/primitives";
 
@@ -24,6 +26,41 @@ export function ErrorNote({ error }: { error: Error | null }) {
 export function EnvLine({ children }: { children: ReactNode }) {
   return (
     <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-xs break-all text-slate-200">{children}</code>
+  );
+}
+
+/** Copies `text`, saying so for a moment. */
+export function CopyButton({ text, label = "Copy", disabled }: { text: string; label?: string; disabled?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <Button variant="outline" onClick={copy} disabled={disabled}>
+      {copied ? <Check /> : <Copy />} {copied ? "Copied" : label}
+    </Button>
+  );
+}
+
+/**
+ * What the admin set on a page, as environment lines to copy into `.env` or the Helm values:
+ * nothing needs click-ops, so whatever the UI stores can also be configuration.
+ */
+export function EnvironmentLines({ lines, children }: { lines: string[]; children: ReactNode }) {
+  if (lines.length === 0) return null;
+  return (
+    <section className={panel}>
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="flex items-center gap-2 text-lg font-bold">
+          <Terminal className="size-5 text-slate-400" /> As environment variables
+        </h3>
+        <CopyButton text={lines.join("\n")} />
+      </div>
+      <p className="mt-2 text-sm text-slate-400">{children}</p>
+      <pre className="mt-3 overflow-x-auto rounded-lg bg-black/40 p-3 text-xs">{lines.join("\n")}</pre>
+    </section>
   );
 }
 

@@ -14,6 +14,7 @@ import {
   History,
   LayoutDashboard,
   Library,
+  LibraryBig,
   ListChecks,
   type LucideIcon,
   Microchip,
@@ -69,6 +70,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Library",
         title: "Scanning, the mirror or cache, and game information",
         icon: Library,
+      },
+      {
+        href: "/admin/collections/",
+        label: "Shared collections",
+        title: "Collections everyone sees on their Home, kept by admins",
+        icon: LibraryBig,
       },
       {
         href: "/admin/attention/",

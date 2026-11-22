@@ -683,6 +683,14 @@ type Collection {
 	name: String!
 	gameCount: Int!
 	"""
+	Kept by an admin for everyone: everyone sees it, only an admin changes it.
+	"""
+	shared: Boolean!
+	"""
+	Declared in the server's environment (`SOVEMU_COLLECTIONS__…`): changed only there.
+	"""
+	declared: Boolean!
+	"""
 	Its games, most recently added first.
 	"""
 	games: [Game!]!
@@ -1070,6 +1078,10 @@ type Game {
 	The ids of this user's collections that hold it.
 	"""
 	collectionIds: [Int!]!
+	"""
+	The ids of the shared collections that hold it.
+	"""
+	sharedCollectionIds: [Int!]!
 	"""
 	How many discs (1 for most games): a multi-disc game is one entry, its discs changed in play.
 	"""
@@ -1751,6 +1763,22 @@ type Mutation {
 	runs.
 	"""
 	lookUpGame(gameId: Int!): MetadataStatus!
+	"""
+	Admins: makes a collection everyone sees (`CONFLICT` if one has that name).
+	"""
+	createSharedCollection(name: String!): Collection!
+	"""
+	Admins: renames a shared collection.
+	"""
+	renameSharedCollection(id: Int!, name: String!): Boolean!
+	"""
+	Admins: deletes a shared collection (its games stay in the library).
+	"""
+	deleteSharedCollection(id: Int!): Boolean!
+	"""
+	Admins: puts a game in a shared collection, or takes it out.
+	"""
+	setInSharedCollection(collectionId: Int!, gameId: Int!, member: Boolean!): Boolean!
 }
 
 """
@@ -2030,6 +2058,10 @@ type Query {
 	This user's collections, by name.
 	"""
 	collections: [Collection!]!
+	"""
+	The collections an admin keeps for everyone, by name.
+	"""
+	sharedCollections: [Collection!]!
 	"""
 	Every system SovEmu offers (hidden ones left out), in SovEmu's order.
 	"""

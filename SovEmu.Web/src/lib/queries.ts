@@ -309,20 +309,35 @@ export const SearchQuery = graphql(
   [GameFields],
 );
 
-export const CollectionsQuery = graphql(
+export const CollectionFields = graphql(
   `
-  query Collections {
-    collections {
-      id
-      name
-      gameCount
-      games {
-        ...GameFields
-      }
+  fragment CollectionFields on Collection {
+    id
+    name
+    gameCount
+    shared
+    declared
+    games {
+      ...GameFields
     }
   }
 `,
   [GameFields],
+);
+
+// The shared collections (an admin's, for everyone) and this user's own.
+export const CollectionsQuery = graphql(
+  `
+  query Collections {
+    sharedCollections {
+      ...CollectionFields
+    }
+    collections {
+      ...CollectionFields
+    }
+  }
+`,
+  [CollectionFields],
 );
 
 export const CollectionIdsQuery = graphql(`
@@ -330,6 +345,7 @@ export const CollectionIdsQuery = graphql(`
     game(id: $id) {
       id
       collectionIds
+      sharedCollectionIds
     }
   }
 `);
@@ -359,6 +375,33 @@ export const DeleteCollectionMutation = graphql(`
 export const SetInCollectionMutation = graphql(`
   mutation SetInCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {
     setInCollection(collectionId: $collectionId, gameId: $gameId, member: $member)
+  }
+`);
+
+export const CreateSharedCollectionMutation = graphql(`
+  mutation CreateSharedCollection($name: String!) {
+    createSharedCollection(name: $name) {
+      id
+      name
+    }
+  }
+`);
+
+export const RenameSharedCollectionMutation = graphql(`
+  mutation RenameSharedCollection($id: Int!, $name: String!) {
+    renameSharedCollection(id: $id, name: $name)
+  }
+`);
+
+export const DeleteSharedCollectionMutation = graphql(`
+  mutation DeleteSharedCollection($id: Int!) {
+    deleteSharedCollection(id: $id)
+  }
+`);
+
+export const SetInSharedCollectionMutation = graphql(`
+  mutation SetInSharedCollection($collectionId: Int!, $gameId: Int!, $member: Boolean!) {
+    setInSharedCollection(collectionId: $collectionId, gameId: $gameId, member: $member)
   }
 `);
 

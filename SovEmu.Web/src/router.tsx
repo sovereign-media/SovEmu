@@ -57,6 +57,7 @@ const ResourcesAdmin = lazy(() => import("./components/admin/ResourcesAdmin"));
 const RenderingAdmin = lazy(() => import("./components/admin/RenderingAdmin"));
 const BiosAdmin = lazy(() => import("./components/admin/BiosAdmin"));
 const DecorationsAdmin = lazy(() => import("./components/admin/DecorationsAdmin"));
+const CollectionsAdmin = lazy(() => import("./components/admin/CollectionsAdmin"));
 const AttentionAdmin = lazy(() => import("./components/admin/AttentionAdmin"));
 const PatchesAdmin = lazy(() => import("./components/admin/PatchesAdmin"));
 const CoresAdmin = lazy(() => import("./components/admin/CoresAdmin"));
@@ -96,6 +97,7 @@ const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: st
   "/admin/rendering/": ["Rendering", RenderingAdmin, []],
   "/admin/bios/": ["BIOS", BiosAdmin, []],
   "/admin/decorations/": ["Decorations", DecorationsAdmin, []],
+  "/admin/collections/": ["Shared collections", CollectionsAdmin, []],
   "/admin/attention/": ["Needs attention", AttentionAdmin, ["kind", "system"]],
   "/admin/patches/": ["Patches", PatchesAdmin, []],
   "/admin/cores/": ["Cores", CoresAdmin, []],

@@ -27,6 +27,7 @@ fn hot_queries() -> Vec<(&'static str, String)> {
         ("Home: a collection's row", collections::collection_games_sql()),
         ("every list: the user's favourites", collections::FAVOURITE_IDS.to_owned()),
         ("a game's panel: its collections", collections::OF_GAME.to_owned()),
+        ("Home and the menu: a user's or the shared collections", collections::LIST.to_owned()),
         ("every list: the patch each game plays", crate::patches::chosen_sql(3)),
         // What removing a game (a rescan without its file) cascades into, once per game.
         ("removing a game: favourites", "SELECT 1 FROM favourites WHERE game_id = ?".into()),

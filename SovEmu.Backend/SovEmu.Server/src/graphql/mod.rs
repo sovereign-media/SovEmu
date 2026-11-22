@@ -36,6 +36,7 @@ mod activity;
 mod appearance;
 mod attention;
 mod client_events;
+mod collections_admin;
 mod controllers;
 mod jobs;
 mod library;
@@ -328,6 +329,7 @@ pub(crate) struct Mutation(
     streaming::StreamingMutation,
     client_events::ClientEventsMutation,
     attention::AttentionMutation,
+    collections_admin::CollectionsAdminMutation,
 );
 
 #[cfg(test)]
