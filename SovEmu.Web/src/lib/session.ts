@@ -79,7 +79,7 @@ export class Session {
     // (older Firefox) just measure nothing.
     if (video.requestVideoFrameCallback) {
       const shown: VideoFrameRequestCallback = (now, frame) => {
-        this.latency.frameShown(Math.floor(frame.presentationTime ?? now) >>> 0);
+        this.latency.frameShown(frame.presentationTime ?? now, frame.receiveTime);
         this.frameCallback = video.requestVideoFrameCallback(shown);
       };
       this.frameCallback = video.requestVideoFrameCallback(shown);
@@ -178,7 +178,10 @@ export class Session {
     }
     const ack = decodeAck(data);
     if (!ack) return;
-    this.latency.acked(ack.clientTimeMs);
+    // The ack echoes the low 32 bits of the send time; put back the high ones from now.
+    const now = performance.now();
+    const age = (now32() - ack.clientTimeMs) >>> 0;
+    this.latency.acked(now - age, now);
     this.inputRtts.push((now32() - ack.clientTimeMs) >>> 0);
     if (this.inputRtts.length > 60) this.inputRtts.shift();
   }
