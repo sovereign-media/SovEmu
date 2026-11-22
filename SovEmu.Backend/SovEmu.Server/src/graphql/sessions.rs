@@ -1,6 +1,7 @@
 //! Game sessions: starting one and following its start, the WebRTC offer, saves and states, and discs.
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// A running game: one worker streaming over WebRTC.
 pub(super) struct SessionNode(pub(super) sovemu_sessions::workers::SessionInfo);
@@ -388,17 +389,28 @@ impl SessionsMutation {
         start_id: Option<String>,
     ) -> Result<SessionNode> {
         let user = user(ctx).await?;
-        crate::api::start_session(state(ctx), &user, game_id, start_id.as_deref())
+        let session = crate::api::start_session(state(ctx), &user, game_id, start_id.as_deref())
             .await
-            .api()
-            .map(SessionNode)
+            .api()?;
+        let entry = Entry::new(Kind::GameStarted).about(&session.title).detail(&session.system);
+        record(ctx, &user, entry);
+        Ok(SessionNode(session))
     }
 
     /// Ends a session, the player's own or (admins) anyone's; the worker writes the battery save
     /// and the auto save first.
     async fn stop_session(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
         let user = user(ctx).await?;
-        crate::api::stop_session(state(ctx), &user, &id).await.api()?;
+        let state = state(ctx);
+        let (player, title) = crate::api::stop_session(state, &user, &id).await.api()?;
+        // A player quitting is their game ending (recorded as it ends); an admin stopping
+        // someone else's game is the admin's doing.
+        if player != user.id {
+            let name = state.identity.user(player).await.ok().flatten().map(|u| u.username);
+            let detail = name
+                .map_or_else(|| "a deleted account's game".to_owned(), |n| format!("{n}'s game"));
+            record(ctx, &user, Entry::new(Kind::SessionStopped).about(title).detail(detail));
+        }
         Ok(true)
     }
 

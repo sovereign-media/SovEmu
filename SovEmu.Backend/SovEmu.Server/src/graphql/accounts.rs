@@ -1,6 +1,7 @@
 //! Accounts and sign-in: who is signed in, where to sign in, the server's build, and the users an admin adds.
 
 use super::*;
+use crate::activity::{Entry, Kind};
 
 /// What an account may do.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
@@ -197,6 +198,8 @@ impl AccountsMutation {
         let new =
             NewUser { username: input.username, password: input.password, role: input.role.into() };
         let user = state(ctx).identity.add_user(&me, &new).await.map_err(|e| gql(e.into()))?;
+        let entry = Entry::new(Kind::UserAdded).about(&user.username).detail(user.role.as_str());
+        record(ctx, &me, entry);
         Ok(user.into())
     }
 
@@ -209,7 +212,10 @@ impl AccountsMutation {
         role: RoleKind,
     ) -> Result<Account> {
         let me = admin(ctx).await?;
-        crate::auth::set_role(state(ctx), &me, user_id, role.into()).await.api().map(Into::into)
+        let user = crate::auth::set_role(state(ctx), &me, user_id, role.into()).await.api()?;
+        let entry = Entry::new(Kind::RoleChanged).about(&user.username).detail(user.role.as_str());
+        record(ctx, &me, entry);
+        Ok(user.into())
     }
 
     /// Admins: sets an account's password (at least 8 characters), which signs that user out
@@ -221,7 +227,8 @@ impl AccountsMutation {
         password: String,
     ) -> Result<bool> {
         let me = admin(ctx).await?;
-        crate::auth::set_password(state(ctx), &me, user_id, &password).await.api()?;
+        let user = crate::auth::set_password(state(ctx), &me, user_id, &password).await.api()?;
+        record(ctx, &me, Entry::new(Kind::PasswordSet).about(user.username));
         Ok(true)
     }
 
@@ -230,14 +237,16 @@ impl AccountsMutation {
     /// and not an account the environment declares.
     async fn remove_user(&self, ctx: &Context<'_>, user_id: i64) -> Result<bool> {
         let me = admin(ctx).await?;
-        crate::auth::remove_user(state(ctx), &me, user_id).await.api()?;
+        let user = crate::auth::remove_user(state(ctx), &me, user_id).await.api()?;
+        record(ctx, &me, Entry::new(Kind::UserRemoved).about(user.username));
         Ok(true)
     }
 
     /// Admins: signs an account out of every browser and app.
     async fn sign_out_everywhere(&self, ctx: &Context<'_>, user_id: i64) -> Result<bool> {
         let me = admin(ctx).await?;
-        crate::auth::sign_out_everywhere(state(ctx), &me, user_id).await.api()?;
+        let user = crate::auth::sign_out_everywhere(state(ctx), &me, user_id).await.api()?;
+        record(ctx, &me, Entry::new(Kind::SignedOutEverywhere).about(user.username));
         Ok(true)
     }
 }

@@ -52,6 +52,10 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Auth: local accounts (argon2, HttpOnly session cookie), first-run admin setup, admin adds
       users, changes their roles and passwords, signs them out everywhere and removes them (never
       the last admin, nor an account the environment declares, which shows locked)
+- [x] The admin Activity page: who did what, and when (sign-ins and refusals through
+      `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
+      changes from their resolvers), kept in `activity` (migration 0023, pruned after
+      `SOVEMU_ACTIVITY_HISTORY_DAYS`), filtered by account and kind, paged, and exported as CSV
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
 - [x] Sessions: one `sovemu-worker session` per game, JSON-line IPC with request ids, a UDP port per

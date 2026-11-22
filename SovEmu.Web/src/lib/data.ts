@@ -2,8 +2,8 @@
 // read, here, so every screen asks for "the systems" the same way and a change elsewhere can say
 // what it made stale (`invalidate`). Screens use these with `useQuery`; the player, which loads
 // imperatively, with `queryClient.fetchQuery`.
-import { QueryClient, queryOptions } from "@tanstack/react-query";
-import { api, type ClientEventKind, type ResourceRange } from "./api";
+import { infiniteQueryOptions, QueryClient, queryOptions } from "@tanstack/react-query";
+import { type ActivityFilter, api, type ClientEventKind, type ResourceRange } from "./api";
 import { ApiError } from "./graphql";
 
 export const queryClient = new QueryClient({
@@ -45,6 +45,14 @@ export const q = {
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
+  /** A page at a time: `useInfiniteQuery`, each page's `next` the following page's start. */
+  activity: (filter: ActivityFilter) =>
+    infiniteQueryOptions({
+      queryKey: ["admin", "activity", filter],
+      queryFn: ({ pageParam }) => api.activity(filter, pageParam),
+      initialPageParam: null as string | null,
+      getNextPageParam: (page) => page.next,
+    }),
   streaming: () => queryOptions({ queryKey: ["admin", "streaming"], queryFn: api.streaming }),
   clientEventGroups: (days: number) =>
     queryOptions({ queryKey: ["admin", "client-events", days], queryFn: () => api.clientEventGroups(days) }),

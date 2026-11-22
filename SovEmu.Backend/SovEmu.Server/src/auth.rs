@@ -43,32 +43,34 @@ pub(crate) async fn set_role(
     Ok(state.identity.set_role(admin, user_id, role).await?)
 }
 
-/// An admin sets an account's password; that user is signed out everywhere.
+/// An admin sets an account's password; that user is signed out everywhere. The account.
 pub(crate) async fn set_password(
     state: &AppState,
     admin: &User,
     user_id: i64,
     password: &str,
-) -> ApiResult<()> {
-    changeable(state, user_id).await?;
-    Ok(state.identity.set_password(admin, user_id, password).await?)
+) -> ApiResult<User> {
+    let user = changeable(state, user_id).await?;
+    state.identity.set_password(admin, user_id, password).await?;
+    Ok(user)
 }
 
 /// An admin removes an account (their saves stay on disk, shown as a deleted user's).
-pub(crate) async fn remove_user(state: &AppState, admin: &User, user_id: i64) -> ApiResult<()> {
-    changeable(state, user_id).await?;
-    Ok(state.identity.remove_user(admin, user_id).await?)
+pub(crate) async fn remove_user(state: &AppState, admin: &User, user_id: i64) -> ApiResult<User> {
+    let user = changeable(state, user_id).await?;
+    state.identity.remove_user(admin, user_id).await?;
+    Ok(user)
 }
 
-/// An admin signs an account out of every browser and app. Allowed for declared accounts too:
+/// An admin signs an account out of every browser and app. The account. Allowed for declared accounts too:
 /// it changes nothing the environment sets.
 pub(crate) async fn sign_out_everywhere(
     state: &AppState,
     admin: &User,
     user_id: i64,
-) -> ApiResult<()> {
+) -> ApiResult<User> {
     let user = state.identity.user(user_id).await?.ok_or_else(|| ApiError::not_found("user"))?;
     state.identity.sign_out_everywhere(user_id).await?;
     tracing::info!(by = %admin.username, user.name = %user.username, "signed a user out everywhere");
-    Ok(())
+    Ok(user)
 }

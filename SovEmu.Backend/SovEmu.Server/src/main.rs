@@ -5,6 +5,7 @@
 //! WebRTC on a UDP port of its own.
 
 mod about;
+mod activity;
 mod admin;
 mod api;
 mod appearance;
@@ -350,6 +351,11 @@ pub struct Config {
     /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
     #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
     pub job_history_days: u32,
+
+    /// Days of the activity log kept (sign-ins, games started and ended, admin changes, on the
+    /// admin Activity page); maintenance deletes older entries (0: kept for ever).
+    #[arg(long, env = "SOVEMU_ACTIVITY_HISTORY_DAYS", default_value_t = 90)]
+    pub activity_history_days: u32,
 
     /// Days of client errors kept (what the apps reported, on the admin Client errors page);
     /// maintenance deletes older ones (0: kept for ever).
@@ -698,6 +704,8 @@ pub struct AppState {
     pub(crate) game_counts: Arc<library::GameCounts>,
     /// The most recent games that failed, for the Sessions page (`failures`).
     pub(crate) failures: Arc<failures::Failures>,
+    /// Who did what, and when (`activity`).
+    pub(crate) activity: activity::Activity,
 }
 
 impl AppState {
@@ -811,6 +819,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     std::fs::create_dir_all(&config.roms_dir).ok();
     bios::prepare(&config.bios_dir());
     let db = db::open(&paths.database()).await?;
+    let activity = activity::Activity::new(db.clone());
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!(summary = %gpu.summary(), "GPU probe");
@@ -837,7 +846,11 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
-        observer: Arc::new(failures::SessionEvents { failures: session_failures.clone() }),
+        observer: Arc::new(sovemu_sessions::Observers(vec![
+            Arc::new(telemetry::SessionMetrics),
+            session_failures.clone(),
+            Arc::new(activity.clone()),
+        ])),
     });
     let cache_dir = paths.cache_games();
     move_legacy_cache(&paths);
@@ -938,6 +951,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
             max_failures_per_ip: config.login_max_failures_per_ip,
             lockout: std::time::Duration::from_secs(config.login_lockout_minutes * 60),
             refresh_retry: std::time::Duration::from_secs(config.refresh_retry_seconds),
+            observer: Arc::new(activity.clone()),
         },
     )
     .await?;
@@ -972,6 +986,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         storage: Arc::default(),
         game_counts,
         failures: session_failures,
+        activity,
         jobs,
         resources,
     })

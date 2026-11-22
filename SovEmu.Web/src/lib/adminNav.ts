@@ -9,6 +9,7 @@ import {
   Gamepad,
   Gauge,
   HardDrive,
+  History,
   Library,
   ListChecks,
   type LucideIcon,
@@ -137,6 +138,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Resources",
         title: "The host's CPU and memory, and how much the server is using",
         icon: Gauge,
+      },
+      {
+        href: "/admin/activity/",
+        label: "Activity",
+        title: "Who did what, and when: sign-ins, games played, admin changes",
+        icon: History,
       },
       {
         href: "/admin/jobs/",

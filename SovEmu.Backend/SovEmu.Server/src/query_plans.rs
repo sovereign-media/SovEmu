@@ -37,6 +37,7 @@ fn hot_queries() -> Vec<(&'static str, String)> {
         ("removing a patch: its choices", "SELECT 1 FROM patch_choices WHERE patch_id = ?".into()),
         ("Client errors: the groups", crate::client_events::GROUPS.into()),
         ("Client errors: a group's events", crate::client_events::EVENTS.into()),
+        ("Activity: a page", crate::activity::PAGE.into()),
     ]
 }
 
