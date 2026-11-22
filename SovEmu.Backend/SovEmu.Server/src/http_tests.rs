@@ -1625,6 +1625,41 @@ async fn admins_see_every_core_with_its_licence() {
 }
 
 #[tokio::test]
+async fn a_library_that_went_away_keeps_its_games() {
+    let mut h = Harness::new("library-gone", false).await;
+    h.sign_up_admin().await;
+    let scan = "mutation { scanLibrary { found removed } }";
+    let known = h.ok(scan, json!({})).await["scanLibrary"]["found"].as_i64().unwrap();
+    assert!(known > 0);
+    let count = |state: &AppState| {
+        let db = state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM games").fetch_one(&db).await.unwrap()
+        }
+    };
+
+    // An unmounted share: its mount point is an empty folder.
+    let roms = h.dir.join("roms");
+    let away = h.dir.join("roms-away");
+    std::fs::rename(&roms, &away).unwrap();
+    std::fs::create_dir_all(&roms).unwrap();
+    let (_, message) = h.err(scan, json!({})).await;
+    assert!(message.contains("is the share mounted"), "{message}");
+    assert_eq!(count(&h.state).await, known, "nothing removed");
+
+    // No folder at all.
+    std::fs::remove_dir_all(&roms).unwrap();
+    let (_, message) = h.err(scan, json!({})).await;
+    assert!(message.contains("reading the library"), "{message}");
+    assert_eq!(count(&h.state).await, known, "nothing removed");
+
+    // Back again: the same games, nothing added or removed.
+    std::fs::rename(&away, &roms).unwrap();
+    let back = h.ok(scan, json!({})).await["scanLibrary"].clone();
+    assert_eq!((back["found"].as_i64(), back["removed"].as_i64()), (Some(known), Some(0)));
+}
+
+#[tokio::test]
 async fn soft_patches_apply_by_default_and_can_be_chosen() {
     let mut h = Harness::new("patches", true).await;
     h.sign_up_admin().await;

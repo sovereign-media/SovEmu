@@ -197,7 +197,12 @@ impl From<JobError> for ApiError {
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
                 "the server is shutting down",
             ),
-            JobError::Failed(message) => ApiError::internal(message),
+            // Only admins start jobs, and the Jobs page shows them the same message: the button
+            // that ran it says why it failed too ("is the share mounted?"). The run is recorded
+            // and logged where it failed.
+            JobError::Failed(message) => {
+                ApiError::new(axum::http::StatusCode::SERVICE_UNAVAILABLE, message)
+            }
         }
     }
 }

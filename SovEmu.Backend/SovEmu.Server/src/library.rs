@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use anyhow::Context as _;
 use serde::Serialize;
 use sovemu_library::scan::{PartKind, group_discs, walk};
 use sqlx::SqlitePool;
@@ -16,12 +17,26 @@ pub(crate) struct ScanReport {
 
 /// Rescans `root` and brings the `games` table in line: new files added, changed ones updated
 /// (keeping their ids, so play history and saves stay attached), missing ones removed.
-pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> Result<ScanReport, sqlx::Error> {
-    let root = root.to_owned();
-    let found =
-        tokio::task::spawn_blocking(move || group_discs(walk(&root))).await.unwrap_or_default();
+///
+/// Removing a game removes everyone's history, favourites, collection entries, cheats and patch
+/// choices for it, so a library that cannot be read is an error, never an empty library. And
+/// one that reads as empty while games are known is refused: an unmounted share is an empty
+/// folder.
+pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanReport> {
+    let dir = root.to_owned();
+    let found = tokio::task::spawn_blocking(move || walk(&dir).map(group_discs))
+        .await
+        .context("the library walk stopped")?
+        .with_context(|| format!("reading the library at {}", root.display()))?;
     let mut tx = pool.begin().await?;
     let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM games").fetch_one(&mut *tx).await?;
+    if found.is_empty() && before > 0 {
+        anyhow::bail!(
+            "the library at {} has no games, but {before} are known: not removing them all \
+             (is the share mounted?)",
+            root.display()
+        );
+    }
     sqlx::query("CREATE TEMP TABLE IF NOT EXISTS seen (path TEXT PRIMARY KEY)")
         .execute(&mut *tx)
         .await?;
