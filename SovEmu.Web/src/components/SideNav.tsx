@@ -2,14 +2,14 @@
 // rest, labelled pills on hover or keyboard focus), on a phone a tab bar along the bottom. The
 // SovEmu wordmark sits in the corner above the dock. Entries: Home; Systems, a menu nested by
 // maker (Nintendo ▸ NES, SNES …), then the BIOS check; the account (sign out); and for admins
-// the gear, the admin menu: groups cascading into their pages, as Sovereign's (`lib/adminNav.ts`).
+// the gear, the admin menu: every admin page in one list (`lib/adminNav.ts`).
 // Menus are Radix DropdownMenus.
 
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Gamepad2, House, LogOut, Microchip, Search, Settings } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useRef, useState } from "react";
-import { ADMIN_NAV_GROUPS, type AdminNavItem, findAdminNavGroup, findAdminNavItem } from "../lib/adminNav";
+import { ADMIN_NAV_GROUPS, findAdminNavItem } from "../lib/adminNav";
 import type { SystemSummary, User } from "../lib/api";
 import { signOut as endSignIn } from "../lib/auth";
 import { q } from "../lib/data";
@@ -252,59 +252,34 @@ function Entries({
           shape={shape}
           onOpenChange={onMenu}
         >
-          <AdminMenu shape={shape} />
+          <AdminMenu />
         </MenuEntry>
       )}
     </>
   );
 }
 
-/** The admin menu, as Sovereign's: on the dock a cascade of groups, each a submenu of its pages
- *  (`ADMIN_NAV_GROUPS`, the one list); on the phone's bar, the pages under their group's label. */
-function AdminMenu({ shape }: { shape: "dock" | "bar" }) {
+/** The admin menu: every admin page in one flat list, a separator between groups
+ *  (`ADMIN_NAV_GROUPS`, the one list), the same on the dock and the phone's bar. */
+function AdminMenu() {
   const here = typeof location === "undefined" ? "" : location.pathname;
-  const current = findAdminNavGroup(here)?.id;
-  const page = (item: AdminNavItem) => {
-    const Icon = item.icon;
-    const active = findAdminNavItem(here)?.href === item.href;
-    return (
-      <DropdownMenu.Item key={item.href} asChild className={cn(ROW, active && "text-white")}>
-        <a href={item.href} title={item.title} aria-current={active ? "page" : undefined}>
-          <Icon /> {item.label}
-        </a>
-      </DropdownMenu.Item>
-    );
-  };
-  if (shape === "bar") {
-    return ADMIN_NAV_GROUPS.map((group) => (
-      <DropdownMenu.Group key={group.id}>
-        <DropdownMenu.Label className="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-          {group.label}
-        </DropdownMenu.Label>
-        {group.items.map(page)}
-      </DropdownMenu.Group>
-    ));
-  }
-  return ADMIN_NAV_GROUPS.map((group) => {
-    const Icon = group.icon;
-    return (
-      <DropdownMenu.Sub key={group.id}>
-        <DropdownMenu.SubTrigger
-          className={cn(ROW, group.id === current && "text-white")}
-          data-current={group.id === current}
-        >
-          <Icon />
-          <span className="flex-1">{group.label}</span>
-          <ChevronRight className="text-slate-500" />
-        </DropdownMenu.SubTrigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.SubContent sideOffset={4} collisionPadding={8} className={PANE}>
-            {group.items.map(page)}
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Sub>
-    );
-  });
+  const current = findAdminNavItem(here)?.href;
+  return ADMIN_NAV_GROUPS.map((group, i) => (
+    <DropdownMenu.Group key={group.id}>
+      {i > 0 && <DropdownMenu.Separator className="my-1 h-px bg-edge" />}
+      {group.items.map((item) => {
+        const Icon = item.icon;
+        const active = item.href === current;
+        return (
+          <DropdownMenu.Item key={item.href} asChild className={cn(ROW, active && "text-white")}>
+            <a href={item.href} title={item.title} aria-current={active ? "page" : undefined}>
+              <Icon /> {item.label}
+            </a>
+          </DropdownMenu.Item>
+        );
+      })}
+    </DropdownMenu.Group>
+  ));
 }
 
 /** How long the pointer rests on the dock before it opens, so crossing it does not flash it. */

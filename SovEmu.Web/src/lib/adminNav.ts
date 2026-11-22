@@ -1,17 +1,7 @@
-// The admin menu, as Sovereign's (`Sovereign.React/src/components/admin/adminNavItems.ts`): the gear
-// in the dock opens a cascade of groups, each a submenu of pages. One list drives the menu, the
-// page headings and the document titles, so a new page is one entry here.
-import {
-  Gamepad,
-  Gamepad2,
-  Library,
-  ListChecks,
-  type LucideIcon,
-  Server,
-  SlidersHorizontal,
-  Users,
-  UsersRound,
-} from "lucide-react";
+// The admin menu: the gear in the dock opens one flat list of the admin pages, a separator
+// between groups. One list drives the menu, the page headings and the document titles, so a new
+// page is one entry here.
+import { Gamepad, Library, ListChecks, type LucideIcon, SlidersHorizontal, Users } from "lucide-react";
 
 export interface AdminNavItem {
   /** The page (with its trailing slash, as the router's paths have it). */
@@ -24,8 +14,8 @@ export interface AdminNavItem {
 
 export interface AdminNavGroup {
   id: string;
+  /** Names the group in its pages' document titles (`Users & Devices · Users`). */
   label: string;
-  icon: LucideIcon;
   items: AdminNavItem[];
 }
 
@@ -33,7 +23,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "library",
     label: "Library",
-    icon: Library,
     items: [
       {
         href: "/admin/",
@@ -46,7 +35,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "users-devices",
     label: "Users & Devices",
-    icon: UsersRound,
     items: [
       { href: "/admin/users/", label: "Users", title: "Accounts on this server and their roles", icon: Users },
       {
@@ -60,7 +48,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "emulation",
     label: "Emulation",
-    icon: Gamepad2,
     items: [
       {
         href: "/admin/settings/",
@@ -73,7 +60,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "server",
     label: "Server",
-    icon: Server,
     items: [
       {
         href: "/admin/jobs/",
