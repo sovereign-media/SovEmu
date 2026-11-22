@@ -35,6 +35,7 @@ mod accounts;
 mod activity;
 mod appearance;
 mod attention;
+mod backups;
 mod client_events;
 mod collections_admin;
 mod controllers;
@@ -312,6 +313,7 @@ pub(crate) struct Query(
     activity::ActivityQuery,
     statistics::StatisticsQuery,
     attention::AttentionQuery,
+    backups::BackupsQuery,
     logs::LogsQuery,
 );
 
@@ -329,6 +331,7 @@ pub(crate) struct Mutation(
     streaming::StreamingMutation,
     client_events::ClientEventsMutation,
     attention::AttentionMutation,
+    backups::BackupsMutation,
     collections_admin::CollectionsAdminMutation,
 );
 

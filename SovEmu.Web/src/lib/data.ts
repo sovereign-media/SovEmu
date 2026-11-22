@@ -57,6 +57,8 @@ export const q = {
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
   overview: () => queryOptions({ queryKey: ["admin", "overview"], queryFn: api.overview }),
   logs: (filter: LogFilter) => queryOptions({ queryKey: ["admin", "logs", filter], queryFn: () => api.logs(filter) }),
+  /** Keyed by when the last backup run ended, so a finished run is read at once. */
+  backups: (lastRun: number | null) => queryOptions({ queryKey: ["admin", "backups", lastRun], queryFn: api.backups }),
   attentionCounts: () => queryOptions({ queryKey: ["admin", "attention"], queryFn: api.attentionCounts }),
   gamesNeedingAttention: (kind: AttentionKind, system: string | null) =>
     queryOptions({

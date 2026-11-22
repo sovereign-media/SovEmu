@@ -9,6 +9,9 @@
 //!   bios/<system>/        BIOS files, unless SOVEMU_BIOS_DIR points elsewhere
 //!   saves/<user>/<system>/<game>.srm            battery saves
 //!   saves/<user>/<system>/states/<game>/        save states and their screenshots
+//!   backups/              backups, unless SOVEMU_BACKUP_DIR points elsewhere
+//!   restored.json         the backup last restored (SOVEMU_RESTORE_FROM), so it is restored once
+//!   before-restore-<time>/  what a restore replaced, kept
 //!   cache/games/          mode `cache`: games and art copied from the library as they are used
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
@@ -129,6 +132,11 @@ impl DataPaths {
     /// Box art downloaded by the game-information lookup.
     pub fn artwork(&self) -> PathBuf {
         self.metadata().join("media")
+    }
+
+    /// Backups, when `SOVEMU_BACKUP_DIR` is not set (`backup`).
+    pub fn backups(&self) -> PathBuf {
+        self.root.join("backups")
     }
 
     /// The saves of every user, one folder per user id.

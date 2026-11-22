@@ -1,13 +1,6 @@
-// The admin Jobs page's wording: what each background job is called, when it runs, and how its
-// last run went. Times from the API are Unix seconds.
-import type { JobName, JobState } from "./api";
-
-export const JOB_LABELS: Record<JobName, string> = {
-  SCAN: "Library scan",
-  MIRROR_SYNC: "Mirror sync",
-  METADATA: "Game information",
-  MAINTENANCE: "Database upkeep",
-};
+// The admin Jobs page's wording: when each background job runs, and how its last run went (its
+// name comes from the server, `JobState.label`). Times from the API are Unix seconds.
+import type { JobState } from "./api";
 
 /** "45 s", "12 min", "3 h", "2 days". */
 export function formatSpan(seconds: number): string {

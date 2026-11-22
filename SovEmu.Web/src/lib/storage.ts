@@ -17,6 +17,7 @@ export const AREA_LABELS: Record<string, string> = {
   builtin_decorations: "Built-in decorations",
   roms: "Library",
   bios: "BIOS files",
+  backups: "Backups",
   other: "Other",
 };
 

@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, Clock, LoaderCircle, Play } from "lucide-react";
 import { api, type JobState } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { JOB_LABELS, lastRunText, scheduleText } from "../../lib/jobs";
+import { lastRunText, scheduleText } from "../../lib/jobs";
 import { Button } from "../ui/button";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
@@ -38,8 +38,8 @@ function Jobs() {
         description={
           <>
             What the server does on its own. Intervals are set on the server (<code>SOVEMU_SCAN_INTERVAL_MINUTES</code>,{" "}
-            <code>SOVEMU_MIRROR_INTERVAL_MINUTES</code>, <code>SOVEMU_MAINTENANCE_INTERVAL_MINUTES</code>); 0 turns a
-            job's schedule off.
+            <code>SOVEMU_MIRROR_INTERVAL_MINUTES</code>, <code>SOVEMU_MAINTENANCE_INTERVAL_MINUTES</code>,{" "}
+            <code>SOVEMU_BACKUP_INTERVAL_HOURS</code>); 0 turns a job's schedule off.
           </>
         }
       >
@@ -51,7 +51,7 @@ function Jobs() {
             <li key={job.name} className="flex items-start gap-4 py-4">
               <StatusIcon job={job} />
               <div className="min-w-0 flex-1">
-                <div className="font-semibold">{JOB_LABELS[job.name]}</div>
+                <div className="font-semibold">{job.label}</div>
                 <p className="text-sm text-slate-400">{job.description}</p>
                 <p className="mt-1 text-sm text-slate-300">
                   {scheduleText(job, now)} · {lastRunText(job, now)}

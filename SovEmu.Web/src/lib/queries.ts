@@ -761,6 +761,7 @@ export const AdminStatusQuery = graphql(
 const JobFields = graphql(`
   fragment JobFields on JobState {
     name
+    label
     description
     intervalMinutes
     nextRunAt
@@ -1324,6 +1325,29 @@ export const LookUpGameMutation = graphql(`
     lookUpGame(gameId: $gameId) {
       running
     }
+  }
+`);
+
+export const BackupsQuery = graphql(`
+  query Backups {
+    backups {
+      dir
+      intervalHours
+      keep
+      restoreFrom
+      files {
+        name
+        bytes
+        created
+        url
+      }
+    }
+  }
+`);
+
+export const DeleteBackupMutation = graphql(`
+  mutation DeleteBackup($name: String!) {
+    deleteBackup(name: $name)
   }
 `);
 

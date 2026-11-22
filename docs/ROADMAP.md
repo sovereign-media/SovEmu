@@ -77,6 +77,11 @@ held 59.93 fps over 300 frames with no resyncs.
       migration 0026), filled from a game's panel; declared as `SOVEMU_COLLECTIONS__<n>__NAME`
       and `__GAMES__<m>` (`<system>/<file>`), kept in step after each scan and locked, and
       offered as environment lines
+- [x] Backups (`/admin/backups/`): the database (`VACUUM INTO`), the signing keys and every save
+      in one zip, made by the `Backup` job (`SOVEMU_BACKUP_INTERVAL_HOURS`, newest
+      `SOVEMU_BACKUP_KEEP` kept, in `SOVEMU_BACKUP_DIR`) or the page's button, downloaded through
+      a signed URL for admins only; restored at startup from `SOVEMU_RESTORE_FROM`, what it
+      replaces moved into `before-restore-<time>/`, each backup restored once
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

@@ -8,6 +8,7 @@ const s = NOW / 1000;
 function job(over: Partial<JobState> = {}): JobState {
   return {
     name: "SCAN",
+    label: "Library scan",
     description: "",
     intervalMinutes: 60,
     nextRunAt: s + 600,

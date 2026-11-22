@@ -217,3 +217,48 @@ pub(crate) async fn decorations_report(state: &AppState) -> ApiResult<Decoration
             .collect(),
     })
 }
+
+/// Makes a backup ([`Job::Backup`]'s work) in the backup folder, keeping the newest.
+pub(crate) async fn back_up(state: AppState) -> anyhow::Result<crate::backup::Made> {
+    let dir = state.config.backup_dir();
+    let made =
+        crate::backup::create(&state.db, &state.config.paths(), &dir, state.config.backup_keep)
+            .await?;
+    tracing::info!(
+        backup = %made.file.name,
+        bytes = made.file.bytes,
+        pruned = made.pruned,
+        "backup made"
+    );
+    Ok(made)
+}
+
+/// A backup, for an admin only (`/media/backups/<name>`, the signed URL `backups` hands out):
+/// it holds every account's password hash and the signing keys.
+pub(crate) async fn backup_file(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    crate::assets::SignedUser(user_id): crate::assets::SignedUser,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    use axum::http::{HeaderValue, header};
+    use axum::response::IntoResponse;
+    use tower::ServiceExt;
+    let admin = state.identity.user(user_id).await.map_err(ApiError::internal)?;
+    if !admin.is_some_and(|u| u.role == sovemu_identity::Role::Admin) {
+        return Err(ApiError::forbidden());
+    }
+    let file = crate::backup::find(&state.config.backup_dir(), &name)
+        .ok_or_else(|| ApiError::not_found("backup"))?;
+    let mut response = tower_http::services::ServeFile::new(file)
+        .oneshot(request)
+        .await
+        .map_err(ApiError::internal)?
+        .into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Ok(v) = HeaderValue::from_str(&format!("attachment; filename=\"{name}\"")) {
+        headers.insert(header::CONTENT_DISPOSITION, v);
+    }
+    Ok(response)
+}

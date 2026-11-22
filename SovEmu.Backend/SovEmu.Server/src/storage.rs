@@ -71,6 +71,7 @@ fn areas(state: &AppState) -> Vec<(&'static str, PathBuf)> {
         ("builtin_decorations", config.builtin_decorations()),
         ("roms", config.roms_dir.clone()),
         ("bios", config.bios_dir()),
+        ("backups", config.backup_dir()),
     ];
     // In mirror mode the library *is* the mirror: count it once.
     areas.retain(|(id, p)| p.starts_with(paths.root()) && !(*id == "roms" && *p == paths.mirror()));

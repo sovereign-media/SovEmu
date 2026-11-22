@@ -324,6 +324,48 @@ type Background {
 }
 
 """
+A backup kept.
+"""
+type BackupFile {
+	name: String!
+	bytes: Float!
+	"""
+	When it was made (Unix seconds).
+	"""
+	created: Float!
+	"""
+	Its download: a signed URL, for this admin only.
+	"""
+	url: String!
+}
+
+"""
+The backups, and how they are made.
+"""
+type Backups {
+	"""
+	Where they are kept (`SOVEMU_BACKUP_DIR`).
+	"""
+	dir: String!
+	"""
+	A backup every this many hours (`SOVEMU_BACKUP_INTERVAL_HOURS`; 0: none on a schedule).
+	"""
+	intervalHours: Float!
+	"""
+	How many are kept (`SOVEMU_BACKUP_KEEP`; 0: every one).
+	"""
+	keep: Int!
+	"""
+	The backup restored at startup, if `SOVEMU_RESTORE_FROM` is set.
+	"""
+	restoreFrom: String
+	"""
+	Newest first.
+	"""
+	files: [BackupFile!]!
+}
+
+"""
 One input driving one button.
 """
 type Binding {
@@ -1316,6 +1358,10 @@ enum JobName {
 	Database upkeep: expired sign-ins and old job history deleted.
 	"""
 	MAINTENANCE
+	"""
+	A backup of the database, the signing keys and the saves.
+	"""
+	BACKUP
 }
 
 """
@@ -1363,6 +1409,10 @@ A background job this server has, and its state now.
 """
 type JobState {
 	name: JobName!
+	"""
+	Its name for people ("Library scan").
+	"""
+	label: String!
 	description: String!
 	"""
 	How often it runs on its own, in minutes; none if it does not (it follows another job,
@@ -1763,6 +1813,10 @@ type Mutation {
 	runs.
 	"""
 	lookUpGame(gameId: Int!): MetadataStatus!
+	"""
+	Admins: deletes a backup (`NOT_FOUND` if there is none by that name).
+	"""
+	deleteBackup(name: String!): Boolean!
 	"""
 	Admins: makes a collection everyone sees (`CONFLICT` if one has that name).
 	"""
@@ -2226,6 +2280,10 @@ type Query {
 	Admins: how many games (or files) of each kind need attention, per system.
 	"""
 	attentionCounts: [AttentionCount!]!
+	"""
+	Admins: the backups kept, and how they are made.
+	"""
+	backups: Backups!
 	"""
 	Admins: the server's recent log, its own lines and its game sessions': the newest
 	`limit` (1000 at most) at `level` and above, of one `session`, holding `text`, after line
