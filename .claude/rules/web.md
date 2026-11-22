@@ -65,5 +65,13 @@ paths:
   (`biome ci`) checks, in CI and the pre-push hook. Warnings (effect dependencies, some a11y
   rules for the pad-driven screens) are worth a look but do not fail; errors do. Never edit
   `src/graphql-env.d.ts` by hand: `npm run schema` writes it.
+- **End-to-end tests are Playwright** (`e2e/`, `playwright.config.ts`): `*.e2e.ts` files (Vitest
+  owns `*.test.ts`) run in Chromium against a real `sovemu-server` that `e2e/server.mjs` builds
+  and starts on a fresh data folder (`test-results/e2e-data`) with stand-in games (a few bytes
+  named like ROMs, never real ones) and an admin; `auth.setup.ts` signs in once through the real
+  sign-in and every test starts signed in. Find elements by role and label
+  (`getByRole("button", { name: "Rescan" })`, `getByLabel("Username")`), never by CSS class.
+  A screen or flow worth checking by eye gets a test here. `SOVEMU_E2E_URL` runs them against a
+  server already running; `npm run e2e:ui` opens Playwright's UI.
 - Before a PR: `npm run lint`, `npm test` and `npm run build` (which runs `tsc` first) from
   `SovEmu.Web/`.
