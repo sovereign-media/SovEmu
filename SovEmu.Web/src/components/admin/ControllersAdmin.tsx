@@ -7,7 +7,7 @@
 // admin's can be copied out as environment lines.
 
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Gamepad2, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
+import { Check, Copy, Info, Keyboard, Lock, RotateCcw, Save, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type ControllerDefaults, type PadLayout, type SystemControls, type SystemSummary } from "../../lib/api";
 import {
@@ -239,27 +239,16 @@ function Controllers() {
 
   return (
     <>
-      <section className={panel}>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-bold">
-              <Gamepad2 className="size-5 text-slate-400" /> Controllers
-            </h2>
-            <p className="mt-1 max-w-prose text-sm text-slate-400">
-              The buttons every player starts with, per controller model. Players can still remap their own in a game's
-              Controls menu, which wins over these.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
-            <Select
-              label="System"
-              value={system}
-              options={[{ value: "", label: "Every system" }, ...systems.map((s) => ({ value: s.id, label: s.name }))]}
-              onChange={chooseSystem}
-              className="w-64"
-            />
-          </div>
+      <section className={panel} aria-label="Controller">
+        <div className="flex flex-wrap gap-2">
+          <Select label="Controller" value={controller} options={choices} onChange={choose} className="w-64" />
+          <Select
+            label="System"
+            value={system}
+            options={[{ value: "", label: "Every system" }, ...systems.map((s) => ({ value: s.id, label: s.name }))]}
+            onChange={chooseSystem}
+            className="w-64"
+          />
         </div>
         <p className="mt-4 flex items-center gap-2 text-sm text-slate-400">
           {locked && <Lock className="size-4 text-amber-300" />}
@@ -360,7 +349,10 @@ function Controllers() {
 
 export default function ControllersAdmin() {
   return (
-    <AdminPage width="max-w-6xl">
+    <AdminPage
+      width="max-w-6xl"
+      description="The buttons every player starts with, per controller model. Players can still remap their own in a game's Controls menu, which wins over these."
+    >
       <Controllers />
     </AdminPage>
   );

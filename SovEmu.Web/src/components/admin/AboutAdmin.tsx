@@ -8,9 +8,7 @@ import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { buildText, shortCommit } from "../../lib/about";
 import { q } from "../../lib/data";
-import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, ErrorNote, Licence } from "./AdminPage";
 
 function Link({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -25,19 +23,6 @@ function Link({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-function Licence({ children, nonCommercial = false }: { children: ReactNode; nonCommercial?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap",
-        nonCommercial ? "bg-amber-500/15 text-amber-300" : "bg-white/10 text-slate-300",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function About() {
   const about = useQuery(q.about());
   const cores = useQuery(q.cores());
@@ -47,10 +32,7 @@ function About() {
       <ErrorNote error={about.error ?? cores.error} />
       {a && (
         <>
-          <section className={panel} aria-labelledby="build-heading">
-            <h2 id="build-heading" className="text-lg font-bold">
-              SovEmu {buildText(a.buildInfo)}
-            </h2>
+          <AdminSection title={<>SovEmu {buildText(a.buildInfo)}</>}>
             <p className="mt-1 text-sm text-slate-400">
               A self-hosted console emulation server, for personal and family use. It is not sold, which several of the
               emulators and services below require. Its cores come from libretro's {a.buildInfo.libretroRelease} stable
@@ -61,12 +43,9 @@ function About() {
                 Commit <code className="font-mono">{a.buildInfo.revision}</code>
               </p>
             )}
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="cores-heading">
-            <h2 id="cores-heading" className="text-lg font-bold">
-              Emulators
-            </h2>
+          <AdminSection title="Emulators">
             <p className="mt-1 text-sm text-slate-400">
               The libretro cores the image ships, as their own information files state their licences.
             </p>
@@ -82,12 +61,9 @@ function About() {
                   </li>
                 ))}
             </ul>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="services-heading">
-            <h2 id="services-heading" className="text-lg font-bold">
-              Game information
-            </h2>
+          <AdminSection title="Game information">
             <ul className="mt-3 divide-y divide-white/5">
               {a.attributions.services.map((s) => (
                 <li key={s.name} className="grid gap-1 py-3">
@@ -114,12 +90,9 @@ function About() {
                 </li>
               ))}
             </ul>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="components-heading">
-            <h2 id="components-heading" className="text-lg font-bold">
-              Also in the image
-            </h2>
+          <AdminSection title="Also in the image">
             <ul className="mt-3 divide-y divide-white/5">
               {a.attributions.components.map((c) => (
                 <li key={c.name} className="flex flex-wrap items-center gap-3 py-2.5">
@@ -143,7 +116,7 @@ function About() {
               Debian's packages in the image (glibc, libva and the rest) keep their licences in{" "}
               <code>/usr/share/doc/*/copyright</code>.
             </p>
-          </section>
+          </AdminSection>
         </>
       )}
     </>

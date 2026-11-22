@@ -120,6 +120,34 @@ export function Confirm({
   );
 }
 
+// --- Pill -----------------------------------------------------------------------------------
+
+/** What a pill says about its subject, as a colour. */
+export type PillTone = "neutral" | "muted" | "accent" | "good" | "warn" | "bad";
+
+const PILL_TONES: Record<PillTone, string> = {
+  neutral: "bg-white/10 text-slate-300",
+  muted: "bg-white/10 text-slate-400",
+  accent: "bg-accent/20 text-accent",
+  good: "bg-emerald-500/15 text-emerald-300",
+  warn: "bg-amber-500/15 text-amber-300",
+  bad: "bg-red-500/20 text-red-300",
+};
+
+/** A short label for a state, a role or a licence. */
+export function Pill({ tone = "neutral", className, ...props }: ComponentProps<"span"> & { tone?: PillTone }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap [&_svg]:size-3.5",
+        PILL_TONES[tone],
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 // --- Select ---------------------------------------------------------------------------------
 
 /** Radix refuses an empty item value, and a core option may have one: values are prefixed. */

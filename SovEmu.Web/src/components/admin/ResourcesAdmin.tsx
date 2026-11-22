@@ -4,7 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ChartLine, Cpu, Info } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import type { ResourceHistory, ResourceRange, ServerResources } from "../../lib/api";
 import { q } from "../../lib/data";
 import {
@@ -17,8 +17,8 @@ import {
   tickLabel,
   timeTicks,
 } from "../../lib/resources";
-import { Progress, panel, Segmented } from "../ui/primitives";
-import AdminPage from "./AdminPage";
+import { Progress, Segmented } from "../ui/primitives";
+import AdminPage, { AdminSection } from "./AdminPage";
 
 const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "HOUR", label: "Hour" },
@@ -26,31 +26,6 @@ const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "WEEK", label: "Week" },
   { value: "MONTH", label: "Month" },
 ];
-
-function Card({
-  title,
-  icon,
-  actions,
-  children,
-}: {
-  title: string;
-  icon: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className={panel}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
-          {icon}
-          {title}
-        </h2>
-        {actions}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function Host({ host }: { host: ServerResources["host"] }) {
   const cpus =
@@ -307,18 +282,18 @@ function Resources() {
   const u = r.usage;
   return (
     <>
-      <Card title="Host" icon={<Cpu />}>
+      <AdminSection title="Host" icon={<Cpu />}>
         <Host host={r.host} />
-      </Card>
+      </AdminSection>
 
-      <Card title="In use now" icon={<Activity />}>
+      <AdminSection title="In use now" icon={<Activity />}>
         <p className="mt-2 text-sm text-slate-400">
           The container's whole use: the server and every game session running in it.
         </p>
         <Usage r={r} />
-      </Card>
+      </AdminSection>
 
-      <Card
+      <AdminSection
         title="History"
         icon={<ChartLine />}
         actions={<Segmented label="Time range" value={range} options={RANGES} onChange={setRange} />}
@@ -348,7 +323,7 @@ function Resources() {
             peak are kept for <code>SOVEMU_RESOURCE_HISTORY_DAYS</code> days.
           </span>
         </p>
-      </Card>
+      </AdminSection>
     </>
   );
 }

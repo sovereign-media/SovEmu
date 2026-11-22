@@ -7,8 +7,7 @@ import { Shield, User as UserIcon } from "lucide-react";
 import type { api } from "../../lib/api";
 import { q } from "../../lib/data";
 import { initials } from "../../lib/systems";
-import { cn } from "../ui/cn";
-import { panel } from "../ui/primitives";
+import { Pill, panel } from "../ui/primitives";
 import AdminPage, { ErrorNote } from "./AdminPage";
 
 type Account = Awaited<ReturnType<typeof api.users>>[number];
@@ -16,15 +15,10 @@ type Account = Awaited<ReturnType<typeof api.users>>[number];
 function RoleBadge({ role }: { role: Account["role"] }) {
   const admin = role === "ADMIN";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold [&_svg]:size-3.5",
-        admin ? "bg-accent/20 text-accent" : "bg-white/10 text-slate-300",
-      )}
-    >
+    <Pill tone={admin ? "accent" : "neutral"}>
       {admin ? <Shield aria-hidden /> : <UserIcon aria-hidden />}
       {admin ? "Admin" : "Viewer"}
-    </span>
+    </Pill>
   );
 }
 

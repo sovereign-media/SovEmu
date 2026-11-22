@@ -11,8 +11,8 @@ import { q, queryClient } from "../../lib/data";
 import { AREA_LABELS, formatBytes, relativePath, segments } from "../../lib/storage";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
-import { Confirm, panel, Tooltip } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import { Confirm, Tooltip } from "../ui/primitives";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
 /** Segment colours: SovEmu's areas in turn, then the rest of the disk and the free space. */
 const PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#06b6d4", "#ec4899", "#a855f7", "#84cc16", "#f97316"];
@@ -45,17 +45,18 @@ function Storage() {
       <ErrorNote error={storage.error ?? refresh.error ?? clear.error} />
       {r && (
         <>
-          <section className={panel} aria-labelledby="disk-heading">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="disk-heading" className="text-lg font-bold">
-                {r.totalBytes != null && r.freeBytes != null
-                  ? `${formatBytes(r.freeBytes)} free of ${formatBytes(r.totalBytes)}`
-                  : "The data folder"}
-              </h2>
+          <AdminSection
+            title={
+              r.totalBytes != null && r.freeBytes != null
+                ? `${formatBytes(r.freeBytes)} free of ${formatBytes(r.totalBytes)}`
+                : "The data folder"
+            }
+            actions={
               <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
                 <RefreshCw className={refresh.isPending ? "animate-spin" : ""} /> Refresh
               </Button>
-            </div>
+            }
+          >
             {bar.length > 0 && (
               <>
                 <div
@@ -84,12 +85,9 @@ function Storage() {
             <p className="mt-3 text-xs text-muted">
               <code>{r.dataDir}</code> · measured {new Date(r.measuredAt * 1000).toLocaleTimeString("en-GB")}
             </p>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="areas-heading">
-            <h2 id="areas-heading" className="text-lg font-bold">
-              In the data folder
-            </h2>
+          <AdminSection title="In the data folder">
             <table className="mt-3 w-full text-sm">
               <thead className="text-left text-xs text-muted">
                 <tr>
@@ -112,12 +110,9 @@ function Storage() {
                 ))}
               </tbody>
             </table>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="saves-heading">
-            <h2 id="saves-heading" className="text-lg font-bold">
-              Saves by player
-            </h2>
+          <AdminSection title="Saves by player">
             {r.saves.length === 0 ? (
               <p className="mt-2 text-sm text-muted">No saves yet.</p>
             ) : (
@@ -133,12 +128,9 @@ function Storage() {
                 ))}
               </ul>
             )}
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="cache-heading">
-            <h2 id="cache-heading" className="text-lg font-bold">
-              Game cache
-            </h2>
+          <AdminSection title="Game cache">
             <p className="mt-2 text-sm text-slate-400">
               {r.cacheLimitBytes != null
                 ? `In cache mode, games and box art are copied from the library as they are used, up to ${formatBytes(r.cacheLimitBytes)} (SOVEMU_CACHE_GB), least recently used out. `
@@ -156,7 +148,7 @@ function Storage() {
               </Button>
               {message && <span className="text-sm text-emerald-300">{message}</span>}
             </div>
-          </section>
+          </AdminSection>
         </>
       )}
       <Confirm

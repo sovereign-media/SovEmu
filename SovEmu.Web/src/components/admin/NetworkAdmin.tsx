@@ -8,8 +8,8 @@ import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { q } from "../../lib/data";
 import { networkWarnings, portRange } from "../../lib/network";
-import { Progress, panel } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import { Progress } from "../ui/primitives";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
 function Facts({ children }: { children: ReactNode }) {
@@ -50,10 +50,7 @@ function Network() {
             </div>
           ))}
 
-          <section className={panel} aria-labelledby="streams-heading">
-            <h2 id="streams-heading" className="text-lg font-bold">
-              Game streams
-            </h2>
+          <AdminSection title="Game streams">
             <Facts>
               <Fact label="Media goes to">
                 <code className={mono}>{n.advertisedIp}</code>{" "}
@@ -80,12 +77,9 @@ function Network() {
             <p className="mt-3 text-xs text-muted">
               One port per game being played. Publish the whole range, UDP, from the host or container.
             </p>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="signin-heading">
-            <h2 id="signin-heading" className="text-lg font-bold">
-              Sign-in addresses
-            </h2>
+          <AdminSection title="Sign-in addresses">
             <ul className="mt-3 grid gap-1">
               {n.publicUrls.map((u) => (
                 <li key={u}>
@@ -99,12 +93,9 @@ function Network() {
                 : "SOVEMU_PUBLIC_URL is not set, so these are this host's own: set it when people use a hostname or a proxy."}{" "}
               Cookies are {n.secureCookies ? "" : "not "}marked Secure (<code>SOVEMU_SECURE_COOKIES</code>).
             </p>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="request-heading">
-            <h2 id="request-heading" className="text-lg font-bold">
-              This request
-            </h2>
+          <AdminSection title="This request">
             <Facts>
               <Fact label="Address used">
                 <code className={mono}>{n.requestHost || "(none)"}</code>
@@ -127,12 +118,9 @@ function Network() {
               Behind a reverse proxy, "Your address" should be your own, not the proxy's: if it is the proxy's, add the
               proxy to <code>SOVEMU_TRUSTED_PROXIES</code>.
             </p>
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="ice-heading">
-            <h2 id="ice-heading" className="text-lg font-bold">
-              STUN and TURN
-            </h2>
+          <AdminSection title="STUN and TURN">
             {n.iceServers.length === 0 ? (
               <p className="mt-2 text-sm text-muted">
                 None: browsers connect to the game ports directly, which works on the same network or with the ports
@@ -148,18 +136,15 @@ function Network() {
                 ))}
               </ul>
             )}
-          </section>
+          </AdminSection>
 
-          <section className={panel} aria-labelledby="network-settings-heading">
-            <h2 id="network-settings-heading" className="text-lg font-bold">
-              Settings
-            </h2>
+          <AdminSection title="Settings">
             <ul className="mt-1 divide-y divide-white/5">
               {n.settings.map((s) => (
                 <SettingRow key={s.name} setting={s} />
               ))}
             </ul>
-          </section>
+          </AdminSection>
         </>
       )}
     </>

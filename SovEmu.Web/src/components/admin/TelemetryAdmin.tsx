@@ -8,7 +8,7 @@ import { q } from "../../lib/data";
 import { type ExportResult, exportText, intervalText } from "../../lib/telemetry";
 import { cn } from "../ui/cn";
 import { panel } from "../ui/primitives";
-import AdminPage, { EnvLine, ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
 function Signal({ name, result }: { name: string; result: ExportResult }) {
@@ -83,10 +83,7 @@ function Telemetry() {
           </section>
 
           {t.enabled && (
-            <section className={panel} aria-labelledby="signals-heading">
-              <h2 id="signals-heading" className="text-lg font-bold">
-                Exports since the server started
-              </h2>
+            <AdminSection title="Exports since the server started">
               <ul className="divide-y divide-white/5">
                 <Signal name="Traces" result={t.traces} />
                 <Signal name="Metrics" result={t.metrics} />
@@ -94,19 +91,16 @@ function Telemetry() {
               <p className="mt-2 text-xs text-muted">
                 The first metrics are sent one interval after the server starts.
               </p>
-            </section>
+            </AdminSection>
           )}
 
-          <section className={panel} aria-labelledby="telemetry-settings-heading">
-            <h2 id="telemetry-settings-heading" className="text-lg font-bold">
-              Settings
-            </h2>
+          <AdminSection title="Settings">
             <ul className="mt-1 divide-y divide-white/5">
               {t.settings.map((s) => (
                 <SettingRow key={s.name} setting={s} />
               ))}
             </ul>
-          </section>
+          </AdminSection>
         </>
       )}
     </>

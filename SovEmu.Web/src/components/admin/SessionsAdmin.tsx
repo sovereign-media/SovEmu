@@ -18,17 +18,16 @@ import {
   healthSummary,
 } from "../../lib/sessions";
 import { Button } from "../ui/button";
-import { Confirm, panel, Tooltip } from "../ui/primitives";
-import AdminPage from "./AdminPage";
-
-const pill = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold whitespace-nowrap";
+import { Confirm, Pill, Tooltip } from "../ui/primitives";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
 /** The encoder pill: green on a GPU, grey on the CPU, with a mark when it fell back. */
 function StreamPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
-  const tone = p.videoHardware ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-slate-200";
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={`${pill} ${tone}`}>{streamLabel(p.videoCodec, p.videoEncoder, p.videoHardware)}</span>
+      <Pill tone={p.videoHardware ? "good" : "neutral"}>
+        {streamLabel(p.videoCodec, p.videoEncoder, p.videoHardware)}
+      </Pill>
       {p.fallbacks.length > 0 && (
         <Tooltip content={`Fell back from ${fallbacksLabel(p.fallbacks)}`}>
           <CircleAlert className="size-4 text-amber-400" aria-label="Fell back" />
@@ -40,10 +39,9 @@ function StreamPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
 
 function RenderPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
   if (!p.renderer) return <span className="text-sm text-slate-400">CPU</span>;
-  const tone = p.rendererSoftware ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200";
   return (
     <Tooltip content={renderingLabel(p.renderer, p.rendererSoftware)}>
-      <span className={`${pill} ${tone}`}>{p.rendererSoftware ? "Software" : "GPU"}</span>
+      <Pill tone={p.rendererSoftware ? "warn" : "good"}>{p.rendererSoftware ? "Software" : "GPU"}</Pill>
     </Tooltip>
   );
 }
@@ -141,14 +139,11 @@ function Failures() {
   const failures = useQuery({ ...q.sessionFailures(), refetchInterval: 10_000 });
   if (!failures.data) return null;
   return (
-    <section className={panel} aria-labelledby="failures-heading">
-      <h2 id="failures-heading" className="flex items-center gap-2 text-xl font-bold">
-        <TriangleAlert className="size-5 text-slate-400" /> Recent failures
-      </h2>
-      <p className="mt-2 text-sm text-slate-400">
-        Games that would not start, or crashed while playing, newest first, with the emulator's last words: a missing
-        BIOS or an option it cannot run with shows here. Kept until the server restarts.
-      </p>
+    <AdminSection
+      icon={<TriangleAlert />}
+      title="Recent failures"
+      description="Games that would not start, or crashed while playing, newest first, with the emulator's last words: a missing BIOS or an option it cannot run with shows here. Kept until the server restarts."
+    >
       {failures.data.length === 0 ? (
         <p className="mt-6 text-sm text-slate-400">No game has failed since the server started.</p>
       ) : (
@@ -158,7 +153,7 @@ function Failures() {
           ))}
         </ul>
       )}
-    </section>
+    </AdminSection>
   );
 }
 
@@ -176,14 +171,11 @@ function Sessions() {
   const now = Date.now() / 1000;
   return (
     <>
-      <section className={panel}>
-        <h2 className="flex items-center gap-2 text-xl font-bold">
-          <MonitorPlay className="size-5 text-slate-400" /> Active sessions
-        </h2>
-        <p className="mt-2 text-sm text-slate-400">
-          Games being played now, and how each stream is made. The player's own numbers show while their stats panel is
-          open.
-        </p>
+      <AdminSection
+        icon={<MonitorPlay />}
+        title="Active sessions"
+        description="Games being played now, and how each stream is made. The player's own numbers show while their stats panel is open."
+      >
         {sessions.data.length === 0 ? (
           <p className="mt-6 text-sm text-slate-400">No games are being played.</p>
         ) : (
@@ -290,8 +282,10 @@ function Sessions() {
             </table>
           </div>
         )}
-        {stop.error && <p className="mt-3 text-sm text-amber-300">{stop.error.message}</p>}
-      </section>
+        <div className="mt-3">
+          <ErrorNote error={stop.error} />
+        </div>
+      </AdminSection>
       <Failures />
       <Confirm
         open={stopping !== null}

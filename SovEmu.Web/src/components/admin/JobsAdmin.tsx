@@ -8,8 +8,7 @@ import { api, type JobState } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
 import { JOB_LABELS, lastRunText, scheduleText } from "../../lib/jobs";
 import { Button } from "../ui/button";
-import { panel } from "../ui/primitives";
-import AdminPage from "./AdminPage";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
 function StatusIcon({ job }: { job: JobState }) {
   if (job.running) return <LoaderCircle className="size-5 animate-spin text-sky-400" aria-label="Running" />;
@@ -34,14 +33,19 @@ function Jobs() {
   const now = Date.now();
   return (
     <>
-      <section className={panel}>
-        <h2 className="text-xl font-bold">Background jobs</h2>
-        <p className="mt-2 text-sm text-slate-400">
-          What the server does on its own. Intervals are set on the server (<code>SOVEMU_SCAN_INTERVAL_MINUTES</code>,{" "}
-          <code>SOVEMU_MIRROR_INTERVAL_MINUTES</code>, <code>SOVEMU_MAINTENANCE_INTERVAL_MINUTES</code>); 0 turns a
-          job's schedule off.
-        </p>
-        {run.error && <p className="mt-3 text-sm text-amber-300">{run.error.message}</p>}
+      <AdminSection
+        title="Background jobs"
+        description={
+          <>
+            What the server does on its own. Intervals are set on the server (<code>SOVEMU_SCAN_INTERVAL_MINUTES</code>,{" "}
+            <code>SOVEMU_MIRROR_INTERVAL_MINUTES</code>, <code>SOVEMU_MAINTENANCE_INTERVAL_MINUTES</code>); 0 turns a
+            job's schedule off.
+          </>
+        }
+      >
+        <div className="mt-3">
+          <ErrorNote error={run.error} />
+        </div>
         <ul className="mt-4 divide-y divide-white/10">
           {jobs.data.map((job) => (
             <li key={job.name} className="flex items-start gap-4 py-4">
@@ -70,7 +74,7 @@ function Jobs() {
             </li>
           ))}
         </ul>
-      </section>
+      </AdminSection>
     </>
   );
 }

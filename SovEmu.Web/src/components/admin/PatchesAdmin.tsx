@@ -8,7 +8,7 @@ import { q } from "../../lib/data";
 import { groupPatches, patchCount } from "../../lib/patches";
 import { cn } from "../ui/cn";
 import { panel } from "../ui/primitives";
-import AdminPage, { ErrorNote } from "./AdminPage";
+import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
 const players = (n: number) => `${n} ${n === 1 ? "player" : "players"}`;
 
@@ -34,10 +34,7 @@ function Patches() {
         <p className="text-sm text-muted">No patches were found in the library.</p>
       )}
       {grouped.map((system) => (
-        <section key={system.system} className={panel} aria-labelledby={`patches-${system.system}`}>
-          <h2 id={`patches-${system.system}`} className="text-lg font-bold">
-            {names.get(system.system) ?? system.system}
-          </h2>
+        <AdminSection key={system.system} title={names.get(system.system) ?? system.system}>
           <ul className="mt-3 divide-y divide-white/5">
             {system.games.map((game) => (
               <li key={game.id} className="py-3">
@@ -87,7 +84,7 @@ function Patches() {
               </li>
             ))}
           </ul>
-        </section>
+        </AdminSection>
       ))}
     </>
   );

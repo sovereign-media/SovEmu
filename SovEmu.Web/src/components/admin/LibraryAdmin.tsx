@@ -3,12 +3,12 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
-import { type ReactNode, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
 import { Button } from "../ui/button";
-import { Confirm, Progress, panel } from "../ui/primitives";
-import AdminPage from "./AdminPage";
+import { Confirm, Progress } from "../ui/primitives";
+import AdminPage, { AdminSection } from "./AdminPage";
 
 const MODES: Record<LibraryStatus["mode"], [string, string]> = {
   DIRECT: ["Direct", "Games are played straight from the library: local disk or a share on the same network."],
@@ -21,31 +21,6 @@ const MODES: Record<LibraryStatus["mode"], [string, string]> = {
     "A full local copy of the library is kept in sync in the background, and games are played from it.",
   ],
 };
-
-function Card({
-  title,
-  icon,
-  actions,
-  children,
-}: {
-  title: string;
-  icon: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className={panel}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 className="flex items-center gap-2 text-xl font-bold [&_svg]:size-5 [&_svg]:text-slate-400">
-          {icon}
-          {title}
-        </h2>
-        <div className="flex gap-2">{actions}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function syncText(m: NonNullable<LibraryStatus["mirror"]>): string {
   if (m.error) return m.error;
@@ -85,7 +60,7 @@ function Library() {
   const artPct = art.total ? (100 * art.done) / art.total : 0;
   return (
     <>
-      <Card
+      <AdminSection
         title="Library"
         icon={<HardDrive />}
         actions={
@@ -107,10 +82,10 @@ function Library() {
           )}
         </dl>
         <p className="mt-3 text-sm text-slate-400">{help}</p>
-      </Card>
+      </AdminSection>
 
       {m && (
-        <Card
+        <AdminSection
           title="Mirror"
           icon={<FolderSync />}
           actions={
@@ -127,10 +102,10 @@ function Library() {
         >
           <Progress className="mt-4" value={syncPct} label="Mirror sync" />
           <p className="mt-2 text-sm text-slate-300">{syncText(m)}</p>
-        </Card>
+        </AdminSection>
       )}
 
-      <Card
+      <AdminSection
         title="Game information"
         icon={<Info />}
         actions={
@@ -180,7 +155,7 @@ function Library() {
             ))}
           </ul>
         )}
-      </Card>
+      </AdminSection>
 
       <Confirm
         open={confirm}
