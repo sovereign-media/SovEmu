@@ -1485,6 +1485,13 @@ type Mutation {
 	"""
 	setBackground(id: String!): Boolean!
 	"""
+	Admins: tests this browser's connection to the game streams. Give an offer (SDP) with a
+	data channel; the answer (SDP) comes from a peer on a free game port, answered as a game
+	is, which echoes whatever the data channel carries for `testSeconds`. The browser reads
+	the round trip and the path (direct, or through a relay) from its own end.
+	"""
+	testConnection(sdp: String!): String!
+	"""
 	Signed-in users: what went wrong on this client (a connection that failed, a stalled
 	picture, a screen that crashed), for the server's log beside the session's own lines and
 	the admin's Client errors page. `client` names it and its version (`android 0.1.0
@@ -1821,6 +1828,11 @@ type Query {
 	Admins: every background, and the one chosen.
 	"""
 	appearance: AppearanceSettings!
+	"""
+	Admins: the settings that shape every game's stream (bitrates, codec and encoder,
+	keyframes, fast-forward, rewind).
+	"""
+	streaming: StreamingReport!
 	"""
 	Admins: the client errors of the last `days` days, by kind and client, the most frequent
 	first.
@@ -2254,6 +2266,20 @@ type StreamPipeline {
 	Frames the picture runs ahead of the game (0: off).
 	"""
 	runAhead: Int!
+}
+
+"""
+What the Streaming page shows.
+"""
+type StreamingReport {
+	"""
+	The settings that shape a game's stream, as the Configuration page shows them.
+	"""
+	settings: [ConfigSetting!]!
+	"""
+	How long a connection test stays up, connected or not.
+	"""
+	testSeconds: Int!
 }
 
 type System {

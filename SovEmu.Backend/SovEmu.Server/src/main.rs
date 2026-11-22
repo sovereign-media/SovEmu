@@ -39,6 +39,7 @@ mod resources;
 mod search;
 mod settings;
 mod storage;
+mod streaming;
 mod structured;
 mod telemetry;
 

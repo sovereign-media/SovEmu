@@ -42,6 +42,7 @@ mod resources;
 mod server;
 mod sessions;
 mod settings;
+mod streaming;
 
 #[allow(unused_imports)]
 use accounts::*;
@@ -295,6 +296,7 @@ pub(crate) struct Query(
     settings::SettingsQuery,
     controllers::ControllersQuery,
     appearance::AppearanceQuery,
+    streaming::StreamingQuery,
     client_events::ClientEventsQuery,
 );
 
@@ -309,6 +311,7 @@ pub(crate) struct Mutation(
     settings::SettingsMutation,
     controllers::ControllersMutation,
     appearance::AppearanceMutation,
+    streaming::StreamingMutation,
     client_events::ClientEventsMutation,
 );
 

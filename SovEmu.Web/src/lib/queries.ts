@@ -981,22 +981,32 @@ export const CoresQuery = graphql(`
   }
 `);
 
-export const ConfigurationQuery = graphql(`
-  query Configuration {
-    configuration {
-      group
-      name
-      value
-      effective
-      source
-      secret
-      default
-      description
-    }
+export const ConfigSettingFields = graphql(`
+  fragment ConfigSettingFields on ConfigSetting {
+    group
+    name
+    value
+    effective
+    source
+    secret
+    default
+    description
   }
 `);
 
-export const NetworkQuery = graphql(`
+export const ConfigurationQuery = graphql(
+  `
+  query Configuration {
+    configuration {
+      ...ConfigSettingFields
+    }
+  }
+`,
+  [ConfigSettingFields],
+);
+
+export const NetworkQuery = graphql(
+  `
   query Network {
     network {
       http
@@ -1021,18 +1031,13 @@ export const NetworkQuery = graphql(`
         hasCredential
       }
       settings {
-        group
-        name
-        value
-        effective
-        source
-        secret
-        default
-        description
+        ...ConfigSettingFields
       }
     }
   }
-`);
+`,
+  [ConfigSettingFields],
+);
 
 export const StorageQuery = graphql(`
   query Storage($refresh: Boolean) {
@@ -1055,6 +1060,26 @@ export const StorageQuery = graphql(`
         files
       }
     }
+  }
+`);
+
+export const StreamingQuery = graphql(
+  `
+  query Streaming {
+    streaming {
+      testSeconds
+      settings {
+        ...ConfigSettingFields
+      }
+    }
+  }
+`,
+  [ConfigSettingFields],
+);
+
+export const TestConnectionMutation = graphql(`
+  mutation TestConnection($sdp: String!) {
+    testConnection(sdp: $sdp)
   }
 `);
 
@@ -1094,7 +1119,8 @@ export const ClearCacheMutation = graphql(`
   }
 `);
 
-export const TelemetryQuery = graphql(`
+export const TelemetryQuery = graphql(
+  `
   query Telemetry {
     telemetry {
       enabled
@@ -1118,18 +1144,13 @@ export const TelemetryQuery = graphql(`
         failures
       }
       settings {
-        group
-        name
-        value
-        effective
-        source
-        secret
-        default
-        description
+        ...ConfigSettingFields
       }
     }
   }
-`);
+`,
+  [ConfigSettingFields],
+);
 
 export const AboutQuery = graphql(`
   query About {

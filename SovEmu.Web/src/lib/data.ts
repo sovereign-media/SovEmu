@@ -45,6 +45,7 @@ export const q = {
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
+  streaming: () => queryOptions({ queryKey: ["admin", "streaming"], queryFn: api.streaming }),
   clientEventGroups: (days: number) =>
     queryOptions({ queryKey: ["admin", "client-events", days], queryFn: () => api.clientEventGroups(days) }),
   clientEvents: (kind: ClientEventKind, client: string, days: number) =>

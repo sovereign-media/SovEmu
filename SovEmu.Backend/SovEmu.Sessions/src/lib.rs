@@ -5,11 +5,14 @@
 //!   allow-listed environment they get (no secrets).
 //! - [`starts`]: the progress of games being started, for the clients' loading screens.
 //! - [`gpu`]: where 3D systems render, as `sovemu-worker gpu` reports.
+//! - [`connection_test`]: the admin's connection test, a worker on a game port that answers a
+//!   browser's offer and echoes its data channel.
 //!
 //! The server never runs a core: this crate starts the processes that do. It knows nothing about
 //! HTTP or the database; it reports sessions starting and ending to an [`Observer`] (the server
 //! records metrics).
 
+pub mod connection_test;
 pub mod gpu;
 pub mod starts;
 pub mod workers;
