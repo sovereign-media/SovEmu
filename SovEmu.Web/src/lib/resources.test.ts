@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatCores, geometry, nearest, runs, severity, timeTicks } from "./resources";
+import { formatCores, geometry, nearest, runs, severity, timeTicks } from "./resources";
 
 const p = (at: number, average: number, max = average) => ({ at, average, max });
 
 describe("resources", () => {
-  it("says sizes and cores briefly", () => {
-    expect(formatBytes(512 * 1024 ** 2)).toBe("512 MB");
-    expect(formatBytes(3.25 * 1024 ** 3)).toBe("3.3 GB");
-    expect(formatBytes(128 * 1024 ** 3)).toBe("128 GB");
+  it("says cores briefly", () => {
     expect(formatCores(2)).toBe("2 cores");
     expect(formatCores(1)).toBe("1 core");
     expect(formatCores(1.5)).toBe("1.5 cores");

@@ -4,8 +4,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
 import { useCallback, useState } from "react";
-import { api, formatSize, type LibraryStatus, type MetadataStatus } from "../../lib/api";
+import { api, type LibraryStatus, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
+import { formatBytes } from "../../lib/numbers";
 import { Button } from "../ui/button";
 import { Confirm, Progress } from "../ui/primitives";
 import AdminPage, { AdminSection } from "./AdminPage";
@@ -25,7 +26,7 @@ const MODES: Record<LibraryStatus["mode"], [string, string]> = {
 function syncText(m: NonNullable<LibraryStatus["mirror"]>): string {
   if (m.error) return m.error;
   if (m.running)
-    return `Copying ${m.filesDone.toLocaleString()} of ${m.filesTotal.toLocaleString()} files (${formatSize(m.bytesDone)} of ${formatSize(m.bytesTotal)})`;
+    return `Copying ${m.filesDone.toLocaleString()} of ${m.filesTotal.toLocaleString()} files (${formatBytes(m.bytesDone)} of ${formatBytes(m.bytesTotal)})`;
   if (m.finishedAt)
     return `Up to date as of ${new Date(m.finishedAt * 1000).toLocaleString()}${m.failed ? ` · ${m.failed} failed` : ""}${m.removed ? ` · ${m.removed} removed` : ""}`;
   return "Not synced yet.";
@@ -77,7 +78,7 @@ function Library() {
           {library.cacheBytes !== null && (
             <>
               <dt className="text-slate-400">Local cache</dt>
-              <dd>{formatSize(library.cacheBytes)}</dd>
+              <dd>{formatBytes(library.cacheBytes)}</dd>
             </>
           )}
         </dl>
