@@ -2,6 +2,7 @@
 // between groups. One list drives the menu, the page headings and the document titles, so a new
 // page is one entry here.
 import {
+  Activity,
   FileDiff,
   Frame,
   Gamepad,
@@ -143,6 +144,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Storage",
         title: "Where the data folder's space goes, and clearing the game cache",
         icon: HardDrive,
+      },
+      {
+        href: "/admin/telemetry/",
+        label: "Telemetry",
+        title: "Whether traces and metrics are exported, and how the last export went",
+        icon: Activity,
       },
     ],
   },

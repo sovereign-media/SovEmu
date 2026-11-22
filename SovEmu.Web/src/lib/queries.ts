@@ -1007,3 +1007,40 @@ export const ClearCacheMutation = graphql(`
     clearCache
   }
 `);
+
+export const TelemetryQuery = graphql(`
+  query Telemetry {
+    telemetry {
+      enabled
+      endpoint
+      logFormat
+      serviceName
+      metricIntervalMs
+      headerNames
+      traces {
+        lastAt
+        ok
+        error
+        exports
+        failures
+      }
+      metrics {
+        lastAt
+        ok
+        error
+        exports
+        failures
+      }
+      settings {
+        group
+        name
+        value
+        effective
+        source
+        secret
+        default
+        description
+      }
+    }
+  }
+`);

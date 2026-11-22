@@ -66,6 +66,7 @@ import {
   type SystemFields,
   SystemGamesQuery,
   SystemsQuery,
+  TelemetryQuery,
   UsersQuery,
   ViewerQuery as ViewerDocument,
 } from "./queries";
@@ -130,6 +131,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type TelemetryReport = ResultOf<typeof TelemetryQuery>["telemetry"];
 export type StorageReport = ResultOf<typeof StorageQuery>["storage"];
 export type NetworkReport = ResultOf<typeof NetworkQuery>["network"];
 export type ConfigSetting = ResultOf<typeof ConfigurationQuery>["configuration"][number];
@@ -179,6 +181,8 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** Admin: OpenTelemetry export, and how each signal's last export went. */
+  telemetry: async () => (await request(TelemetryQuery)).telemetry,
   /** Admin: where the data folder's space goes (`refresh`: measure now). */
   storage: async (refresh = false) => (await request(StorageQuery, { refresh })).storage,
   /** Admin: deletes the game cache's copies, but those being played; the bytes freed. */

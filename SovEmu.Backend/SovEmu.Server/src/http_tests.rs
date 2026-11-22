@@ -1570,6 +1570,22 @@ async fn admins_see_where_the_space_goes() {
 }
 
 #[tokio::test]
+async fn admins_see_whether_telemetry_is_exported() {
+    let mut h = Harness::new("telemetry", false).await;
+    h.sign_up_admin().await;
+    let q = "{ telemetry { enabled endpoint logFormat serviceName metricIntervalMs headerNames \
+             traces { lastAt ok exports } settings { name } } }";
+    let t = h.ok(q, json!({})).await["telemetry"].clone();
+    assert_eq!((t["enabled"].clone(), t["endpoint"].clone()), (json!(false), Value::Null));
+    assert_eq!(t["serviceName"], "sovemu-server");
+    assert_eq!(t["metricIntervalMs"], json!(60_000.0));
+    assert_eq!(t["traces"]["lastAt"], Value::Null, "nothing exported");
+    let names: Vec<&str> =
+        t["settings"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"SOVEMU_OTEL_ENDPOINT") && names.contains(&"SOVEMU_LOG_FORMAT"));
+}
+
+#[tokio::test]
 async fn admins_see_every_core_with_its_licence() {
     let mut h = Harness::new("cores", true).await;
     h.sign_up_admin().await;

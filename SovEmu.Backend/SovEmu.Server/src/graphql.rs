@@ -837,6 +837,54 @@ enum PartKind {
 /// A soft patch for a game.
 struct PatchNode(crate::patches::Patch);
 
+/// OpenTelemetry export: whether it is on, where to, and how it has gone.
+#[derive(SimpleObject)]
+struct TelemetryReport {
+    /// `SOVEMU_OTEL_ENDPOINT` is set: traces and metrics are exported.
+    enabled: bool,
+    /// The collector, credentials masked.
+    endpoint: Option<String>,
+    /// `text` or `json` (`SOVEMU_LOG_FORMAT`).
+    log_format: String,
+    /// `OTEL_SERVICE_NAME`, else SovEmu's.
+    service_name: String,
+    /// How often metrics are sent (`OTEL_METRIC_EXPORT_INTERVAL`), milliseconds.
+    metric_interval_ms: f64,
+    /// The headers sent with each export (`OTEL_EXPORTER_OTLP_HEADERS`), by name only.
+    header_names: Vec<String>,
+    traces: ExportResult,
+    metrics: ExportResult,
+    /// The settings this page is about, as the Configuration page shows them.
+    settings: Vec<ConfigSetting>,
+}
+
+/// How one signal's exports have gone since the server started.
+#[derive(SimpleObject)]
+struct ExportResult {
+    /// When the last export finished (Unix seconds); null before the first.
+    last_at: Option<f64>,
+    ok: bool,
+    /// The last export's error, URLs' credentials masked.
+    error: Option<String>,
+    exports: f64,
+    failures: f64,
+}
+
+impl From<crate::telemetry::ExportStatus> for ExportResult {
+    fn from(s: crate::telemetry::ExportStatus) -> Self {
+        Self {
+            last_at: s
+                .last_at
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64()),
+            ok: s.ok,
+            error: s.error,
+            exports: s.exports as f64,
+            failures: s.failures as f64,
+        }
+    }
+}
+
 /// Where the data folder's space goes.
 #[derive(SimpleObject)]
 struct StorageReport {
@@ -2175,6 +2223,43 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
+    /// export went.
+    async fn telemetry(&self, ctx: &Context<'_>) -> Result<TelemetryReport> {
+        admin(ctx).await?;
+        let config = &state(ctx).config;
+        let settings = crate::configuration::settings(config);
+        let env = |name: &str| {
+            config.given.environment.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
+        };
+        let (traces, metrics) = crate::telemetry::export_status();
+        Ok(TelemetryReport {
+            enabled: config.otel_endpoint.is_some(),
+            endpoint: config.otel_endpoint.as_deref().map(crate::redact::url),
+            log_format: config.log_format.as_arg().to_owned(),
+            service_name: env("OTEL_SERVICE_NAME")
+                .unwrap_or_else(|| crate::telemetry::SERVICE.into()),
+            metric_interval_ms: env("OTEL_METRIC_EXPORT_INTERVAL")
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(60_000.0),
+            header_names: env("OTEL_EXPORTER_OTLP_HEADERS")
+                .map(|h| crate::redact::header_names(&h))
+                .unwrap_or_default(),
+            traces: traces.into(),
+            metrics: metrics.into(),
+            settings: settings
+                .into_iter()
+                .filter(|s| {
+                    s.name == "SOVEMU_OTEL_ENDPOINT"
+                        || s.name == "SOVEMU_LOG_FORMAT"
+                        || s.name == "RUST_LOG"
+                        || s.name.starts_with("OTEL_")
+                })
+                .map(Into::into)
+                .collect(),
+        })
     }
 
     /// Admins: where the data folder's space goes. Measured at most every few minutes, unless

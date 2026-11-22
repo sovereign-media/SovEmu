@@ -660,6 +660,23 @@ type EncoderFallback {
 	reason: String!
 }
 
+"""
+How one signal's exports have gone since the server started.
+"""
+type ExportResult {
+	"""
+	When the last export finished (Unix seconds); null before the first.
+	"""
+	lastAt: Float
+	ok: Boolean!
+	"""
+	The last export's error, URLs' credentials masked.
+	"""
+	error: String
+	exports: Float!
+	failures: Float!
+}
+
 type Game {
 	id: Int!
 	"""
@@ -1500,6 +1517,11 @@ type Query {
 	"""
 	activeSessions: [ActiveSession!]!
 	"""
+	Admins: OpenTelemetry export: whether it is on, where to, and how each signal's last
+	export went.
+	"""
+	telemetry: TelemetryReport!
+	"""
 	Admins: where the data folder's space goes. Measured at most every few minutes, unless
 	`refresh` asks for a measurement now.
 	"""
@@ -2040,6 +2062,42 @@ type SystemDecoration {
 	or a set that isn't there.
 	"""
 	preview: Decoration
+}
+
+"""
+OpenTelemetry export: whether it is on, where to, and how it has gone.
+"""
+type TelemetryReport {
+	"""
+	`SOVEMU_OTEL_ENDPOINT` is set: traces and metrics are exported.
+	"""
+	enabled: Boolean!
+	"""
+	The collector, credentials masked.
+	"""
+	endpoint: String
+	"""
+	`text` or `json` (`SOVEMU_LOG_FORMAT`).
+	"""
+	logFormat: String!
+	"""
+	`OTEL_SERVICE_NAME`, else SovEmu's.
+	"""
+	serviceName: String!
+	"""
+	How often metrics are sent (`OTEL_METRIC_EXPORT_INTERVAL`), milliseconds.
+	"""
+	metricIntervalMs: Float!
+	"""
+	The headers sent with each export (`OTEL_EXPORTER_OTLP_HEADERS`), by name only.
+	"""
+	headerNames: [String!]!
+	traces: ExportResult!
+	metrics: ExportResult!
+	"""
+	The settings this page is about, as the Configuration page shows them.
+	"""
+	settings: [ConfigSetting!]!
 }
 
 """

@@ -126,3 +126,12 @@ test("the Storage page shows where the space goes", async ({ page }) => {
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(page.getByRole("heading", { name: /free of/ })).toBeVisible();
 });
+
+test("the Telemetry page says how to turn export on", async ({ page }) => {
+  await page.goto("/admin/telemetry/");
+  await expect(page.getByRole("heading", { name: "Telemetry", level: 1 })).toBeVisible();
+  // The e2e server exports nothing.
+  await expect(page.getByRole("heading", { name: "Nothing is exported" })).toBeVisible();
+  await expect(page.getByText("SOVEMU_OTEL_ENDPOINT=http://otel-collector:4318")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_LOG_FORMAT" })).toBeVisible();
+});
