@@ -738,7 +738,11 @@ function Player() {
         removeEventListener("keydown", onKey);
         removeEventListener("pagehide", onPageHide);
       };
-    })();
+    })().catch((e: unknown) => {
+      // The game could not be read (an unknown or missing `?game`, or the server unreachable):
+      // say so where "Starting…" was, as a failed start does.
+      if (!stopped) setStatus(`Could not start: ${e instanceof Error ? e.message : String(e)}`);
+    });
 
     // Leaving the screen (Back, a link) ends the game as closing the page would: the stream, the
     // listeners, and the server's session, which writes the auto save.
