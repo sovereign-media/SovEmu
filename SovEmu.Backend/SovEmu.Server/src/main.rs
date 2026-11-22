@@ -32,6 +32,7 @@ mod metadata;
 mod ops;
 mod patches;
 mod paths;
+mod play_stats;
 #[cfg(test)]
 mod query_plans;
 mod redact;
@@ -851,6 +852,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
             Arc::new(telemetry::SessionMetrics),
             session_failures.clone(),
             Arc::new(activity.clone()),
+            Arc::new(play_stats::PlayLog::new(db.clone())),
         ])),
     });
     let cache_dir = paths.cache_games();

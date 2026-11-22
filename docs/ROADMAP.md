@@ -56,6 +56,10 @@ held 59.93 fps over 300 frames with no resyncs.
       `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
       changes from their resolvers), kept in `activity` (migration 0023, pruned after
       `SOVEMU_ACTIVITY_HISTORY_DAYS`), filtered by account and kind, paged, and exported as CSV
+- [x] The admin Statistics page: every game played is kept as it ends (`play_sessions`,
+      migration 0024), and a week, month or year shows the totals, time played per day (per
+      week over a year), the most played games, each account's and system's time, and the most
+      favourited games, each figure one query over the window by start time
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own
       page, with what that account has played and its saves, and sign one out through oauth-as's

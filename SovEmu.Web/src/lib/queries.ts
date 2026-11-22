@@ -1185,6 +1185,53 @@ export const ActivityQuery = graphql(`
   }
 `);
 
+export const PlayStatisticsQuery = graphql(`
+  query PlayStatistics($range: StatsRange!) {
+    playStatistics(range: $range) {
+      from
+      to
+      totals {
+        sessions
+        seconds
+        players
+        games
+      }
+      days {
+        day
+        sessions
+        seconds
+      }
+      games {
+        gameId
+        title
+        system
+        sessions
+        seconds
+        players
+      }
+      players {
+        userId
+        username
+        sessions
+        seconds
+        games
+      }
+      systems {
+        system
+        sessions
+        seconds
+        players
+      }
+      favourites {
+        gameId
+        title
+        system
+        users
+      }
+    }
+  }
+`);
+
 export const ClearCacheMutation = graphql(`
   mutation ClearCache {
     clearCache

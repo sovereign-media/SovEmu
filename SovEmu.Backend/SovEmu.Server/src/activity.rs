@@ -165,17 +165,11 @@ impl Activity {
         Self { db }
     }
 
-    /// Records `entry` now, without waiting for the write. A write that fails is logged.
+    /// Records `entry` now, without waiting for the write (`db::write_in_background`).
     pub(crate) fn record(&self, entry: Entry) {
         let db = self.db.clone();
         let at = crate::client_events::now_unix();
-        // Outside a runtime (a synchronous test) there is nothing to write with.
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
-        runtime.spawn(async move {
-            if let Err(e) = insert(&db, &entry, at).await {
-                tracing::warn!(error = %e, kind = ?entry.kind, "could not record activity");
-            }
-        });
+        crate::db::write_in_background("activity", async move { insert(&db, &entry, at).await });
     }
 }
 

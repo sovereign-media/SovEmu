@@ -186,6 +186,17 @@ test("the Devices page lists every sign-in and signs one out; a user's page list
   await expect(page.getByText(/^Web browser · admin/).first()).toBeVisible();
 });
 
+test("the Statistics page shows a window of plays, a bar for each day", async ({ page }) => {
+  await page.goto("/admin/statistics/");
+  await expect(page.getByRole("heading", { name: "Statistics", level: 1 })).toBeVisible();
+  await expect(page.getByText("Games played")).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Time played over the window/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Most played games" })).toBeVisible();
+  await page.getByRole("radio", { name: "Year" }).click();
+  await expect(page.getByRole("radio", { name: "Year" })).toHaveAttribute("data-state", "on");
+  await expect(page.getByText(/^Week of /).first()).toBeVisible();
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

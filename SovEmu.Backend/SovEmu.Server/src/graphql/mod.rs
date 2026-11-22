@@ -43,6 +43,7 @@ mod resources;
 mod server;
 mod sessions;
 mod settings;
+mod statistics;
 mod streaming;
 
 #[allow(unused_imports)]
@@ -306,6 +307,7 @@ pub(crate) struct Query(
     streaming::StreamingQuery,
     client_events::ClientEventsQuery,
     activity::ActivityQuery,
+    statistics::StatisticsQuery,
 );
 
 // The mutation root: each area's mutations, in this order.

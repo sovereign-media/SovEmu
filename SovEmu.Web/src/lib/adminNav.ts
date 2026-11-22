@@ -3,6 +3,7 @@
 // page is one entry here.
 import {
   Activity,
+  BarChart3,
   Bug,
   FileDiff,
   Frame,
@@ -145,6 +146,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Resources",
         title: "The host's CPU and memory, and how much the server is using",
         icon: Gauge,
+      },
+      {
+        href: "/admin/statistics/",
+        label: "Statistics",
+        title: "What was played: the most played games, hours played, by account and system",
+        icon: BarChart3,
       },
       {
         href: "/admin/activity/",
