@@ -16,7 +16,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |
 | Video | VP8 by default (libvpx realtime, on the CPU), or H.264 (`SOVEMU_VIDEO_CODEC`); encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`): Constrained Baseline, no B-frames, keyframes on demand. VP8 is the default because a TV's hardware H.264 decoder measured far slower than its VP8 one |
-| Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato` |
+| Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato`, sent as redundant audio (RED, RFC 2198) to clients that offer it, so a lost packet is rebuilt without a retransmission |
 | Input | Unreliable, unordered WebRTC DataChannel; each packet carries a sequence number and the full button state |
 | Designed for, not in v1 | Rewind/fast-forward, cheats, RetroAchievements (rcheevos), per-game controller remapping, client-side shaders |
 
