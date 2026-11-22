@@ -459,7 +459,7 @@ Debian/Ubuntu: `libclang-dev libvpx-dev libopus-dev libavcodec-dev libavutil-dev
 ```bash
 (cd SovEmu.Web && npm ci && npm test && npm run build)
 cd SovEmu.Backend
-cargo test --workspace
+cargo nextest run --workspace     # or cargo test --workspace (slower); cargo install cargo-nextest --locked
 cargo build --release -p sovemu-worker
 cargo build --release -p sovemu-server
 target/release/sovemu-server --data-dir ../data --cores-dir ../cores --web-dir ../SovEmu.Web/dist

@@ -39,8 +39,9 @@ args+=(--ignore-filename-regex 'SovEmu\.TestCore/')
 export CARGO_TARGET_DIR="$root/SovEmu.Backend/target/coverage"
 
 mkdir -p "$out"
-# A failing test still leaves a report (and is named in the output); `cargo test` is the gate.
-cargo llvm-cov "${args[@]}" --ignore-run-fail --lcov --output-path "$out/lcov.info"
+# The tests run under nextest, as everywhere else. A failing test still leaves a report (and is
+# named in the output); the plain run is the gate.
+cargo llvm-cov nextest "${args[@]}" --ignore-run-fail --lcov --output-path "$out/lcov.info"
 cargo llvm-cov report "${args[@]}" --summary-only | tee "$out/summary.txt"
 cargo llvm-cov report "${args[@]}" --html --output-dir "$out"
 echo "coverage: $out/html/index.html"

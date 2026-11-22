@@ -142,9 +142,15 @@ All Rust crates live under `SovEmu.Backend/`, one Cargo workspace. Build and tes
 cd SovEmu.Backend
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo nextest run --workspace     # the tests (cargo test --workspace also works, slower)
 ../scripts/coverage.sh            # line coverage → ../coverage/ (summary, lcov, HTML)
 ```
+
+Tests run under **cargo-nextest** (once: `cargo install cargo-nextest --locked`; config in
+`SovEmu.Backend/.config/nextest.toml`), as the pre-push hook, the container's `test` stage and
+coverage do: every test is a process of its own, run all at once, so the core-loading tests no
+longer take turns on `CORE_LOCK` (about 2.5 times faster than `cargo test`). A test must not
+rely on another test's process state, and nextest runs no doctests (there are none).
 
 Coverage is `cargo-llvm-cov` (once: `rustup component add llvm-tools-preview && cargo install
 cargo-llvm-cov --locked`), run through `scripts/coverage.sh`, never bare: the script gives it a
@@ -197,7 +203,7 @@ client's tests and builds it on `node:<ver>-trixie-slim`; `cores` installs every
 `scripts/cores.list` from the libretro stable release with `scripts/install-cores.sh` (refusing
 to build for anything but `linux/amd64`); `toolchain` is `rust:<ver>-trixie` with the sources
 and Debian's libvpx, libopus and libavcodec; `build` compiles the release binaries and `test` runs
-`cargo test --workspace` with Mesa's llvmpipe, both from `toolchain`: compiled side by side, each
+`cargo nextest run --workspace` (the released nextest, pinned by checksum) with Mesa's llvmpipe, both from `toolchain`: compiled side by side, each
 with its own `target/` cache mount, the tests run once the release build is done (some time the
 emulator) (CI builds both at once with `SovEmu.Backend/docker-bake.hcl` and
 keeps the cache mounts between runs); `runtime` is `debian:trixie-slim` with
