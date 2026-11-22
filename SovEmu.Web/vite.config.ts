@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -10,6 +11,8 @@ import { defineConfig } from "vite";
 // proxied to a locally running sovemu-server (SOVEMU_API, default 127.0.0.1:8080).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Unit tests (Vitest): Intl warmed before any test, so its first use is not timed in one.
+  test: { setupFiles: ["src/test-setup.ts"] },
   server: {
     proxy: Object.fromEntries(
       ["/graphql", "/media", "/oauth", "/.well-known"].map((path) => [
