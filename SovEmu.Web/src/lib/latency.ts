@@ -1,9 +1,12 @@
 // Measured button-to-frame latency, and the history the stats panel's graph draws.
 //
 // The worker acks each input just before the video of the frame that consumed it, so the first
-// frame shown after an ack is the one showing that input: from sending the input to that frame
-// is button to frame, measured (decoding, and any frames the decoder holds back, included). The
-// display's own lag comes on top. The Android app measures the same way.
+// frame to *arrive* after an ack is the one showing that input: from sending the input to that
+// frame reaching the screen is button to frame, measured (decoding, and any frames the decoder
+// holds back, included). The display's own lag comes on top. A frame that arrived before the ack
+// but is shown after it (a decoder running a frame or two behind) is an older picture and must
+// not count, so each frame is matched by when it was received, not by when it is shown. The
+// Android app measures the same way.
 
 /** How many recent inputs the median is taken over. */
 const SAMPLES = 60;
@@ -14,21 +17,36 @@ function median(values: number[]): number {
   return s[Math.floor(s.length / 2)];
 }
 
+/**
+ * The ack leaves the worker just before its frame, but its arrival is timed on the page's main
+ * thread while the frame's is timed on the network thread, so the frame can look a few
+ * milliseconds earlier than its ack. Half a 60 fps frame of slack lets it through without
+ * letting through the frame before it (a whole frame earlier).
+ */
+const ACK_SLACK_MS = 8;
+
 /** Times inputs from being sent to the first frame shown after their ack. */
 export class LatencyMeter {
-  /** The sent time of the input whose ack came last, until a frame is shown. */
-  private pending: number | null = null;
+  /** The input whose ack came last (when it was sent, when the ack arrived), until its frame is shown. */
+  private pending: { sentAt: number; ackedAt: number } | null = null;
   private samples: number[] = [];
 
-  /** An ack arrived for an input sent at `sentAt` (the same clock as `frameShown`'s). */
-  acked(sentAt: number) {
-    this.pending = sentAt;
+  /** An ack arrived at `ackedAt` for an input sent at `sentAt` (the same clock as `frameShown`'s). */
+  acked(sentAt: number, ackedAt: number) {
+    // Keep the oldest waiting input: a newer ack's frame comes later still.
+    if (this.pending === null) this.pending = { sentAt, ackedAt };
   }
 
-  /** A frame reached the screen at `at`; it shows the input acked last, if one is waiting. */
-  frameShown(at: number) {
+  /**
+   * A frame reached the screen at `at`, having been received at `receivedAt`. It shows the
+   * waiting input only if it arrived after that input's ack; where the browser does not say when
+   * a frame was received, the first frame shown after the ack is taken (low when decoding is
+   * slower than a frame).
+   */
+  frameShown(at: number, receivedAt?: number) {
     if (this.pending === null) return;
-    const ms = at - this.pending;
+    if (receivedAt !== undefined && receivedAt < this.pending.ackedAt - ACK_SLACK_MS) return;
+    const ms = at - this.pending.sentAt;
     this.pending = null;
     // A clock jump or a frame from before the ack: not a measurement.
     if (ms < 0 || ms > 2000) return;
