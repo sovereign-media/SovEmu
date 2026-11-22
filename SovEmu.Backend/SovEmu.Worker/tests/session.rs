@@ -208,9 +208,11 @@ fn streams_video_and_audio_and_acknowledges_input() {
     // a small receive buffer then drops packets until hardly a frame arrives whole.
     socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
     let local = socket.local_addr().unwrap();
-    // Offers playout delay as libwebrtc does (Android, iOS, browsers), at an id of its own.
+    // Offers playout delay as libwebrtc does (Android, iOS, browsers), at an id of its own, and
+    // redundant audio (RED) as Chrome does. str0m unwraps RED, so audio arrives as plain Opus.
     let mut rtc = RtcConfig::new()
         .set_extension(PLAYOUT_DELAY_ID, Extension::PlayoutDelay)
+        .enable_opus(true, true)
         .build(Instant::now());
     rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
 
@@ -247,6 +249,13 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert_eq!(answer.kind, SdpKind::Answer);
     assert!(answer.sdp.contains("H264"), "answer negotiates H.264");
     assert!(answer.sdp.to_lowercase().contains("opus"), "answer negotiates Opus");
+    let red_pt: u8 = answer
+        .sdp
+        .lines()
+        .find_map(|l| l.strip_prefix("a=rtpmap:")?.strip_suffix(" red/48000/2"))
+        .expect("answer negotiates redundant audio")
+        .parse()
+        .unwrap();
     let playout_delay = format!(
         "a=extmap:{PLAYOUT_DELAY_ID} http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
     );
@@ -269,6 +278,18 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut last_input = Instant::now();
     let started = Instant::now();
     let mut buf = vec![0u8; 2048];
+    // RTP packets on the RED payload type: the header is not encrypted, so the wire shows the
+    // audio going out wrapped. RTCP (packet types 192-223) shares the first byte's version bits.
+    let mut red_packets = 0usize;
+    let mut count_red = |packet: &[u8]| {
+        if packet.len() >= 12
+            && packet[0] >> 6 == 2
+            && !(192..=223).contains(&packet[1])
+            && packet[1] & 0x7f == red_pt
+        {
+            red_packets += 1;
+        }
+    };
 
     // After the basics, hold fast-forward for a while and see more frames emulated per frame shown.
     // A tick shows one frame however slow the machine is, and runs one emulated frame normally or
@@ -386,11 +407,13 @@ fn streams_video_and_audio_and_acknowledges_input() {
         }
         match socket.recv_from(&mut buf) {
             Ok((n, source)) => {
+                count_red(&buf[..n]);
                 rtc.handle_input(receive(n, source, local, &buf)).unwrap();
                 // Take whatever else has queued up before going back to the events, so a
                 // backlog drains in one go rather than a packet a turn.
                 socket.set_nonblocking(true).unwrap();
                 while let Ok((n, source)) = socket.recv_from(&mut buf) {
+                    count_red(&buf[..n]);
                     rtc.handle_input(receive(n, source, local, &buf)).unwrap();
                 }
                 socket.set_nonblocking(false).unwrap();
@@ -418,6 +441,7 @@ fn streams_video_and_audio_and_acknowledges_input() {
     assert_eq!(pipeline.renderer, None, "the test core draws on the CPU");
     assert!(audio_packets >= 100, "received {audio_packets} audio packets");
     assert_eq!(audio_samples, audio_packets * 480, "10 ms Opus packets");
+    assert!(red_packets * 10 >= audio_packets * 9, "{red_packets}/{audio_packets} audio in RED");
     assert!(acks.len() >= 3, "received {} input acks", acks.len());
     for ack in &acks {
         assert!(ack.seq >= 1 && ack.seq <= seq);
@@ -459,6 +483,7 @@ fn a_client_without_h264_gets_vp8() {
     let answer: SessionDescription = serde_json::from_str(&body).unwrap();
     assert!(answer.sdp.contains("VP8"), "answer negotiates VP8");
     assert!(!answer.sdp.contains("H264"), "and no H.264, which the client did not offer");
+    assert!(!answer.sdp.contains("red/48000"), "nor redundant audio, which it did not offer");
 }
 
 /// Emulated frames per video frame received, between the acks `from` and `to` (exclusive): how
