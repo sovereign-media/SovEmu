@@ -793,9 +793,10 @@ impl Session {
 
     /// Takes a send-bandwidth estimate.
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
+        let now = Instant::now();
         self.estimate_kbps = Some(estimate_bps / 1000);
-        self.adaptation.estimate(estimate_bps);
-        self.apply_bitrate(Instant::now());
+        self.adaptation.estimate(estimate_bps, now);
+        self.apply_bitrate(now);
     }
 
     /// Changes the encoder's bitrate to what the connection and the client call for now, if
