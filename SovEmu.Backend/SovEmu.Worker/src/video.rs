@@ -174,6 +174,9 @@ impl Video {
             width,
             height,
             fps: (fps * 100.0).round() / 100.0,
+            // The session's, which knows what the player was last told.
+            kbps: 0,
+            limited_by: String::new(),
         }
     }
 
@@ -181,6 +184,15 @@ impl Video {
         match &mut self.encoder {
             Encoder::H264(e) => e.request_keyframe(),
             Encoder::Vp8(e) => e.request_keyframe(),
+        }
+    }
+
+    /// Whether changing the bitrate reopens the encoder (with a keyframe): the hardware
+    /// encoders take their rate control at open.
+    pub(crate) fn rate_change_reopens(&self) -> bool {
+        match &self.encoder {
+            Encoder::H264(e) => e.backend().is_some_and(|b| b.is_hardware()),
+            Encoder::Vp8(_) => false,
         }
     }
 

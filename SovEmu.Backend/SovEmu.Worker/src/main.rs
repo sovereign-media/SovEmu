@@ -11,6 +11,7 @@
 //! - `probe` loads cores and reports what they say about themselves.
 //! - `gpu` finds the GPUs this process can render with, by rendering with each.
 
+mod adapt;
 mod gpu;
 mod headless;
 mod health;
@@ -155,9 +156,17 @@ struct SessionArgs {
     #[arg(long)]
     state_dir: Option<PathBuf>,
 
-    /// Video target bitrate, kbit/s (adaptation stays at or below it).
-    #[arg(long, default_value_t = 2500)]
+    /// Video bitrate a stream starts at, kbit/s; it then follows the connection and the client.
+    #[arg(long, default_value_t = 5000)]
     video_kbps: u32,
+
+    /// The lowest video bitrate adaptation chooses, kbit/s.
+    #[arg(long, default_value_t = 300)]
+    video_min_kbps: u32,
+
+    /// The highest video bitrate adaptation chooses, kbit/s (never below the starting rate).
+    #[arg(long, default_value_t = 12000)]
+    video_max_kbps: u32,
 
     /// Opus bitrate, kbit/s.
     #[arg(long, default_value_t = 128)]
@@ -239,9 +248,17 @@ struct ServeArgs {
     #[arg(long = "advertise-ip", env = "SOVEMU_ADVERTISE_IP")]
     advertise: Option<IpAddr>,
 
-    /// Video target bitrate, kbit/s (adaptation stays at or below it).
-    #[arg(long, default_value_t = 2500)]
+    /// Video bitrate a stream starts at, kbit/s; it then follows the connection and the client.
+    #[arg(long, default_value_t = 5000)]
     video_kbps: u32,
+
+    /// The lowest video bitrate adaptation chooses, kbit/s.
+    #[arg(long, default_value_t = 300)]
+    video_min_kbps: u32,
+
+    /// The highest video bitrate adaptation chooses, kbit/s (never below the starting rate).
+    #[arg(long, default_value_t = 12000)]
+    video_max_kbps: u32,
 
     /// Opus bitrate, kbit/s.
     #[arg(long, default_value_t = 128)]

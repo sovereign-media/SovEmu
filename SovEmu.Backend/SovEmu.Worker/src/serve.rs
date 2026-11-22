@@ -32,6 +32,8 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             save_dir: args.save_dir.clone(),
             variables: args.variables.clone(),
             video_kbps: args.video_kbps,
+            video_min_kbps: args.video_min_kbps,
+            video_max_kbps: args.video_max_kbps,
             audio_kbps: args.audio_kbps,
             rewind_seconds: args.rewind_seconds,
             rewind_max_mb: args.rewind_max_mb,

@@ -342,7 +342,9 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_UDP_BIND` | `0.0.0.0` | Address the session ports bind to |
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
-| `SOVEMU_VIDEO_KBPS` | `2500` | Video bitrate cap (adaptation stays below it) |
+| `SOVEMU_VIDEO_KBPS` | `5000` | Video bitrate a stream starts at. It then adapts throughout the stream: up while the connection has headroom and down on congestion (the send-bandwidth estimate), and down while the client's decoder falls behind (the stats every client sends once a second: frames decoded, frames dropped, decode time), back up as it recovers. The player is told of a change of a quarter or more, at most every 15 seconds, by a notice at the top of the screen, worded and drawn as Sovereign's ("Slow connection. Playing at a lower quality."). `video_kbps_target`, `estimate_kbps` and `client_limit_kbps` in the `session health` log line show it |
+| `SOVEMU_VIDEO_MIN_KBPS` | `300` | The lowest video bitrate a stream adapts down to |
+| `SOVEMU_VIDEO_MAX_KBPS` | `12000` | The highest video bitrate a stream adapts up to (never below `SOVEMU_VIDEO_KBPS`). Set it to `SOVEMU_VIDEO_KBPS` for a stream that only adapts down |
 | `SOVEMU_VIDEO_CODEC` | `vp8` | `vp8`, `h264`, or `auto` (H.264 when the client offers it, else VP8). VP8 is encoded on the CPU; H.264 on the GPU where there is one. VP8 is the default because a TV's hardware H.264 decoder can be far slower than its VP8 one (23 ms against 3.6 ms a frame at 640×448 on an Amlogic TV): try `auto` where your clients decode H.264 quickly, and compare "Measured button→frame" |
 | `SOVEMU_VIDEO_ENCODER` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
 | `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |

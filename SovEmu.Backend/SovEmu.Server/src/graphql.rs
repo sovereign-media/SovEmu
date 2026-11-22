@@ -958,7 +958,7 @@ impl ActiveSessionNode {
     async fn health(&self) -> Option<StreamHealth> {
         self.0.live.health.as_ref().map(StreamHealth::from)
     }
-    /// What the player's stats panel shows; only while it is open.
+    /// The client's own view of the stream, as it last reported it (once a second while playing).
     async fn client_stats(&self) -> Option<ClientStreamStats> {
         self.0.live.client_stats.as_ref().map(|(s, _)| ClientStreamStats::from(s))
     }

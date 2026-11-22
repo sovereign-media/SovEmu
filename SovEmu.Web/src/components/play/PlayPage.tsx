@@ -59,6 +59,7 @@ import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency
 import { describeFirstPicture, describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
+import type { QualityNotice } from "../../lib/pipeline";
 import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { type StatItem, StatsSampler } from "../../lib/stats";
@@ -69,6 +70,7 @@ import { cn } from "../ui/cn";
 import { Dialog, Field, inputClass, Progress } from "../ui/primitives";
 import { useToast } from "../ui/toast";
 import { LatencyGraph } from "./LatencyGraph";
+import { QualityChip } from "./QualityChip";
 
 const ICONS: Record<string, LucideIcon> = {
   play: Play,
@@ -142,6 +144,8 @@ function Player() {
   const screen = useScreen();
   const [filtered, setFiltered] = useState(false);
   const [stats, setStats] = useState<StatItem[] | null>(null);
+  /** The worker changed the stream's quality: the notice at the top of the screen, for a moment. */
+  const [quality, setQuality] = useState<QualityNotice | null>(null);
   // The graph's last minute, a copy of `history`'s points per sample so React redraws it.
   const [graph, setGraph] = useState<{ points: LatencyPoint[]; max: number }>({ points: [], max: 50 });
   // Adding a cheat: a form, while which menus ignore the pad.
@@ -155,6 +159,7 @@ function Player() {
     let session: Session | null = null;
     let capturing = false;
     let statsOn = false;
+    let qualityTimer = 0;
     let polling = true;
     let everConnected = false;
     let lastFrames = 0;
@@ -307,6 +312,11 @@ function Player() {
                 );
               }
               if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
+            },
+            onQuality: (notice) => {
+              setQuality(notice);
+              window.clearTimeout(qualityTimer);
+              qualityTimer = window.setTimeout(() => setQuality(null), QUALITY_NOTICE_MS);
             },
           },
           { iceServers },
@@ -702,13 +712,14 @@ function Player() {
           if (stalledFor === STALL_SECONDS && info) {
             reportClientEvent("STREAM_STALLED", `no new picture for ${STALL_SECONDS} s`, info.id);
           }
-          if (!statsOn) return;
+          // Sampled whether or not the overlay is open: the worker adapts the video bitrate to
+          // how this client keeps up, and logs its view beside its own health lines.
           const { items, numbers } = await sampler.sample(session);
+          session.sendStats({ ...numbers, client: clientName() });
+          if (!statsOn) return;
           setStats(items);
           history.push({ measured: numbers.input_to_frame_ms ?? NaN, estimate: numbers.estimate_ms ?? NaN });
           setGraph({ points: [...history.points], max: history.scaleMax });
-          // Logged by the worker beside its own health lines, for reading back later.
-          session.sendStats({ ...numbers, client: clientName() });
         }, 1000),
       );
 
@@ -735,6 +746,7 @@ function Player() {
       stopped = true;
       polling = false;
       timers.forEach(clearTimeout);
+      clearTimeout(qualityTimer);
       cleanup();
       session?.close();
       filter.stop();
@@ -941,6 +953,8 @@ function Player() {
         </form>
       </Dialog>
 
+      {quality && <QualityChip notice={quality} />}
+
       {stats && (
         <div className="pointer-events-none absolute top-4 left-4 w-max max-w-[calc(100%-2rem)] rounded-lg bg-black/70 px-3 py-2 font-mono text-xs">
           {/* Two columns, the first filled before the second, to keep the panel short. */}
@@ -972,7 +986,10 @@ function Player() {
 }
 
 /** Shown where stats are turned on and on the overlay: they cost a little every second. */
-const STATS_WARNING = "Stats are logged while shown, and can affect game performance.";
+/** How long a notice of a change in quality stays at the top of the screen (Sovereign's 5 s). */
+const QUALITY_NOTICE_MS = 5000;
+
+const STATS_WARNING = "Showing stats can affect game performance.";
 
 /** Seconds without a new video frame, while playing, before it is reported as a stall. */
 const STALL_SECONDS = 3;

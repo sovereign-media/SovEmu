@@ -110,9 +110,10 @@ export function encodeAnalog(packet: { seq: number; ports: Analog[] }): ArrayBuf
 }
 
 /**
- * What the stats overlay shows, sent once a second while it is open so the worker logs the
- * client's view beside its own (`client stats`). Times in ms, rates in kbit/s; every key is
- * optional. The keys and their order are `ClientStats` in SovEmu.Protocol.
+ * The client's view of the stream, sent once a second while playing (the stats overlay's
+ * numbers, whether or not it is open): the worker lowers the video bitrate for a client that
+ * is not keeping up (`fps`, `frames_dropped`, `decode_ms`) and logs the client's view beside
+ * its own (`client stats`). Times in ms, rates in kbit/s; every key is optional. The keys and their order are `ClientStats` in SovEmu.Protocol.
  */
 export interface ClientStats {
   client?: string;
@@ -129,6 +130,8 @@ export interface ClientStats {
   fps?: number;
   kbps?: number;
   packets_lost?: number;
+  /** Video frames dropped since the stream began (getStats' `framesDropped`). */
+  frames_dropped?: number;
   game_mode?: boolean;
   wifi_lock?: boolean;
   low_latency_decode?: boolean;
@@ -150,6 +153,7 @@ const STATS_KEYS: (keyof ClientStats)[] = [
   "fps",
   "kbps",
   "packets_lost",
+  "frames_dropped",
   "game_mode",
   "wifi_lock",
   "low_latency_decode",
@@ -202,6 +206,13 @@ export interface Pipeline {
     width: number;
     height: number;
     fps: number;
+    /**
+     * The video bitrate as last told to the player, kbit/s: it moves in steps worth a notice,
+     * so a change from the one before is shown (`qualityNotice`). 0: unknown (an older server).
+     */
+    kbps: number;
+    /** What held it down when it last fell: `connection`, `client`, or empty. */
+    limitedBy: string;
   };
   audio: { codec: string; sourceHz: number; kbps: number };
   runAhead: number;
@@ -241,6 +252,8 @@ export function decodePipeline(data: ArrayBuffer): Pipeline | null {
       width: num(video.width),
       height: num(video.height),
       fps: num(video.fps),
+      kbps: num(video.kbps),
+      limitedBy: str(video.limited_by),
     },
     audio: { codec: str(audio.codec), sourceHz: num(audio.source_hz), kbps: num(audio.kbps) },
     runAhead: num(p.run_ahead),
