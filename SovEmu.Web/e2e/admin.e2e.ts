@@ -59,3 +59,11 @@ test("the Rendering page says where 3D systems render, and what the probe found"
   await expect(page.getByText(/SOVEMU_GPU=/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
 });
+
+test("the BIOS page shows each system's files with the MD5s they should have", async ({ page }) => {
+  await page.goto("/admin/bios/?id=psx");
+  await expect(page.getByRole("heading", { name: "BIOS", level: 1 })).toBeVisible();
+  const psx = page.locator("section").filter({ has: page.getByRole("heading", { name: /psx\/$/ }) });
+  await expect(psx).toBeVisible();
+  await expect(psx.getByRole("button", { name: /^Copy [0-9a-f]{32}$/ }).first()).toBeVisible();
+});

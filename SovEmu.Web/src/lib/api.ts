@@ -7,6 +7,7 @@ import {
   ActiveSessionsQuery,
   AddCheatMutation,
   AdminStatusQuery as AdminStatusDocument,
+  BiosDirQuery,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
   CheatsQuery as CheatsDocument,
@@ -138,6 +139,8 @@ export const api = {
   systems: async () => (await request(SystemsQuery)).systems,
   /** Every system with its BIOS files checked (null for one that uses none). */
   bios: async () => (await request(BiosQuery)).systems,
+  /** Admins: the server's BIOS folder. */
+  biosDir: async () => (await request(BiosDirQuery)).biosDir,
   /** A system and its games, or null for an unknown or hidden system. */
   system: async (id: string) => (await request(SystemGamesQuery, { id })).system,
   game: async (id: number) => (await request(GameQuery, { id })).game,

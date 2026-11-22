@@ -91,6 +91,11 @@ type BiosFile {
 	"""
 	md5: String
 	"""
+	The good dumps' MD5s, any one of which is right. Empty when any content is fine, or
+	for a system that takes any number of dumps (PS2), whose list is too long to show.
+	"""
+	expectedMd5: [String!]!
+	"""
 	Bytes expected.
 	"""
 	size: Float!
@@ -1234,6 +1239,11 @@ type Query {
 	Admins: every game being played now, oldest first, with how each stream is made.
 	"""
 	activeSessions: [ActiveSession!]!
+	"""
+	Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
+	the subfolder its `bios.folder` names.
+	"""
+	biosDir: String!
 	"""
 	Admins: where 3D systems render, and every device the startup probe tried.
 	"""

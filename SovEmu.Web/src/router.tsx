@@ -48,6 +48,7 @@ const JobsAdmin = lazy(() => import("./components/admin/JobsAdmin"));
 const SessionsAdmin = lazy(() => import("./components/admin/SessionsAdmin"));
 const ResourcesAdmin = lazy(() => import("./components/admin/ResourcesAdmin"));
 const RenderingAdmin = lazy(() => import("./components/admin/RenderingAdmin"));
+const BiosAdmin = lazy(() => import("./components/admin/BiosAdmin"));
 
 /** Path, title, screen, and the URL parameters the screen updates itself (with `history`). */
 const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[]][] = [
@@ -66,6 +67,7 @@ const SCREENS: [path: string, title: string, Screen: ComponentType, own: string[
   ["/admin/sessions/", "Sessions", SessionsAdmin, []],
   ["/admin/jobs/", "Jobs", JobsAdmin, []],
   ["/admin/rendering/", "Rendering", RenderingAdmin, []],
+  ["/admin/bios/", "BIOS", BiosAdmin, []],
 ];
 
 const routes = SCREENS.map(([path, title, Screen, own]) =>

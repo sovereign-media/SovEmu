@@ -303,6 +303,7 @@ export const BiosQuery = graphql(
             state
             foundAt
             md5
+            expectedMd5
             size
           }
         }
@@ -841,5 +842,11 @@ export const GpuQuery = graphql(`
         chosen
       }
     }
+  }
+`);
+
+export const BiosDirQuery = graphql(`
+  query BiosDir {
+    biosDir
   }
 `);

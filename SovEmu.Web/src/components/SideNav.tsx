@@ -12,6 +12,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { ADMIN_NAV_GROUPS, findAdminNavItem } from "../lib/adminNav";
 import type { SystemSummary, User } from "../lib/api";
 import { signOut as endSignIn } from "../lib/auth";
+import { biosHref } from "../lib/bios";
 import { q } from "../lib/data";
 import { groupByMaker, initials, systemBadge } from "../lib/systems";
 import { cn } from "./ui/cn";
@@ -217,7 +218,7 @@ function Entries({
         )}
         <DropdownMenu.Separator className="my-1 h-px bg-edge" />
         <DropdownMenu.Item asChild className={ROW}>
-          <a href="/bios/">
+          <a href={biosHref(!!user?.isAdmin)}>
             <Microchip />
             <span className="flex-1">BIOS files</span>
             {biosMissing > 0 && <span className="text-xs text-amber-300 tabular-nums">{biosMissing} missing</span>}

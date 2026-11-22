@@ -527,6 +527,9 @@ struct BiosFile {
     found_at: Option<String>,
     /// Of the file found.
     md5: Option<String>,
+    /// The good dumps' MD5s, any one of which is right. Empty when any content is fine, or
+    /// for a system that takes any number of dumps (PS2), whose list is too long to show.
+    expected_md5: Vec<String>,
     /// Bytes expected.
     size: f64,
 }
@@ -572,6 +575,7 @@ impl SystemBios {
                             },
                             found_at: f.found_at,
                             md5: f.md5,
+                            expected_md5: f.expected_md5,
                             size: f.size as f64,
                         })
                         .collect(),
@@ -1884,6 +1888,13 @@ impl Query {
         admin(ctx).await?;
         let sessions = crate::api::active_sessions(state(ctx)).await.api()?;
         Ok(sessions.into_iter().map(ActiveSessionNode).collect())
+    }
+
+    /// Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
+    /// the subfolder its `bios.folder` names.
+    async fn bios_dir(&self, ctx: &Context<'_>) -> Result<String> {
+        admin(ctx).await?;
+        Ok(state(ctx).config.bios_dir().display().to_string())
     }
 
     /// Admins: where 3D systems render, and every device the startup probe tried.

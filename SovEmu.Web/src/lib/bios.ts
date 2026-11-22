@@ -70,3 +70,10 @@ export function summary(systems: { bios: SystemBios }[]): string {
   if (check) parts.push(`${check} ${check === 1 ? "has a file" : "have files"} to check`);
   return parts.length ? `${parts.join("; ")}.` : "Every system has what it needs.";
 }
+
+/** Where a BIOS link goes: admins to the admin BIOS page (with the good dumps' MD5s), everyone
+ *  else to the BIOS page; `system` scrolls to one system's card. */
+export function biosHref(admin: boolean, system?: string): string {
+  const page = admin ? "/admin/bios/" : "/bios/";
+  return system ? `${page}?id=${encodeURIComponent(system)}` : page;
+}

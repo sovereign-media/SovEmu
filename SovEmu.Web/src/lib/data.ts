@@ -25,6 +25,7 @@ export const q = {
   home: () => queryOptions({ queryKey: ["home"], queryFn: api.home }),
   systems: () => queryOptions({ queryKey: ["systems"], queryFn: api.systems }),
   bios: () => queryOptions({ queryKey: ["bios"], queryFn: api.bios }),
+  biosDir: () => queryOptions({ queryKey: ["admin", "biosDir"], queryFn: api.biosDir, staleTime: Infinity }),
   system: (id: string) => queryOptions({ queryKey: ["system", id], queryFn: () => api.system(id) }),
   game: (id: number) => queryOptions({ queryKey: ["game", id], queryFn: () => api.game(id) }),
   saves: (gameId: number) => queryOptions({ queryKey: ["game", gameId, "saves"], queryFn: () => api.saves(gameId) }),
