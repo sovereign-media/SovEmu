@@ -567,8 +567,7 @@ impl Workers {
             self.stop(&existing.id).await;
         }
         phase(Phase::Launching);
-        let port =
-            self.lock().free_ports.pop_first().ok_or_else(|| Error::NoPort(self.port_count()))?;
+        let port = self.take_port()?;
         let after_exit = launch.after_exit.take();
         // From here the port goes back to the pool when the worker exits (`Process::reap`).
         let session = self.spawn(&launch, port, after_exit).await?;
@@ -620,15 +619,8 @@ impl Workers {
             "session starting"
         );
         let started = Instant::now();
-        let mut command = Command::new(&self.config.worker_bin);
-        command.env_clear();
-        for var in WORKER_ENV {
-            if let Some(value) = std::env::var_os(var) {
-                command.env(var, value);
-            }
-        }
+        let mut command = self.worker_command("session", port);
         command
-            .arg("session")
             .arg("--video-kbps")
             .arg(self.config.video_kbps.to_string())
             .arg("--video-min-kbps")
@@ -645,8 +637,6 @@ impl Workers {
             .arg(&launch.core)
             .arg("--rom")
             .arg(&launch.rom)
-            .arg("--udp")
-            .arg(format!("{}:{port}", self.config.bind_ip))
             .arg("--system-dir")
             .arg(&bios)
             .arg("--bios-path")
@@ -672,9 +662,7 @@ impl Workers {
             .arg("--session-id")
             .arg(&id)
             .arg("--system")
-            .arg(&launch.system)
-            .arg("--log-format")
-            .arg(self.config.log_format);
+            .arg(&launch.system);
         if let Some((patch, name)) = &launch.patch {
             command.arg("--patch").arg(patch).arg("--patch-name").arg(name);
         }
@@ -683,9 +671,6 @@ impl Workers {
         }
         if launch.run_ahead > 0 {
             command.arg("--run-ahead").arg(launch.run_ahead.to_string());
-        }
-        if let Some(ip) = self.config.advertise_ip {
-            command.arg("--advertise-ip").arg(ip.to_string());
         }
         let spawned = command
             .stdin(Stdio::piped())
@@ -696,7 +681,7 @@ impl Workers {
         let mut child = match spawned {
             Ok(child) => child,
             Err(e) => {
-                self.lock().free_ports.insert(port);
+                self.release_port(port);
                 return Err(e);
             }
         };
@@ -866,9 +851,40 @@ impl Workers {
 
     /// The worker of session `id` has exited: its port is free again.
     fn forget(&self, id: &str, port: u16) {
-        let mut inner = self.lock();
-        inner.sessions.remove(id);
-        inner.free_ports.insert(port);
+        self.lock().sessions.remove(id);
+        self.release_port(port);
+    }
+
+    /// A UDP port from the pool, for a session or a connection test.
+    pub(crate) fn take_port(&self) -> Result<u16> {
+        self.lock().free_ports.pop_first().ok_or_else(|| Error::NoPort(self.port_count()))
+    }
+
+    /// Puts `port` back in the pool, once its worker has exited.
+    pub(crate) fn release_port(&self, port: u16) {
+        self.lock().free_ports.insert(port);
+    }
+
+    /// The worker binary in `mode`, on UDP `port`, with the allow-listed environment only (no
+    /// secrets) and what every mode shares: the log format and the address clients reach.
+    pub(crate) fn worker_command(&self, mode: &str, port: u16) -> Command {
+        let mut command = Command::new(&self.config.worker_bin);
+        command.env_clear();
+        for var in WORKER_ENV {
+            if let Some(value) = std::env::var_os(var) {
+                command.env(var, value);
+            }
+        }
+        command
+            .arg(mode)
+            .arg("--udp")
+            .arg(format!("{}:{port}", self.config.bind_ip))
+            .arg("--log-format")
+            .arg(self.config.log_format);
+        if let Some(ip) = self.config.advertise_ip {
+            command.arg("--advertise-ip").arg(ip.to_string());
+        }
+        command
     }
 
     /// Ends a session: asks the worker to write its saves and exit, and kills it only if it has
@@ -1080,6 +1096,53 @@ done
         assert!(args.contains(&format!("--session-id {}", session.id)), "{args}");
         assert!(args.contains("--log-format text"), "{args}");
         workers.stop_all().await;
+    }
+
+    /// A connection-test worker: answers the offer, then lingers as a real one would.
+    const ANSWERING: &str = r#"#!/bin/sh
+echo "$@" > "$(dirname "$0")/args"
+read offer
+echo '{"type":"answer","id":1,"answer":{"type":"answer","sdp":"v=0 test"}}'
+sleep 0.3
+"#;
+
+    #[tokio::test]
+    async fn a_connection_test_answers_on_a_pooled_port_and_gives_it_back() {
+        let dir = dir("conntest");
+        let workers = workers_with(&dir, ANSWERING, Duration::from_secs(5), Arc::new(()));
+        let offer = SessionDescription { kind: sovemu_protocol::SdpKind::Offer, sdp: "v=0".into() };
+        let answer = workers.test_connection(offer).await.unwrap();
+        assert_eq!(answer.sdp, "v=0 test");
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.starts_with("connection-test --udp 127.0.0.1:4000"), "{args}");
+        assert!(args.contains("--timeout 30"), "{args}");
+        assert_eq!(workers.ports_in_use(), 1, "held while the worker runs");
+        settle(&workers, 2).await;
+        assert_eq!(workers.count(), 0, "a test is not a session");
+    }
+
+    #[tokio::test]
+    async fn a_connection_test_that_never_answers_says_so_and_frees_its_port() {
+        let dir = dir("conntest-silent");
+        let workers =
+            workers_with(&dir, "#!/bin/sh\nexit 3\n", Duration::from_secs(5), Arc::new(()));
+        let offer = SessionDescription { kind: sovemu_protocol::SdpKind::Offer, sdp: "v=0".into() };
+        let e = workers.test_connection(offer).await.unwrap_err();
+        assert!(matches!(e, Error::Exited), "{e}");
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn a_connection_test_needs_a_free_port() {
+        let dir = dir("conntest-full");
+        let workers = workers(&dir, "exec sleep 600", Duration::from_millis(300));
+        workers.start(launch(&dir, 1, 1)).await.unwrap();
+        workers.start(launch(&dir, 2, 2)).await.unwrap();
+        let offer = SessionDescription { kind: sovemu_protocol::SdpKind::Offer, sdp: "v=0".into() };
+        let e = workers.test_connection(offer).await.unwrap_err();
+        assert!(matches!(e, Error::NoPort(2)), "{e}");
+        workers.stop_all().await;
+        settle(&workers, 2).await;
     }
 
     #[tokio::test]

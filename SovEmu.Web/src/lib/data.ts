@@ -45,6 +45,7 @@ export const q = {
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
+  streaming: () => queryOptions({ queryKey: ["admin", "streaming"], queryFn: api.streaming }),
   configuration: () =>
     queryOptions({ queryKey: ["admin", "configuration"], queryFn: api.configuration, staleTime: Infinity }),
   cores: () => queryOptions({ queryKey: ["admin", "cores"], queryFn: api.cores }),

@@ -35,6 +35,17 @@ test("a game the server will not start is listed under the Sessions page's failu
   await expect(failures.getByText(/^no core installed for /).first()).toBeVisible();
 });
 
+test("the Streaming page tests this browser's connection to a game port", async ({ page }) => {
+  await page.goto("/admin/streaming/");
+  await expect(page.getByRole("heading", { name: "Streaming", level: 1 })).toBeVisible();
+  await expect(page.getByText("SOVEMU_VIDEO_KBPS", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Test this browser" }).click();
+  // A real connection-test worker on a game port, over UDP on this machine.
+  await expect(page.getByText("This browser reaches the game streams.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/^Direct to the game port/)).toBeVisible();
+  await expect(page.getByText(/^\d+ of 10$/)).toBeVisible();
+});
+
 test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });

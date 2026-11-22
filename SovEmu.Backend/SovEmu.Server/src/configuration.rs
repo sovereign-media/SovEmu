@@ -309,6 +309,11 @@ pub(crate) fn settings(config: &Config) -> Vec<Setting> {
 
 /// The settings for the startup log: a heading per group, then `NAME=value` lines, with the
 /// effective value and the source where they say something.
+/// The settings whose names `keep` accepts, as [`settings`] lists them: an admin page's slice.
+pub(crate) fn settings_where(config: &Config, keep: impl Fn(&str) -> bool) -> Vec<Setting> {
+    settings(config).into_iter().filter(|s| keep(&s.name)).collect()
+}
+
 pub(crate) fn summary(config: &Config) -> String {
     let mut lines = Vec::new();
     let mut current = None;

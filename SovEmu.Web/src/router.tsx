@@ -55,6 +55,7 @@ const PatchesAdmin = lazy(() => import("./components/admin/PatchesAdmin"));
 const CoresAdmin = lazy(() => import("./components/admin/CoresAdmin"));
 const ConfigurationAdmin = lazy(() => import("./components/admin/ConfigurationAdmin"));
 const NetworkAdmin = lazy(() => import("./components/admin/NetworkAdmin"));
+const StreamingAdmin = lazy(() => import("./components/admin/StreamingAdmin"));
 const StorageAdmin = lazy(() => import("./components/admin/StorageAdmin"));
 const TelemetryAdmin = lazy(() => import("./components/admin/TelemetryAdmin"));
 const AboutAdmin = lazy(() => import("./components/admin/AboutAdmin"));
@@ -86,6 +87,7 @@ const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: st
   "/admin/cores/": ["Cores", CoresAdmin, []],
   "/admin/configuration/": ["Configuration", ConfigurationAdmin, []],
   "/admin/network/": ["Network", NetworkAdmin, []],
+  "/admin/streaming/": ["Streaming", StreamingAdmin, []],
   "/admin/storage/": ["Storage", StorageAdmin, []],
   "/admin/telemetry/": ["Telemetry", TelemetryAdmin, []],
   "/admin/about/": ["About", AboutAdmin, []],

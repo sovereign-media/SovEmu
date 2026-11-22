@@ -17,6 +17,7 @@ import {
   Network,
   Package,
   Palette,
+  Radio,
   ScrollText,
   Settings2,
   SlidersHorizontal,
@@ -93,6 +94,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Rendering",
         title: "Where 3D systems render: the GPU, or software",
         icon: MonitorCog,
+      },
+      {
+        href: "/admin/streaming/",
+        label: "Streaming",
+        title: "Test this browser's connection to the game streams, and the stream settings",
+        icon: Radio,
       },
       {
         href: "/admin/bios/",

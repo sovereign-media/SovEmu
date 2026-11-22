@@ -1974,6 +1974,8 @@ const ADMIN_ONLY: &[&str] = &[
     "mutation { resetControllerDefault(controller: \"xbox\") }",
     "{ appearance { chosen } }",
     "{ sessionFailures { title } }",
+    "{ streaming { testSeconds } }",
+    "mutation { testConnection(sdp: \"v=0\") }",
     "mutation { setBackground(id: \"random\") }",
 ];
 
@@ -2002,6 +2004,7 @@ async fn viewers_and_strangers_are_refused_every_admin_resolver() {
         include_str!("graphql/resources.rs"),
         include_str!("graphql/settings.rs"),
         include_str!("graphql/controllers.rs"),
+        include_str!("graphql/streaming.rs"),
     ]
     .iter()
     .map(|source| source.matches("admin(ctx).await?").count())
@@ -2158,6 +2161,37 @@ async fn a_start_the_server_refuses_is_listed_with_why() {
             "exitCode": null, "signal": null, "lastLines": [],
         }])
     );
+}
+
+#[tokio::test]
+async fn admins_see_the_streaming_settings_and_test_a_connection() {
+    let mut h = Harness::new("streaming", true).await;
+    h.sign_up_admin().await;
+    let page = h.ok("{ streaming { testSeconds settings { name } } }", json!({})).await;
+    assert_eq!(page["streaming"]["testSeconds"], 30);
+    let names: Vec<&str> = page["streaming"]["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"SOVEMU_VIDEO_KBPS") && names.contains(&"SOVEMU_REWIND_SECONDS"));
+    assert!(!names.contains(&"SOVEMU_HTTP"), "a network setting, on the Network page");
+
+    // A real connection-test worker on a game port reads the offer: one that is not SDP is
+    // refused with why, and its port goes back to the pool.
+    let (code, message) = h
+        .err("mutation($sdp: String!) { testConnection(sdp: $sdp) }", json!({"sdp": "nonsense"}))
+        .await;
+    assert_eq!(code, "BAD_REQUEST");
+    assert!(message.contains("bad offer"), "{message}");
+    for _ in 0..100 {
+        if h.state.workers.ports_in_use() == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.state.workers.ports_in_use(), 0, "its port is back in the pool");
 }
 
 #[tokio::test]

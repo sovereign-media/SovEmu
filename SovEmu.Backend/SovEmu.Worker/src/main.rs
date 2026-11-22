@@ -10,8 +10,11 @@
 //!   WAV file and a timing summary).
 //! - `probe` loads cores and reports what they say about themselves.
 //! - `gpu` finds the GPUs this process can render with, by rendering with each.
+//! - `connection-test` answers one WebRTC offer on a game port and echoes its data channel, so
+//!   an admin can check a browser reaches the streams.
 
 mod adapt;
+mod connection_test;
 mod gpu;
 mod headless;
 mod health;
@@ -97,6 +100,24 @@ enum Command {
     /// Try every GPU (and the software renderer): make a GL context, draw, read it back. Prints
     /// the results as JSON.
     Gpu,
+    /// Answer one WebRTC offer (JSON lines on stdin/stdout) with a peer that has no media, and
+    /// echo its data channels: the admin's connection test.
+    ConnectionTest(ConnectionTestArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct ConnectionTestArgs {
+    /// The UDP address to answer on: one of the game ports.
+    #[arg(long)]
+    udp: SocketAddr,
+
+    /// The IP address clients send to, if not the bound one.
+    #[arg(long = "advertise-ip")]
+    advertise: Option<IpAddr>,
+
+    /// Seconds before it gives up, connected or not.
+    #[arg(long, default_value_t = 30)]
+    timeout: u64,
 }
 
 /// `--gpu`: `auto`, `software`, `off` (refuse GPU cores) or a render node.
@@ -414,6 +435,7 @@ fn main() -> ExitCode {
         Command::Headless(args) => headless::run(args),
         Command::Probe(args) => probe::run(args),
         Command::Gpu => gpu::run(),
+        Command::ConnectionTest(args) => connection_test::run(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

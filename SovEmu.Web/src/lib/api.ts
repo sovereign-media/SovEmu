@@ -66,12 +66,14 @@ import {
   StartSessionMutation,
   StopSessionMutation,
   StorageQuery,
+  StreamingQuery,
   SyncLibraryMutation,
   SystemControlsQuery,
   type SystemFields,
   SystemGamesQuery,
   SystemsQuery,
   TelemetryQuery,
+  TestConnectionMutation,
   UsersQuery,
   ViewerQuery as ViewerDocument,
 } from "./queries";
@@ -206,6 +208,10 @@ export const api = {
   clearCache: async () => (await request(ClearCacheMutation)).clearCache,
   /** Admin: how browsers and apps reach the server and its game streams. */
   network: async () => (await request(NetworkQuery)).network,
+  /** Admin: the settings that shape every game's stream, and how long a connection test lasts. */
+  streaming: async () => (await request(StreamingQuery)).streaming,
+  /** Admin: answers this browser's offer with a connection-test peer on a game port. */
+  testConnection: async (sdp: string) => (await request(TestConnectionMutation, { sdp })).testConnection,
   /** Admin: the server's effective configuration, credentials masked. */
   configuration: async () => (await request(ConfigurationQuery)).configuration,
   /** Admin: every core with its licence, and the libretro release they come from. */
