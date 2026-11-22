@@ -39,6 +39,7 @@ mod controllers;
 mod jobs;
 mod library;
 mod library_admin;
+mod logs;
 mod resources;
 mod server;
 mod sessions;
@@ -308,6 +309,7 @@ pub(crate) struct Query(
     client_events::ClientEventsQuery,
     activity::ActivityQuery,
     statistics::StatisticsQuery,
+    logs::LogsQuery,
 );
 
 // The mutation root: each area's mutations, in this order.

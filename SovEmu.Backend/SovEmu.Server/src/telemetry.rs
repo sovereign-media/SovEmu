@@ -193,8 +193,13 @@ impl Telemetry {
     }
 }
 
-/// Installs the log subscriber, and the OpenTelemetry exporters when `otel_endpoint` is set.
-pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Telemetry> {
+/// Installs the log subscriber (stderr, and the admin Logs page's `buffer` when there is one),
+/// and the OpenTelemetry exporters when `otel_endpoint` is set.
+pub(crate) fn init(
+    format: LogFormat,
+    otel_endpoint: Option<&str>,
+    buffer: Option<std::sync::Arc<crate::logs::LogBuffer>>,
+) -> Result<Telemetry> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     // Timestamps in the server's own time zone (`TZ`; UTC without one), with its offset.
     let local = || tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
@@ -244,6 +249,7 @@ pub(crate) fn init(format: LogFormat, otel_endpoint: Option<&str>) -> Result<Tel
     tracing_subscriber::registry()
         .with(filter)
         .with(logs)
+        .with(buffer.map(crate::logs::LogLayer))
         .with(traces)
         .try_init()
         .context("installing the log subscriber")?;

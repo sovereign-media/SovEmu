@@ -3,7 +3,14 @@
 // what it made stale (`invalidate`). Screens use these with `useQuery`; the player, which loads
 // imperatively, with `queryClient.fetchQuery`.
 import { infiniteQueryOptions, QueryClient, queryOptions } from "@tanstack/react-query";
-import { type ActivityFilter, api, type ClientEventKind, type ResourceRange, type StatsRange } from "./api";
+import {
+  type ActivityFilter,
+  api,
+  type ClientEventKind,
+  type LogFilter,
+  type ResourceRange,
+  type StatsRange,
+} from "./api";
 import { ApiError } from "./graphql";
 
 export const queryClient = new QueryClient({
@@ -47,6 +54,7 @@ export const q = {
   telemetry: () => queryOptions({ queryKey: ["admin", "telemetry"], queryFn: api.telemetry }),
   storage: () => queryOptions({ queryKey: ["admin", "storage"], queryFn: () => api.storage() }),
   network: () => queryOptions({ queryKey: ["admin", "network"], queryFn: api.network }),
+  logs: (filter: LogFilter) => queryOptions({ queryKey: ["admin", "logs", filter], queryFn: () => api.logs(filter) }),
   playStatistics: (range: StatsRange) =>
     queryOptions({ queryKey: ["admin", "statistics", range], queryFn: () => api.playStatistics(range) }),
   /** A page at a time: `useInfiniteQuery`, each page's `next` the following page's start. */

@@ -365,6 +365,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
 | `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
 | `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SOVEMU_LOG_BUFFER_LINES` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
 | `SOVEMU_ACTIVITY_HISTORY_DAYS` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |
 | `SOVEMU_CLIENT_EVENT_DAYS` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |
 | `SOVEMU_RESOURCE_SAMPLE_SECONDS` | `5` | Seconds between readings of the container's CPU and memory (its cgroup: the server and every game session), for the admin Resources page and the OpenTelemetry gauges (0: not read) |

@@ -189,6 +189,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_JOB_HISTORY_DAYS"
         | "SOVEMU_CLIENT_EVENT_DAYS"
         | "SOVEMU_ACTIVITY_HISTORY_DAYS"
+        | "SOVEMU_LOG_BUFFER_LINES"
         | "SOVEMU_RESOURCE_SAMPLE_SECONDS"
         | "SOVEMU_RESOURCE_HISTORY_DAYS"
         | "SOVEMU_ASSET_KEY"
