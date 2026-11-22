@@ -63,6 +63,9 @@ pub struct GpuStatus {
     pub devices: Vec<Device>,
     /// Why the setting could not be honoured, or why nothing could be probed.
     pub note: Option<String>,
+    /// When the probe ran (once, at startup); none for a decision made without one.
+    #[serde(skip)]
+    pub probed_at: Option<std::time::SystemTime>,
 }
 
 impl GpuStatus {
@@ -74,6 +77,25 @@ impl GpuStatus {
             renderer: None,
             devices: Vec::new(),
             note,
+            probed_at: None,
+        }
+    }
+
+    /// Whether workers render on `device`: the one `worker_arg` names (`auto`, a GPU without a
+    /// render node, is the first working hardware device, as workers pick it).
+    pub fn chosen(&self, device: &Device) -> bool {
+        if !device.works {
+            return false;
+        }
+        match self.mode {
+            Mode::Off => false,
+            Mode::Software => device.kind == "software",
+            Mode::Gpu if self.worker_arg == "auto" => self
+                .devices
+                .iter()
+                .find(|d| d.works && d.kind == "hardware")
+                .is_some_and(|d| d == device),
+            Mode::Gpu => device.node.as_deref() == Some(self.worker_arg.as_str()),
         }
     }
 
@@ -130,6 +152,7 @@ pub(crate) fn decide(setting: &str, probe: Probe) -> GpuStatus {
         renderer,
         devices: probe.devices.clone(),
         note,
+        probed_at: None,
     };
     let fall_back = |note: String| match software {
         Some(d) => with(Mode::Software, "software".into(), d.renderer.clone(), Some(note)),
@@ -168,6 +191,14 @@ pub(crate) fn decide(setting: &str, probe: Probe) -> GpuStatus {
 
 /// Runs the probe in a worker (with the workers' cleared environment) and decides.
 pub async fn detect(worker: &Path, setting: &str, env: &[(String, String)]) -> GpuStatus {
+    let mut status = probe_and_decide(worker, setting, env).await;
+    if setting.trim() != "off" {
+        status.probed_at = Some(std::time::SystemTime::now());
+    }
+    status
+}
+
+async fn probe_and_decide(worker: &Path, setting: &str, env: &[(String, String)]) -> GpuStatus {
     if setting.trim() == "off" {
         return GpuStatus::off(setting, Some("SOVEMU_GPU=off".into()));
     }
@@ -229,6 +260,23 @@ mod tests {
 
         let s = decide("auto", probe(vec![], None));
         assert_eq!((s.mode, s.worker_arg.as_str()), (Mode::Off, "off"));
+    }
+
+    #[test]
+    fn the_chosen_device_is_the_one_workers_use() {
+        let gpu = device(Some("/dev/dri/renderD128"), "hardware", true);
+        let other = device(Some("/dev/dri/renderD129"), "hardware", true);
+        let soft = device(None, "software", true);
+        let all = vec![gpu.clone(), other.clone(), soft.clone()];
+        let s = decide("/dev/dri/renderD129", probe(all.clone(), Some("/dev/dri/renderD128")));
+        assert_eq!(s.devices.iter().map(|d| s.chosen(d)).collect::<Vec<_>>(), [false, true, false]);
+        let s = decide("software", probe(all.clone(), Some("/dev/dri/renderD128")));
+        assert_eq!(s.devices.iter().map(|d| s.chosen(d)).collect::<Vec<_>>(), [false, false, true]);
+        let nodeless = device(None, "hardware", true);
+        let s = decide("auto", probe(vec![soft.clone(), nodeless], Some("auto")));
+        assert_eq!(s.devices.iter().map(|d| s.chosen(d)).collect::<Vec<_>>(), [false, true]);
+        let s = GpuStatus::off("off", None);
+        assert!(!s.chosen(&gpu));
     }
 
     #[test]

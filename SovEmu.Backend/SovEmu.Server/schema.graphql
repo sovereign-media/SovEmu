@@ -623,6 +623,10 @@ type GpuDevice {
 	version: String
 	works: Boolean!
 	error: String
+	"""
+	Workers render on this one.
+	"""
+	chosen: Boolean!
 }
 
 """
@@ -643,6 +647,15 @@ type GpuStatus {
 	Why the setting could not be honoured, or why nothing could be probed.
 	"""
 	note: String
+	"""
+	What workers are started with (`--gpu`): a render node, `auto`, `software` or `off`.
+	"""
+	workerArg: String!
+	"""
+	When the probe ran (Unix seconds): once, at startup, so a GPU added later needs a
+	restart. None when nothing was probed (`SOVEMU_GPU=off`).
+	"""
+	probedAt: Float
 }
 
 """

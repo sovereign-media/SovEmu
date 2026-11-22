@@ -819,3 +819,27 @@ export const ChangeEmulatorSettingsMutation = graphql(
 `,
   [SettingsFields],
 );
+
+export const GpuQuery = graphql(`
+  query Gpu {
+    gpu {
+      setting
+      mode
+      renderer
+      note
+      workerArg
+      probedAt
+      devices {
+        node
+        driver
+        kind
+        vendor
+        renderer
+        version
+        works
+        error
+        chosen
+      }
+    }
+  }
+`);

@@ -6,7 +6,16 @@ import { expect, test } from "@playwright/test";
 test("the admin menu lists every admin page, flat", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Admin", exact: true }).click();
-  for (const name of ["Library", "Users", "Controllers", "Emulator settings", "Sessions", "Resources", "Jobs"]) {
+  for (const name of [
+    "Library",
+    "Users",
+    "Controllers",
+    "Emulator settings",
+    "Rendering",
+    "Sessions",
+    "Resources",
+    "Jobs",
+  ]) {
     await expect(page.getByRole("menuitem", { name, exact: true })).toBeVisible();
   }
   // Pages, not group submenus.
@@ -41,4 +50,12 @@ test("the Resources page shows the host, its use and its history", async ({ page
   await expect(page.getByRole("radio", { name: "Week" })).toHaveAttribute("data-state", "on");
   await expect(page.getByRole("img", { name: /CPU over the window/ })).toBeVisible();
   await expect(page.getByRole("img", { name: /Memory over the window/ })).toBeVisible();
+});
+
+test("the Rendering page says where 3D systems render, and what the probe found", async ({ page }) => {
+  await page.goto("/admin/rendering/");
+  await expect(page.getByRole("heading", { name: "Rendering", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /3D systems (render|are off)/ })).toBeVisible();
+  await expect(page.getByText(/SOVEMU_GPU=/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
 });

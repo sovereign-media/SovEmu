@@ -1303,6 +1303,8 @@ struct GpuDevice {
     version: Option<String>,
     works: bool,
     error: Option<String>,
+    /// Workers render on this one.
+    chosen: bool,
 }
 
 /// Where 3D systems render, decided at startup.
@@ -1316,6 +1318,11 @@ struct GpuStatus {
     devices: Vec<GpuDevice>,
     /// Why the setting could not be honoured, or why nothing could be probed.
     note: Option<String>,
+    /// What workers are started with (`--gpu`): a render node, `auto`, `software` or `off`.
+    worker_arg: String,
+    /// When the probe ran (Unix seconds): once, at startup, so a GPU added later needs a
+    /// restart. None when nothing was probed (`SOVEMU_GPU=off`).
+    probed_at: Option<f64>,
 }
 
 /// A background job (`jobs.rs`).
@@ -1899,9 +1906,15 @@ impl Query {
                     version: d.version.clone(),
                     works: d.works,
                     error: d.error.clone(),
+                    chosen: g.chosen(d),
                 })
                 .collect(),
             note: g.note.clone(),
+            worker_arg: g.worker_arg.clone(),
+            probed_at: g
+                .probed_at
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64()),
         })
     }
 

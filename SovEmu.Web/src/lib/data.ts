@@ -37,6 +37,7 @@ export const q = {
   search: (text: string) => queryOptions({ queryKey: ["search", text], queryFn: () => api.search(text) }),
   adminStatus: () => queryOptions({ queryKey: ["admin", "status"], queryFn: api.adminStatus }),
   jobs: () => queryOptions({ queryKey: ["admin", "jobs"], queryFn: api.jobs }),
+  gpu: () => queryOptions({ queryKey: ["admin", "gpu"], queryFn: api.gpu, staleTime: Infinity }),
   activeSessions: () => queryOptions({ queryKey: ["admin", "sessions"], queryFn: api.activeSessions }),
   serverResources: () => queryOptions({ queryKey: ["admin", "resources"], queryFn: api.serverResources }),
   resourceHistory: (range: ResourceRange) =>
