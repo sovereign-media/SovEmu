@@ -7,6 +7,7 @@
 mod about;
 mod admin;
 mod api;
+mod appearance;
 mod assets;
 mod auth;
 mod cheats;
@@ -103,6 +104,18 @@ pub struct Config {
     /// decoration folders, or `none`. Per system: `SOVEMU_SYSTEMS__<id>__DECORATION`.
     #[arg(long, env = "SOVEMU_DECORATION", default_value = decorations::BUILTIN)]
     pub decoration: String,
+
+    /// The background behind every screen, for everyone: a background's name (`dither`,
+    /// `lattice`, `screens`, or a file's name in the background folders), `random` (a different
+    /// one each visit) or `none`. Unset: the admin's choice on the Appearance page, else `random`.
+    #[arg(long, env = "SOVEMU_BACKGROUND")]
+    pub background: Option<String>,
+
+    /// Background folders besides `<data>/backgrounds`: images (WebP, PNG, JPEG) named as they
+    /// are offered (`sunset-beach.png` is "Sunset beach"). Comma-separated; for the same name the
+    /// first folder wins, and any wins over a built-in one.
+    #[arg(long, env = "SOVEMU_BACKGROUNDS_DIRS", value_delimiter = ',')]
+    pub backgrounds_dirs: Vec<PathBuf>,
 
     /// Draws the built-in decorations into this folder and exits (the image's build runs it).
     #[arg(long, hide = true)]
@@ -517,6 +530,13 @@ impl Config {
 
     /// The decoration folders, first wins: the configured ones, `<data>/decorations`, then the
     /// built-in one.
+    /// The background folders, first wins: the configured ones, then `<data>/backgrounds`.
+    pub fn background_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = self.backgrounds_dirs.clone();
+        dirs.push(self.paths().backgrounds());
+        dirs
+    }
+
     pub fn decoration_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = self.decorations_dirs.clone();
         dirs.push(self.paths().decorations());
@@ -648,6 +668,8 @@ pub struct AppState {
     pub assets: Arc<sovemu_assets::AssetSigner>,
     /// The decoration sets found, listed again after each library scan.
     pub decorations: Arc<std::sync::RwLock<Arc<decorations::Decorations>>>,
+    /// The backgrounds and system photos found, listed again after each library scan.
+    pub(crate) appearance: Arc<std::sync::RwLock<Arc<appearance::Appearance>>>,
     /// Accounts and sign-in (`sovemu_identity`).
     pub identity: sovemu_identity::Identity,
     /// Each user's allowance of client events (`client_events`).
@@ -669,6 +691,20 @@ impl AppState {
     }
 
     /// Lists the decoration folders again (a set may have been added).
+    /// The backgrounds and system photos as last listed.
+    pub(crate) fn appearance(&self) -> Arc<appearance::Appearance> {
+        self.appearance.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Lists the background and photo folders again (an image may have been added).
+    pub(crate) fn reload_appearance(&self) {
+        let fresh = Arc::new(appearance::Appearance::load(
+            &self.config.background_dirs(),
+            &self.config.paths().system_photos(),
+        ));
+        *self.appearance.write().unwrap_or_else(|e| e.into_inner()) = fresh;
+    }
+
     pub fn reload_decorations(&self) {
         let fresh = Arc::new(decorations::Decorations::load(&self.config.decoration_dirs()));
         *self.decorations.write().unwrap_or_else(|e| e.into_inner()) = fresh;
@@ -695,6 +731,8 @@ pub fn router(state: AppState) -> Router {
                 .route("/media/games/{id}/{kind}", get(api::game_media))
                 .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
                 .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
+                .route("/media/backgrounds/{id}", get(appearance::background_file))
+                .route("/media/systems/{id}", get(appearance::photo_file))
                 .route_layer(middleware::from_fn_with_state(
                     state.clone(),
                     assets::require_signature,
@@ -858,6 +896,10 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         tracing::warn!(error = %e, "drawing the built-in decorations");
     }
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
+    let appearance = Arc::new(appearance::Appearance::load(
+        &config.background_dirs(),
+        &config.paths().system_photos(),
+    ));
     let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
     let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
     let token_secret = sovemu_assets::load_secret(
@@ -906,6 +948,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         core_info,
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),
+        appearance: Arc::new(std::sync::RwLock::new(appearance)),
         assets,
         identity,
         client_events: Arc::default(),

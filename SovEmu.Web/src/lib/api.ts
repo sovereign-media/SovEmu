@@ -9,6 +9,8 @@ import {
   AddCheatMutation,
   AdminPatchesQuery,
   AdminStatusQuery as AdminStatusDocument,
+  AppearanceQuery,
+  BackgroundQuery,
   BiosDirQuery,
   BiosQuery,
   ChangeEmulatorSettingsMutation,
@@ -51,6 +53,7 @@ import {
   ServerResourcesQuery,
   type SessionFields,
   SessionOfferMutation,
+  SetBackgroundMutation,
   SetCheatMutation,
   SetDiscMutation,
   SetFavouriteMutation,
@@ -132,6 +135,7 @@ export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
 export type ResourceHistory = ResourceHistoryResult["resourceHistory"];
 export type ResourceRange = Enum<"ResourceRange">;
+export type AppearanceSettings = ResultOf<typeof AppearanceQuery>["appearance"];
 export type About = ResultOf<typeof AboutQuery>;
 export type TelemetryReport = ResultOf<typeof TelemetryQuery>["telemetry"];
 export type StorageReport = ResultOf<typeof StorageQuery>["storage"];
@@ -183,6 +187,12 @@ export const api = {
   syncLibrary: () => request(SyncLibraryMutation),
   /** Admin: the background jobs and how each last ran. */
   jobs: async () => (await request(JobsQuery)).jobs,
+  /** The background behind every screen, for everyone (null: none). */
+  background: async () => (await request(BackgroundQuery)).background,
+  /** Admin: every background, and the one chosen. */
+  appearance: async () => (await request(AppearanceQuery)).appearance,
+  /** Admin: the background for everyone: an id, `random` or `none`. */
+  setBackground: (id: string) => request(SetBackgroundMutation, { id }),
   /** Admin: the server's build, the services it uses and what the image ships. */
   about: () => request(AboutQuery),
   /** Admin: OpenTelemetry export, and how each signal's last export went. */

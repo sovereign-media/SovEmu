@@ -193,6 +193,8 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_LOG_FORMAT"
         | "SOVEMU_OTEL_ENDPOINT"
         | "SOVEMU_DECORATION"
+        | "SOVEMU_BACKGROUND"
+        | "SOVEMU_BACKGROUNDS_DIRS"
         | "SOVEMU_DECORATIONS_DIRS"
         | "SOVEMU_WEB_DIR"
         | "SOVEMU_WORKER"

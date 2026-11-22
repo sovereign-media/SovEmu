@@ -16,6 +16,7 @@ import {
   MonitorPlay,
   Network,
   Package,
+  Palette,
   ScrollText,
   Settings2,
   SlidersHorizontal,
@@ -151,6 +152,12 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Telemetry",
         title: "Whether traces and metrics are exported, and how the last export went",
         icon: Activity,
+      },
+      {
+        href: "/admin/appearance/",
+        label: "Appearance",
+        title: "The background behind every screen, for everyone",
+        icon: Palette,
       },
       {
         href: "/admin/about/",
