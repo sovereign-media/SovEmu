@@ -122,6 +122,8 @@ pub(crate) struct SessionConfig {
     /// Seconds between `session health` log lines while a client is connected (0: none).
     pub health_interval: u32,
     pub keyframe_interval: u32,
+    /// Testing only: the share (percent) of outgoing video packets to throw away (`loss.rs`).
+    pub drop_video_percent: f64,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -160,6 +162,8 @@ pub(crate) struct Session {
     estimate_kbps: Option<u64>,
     /// Which of the client's keyframe requests are answered.
     keyframes: crate::keyframes::Gate,
+    /// Simulated loss on the way out, for testing; drops nothing unless asked.
+    loss: crate::loss::Loss,
     /// When the client's last stats were taken (at most every [`STATS_SPACING`], however
     /// often a client sends them), and when they were last logged.
     stats_at: Option<Instant>,
@@ -283,6 +287,7 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             keyframes: crate::keyframes::Gate::new(),
+            loss: crate::loss::Loss::new(config.drop_video_percent),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
@@ -308,6 +313,13 @@ impl Session {
 
     /// Saves the battery RAM and the auto state, once.
     pub(crate) fn finish(&mut self) {
+        if self.loss.active() {
+            tracing::warn!(
+                video_packets = self.loss.seen,
+                dropped = self.loss.dropped,
+                "simulated loss was on (--drop-video-percent): video packets were thrown away"
+            );
+        }
         if std::mem::replace(&mut self.finished, true) {
             return;
         }
@@ -636,6 +648,9 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
         match p.rtc.poll_output()? {
             Output::Timeout(t) => return Ok(Some(t)),
             Output::Transmit(t) => {
+                if session.loss.drops(&t.contents, p.audio.map(|(_, pt)| *pt)) {
+                    continue;
+                }
                 if let Err(e) = socket.send_to(&t.contents, t.destination) {
                     tracing::debug!(destination = %t.destination, error = %e, "UDP send failed");
                 }

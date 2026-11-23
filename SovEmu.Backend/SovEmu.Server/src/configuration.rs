@@ -184,6 +184,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_REWIND_MAX_MB"
         | "SOVEMU_FAST_FORWARD"
         | "SOVEMU_KEYFRAME_INTERVAL"
+        | "SOVEMU_DEBUG_DROP_VIDEO_PERCENT"
         | "SOVEMU_SESSION_HEALTH_SECS"
         | "SOVEMU_SESSION_FAILURES"
         | "SOVEMU_HOME_FEATURED"

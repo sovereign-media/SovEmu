@@ -72,6 +72,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             run_ahead: args.run_ahead,
             health_interval: args.health_interval,
             keyframe_interval: args.keyframe_interval,
+            drop_video_percent: args.drop_video_percent,
             gpu: args.gpu.0.clone(),
             video_codec: args.video_codec,
             video_encoder: args.video_encoder,
