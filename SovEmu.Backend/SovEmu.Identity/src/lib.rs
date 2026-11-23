@@ -50,6 +50,9 @@ pub struct SignIn {
     /// What the app calls its device ([`Identity::name_device`]); none for a browser, or an app
     /// that has not said.
     pub device: Option<String>,
+    /// What its device says it can decode ([`Identity::keep_capabilities`]), as the server
+    /// wrote it; none until it has started a stream.
+    pub capabilities: Option<String>,
 }
 pub use provider::{NATIVE_CLIENT, WEB_CLIENT};
 pub use store::SqliteStorage;
@@ -407,10 +410,12 @@ impl Identity {
         let subject = user_id.map(|id| id.to_string());
         let stored = self.store().sign_ins(subject.as_deref()).await.map_err(Error::internal)?;
         let mut names = devices::names(&self.inner.db).await?;
+        let mut capabilities = devices::capabilities(&self.inner.db).await?;
         Ok(stored
             .into_iter()
             .map(|s| SignIn {
                 device: names.remove(&s.family_id),
+                capabilities: capabilities.remove(&s.family_id),
                 id: s.family_id,
                 user_id: s.subject.and_then(|s| s.parse().ok()),
                 client_id: s.client_id,
@@ -471,6 +476,25 @@ impl Identity {
     /// that belongs to no sign-in that lasts (none are issued so).
     pub async fn name_device(&self, headers: &HeaderMap, name: &str) -> Result<()> {
         let name = devices::clean(name)?;
+        let family = self.family(headers).await?.ok_or_else(|| {
+            Error::NotFound("this sign-in does not last, so it has no device".into())
+        })?;
+        devices::name(&self.inner.db, &family, &name).await
+    }
+
+    /// Keeps what the device behind the sign-in that `headers`' access token belongs to says
+    /// it can decode: `document`, which the caller wrote and will read (JSON to the server,
+    /// text here), replacing any it had. `false` for a sign-in that does not last, which has
+    /// nowhere to keep one. `Unauthorized` without a live token.
+    pub async fn keep_capabilities(&self, headers: &HeaderMap, document: &str) -> Result<bool> {
+        let Some(family) = self.family(headers).await? else { return Ok(false) };
+        devices::keep_capabilities(&self.inner.db, &family, document).await?;
+        Ok(true)
+    }
+
+    /// The refresh family of the sign-in `headers`' access token belongs to; none for a token
+    /// of a sign-in that does not last. `Unauthorized` without a live token.
+    async fn family(&self, headers: &HeaderMap) -> Result<Option<String>> {
         let token = bearer(headers).ok_or_else(|| Error::Unauthorized("not signed in".into()))?;
         let issued = self.inner.provider.issuers[0]
             .server
@@ -478,10 +502,7 @@ impl Identity {
             .await
             .map_err(Error::internal)?
             .ok_or_else(|| Error::Unauthorized("not signed in".into()))?;
-        let family = issued.family_id.as_deref().ok_or_else(|| {
-            Error::NotFound("this sign-in does not last, so it has no device".into())
-        })?;
-        devices::name(&self.inner.db, family, &name).await
+        Ok(issued.family_id.clone())
     }
 }
 

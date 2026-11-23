@@ -69,6 +69,9 @@ pub(super) struct SignInNode {
     /// What the app calls its device (`nameDevice`); null for a browser, or an app that has not
     /// said.
     pub(super) device: Option<String>,
+    /// What its device says it can decode and show, from its latest `sessionOffer`; null until
+    /// it has started a stream with one, or if what is kept is of another version.
+    pub(super) capabilities: Option<crate::capabilities::ClientCapabilities>,
 }
 
 fn unix(t: std::time::SystemTime) -> f64 {
@@ -91,6 +94,10 @@ impl SignInNode {
             last_used_at: unix(s.last_used_at),
             expires_at: s.expires_at.map(unix),
             device: s.device,
+            capabilities: s
+                .capabilities
+                .as_deref()
+                .and_then(crate::capabilities::ClientCapabilities::from_json),
         }
     }
 }

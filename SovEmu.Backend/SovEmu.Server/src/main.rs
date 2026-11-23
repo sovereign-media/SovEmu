@@ -13,6 +13,7 @@ mod assets;
 mod attention;
 mod auth;
 mod backup;
+mod capabilities;
 mod cheats;
 mod client_events;
 mod client_ip;

@@ -192,6 +192,15 @@ worker and which returns the answer. The answer carries the server's
 host candidates. The worker is ICE-lite and uses one UDP port for everything in its session. The client offers receive-only video and audio plus the `input` DataChannel
 (unordered, no retransmits).
 
+With the offer a client sends its **capabilities**: one complete, versioned document of what it
+can decode and show (a row for each video codec: decoded in hardware or not, with a low-latency
+mode or not, and the decoder's name; and its display), as Sovereign's clients do
+(`SovEmu.Server/src/capabilities.rs`). The server refuses a document of another version with a
+message asking the player to update the app, keeps a good one against the sign-in's device
+(`sign_in_capabilities`, shown on `signIns`), and logs it with the session. Choosing each
+session's codec from it is sovereign-media/SovEmu#184; until that lands the codec is still
+`SOVEMU_VIDEO_CODEC`'s, and a client that sends no document is still served.
+
 ### Deployment: one Debian container
 
 SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.

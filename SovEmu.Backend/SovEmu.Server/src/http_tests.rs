@@ -589,6 +589,35 @@ async fn runs_a_game_session_in_a_worker() {
     let offer = "mutation($id: ID!) { sessionOffer(id: $id, sdp: \"not sdp\") }";
     assert_eq!(h.err(offer, json!({"id": sid})).await.0, "BAD_REQUEST");
 
+    // An offer carries what the client can decode: the whole document, checked before the SDP
+    // and kept against the sign-in. One of another version asks the player to update.
+    let offer = "mutation($id: ID!, $c: ClientCapabilitiesInput) { sessionOffer(id: $id, sdp: \"not sdp\", client: \"android 1.4.0 (Mi TV)\", capabilities: $c) }";
+    let document = json!({
+        "version": 1,
+        "videoDecoders": [
+            {"codec": "VP8", "hardware": false, "lowLatency": false, "name": "c2.amlogic.vp8.decoder.sw"},
+            {"codec": "H264", "hardware": true, "lowLatency": true, "name": " c2.amlogic.avc.decoder\n"},
+            {"codec": "AV1", "hardware": true, "lowLatency": true},
+        ],
+        "display": {"width": 3840, "height": 2160, "refreshHz": 59.94},
+    });
+    let kept = "{ signIns { capabilities { version videoDecoders { codec hardware lowLatency name } display { width height refreshHz } } } }";
+    let stored = |v: Value| v["signIns"][0]["capabilities"].clone();
+    assert_eq!(stored(h.ok(kept, json!({})).await), Value::Null, "nothing reported yet");
+    let mut newer = document.clone();
+    newer["version"] = json!(2);
+    let (code, message) = h.err(offer, json!({"id": sid, "c": newer})).await;
+    assert_eq!(code, "BAD_REQUEST");
+    assert!(message.contains("version 2") && message.ends_with("Update the app."), "{message}");
+    assert_eq!(stored(h.ok(kept, json!({})).await), Value::Null, "a refused document is not kept");
+    let (code, message) = h.err(offer, json!({"id": sid, "c": document})).await;
+    assert_eq!(code, "BAD_REQUEST");
+    assert!(!message.contains("capabilities"), "the SDP is what is wrong now: {message}");
+    let mut expected = document.clone();
+    expected["videoDecoders"][1]["name"] = json!("c2.amlogic.avc.decoder");
+    expected["videoDecoders"][2]["name"] = Value::Null;
+    assert_eq!(stored(h.ok(kept, json!({})).await), expected);
+
     // Save states: save slot 2, see it listed, load it; an empty slot cannot be loaded.
     let saves = "query($id: Int!) { game(id: $id) { saves { slot savedAt screenshotUrl } autoSave { slot } } }";
     let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";
