@@ -32,6 +32,9 @@ const BUILTIN_BACKGROUNDS: &[(&str, &str, &[u8])] = &[
 
 /// The built-in system photos, by system id: WebP cut-outs on transparency.
 const BUILTIN_PHOTOS: &[(&str, &[u8])] = &[
+    ("atari2600", include_bytes!("../assets/systems/atari2600.webp")),
+    ("atari7800", include_bytes!("../assets/systems/atari7800.webp")),
+    ("colecovision", include_bytes!("../assets/systems/colecovision.webp")),
     ("dreamcast", include_bytes!("../assets/systems/dreamcast.webp")),
     ("fbneo", include_bytes!("../assets/systems/fbneo.webp")),
     ("gamecube", include_bytes!("../assets/systems/gamecube.webp")),
@@ -39,14 +42,27 @@ const BUILTIN_PHOTOS: &[(&str, &[u8])] = &[
     ("gb", include_bytes!("../assets/systems/gb.webp")),
     ("gba", include_bytes!("../assets/systems/gba.webp")),
     ("gbc", include_bytes!("../assets/systems/gbc.webp")),
+    ("intellivision", include_bytes!("../assets/systems/intellivision.webp")),
+    ("lynx", include_bytes!("../assets/systems/lynx.webp")),
     ("mastersystem", include_bytes!("../assets/systems/mastersystem.webp")),
     ("megadrive", include_bytes!("../assets/systems/megadrive.webp")),
     ("n64", include_bytes!("../assets/systems/n64.webp")),
     ("neogeo", include_bytes!("../assets/systems/neogeo.webp")),
     ("nes", include_bytes!("../assets/systems/nes.webp")),
+    ("ngp", include_bytes!("../assets/systems/ngp.webp")),
+    ("ngpc", include_bytes!("../assets/systems/ngpc.webp")),
+    ("pcengine", include_bytes!("../assets/systems/pcengine.webp")),
+    ("pcenginecd", include_bytes!("../assets/systems/pcenginecd.webp")),
     ("ps2", include_bytes!("../assets/systems/ps2.webp")),
     ("psx", include_bytes!("../assets/systems/psx.webp")),
+    ("sega32x", include_bytes!("../assets/systems/sega32x.webp")),
+    ("segacd", include_bytes!("../assets/systems/segacd.webp")),
+    ("sg1000", include_bytes!("../assets/systems/sg1000.webp")),
     ("snes", include_bytes!("../assets/systems/snes.webp")),
+    ("vectrex", include_bytes!("../assets/systems/vectrex.webp")),
+    ("virtualboy", include_bytes!("../assets/systems/virtualboy.webp")),
+    ("wswan", include_bytes!("../assets/systems/wswan.webp")),
+    ("wswanc", include_bytes!("../assets/systems/wswanc.webp")),
 ];
 
 /// The image formats every client can show.
