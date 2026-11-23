@@ -35,7 +35,7 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
     let mut stdin = std::io::stdin().lock();
     let mut line = String::new();
     stdin.read_line(&mut line).context("reading the offer")?;
-    let Ok(Request::Offer { id, offer }) = serde_json::from_str::<Request>(&line) else {
+    let Ok(Request::Offer { id, offer, .. }) = serde_json::from_str::<Request>(&line) else {
         bail!("expected an offer on stdin, got {:?}", line.trim());
     };
     let mut rtc = match answer(&offer, advertised) {

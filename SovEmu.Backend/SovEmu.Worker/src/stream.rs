@@ -73,7 +73,12 @@ const IDLE_WAIT: Duration = Duration::from_millis(20);
 #[derive(Debug)]
 pub(crate) enum Command {
     /// A client's offer; the new client replaces any current one.
-    Offer { offer: SessionDescription, reply: Sender<Result<SessionDescription, String>> },
+    /// A client's offer, and the codec the server chose for it (none: this worker's setting).
+    Offer {
+        offer: SessionDescription,
+        codec: Option<String>,
+        reply: Sender<Result<SessionDescription, String>>,
+    },
     /// A control request: reset, save or load a state, shut down.
     Control { request: Request, reply: Sender<Result<(), String>> },
 }
@@ -474,13 +479,18 @@ pub(crate) fn run(
         // Commands: a new client replaces the current one; control requests run between frames.
         loop {
             match commands.try_recv() {
-                Ok(Command::Offer { offer, reply }) => {
-                    let result = accept_offer(
-                        &offer,
-                        advertised,
-                        session.adaptation.limits(),
-                        session.video.codec_setting(),
-                    );
+                Ok(Command::Offer { offer, codec, reply }) => {
+                    // The server's choice for this client, when it made one, over the setting.
+                    let codecs = match codec.as_deref().map(str::parse::<CodecSetting>) {
+                        Some(Ok(chosen)) => chosen,
+                        Some(Err(e)) => {
+                            tracing::warn!(error = %e, "the server chose a codec this worker does not know");
+                            session.video.codec_setting()
+                        }
+                        None => session.video.codec_setting(),
+                    };
+                    let result =
+                        accept_offer(&offer, advertised, session.adaptation.limits(), codecs);
                     let answer = match result {
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {
@@ -489,6 +499,7 @@ pub(crate) fn run(
                                 on_event(StreamEvent::ClientDisconnected);
                             }
                             session.new_client();
+                            session.video.allow_for_client(codecs);
                             peer = Some(new_peer);
                             pacer = None;
                             Ok(answer)

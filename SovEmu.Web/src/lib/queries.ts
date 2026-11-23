@@ -811,6 +811,7 @@ export const ActiveSessionsQuery = graphql(`
       core
       startedAt
       connected
+      codecChoice
       pipeline {
         renderer
         rendererSoftware

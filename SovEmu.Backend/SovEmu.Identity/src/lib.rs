@@ -484,12 +484,17 @@ impl Identity {
 
     /// Keeps what the device behind the sign-in that `headers`' access token belongs to says
     /// it can decode: `document`, which the caller wrote and will read (JSON to the server,
-    /// text here), replacing any it had. `false` for a sign-in that does not last, which has
-    /// nowhere to keep one. `Unauthorized` without a live token.
-    pub async fn keep_capabilities(&self, headers: &HeaderMap, document: &str) -> Result<bool> {
-        let Some(family) = self.family(headers).await? else { return Ok(false) };
+    /// text here), replacing any it had. Returns the sign-in it was kept under (a
+    /// [`SignIn::id`]); none for a sign-in that does not last, which has nowhere to keep one.
+    /// `Unauthorized` without a live token.
+    pub async fn keep_capabilities(
+        &self,
+        headers: &HeaderMap,
+        document: &str,
+    ) -> Result<Option<String>> {
+        let Some(family) = self.family(headers).await? else { return Ok(None) };
         devices::keep_capabilities(&self.inner.db, &family, document).await?;
-        Ok(true)
+        Ok(Some(family))
     }
 
     /// The refresh family of the sign-in `headers`' access token belongs to; none for a token

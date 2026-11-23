@@ -114,7 +114,7 @@ fn handle_http(
                     .respond(Response::from_string("expected an SDP offer").with_status_code(400));
             };
             let (reply, answer) = mpsc::channel();
-            if offers.send(Command::Offer { offer, reply }).is_err() {
+            if offers.send(Command::Offer { offer, codec: None, reply }).is_err() {
                 return request
                     .respond(Response::from_string("session ended").with_status_code(503));
             }

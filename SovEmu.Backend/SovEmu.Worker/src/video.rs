@@ -84,6 +84,9 @@ enum Encoder {
 
 pub(crate) struct Video {
     settings: VideoSettings,
+    /// The codecs allowed for the client being answered: the server's choice for it, when it
+    /// made one, else the setting.
+    client_codec: CodecSetting,
     encoder: Encoder,
     /// The encoder last logged, so a change (a fallback) is logged once.
     logged: Option<&'static str>,
@@ -96,7 +99,7 @@ impl Video {
             _ => VideoCodec::H264,
         };
         let encoder = Self::make(&settings, codec, settings.bitrate_kbps);
-        Self { settings, encoder, logged: None }
+        Self { client_codec: settings.codec, settings, encoder, logged: None }
     }
 
     fn make(settings: &VideoSettings, codec: VideoCodec, bitrate_kbps: u32) -> Encoder {
@@ -121,6 +124,11 @@ impl Video {
         self.settings.codec
     }
 
+    /// The codecs the next client may be sent: what its answer offered it.
+    pub(crate) fn allow_for_client(&mut self, codecs: CodecSetting) {
+        self.client_codec = codecs;
+    }
+
     pub(crate) fn codec(&self) -> VideoCodec {
         match self.encoder {
             Encoder::H264(_) => VideoCodec::H264,
@@ -131,7 +139,7 @@ impl Video {
     /// Picks the codec for a client whose offer has (or lacks) each one, switching encoders if
     /// the last client used the other. `None`: nothing in common.
     pub(crate) fn negotiate(&mut self, h264: bool, vp8: bool) -> Option<VideoCodec> {
-        let codec = self.settings.codec.pick(h264, vp8)?;
+        let codec = self.client_codec.pick(h264, vp8)?;
         if codec != self.codec() {
             self.encoder = Self::make(&self.settings, codec, self.bitrate_kbps());
             self.logged = None;
@@ -254,6 +262,19 @@ mod tests {
             fps: 60,
             keyframe_interval: 600,
         }
+    }
+
+    #[test]
+    fn the_servers_choice_for_a_client_is_used_over_the_setting() {
+        // The setting says VP8; the server chose H.264 for this client, so its answer offered
+        // only H.264, and that is what it is sent. The next client is the setting's again.
+        let mut video = Video::new(settings(CodecSetting::Only(VideoCodec::Vp8)));
+        assert_eq!(video.codec(), VideoCodec::Vp8);
+        video.allow_for_client("h264".parse().unwrap());
+        assert_eq!(video.negotiate(true, false), Some(VideoCodec::H264));
+        assert_eq!(video.codec(), VideoCodec::H264);
+        video.allow_for_client(video.codec_setting());
+        assert_eq!(video.negotiate(true, true), Some(VideoCodec::Vp8));
     }
 
     #[test]

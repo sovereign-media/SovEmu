@@ -22,7 +22,7 @@ fn start(offer: SessionDescription) -> (std::process::Child, Reply) {
         .stderr(Stdio::inherit())
         .spawn()
         .expect("start sovemu-worker");
-    let request = serde_json::to_string(&Request::Offer { id: 7, offer }).unwrap();
+    let request = serde_json::to_string(&Request::Offer { id: 7, offer, codec: None }).unwrap();
     writeln!(child.stdin.as_mut().unwrap(), "{request}").unwrap();
     let mut line = String::new();
     BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();

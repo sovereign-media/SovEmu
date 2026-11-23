@@ -79,6 +79,12 @@ impl ActiveSessionNode {
     async fn connected(&self) -> bool {
         self.0.info.connected
     }
+    /// Why its client is sent the video codec it is: each codec priced for it (what a frame
+    /// takes to encode here and to decode there), cheapest first, or the setting that decided.
+    /// Null until a client has offered.
+    async fn codec_choice(&self) -> Option<&str> {
+        self.0.live.codec_choice.as_deref()
+    }
     /// How the stream is made; null until the first frame is encoded.
     async fn pipeline(&self) -> Option<StreamPipeline> {
         self.0.live.pipeline.as_ref().map(StreamPipeline::from)

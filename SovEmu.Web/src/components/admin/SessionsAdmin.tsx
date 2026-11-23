@@ -60,6 +60,8 @@ function Details({ s }: { s: ActiveSession }) {
       ["Run-ahead", runAheadLabel(p.runAhead)],
     );
   }
+  // Why this client is sent this codec: each codec's price for it, or the setting that decided.
+  if (s.codecChoice) rows.push(["Codec chosen by", s.codecChoice]);
   if (h) {
     rows.push(
       ["Frames late", `${Math.round(h.overran * 100)}% (mean frame ${h.tickMeanMs.toFixed(1)} ms)`],
