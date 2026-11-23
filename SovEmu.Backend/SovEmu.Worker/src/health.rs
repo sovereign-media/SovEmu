@@ -26,6 +26,13 @@ pub(crate) struct Stats {
     pub(crate) encode_time: Duration,
     pub(crate) worst_encode: Duration,
     pub(crate) video_bytes: u64,
+    /// The largest encoded frame, in bytes: a keyframe's spike shows here.
+    pub(crate) largest_frame: u64,
+    /// Keyframes sent, the client's requests for one, and how many of those were ignored
+    /// because a keyframe was already on its way (`keyframes.rs`).
+    pub(crate) keyframes: u64,
+    pub(crate) keyframe_requests: u64,
+    pub(crate) keyframe_requests_ignored: u64,
     /// Frames the core ran (run-ahead's and fast-forward's included), the time inside the core,
     /// and reading GPU frames back (which waits for the GPU to finish drawing).
     pub(crate) core_frames: u64,
@@ -52,6 +59,10 @@ impl Stats {
         self.encode_time += other.encode_time;
         self.worst_encode = self.worst_encode.max(other.worst_encode);
         self.video_bytes += other.video_bytes;
+        self.largest_frame = self.largest_frame.max(other.largest_frame);
+        self.keyframes += other.keyframes;
+        self.keyframe_requests += other.keyframe_requests;
+        self.keyframe_requests_ignored += other.keyframe_requests_ignored;
         self.core_frames += other.core_frames;
         self.core_time += other.core_time;
         self.worst_core = self.worst_core.max(other.worst_core);
@@ -171,12 +182,20 @@ impl Health {
         self.window.paused += 1;
     }
 
-    pub(crate) fn encoded(&mut self, took: Duration, bytes: usize) {
+    pub(crate) fn encoded(&mut self, took: Duration, bytes: usize, keyframe: bool) {
         let w = &mut self.window;
         w.encoded += 1;
         w.encode_time += took;
         w.worst_encode = w.worst_encode.max(took);
         w.video_bytes += bytes as u64;
+        w.largest_frame = w.largest_frame.max(bytes as u64);
+        w.keyframes += u64::from(keyframe);
+    }
+
+    /// A client asked for a keyframe; `answered` is false for a request that was ignored.
+    pub(crate) fn keyframe_requested(&mut self, answered: bool) {
+        self.window.keyframe_requests += 1;
+        self.window.keyframe_requests_ignored += u64::from(!answered);
     }
 
     /// Adds a tick's frames: the core's time and the GPU readback's.
@@ -240,6 +259,10 @@ impl Health {
             encode_worst_ms = ms(t.worst_encode),
             video_mb = round1(t.video_bytes as f64 / 1_000_000.0),
             video_kbps = t.video_kbps(),
+            largest_frame_kb = round1(t.largest_frame as f64 / 1000.0),
+            keyframes = t.keyframes,
+            keyframe_requests = t.keyframe_requests,
+            keyframe_requests_ignored = t.keyframe_requests_ignored,
             inputs = t.inputs,
             paused_ticks = t.paused,
             run_ahead = at.run_ahead,
@@ -292,6 +315,10 @@ fn log_health(w: &Stats, at: &Now) {
                 video_encoder = at.video_encoder,
                 estimate_kbps = at.estimate_kbps,
                 client_limit_kbps = at.client_limit_kbps,
+                largest_frame_kb = round1(w.largest_frame as f64 / 1000.0),
+                keyframes = w.keyframes,
+                keyframe_requests = w.keyframe_requests,
+                keyframe_requests_ignored = w.keyframe_requests_ignored,
                 inputs = w.inputs,
                 paused_ticks = w.paused,
                 run_ahead = at.run_ahead,
@@ -330,8 +357,12 @@ mod tests {
         h.ticked(Duration::ZERO, 5 * MS);
         h.ticked(Duration::ZERO, 20 * MS); // over the 16.7 ms period
         h.ticked(10 * MS, 5 * MS); // more than half a period late
-        h.encoded(2 * MS, 1000);
-        h.encoded(4 * MS, 3000);
+        h.encoded(2 * MS, 1000, false);
+        h.encoded(4 * MS, 3000, true);
+        // Three requests for a keyframe, of which one was answered.
+        h.keyframe_requested(true);
+        h.keyframe_requested(false);
+        h.keyframe_requested(false);
         h.input();
         h.summary(t + Duration::from_secs(1), &now());
         let s = h.total();
@@ -341,6 +372,8 @@ mod tests {
         assert_eq!(s.mean_encode_ms(), 3.0);
         assert_eq!(s.video_kbps(), 32.0, "4000 bytes in a second");
         assert_eq!(s.inputs, 1);
+        assert_eq!((s.keyframes, s.largest_frame), (1, 3000));
+        assert_eq!((s.keyframe_requests, s.keyframe_requests_ignored), (3, 2));
     }
 
     #[test]
