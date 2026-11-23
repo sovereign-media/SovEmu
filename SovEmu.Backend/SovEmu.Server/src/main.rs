@@ -65,7 +65,7 @@ use axum::response::Response;
 use axum::routing::get;
 use clap::Parser;
 use sovemu_library::{bios, cache, decorations, mirror};
-use sovemu_sessions::{gpu, workers};
+use sovemu_sessions::{encoders, gpu, workers};
 use sqlx::SqlitePool;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -724,6 +724,8 @@ pub struct AppState {
     pub mirror: Arc<std::sync::Mutex<mirror::SyncStatus>>,
     /// Where 3D systems render, decided at startup.
     pub gpu: Arc<gpu::GpuStatus>,
+    /// What the startup encoder test found.
+    pub encoders: Arc<encoders::EncoderTest>,
     /// What each core offers as settings, probed once.
     pub core_info: Arc<settings::CoreInfoCache>,
     /// The GraphQL schema (cheap to clone: shared).
@@ -886,6 +888,15 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let worker_bin = config.worker.clone().unwrap_or_else(default_worker);
     let gpu = gpu::detect(&worker_bin, &config.gpu, &workers::worker_env()).await;
     tracing::info!(summary = %gpu.summary(), "GPU probe");
+    // Every video encoder, run and timed before the server listens: no game starts without it.
+    let encoders = encoders::test(&worker_bin, &gpu.worker_arg, &workers::worker_env()).await;
+    tracing::info!(
+        took_ms = encoders.took_ms,
+        working = encoders.encoders.iter().filter(|e| e.works).count(),
+        tried = encoders.encoders.len(),
+        summary = %format!("\n{}", encoders.summary()),
+        "encoder test"
+    );
     let session_failures = Arc::new(failures::Failures::new(config.session_failures));
     // Told as sessions start and end, and of each worker's log lines.
     let mut observers: Vec<Arc<dyn sovemu_sessions::Observer>> = vec![
@@ -1045,6 +1056,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         metadata,
         mirror: Arc::default(),
         gpu: Arc::new(gpu),
+        encoders: Arc::new(encoders),
         core_info,
         schema: graphql::schema(),
         decorations: Arc::new(std::sync::RwLock::new(decorations)),

@@ -2583,6 +2583,28 @@ async fn admins_see_the_streaming_settings_and_test_a_connection() {
     assert!(names.contains(&"SOVEMU_VIDEO_KBPS") && names.contains(&"SOVEMU_REWIND_SECONDS"));
     assert!(!names.contains(&"SOVEMU_HTTP"), "a network setting, on the Network page");
 
+    // The startup encoder test ran before the server took a request: every encoder a session
+    // could use is listed, as it would run, working or with why not.
+    let test = h
+        .ok(
+            "{ streaming { encoderTest { tookMs budgetMs note testedAt encoders { codec encoder hardware threads works error timings { width height frames meanMs p95Ms } } } } }",
+            json!({}),
+        )
+        .await["streaming"]["encoderTest"]
+        .clone();
+    assert_eq!((&test["budgetMs"], &test["note"]), (&json!(10_000), &Value::Null), "{test}");
+    assert!(test["tookMs"].as_i64().unwrap() <= 10_000 && test["testedAt"].as_f64().is_some());
+    let encoders = test["encoders"].as_array().unwrap();
+    let vp8 = encoders.iter().find(|e| e["encoder"] == "libvpx").expect("libvpx is always tried");
+    assert_eq!(
+        (&vp8["codec"], &vp8["hardware"], &vp8["threads"]),
+        (&json!("vp8"), &json!(false), &json!(4))
+    );
+    assert!(encoders.iter().any(|e| e["encoder"] == "x264" && e["codec"] == "h264"), "{test}");
+    for e in encoders {
+        assert_eq!(e["works"] == true, e["error"].is_null(), "{e}");
+    }
+
     // A real connection-test worker on a game port reads the offer: one that is not SDP is
     // refused with why, and its port goes back to the pool.
     let (code, message) = h

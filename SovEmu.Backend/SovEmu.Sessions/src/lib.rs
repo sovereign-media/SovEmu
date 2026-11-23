@@ -13,6 +13,7 @@
 //! records metrics).
 
 pub mod connection_test;
+pub mod encoders;
 pub mod gpu;
 pub mod starts;
 pub mod workers;

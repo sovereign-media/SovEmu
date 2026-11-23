@@ -27,6 +27,9 @@ use crate::vp8::DecodedFrame;
 use crate::yuv::{I420Planes, rgba_to_i420, rgba_to_nv12};
 use crate::{EncodedFrame, Error};
 
+/// Threads x264 encodes a frame on.
+pub const X264_THREADS: u32 = 4;
+
 /// An H.264 encoder libavcodec can drive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum H264Backend {
@@ -556,7 +559,7 @@ fn open_context(
                 set_option(ctx, c"forced-idr", "1")?;
                 // zerolatency slices each frame across threads; a few are plenty at console
                 // resolutions and leave cores for the emulator.
-                (*ctx).thread_count = 4;
+                (*ctx).thread_count = X264_THREADS as c_int;
             }
             H264Backend::Vaapi => {
                 let (device, low_power) = vaapi.expect("VA-API needs its device");

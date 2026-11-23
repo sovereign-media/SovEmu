@@ -22,7 +22,7 @@ pub mod vp8;
 pub mod yuv;
 
 pub use audio::AudioEncoder;
-pub use h264::{H264Backend, H264Config, H264Decoder, H264Encoder, H264Preference};
+pub use h264::{H264Backend, H264Config, H264Decoder, H264Encoder, H264Preference, X264_THREADS};
 pub use opus::{OpusDecoder, OpusEncoder};
 pub use vp8::{Vp8Config, Vp8Decoder, Vp8Encoder};
 

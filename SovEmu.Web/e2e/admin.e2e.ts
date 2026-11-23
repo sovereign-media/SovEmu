@@ -39,6 +39,12 @@ test("the Streaming page tests this browser's connection to a game port", async 
   await page.goto("/admin/streaming/");
   await expect(page.getByRole("heading", { name: "Streaming", level: 1 })).toBeVisible();
   await expect(page.getByText("SOVEMU_VIDEO_KBPS", { exact: true })).toBeVisible();
+  // The startup encoder test: VP8 on libvpx's four threads is in every build, and timed.
+  const encoders = page.getByRole("region", { name: "Encoders" });
+  const vp8 = encoders.getByRole("row", { name: /VP8 \(libvpx\)/ });
+  await expect(vp8.getByText("4 CPU threads")).toBeVisible();
+  await expect(vp8.getByText("Works")).toBeVisible();
+  await expect(vp8.getByText(/^\d+\.\d\d ms$/).first()).toBeVisible();
   await page.getByRole("button", { name: "Test this browser" }).click();
   // A real connection-test worker on a game port, over UDP on this machine.
   await expect(page.getByText("This browser reaches the game streams.")).toBeVisible({ timeout: 20_000 });

@@ -31,6 +31,12 @@ unreachable_pub = "warn"
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "warn"
 
+# The media crate converts and encodes every frame: unoptimised, its colour conversion alone
+# takes several times a frame's encode, so the startup encoder test (run by every test that
+# starts a server with a worker) took 9 seconds in a debug build against 1 optimised.
+[profile.dev.package.sovemu-media]
+opt-level = 3
+
 [profile.release]
 # The worker is a long-running per-session process: favour speed, keep symbols for crash reports.
 lto = "thin"
