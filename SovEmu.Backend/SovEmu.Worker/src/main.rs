@@ -245,6 +245,10 @@ struct SessionArgs {
     /// link would, to see how the stream recovers.
     #[arg(long, default_value_t = 0.0)]
     drop_video_percent: f64,
+    /// Testing only: hold each outgoing video packet this many milliseconds, as a distant
+    /// client's link would.
+    #[arg(long, default_value_t = 0)]
+    delay_video_ms: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
@@ -350,6 +354,10 @@ struct ServeArgs {
     /// link would, to see how the stream recovers.
     #[arg(long, default_value_t = 0.0)]
     drop_video_percent: f64,
+    /// Testing only: hold each outgoing video packet this many milliseconds, as a distant
+    /// client's link would.
+    #[arg(long, default_value_t = 0)]
+    delay_video_ms: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
