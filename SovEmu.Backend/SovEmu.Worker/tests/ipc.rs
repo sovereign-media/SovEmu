@@ -101,7 +101,7 @@ impl Worker {
         let (options, categories) = options.expect("the core's options before ready");
         let keys: Vec<&str> = options.iter().map(|o| o.key.as_str()).collect();
         assert_eq!(keys, ["sovemu_test_pattern", "sovemu_test_render"]);
-        assert_eq!(options[0].labels, ["Gradient", "Solid colour"]);
+        assert_eq!(options[0].labels, ["Gradient", "Solid colour", "Noise"]);
         assert_eq!(categories[0].description, "Video");
         (Self { child, stdin, replies, log }, ready)
     }

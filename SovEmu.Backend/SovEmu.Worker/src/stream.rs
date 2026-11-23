@@ -756,6 +756,7 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     // One keyframe for a burst of requests, and none for a request sent
                     // before the last keyframe could have arrived.
                     let answered = session.keyframes.asked(Instant::now());
+                    session.adaptation.trouble(Instant::now());
                     session.health.keyframe_requested(answered);
                     if answered {
                         session.video.request_keyframe();
@@ -763,7 +764,19 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 }
                 Event::EgressBitrateEstimate(
                     BweKind::Twcc { estimate, .. } | BweKind::Remb { estimate, .. },
-                ) => session.adapt_bitrate(estimate.as_u64()),
+                ) => {
+                    session.adapt_bitrate(estimate.as_u64());
+                    // A fall with nothing to back it: the estimator starts again from where
+                    // it was, so the pacer does not slow a stream the link still carries.
+                    if let Some(bps) = session.adaptation.take_restart() {
+                        tracing::debug!(
+                            fell_to_kbps = estimate.as_u64() / 1000,
+                            back_to_kbps = bps / 1000,
+                            "the bandwidth estimate fell with no sign of trouble: asked again"
+                        );
+                        p.rtc.bwe().reset(Bitrate::kbps(bps / 1000));
+                    }
+                }
                 _ => {}
             },
         }
@@ -817,6 +830,7 @@ impl Session {
                     decode_ms: stats.decode_ms,
                     frames_dropped: stats.frames_dropped,
                     frames_sent: self.frames_sent,
+                    packets_lost: stats.packets_lost,
                 };
                 match self.adaptation.client(sample, self.video.bitrate_kbps(), now) {
                     Some(LimitChange::Cut { to_kbps, why }) => tracing::info!(
@@ -936,6 +950,7 @@ impl Session {
                 to_kbps = target,
                 estimate_kbps = self.estimate_kbps,
                 client_limit_kbps = self.adaptation.client_limit_kbps(),
+                ceiling_kbps = self.adaptation.ceiling_kbps(),
                 "video bitrate changed"
             );
             if let Err(e) = self.video.set_bitrate(target) {
