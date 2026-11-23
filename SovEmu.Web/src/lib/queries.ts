@@ -681,8 +681,8 @@ export const StartProgressQuery = graphql(`
 `);
 
 export const SessionOfferMutation = graphql(`
-  mutation SessionOffer($id: ID!, $sdp: String!, $client: String) {
-    sessionOffer(id: $id, sdp: $sdp, client: $client)
+  mutation SessionOffer($id: ID!, $sdp: String!, $client: String, $capabilities: ClientCapabilitiesInput) {
+    sessionOffer(id: $id, sdp: $sdp, client: $client, capabilities: $capabilities)
   }
 `);
 
