@@ -20,6 +20,10 @@ transparent background, 640 px on the longer side. All are from Wikimedia Common
 the public domain or CC0, so they need no attribution; a new photo must be too. Never add a
 photo under a licence that asks for attribution or share-alike.
 
+`scripts/fetch-system-photos.py` downloads the photos it lists (system id → Commons file), refuses
+any that is not public domain or CC0, and writes each as a tile here. A new photo is a line in
+its `PHOTOS`, then an entry in `BUILTIN_PHOTOS` (`src/appearance.rs`) and a row below.
+
 | File                | Commons file                                        | Licence       | Author                                           |
 | ------------------- | --------------------------------------------------- | ------------- | ------------------------------------------------ |
 | `nes.webp`          | `NES-Console-Set.png` (white background removed)    | Public domain | Evan-Amos                                        |
