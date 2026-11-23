@@ -48,6 +48,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) test: &'a EncoderTest,
     /// What the client sent with its offer, if it sent a document.
     pub(crate) capabilities: Option<&'a ClientCapabilities>,
+    /// The client's offer (SDP): a codec it does not carry cannot be sent, whatever the
+    /// document says (a browser may say it decodes H.264 and still not offer it).
+    pub(crate) sdp: &'a str,
     /// What this device's decoder has measured, by codec name (`vp8`), in ms a frame.
     pub(crate) measured: &'a [(String, f64)],
     /// The game's picture, in pixels.
@@ -100,6 +103,15 @@ impl Priced<'_> {
             self.total()
         )
     }
+}
+
+/// Whether an offer (SDP) carries `codec`: an `a=rtpmap` line naming it.
+fn offered(sdp: &str, codec: VideoCodec) -> bool {
+    let name = format!(" {}/90000", codec.name());
+    sdp.lines().any(|line| {
+        let line = line.trim().to_ascii_lowercase();
+        line.starts_with("a=rtpmap:") && line.ends_with(&name)
+    })
 }
 
 /// The encoder a session would get for `codec`, if one works: VP8 is libvpx's; H.264 follows
@@ -165,6 +177,7 @@ pub(crate) fn choose(i: &Inputs<'_>) -> Choice {
 
     let mut priced: Vec<Priced<'_>> = ENCODED
         .iter()
+        .filter(|&&codec| offered(i.sdp, codec))
         .filter_map(|&codec| {
             let decoder = capabilities.video_decoders.iter().find(|d| d.codec == codec)?;
             let encoder = session_encoder(i.test, codec, i.encoder)?;
@@ -180,7 +193,9 @@ pub(crate) fn choose(i: &Inputs<'_>) -> Choice {
         })
         .collect();
     if priced.is_empty() {
-        return vp8("no codec this server encodes is one the client says it decodes: VP8");
+        return vp8(
+            "no codec this server encodes is one the client offers and says it decodes: VP8",
+        );
     }
     let cheapest = priced.iter().map(Priced::total).fold(f64::INFINITY, f64::min);
     // The cheapest and everything within a tie of it, then the tie's order.
@@ -272,9 +287,42 @@ mod tests {
             encoder: "auto",
             test,
             capabilities,
+            sdp: BOTH,
             measured: &measured,
             size: (640, 448),
         })
+    }
+
+    /// An offer's video codecs, as browsers and libwebrtc write them.
+    const BOTH: &str = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96 102\r\na=rtpmap:96 VP8/90000\r\na=rtpmap:102 H264/90000\r\n";
+    const VP8_ONLY: &str = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 VP8/90000\r\na=rtpmap:97 rtx/90000\r\n";
+
+    #[test]
+    fn a_codec_the_offer_does_not_carry_is_never_chosen() {
+        // The document says H.264 in hardware (the cheaper pair), but the offer has only VP8:
+        // a browser built without H.264 can say it decodes it and still not offer it.
+        let phone = device(vec![
+            decoder(VideoCodec::Vp8, false, true),
+            decoder(VideoCodec::H264, true, true),
+        ]);
+        let measured: Vec<(String, f64)> = Vec::new();
+        let inputs = Inputs {
+            setting: "auto",
+            encoder: "auto",
+            test: &intel_server(),
+            capabilities: Some(&phone),
+            sdp: BOTH,
+            measured: &measured,
+            size: (640, 448),
+        };
+        assert_eq!(choose(&inputs).codec, Some(VideoCodec::H264));
+        let choice = choose(&Inputs { sdp: VP8_ONLY, ..inputs });
+        assert_eq!(choice.codec, Some(VideoCodec::Vp8));
+        assert!(!choice.reason.contains("h264"), "{}", choice.reason);
+        // An offer with neither still gets an answer to refuse properly: VP8, and why.
+        let choice = choose(&Inputs { sdp: "not sdp", ..inputs });
+        assert_eq!(choice.codec, Some(VideoCodec::Vp8));
+        assert!(choice.reason.contains("offers"), "{}", choice.reason);
     }
 
     #[test]
@@ -376,6 +424,7 @@ mod tests {
             encoder: "software",
             test: &intel_server(),
             capabilities: Some(&phone),
+            sdp: BOTH,
             measured: &measured,
             size: (640, 448),
         });
@@ -392,6 +441,7 @@ mod tests {
                 encoder: "auto",
                 test: &intel_server(),
                 capabilities: Some(&phone),
+                sdp: BOTH,
                 measured: &measured,
                 size,
             })

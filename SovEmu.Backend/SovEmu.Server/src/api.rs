@@ -564,6 +564,7 @@ pub(crate) async fn offer(
         encoder: &state.config.video_encoder,
         test: &state.encoders,
         capabilities: capabilities.as_ref(),
+        sdp: &sdp,
         measured: &measured,
         size: (info.width, info.height),
     });
