@@ -67,6 +67,9 @@ pub struct WorkerConfig {
     pub rewind_max_mb: u32,
     pub fast_forward: u32,
     pub keyframe_interval: u32,
+    /// Testing only: the share (percent) of video packets workers throw away
+    /// (`SOVEMU_DEBUG_DROP_VIDEO_PERCENT`); 0 for none.
+    pub drop_video_percent: f64,
     /// Seconds between a worker's `session health` log lines (0: none).
     pub health_interval_secs: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
@@ -711,6 +714,8 @@ impl Workers {
             .arg(self.config.fast_forward.to_string())
             .arg("--keyframe-interval")
             .arg(self.config.keyframe_interval.to_string())
+            .arg("--drop-video-percent")
+            .arg(self.config.drop_video_percent.to_string())
             .arg("--gpu")
             .arg(&self.config.gpu)
             .arg("--health-interval")
@@ -1106,6 +1111,7 @@ done
             rewind_max_mb: 0,
             fast_forward: 1,
             keyframe_interval: 60,
+            drop_video_percent: 0.0,
             health_interval_secs: 10,
             gpu: "off".into(),
             log_format: "text",

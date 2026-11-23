@@ -444,6 +444,12 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_KEYFRAME_INTERVAL", default_value_t = 600)]
     pub keyframe_interval: u32,
 
+    /// Testing only: throw away this share (percent) of every game's outgoing video packets,
+    /// as a lossy link would, to see how a stream recovers. Audio and the connection's own
+    /// packets always go. Leave it at 0.
+    #[arg(long, env = "SOVEMU_DEBUG_DROP_VIDEO_PERCENT", default_value_t = 0.0)]
+    pub debug_drop_video_percent: f64,
+
     /// Seconds between each game's `session health` log line while someone is playing (frame
     /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
     /// logs a `session summary` when it ends.
@@ -931,6 +937,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         rewind_max_mb: config.rewind_max_mb,
         fast_forward: config.fast_forward,
         keyframe_interval: config.keyframe_interval,
+        drop_video_percent: config.debug_drop_video_percent,
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),

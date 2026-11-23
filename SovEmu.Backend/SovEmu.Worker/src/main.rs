@@ -21,6 +21,7 @@ mod headless;
 mod health;
 mod keyframes;
 mod loading;
+mod loss;
 mod pacing;
 mod patch;
 mod persist;
@@ -240,6 +241,10 @@ struct SessionArgs {
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
+    /// Testing only: throw away this share (percent) of outgoing video packets, as a lossy
+    /// link would, to see how the stream recovers.
+    #[arg(long, default_value_t = 0.0)]
+    drop_video_percent: f64,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
@@ -341,6 +346,10 @@ struct ServeArgs {
     /// Longest gap between video keyframes, in frames (clients also ask for one after loss).
     #[arg(long, default_value_t = 600)]
     keyframe_interval: u32,
+    /// Testing only: throw away this share (percent) of outgoing video packets, as a lossy
+    /// link would, to see how the stream recovers.
+    #[arg(long, default_value_t = 0.0)]
+    drop_video_percent: f64,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
