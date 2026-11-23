@@ -395,6 +395,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
 | `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
 | `SOVEMU_DEBUG_DROP_VIDEO_PERCENT` | `0` | Testing only: every game throws away this share (percent) of its outgoing video packets, retransmissions included, as a lossy link would, to see how a stream recovers. Audio and the connection's own packets always go, and the same packets are lost on every run. The worker logs how many it dropped when the session ends. Leave it at 0 |
+| `SOVEMU_DEBUG_DELAY_VIDEO_MS` | `0` | Testing only: every game holds each outgoing video packet this many milliseconds before sending it, as a distant client's link would, so a retransmission arrives late. Audio and the connection's own packets go at once. Leave it at 0 |
 | `SOVEMU_SESSION_HEALTH_SECS` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
 | `SOVEMU_SESSION_FAILURES` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
 | `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |

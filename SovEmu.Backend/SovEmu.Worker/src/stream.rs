@@ -124,6 +124,8 @@ pub(crate) struct SessionConfig {
     pub keyframe_interval: u32,
     /// Testing only: the share (percent) of outgoing video packets to throw away (`loss.rs`).
     pub drop_video_percent: f64,
+    /// Testing only: milliseconds each outgoing video packet is held (`loss.rs`).
+    pub delay_video_ms: u32,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -287,7 +289,7 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             keyframes: crate::keyframes::Gate::new(),
-            loss: crate::loss::Loss::new(config.drop_video_percent),
+            loss: crate::loss::Loss::new(config.drop_video_percent, config.delay_video_ms),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
@@ -317,7 +319,8 @@ impl Session {
             tracing::warn!(
                 video_packets = self.loss.seen,
                 dropped = self.loss.dropped,
-                "simulated loss was on (--drop-video-percent): video packets were thrown away"
+                delay_ms = self.loss.delay_ms(),
+                "a simulated link was on (--drop-video-percent, --delay-video-ms): video packets were thrown away or held"
             );
         }
         if std::mem::replace(&mut self.finished, true) {
@@ -595,7 +598,13 @@ pub(crate) fn run(
             session.health.resume(now);
             session.video.request_keyframe();
         }
-        let deadline = if running { rtc_deadline.min(next_frame) } else { rtc_deadline };
+        let mut deadline = if running { rtc_deadline.min(next_frame) } else { rtc_deadline };
+        // Simulated delay (testing only): packets whose wait is over go now, and the loop
+        // wakes for the next.
+        session.loss.flush(&socket, Instant::now());
+        if let Some(due) = session.loss.next_due() {
+            deadline = deadline.min(due);
+        }
 
         // Wait for a datagram or the deadline.
         let wait = deadline.saturating_duration_since(Instant::now());
@@ -648,7 +657,12 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
         match p.rtc.poll_output()? {
             Output::Timeout(t) => return Ok(Some(t)),
             Output::Transmit(t) => {
-                if session.loss.drops(&t.contents, p.audio.map(|(_, pt)| *pt)) {
+                let audio = p.audio.map(|(_, pt)| *pt);
+                if session
+                    .loss
+                    .outgoing(&t.contents, t.destination, audio, Instant::now())
+                    .is_none()
+                {
                     continue;
                 }
                 if let Err(e) = socket.send_to(&t.contents, t.destination) {
