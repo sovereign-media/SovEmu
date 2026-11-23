@@ -38,6 +38,7 @@ import {
   type SystemControls,
   type SystemSummary,
 } from "../../lib/api";
+import { clientCapabilities } from "../../lib/capabilities";
 import { clientName, reportClientEvent } from "../../lib/clientEvents";
 import {
   defaultMapping,
@@ -303,7 +304,7 @@ function Player() {
         if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(firstPicture);
         else v.addEventListener("loadeddata", firstPicture, { once: true });
         session = new Session(
-          (sdp) => api.answer(s.id, sdp, clientName()),
+          async (sdp) => api.answer(s.id, sdp, clientName(), await clientCapabilities()),
           video.current!,
           input,
           {

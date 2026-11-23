@@ -1,6 +1,7 @@
 // The SovEmu API (GraphQL), as the pages use it: one function per operation, returning the
 // types gql.tada infers from the documents in queries.ts. Signed out, a call goes to sign-in.
 // Signing in and out is auth.ts (OpenID Connect), not the API.
+import type { Capabilities } from "./capabilities";
 import type { Enum, ResultOf } from "./gql";
 import { onUnload, request } from "./graphql";
 import {
@@ -359,9 +360,12 @@ export const api = {
   startSession: async (gameId: number, startId?: string) =>
     (await request(StartSessionMutation, { gameId, startId: startId ?? null })).startSession,
   startProgress: async (startId: string) => (await request(StartProgressDocument, { startId })).startProgress,
-  /** The worker's answer (SDP) to a WebRTC offer for the session; `client` names this browser. */
-  answer: async (sessionId: string, sdp: string, client: string) =>
-    (await request(SessionOfferMutation, { id: sessionId, sdp, client })).sessionOffer,
+  /**
+   * The worker's answer (SDP) to a WebRTC offer for the session; `client` names this browser and
+   * `capabilities` says what it can decode and show (the whole document, every time).
+   */
+  answer: async (sessionId: string, sdp: string, client: string, capabilities: Capabilities) =>
+    (await request(SessionOfferMutation, { id: sessionId, sdp, client, capabilities })).sessionOffer,
   stopSession: (id: string) => request(StopSessionMutation, { id }),
   /** Stops a session as the page closes, so the auto save is written now. */
   stopSessionOnUnload: (id: string) => onUnload(StopSessionMutation, { id }),

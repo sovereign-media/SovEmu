@@ -199,7 +199,9 @@ mode or not, and the decoder's name; and its display), as Sovereign's clients do
 message asking the player to update the app, keeps a good one against the sign-in's device
 (`sign_in_capabilities`, shown on `signIns`), and logs it with the session. Choosing each
 session's codec from it is `codec.rs` (below); a client that sends no document is still served,
-with VP8.
+with VP8. The web client asks the browser's Media Capabilities about a WebRTC stream of
+each codec (`src/lib/capabilities.ts`): `powerEfficient` is its word for hardware, and since a
+browser names no decoder and has no low-latency switch, every row says low latency.
 
 **The startup encoder test.** Before it listens, the server runs `sovemu-worker encoders` once
 (`SovEmu.Sessions/src/encoders.rs`), as it runs `sovemu-worker gpu` for rendering: an encoder's
