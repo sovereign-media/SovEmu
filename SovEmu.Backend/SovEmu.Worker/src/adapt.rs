@@ -32,6 +32,9 @@ fn raise_step(kbps: u32) -> u32 {
 
 /// The estimates the connection is judged on: those of this long past, by their median.
 const ESTIMATE_WINDOW: Duration = Duration::from_secs(2);
+/// How long after a dropout new estimates are left alone: the estimator has seen seconds of
+/// nothing arriving, which is not what the connection is like now.
+const DROPOUT_GRACE: Duration = Duration::from_secs(1);
 /// At most this many estimates are kept (str0m reports several a second).
 const ESTIMATES_KEPT: usize = 64;
 
@@ -173,6 +176,11 @@ pub(crate) struct Adaptation {
     /// The sample before this one: when, the frames sent by then, the frames dropped by then.
     last: Option<(Instant, u64, Option<u64>)>,
     changed_at: Option<Instant>,
+    /// Estimates are not taken before this: those just after a dropout still describe the
+    /// dropout, not the connection.
+    ignore_estimates_until: Option<Instant>,
+    /// The next raise is the return from a dropout: taken whole and at once.
+    returning: bool,
     /// When the bitrate was last cut, and last raised.
     cut_at: Option<Instant>,
     raised_at: Option<Instant>,
@@ -193,6 +201,8 @@ impl Adaptation {
             best_decode_ms: None,
             last: None,
             changed_at: None,
+            ignore_estimates_until: None,
+            returning: false,
             cut_at: None,
             raised_at: None,
             told: None,
@@ -243,7 +253,24 @@ impl Adaptation {
     }
 
     /// Takes a send-bandwidth estimate.
+    /// The client is back after a dropout (the link was down, not congested). The estimates
+    /// taken across it are forgotten, with the cut they caused: the network's limit is again
+    /// `kbps_before`, what the stream was sent at when the client was last heard, and new
+    /// estimates are left alone for [`DROPOUT_GRACE`], while the estimator finds its feet.
+    /// What the client's own decoder limits it to is untouched.
+    pub(crate) fn dropout(&mut self, kbps_before: u32, now: Instant) {
+        let Limits { min_kbps, max_kbps, .. } = self.limits;
+        self.estimates.clear();
+        self.network_kbps = Some(kbps_before.clamp(min_kbps, max_kbps));
+        self.ignore_estimates_until = Some(now + DROPOUT_GRACE);
+        self.returning = true;
+        self.cut_at = None;
+    }
+
     pub(crate) fn estimate(&mut self, estimate_bps: u64, now: Instant) {
+        if self.ignore_estimates_until.is_some_and(|until| now < until) {
+            return;
+        }
         self.estimates.push_back((now, estimate_bps));
         while self.estimates.len() > ESTIMATES_KEPT
             || self
@@ -357,7 +384,14 @@ impl Adaptation {
     pub(crate) fn decide(&mut self, current_kbps: u32, reopens: bool, now: Instant) -> Option<u32> {
         let mut target = self.target(now);
         // Before the first estimate the target is the starting rate, taken at once (a new client
-        // starts afresh); after it, raises are held and stepped.
+        // starts afresh), and so is the return from a dropout; otherwise raises are held and
+        // stepped.
+        let returning = std::mem::take(&mut self.returning);
+        if returning && target > current_kbps {
+            self.changed_at = Some(now);
+            self.raised_at = Some(now);
+            return Some(target);
+        }
         if target > current_kbps && self.network_kbps.is_some() {
             let since = |at: Option<Instant>| at.map(|at| now.duration_since(at));
             if since(self.cut_at).is_some_and(|d| d < RAISE_HOLD)
@@ -403,6 +437,37 @@ mod tests {
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         a.estimate(bps, *BASE + ESTIMATE_WINDOW * 5 * (n as u32 + 1));
+    }
+
+    #[test]
+    fn a_dropout_is_not_congestion() {
+        let mut a = adaptation();
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        // A steady 4.5 Mbit/s, then the link goes down: the estimate collapses and the stream
+        // is cut at once, as for congestion.
+        for at in [0, 200, 400] {
+            a.estimate(4_500_000, ms(at));
+        }
+        let before = a.decide(5000, false, ms(400)).expect("down to what the network allows");
+        for at in [600, 800, 1000, 1200] {
+            a.estimate(400_000, ms(at));
+        }
+        let cut = a.decide(before, false, ms(1200)).expect("cut for the collapse");
+        assert!(cut < 500, "{cut}");
+        // The client is heard again at 2.6 s: the stream goes straight back to what it was
+        // sent at before, with no ten-second hold and no stepping up.
+        a.dropout(before, ms(2600));
+        assert_eq!(a.decide(cut, false, ms(2600)), Some(before));
+        // The estimator's first readings after the dropout still describe it: left alone.
+        a.estimate(400_000, ms(2700));
+        a.estimate(450_000, ms(3500));
+        assert_eq!(a.decide(before, false, ms(3500)), None);
+        // After the grace, the connection is judged again: real congestion still cuts.
+        for at in [5700, 5900, 6100] {
+            a.estimate(1_000_000, ms(at));
+        }
+        assert!(a.decide(before, false, ms(6100)).is_some_and(|kbps| kbps < before));
     }
 
     #[test]

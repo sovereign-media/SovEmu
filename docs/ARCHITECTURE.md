@@ -236,6 +236,17 @@ the client has reported one). An answered request whose keyframe never comes is 
 500 ms, so a client is never left asking. The `session health` and `session summary` lines count
 keyframes, requests and ignored requests, and give the largest frame.
 
+**Dropouts** (`keyframes.rs`, `adapt.rs`, `SOVEMU_DROPOUT_KEYFRAME_MS`). A connected client is
+never silent for long: its feedback on what it receives comes many times a second. One that has
+been silent for 700 ms and is then heard again was cut off (Wi-Fi, mostly), and it has missed
+that much video. Left alone, a browser waits on retransmissions for a second or more before it
+asks for a keyframe, and the send-bandwidth estimator, having watched nothing arrive, paces what
+follows at a crawl for many seconds. So the worker sends a keyframe at once, returns the bitrate
+to what it was when the client was last heard, and starts the estimator again from its estimate
+of that moment: a link that was down was not congested. Measured in Chromium with 100 ms of
+delay, the picture came back 0.03 s after a 2-second dropout ended, where it had taken 1.3 s on
+average and 1.8 s at worst.
+
 ### Deployment: one Debian container
 
 SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.

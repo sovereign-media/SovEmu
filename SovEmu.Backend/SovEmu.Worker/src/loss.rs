@@ -4,8 +4,9 @@
 //! send, retransmissions included, as a lossy link would. `--delay-video-ms` holds each video
 //! packet that long before it goes, as a distant client's link would: a retransmission then
 //! arrives late, which is when a client gives up on it and asks for a keyframe.
-//! `--drop-video-burst-ms` throws away every video packet for that long once every
-//! [`BURST_EVERY`], as a Wi-Fi dropout would. Audio, RTCP
+//! `--drop-video-burst-ms` cuts the link both ways for that long once every [`BURST_EVERY`],
+//! as a Wi-Fi dropout does: nothing goes out and nothing the client sends is heard. Outside
+//! a dropout, audio, RTCP
 //! and the connection's own packets (STUN, DTLS) always go at once, so the client still
 //! connects, still hears the game and can still ask for what it lost. Both are off (0) outside
 //! tests and measurements.
@@ -90,9 +91,11 @@ impl Loss {
         if self.drops(datagram, audio) {
             return None;
         }
-        if is_video_rtp(datagram, audio) && self.in_burst(now) {
-            self.seen += u64::from(self.share <= 0.0);
-            self.dropped += 1;
+        // A dropout takes everything, audio and the connection's own packets included.
+        let video = is_video_rtp(datagram, audio);
+        if (video || self.started.is_some()) && self.in_burst(now) {
+            self.seen += u64::from(video && self.share <= 0.0);
+            self.dropped += u64::from(video);
             return None;
         }
         if self.delay.is_zero() || !is_video_rtp(datagram, audio) {
@@ -100,6 +103,11 @@ impl Loss {
         }
         self.held.push_back((now + self.delay, datagram.to_vec(), destination));
         None
+    }
+
+    /// Whether a datagram arriving from the client at `now` is lost to a dropout.
+    pub(crate) fn incoming_lost(&mut self, now: Instant) -> bool {
+        self.started.is_some() && self.in_burst(now)
     }
 
     /// The held packets whose delay is up at `now`, oldest first.
@@ -235,14 +243,18 @@ mod tests {
             None,
             "retransmissions too"
         );
-        assert_eq!(
-            link.outgoing(&rtp(111), to, Some(111), t + ms(9_900)),
-            Some(()),
-            "audio still goes"
-        );
+        // A dropout cuts the link both ways: audio does not go, and the client is not heard.
+        assert_eq!(link.outgoing(&rtp(111), to, Some(111), t + ms(9_900)), None, "audio too");
+        assert!(link.incoming_lost(t + ms(9_900)));
+        assert!(!link.incoming_lost(t + ms(9_700)));
         assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(10_000)), Some(()));
+        assert!(!link.incoming_lost(t + ms(10_000)));
         assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(19_850)), None, "and again");
-        assert_eq!(link.dropped, 3);
+        assert_eq!(link.dropped, 3, "video packets are what is counted");
+        // Before any video has gone there is no dropout: the client can connect.
+        let mut fresh = Loss::new(0.0, 0, 200);
+        assert!(!fresh.incoming_lost(t));
+        assert_eq!(fresh.outgoing(&rtp(111), to, Some(111), t), Some(()));
     }
 
     #[test]
