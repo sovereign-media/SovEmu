@@ -1170,6 +1170,26 @@ export const StreamingQuery = graphql(
       settings {
         ...ConfigSettingFields
       }
+      encoderTest {
+        tookMs
+        budgetMs
+        note
+        testedAt
+        encoders {
+          codec
+          encoder
+          hardware
+          threads
+          works
+          error
+          timings {
+            width
+            height
+            meanMs
+            p95Ms
+          }
+        }
+      }
     }
   }
 `,

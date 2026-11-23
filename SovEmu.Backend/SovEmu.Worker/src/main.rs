@@ -15,6 +15,7 @@
 
 mod adapt;
 mod connection_test;
+mod encoders;
 mod gpu;
 mod headless;
 mod health;
@@ -100,9 +101,21 @@ enum Command {
     /// Try every GPU (and the software renderer): make a GL context, draw, read it back. Prints
     /// the results as JSON.
     Gpu,
+    /// Run every video encoder on a moving picture and time it. Prints the results as JSON.
+    Encoders(EncodersArgs),
     /// Answer one WebRTC offer (JSON lines on stdin/stdout) with a peer that has no media, and
     /// echo its data channels: the admin's connection test.
     ConnectionTest(ConnectionTestArgs),
+}
+
+#[derive(Debug, clap::Args)]
+struct EncodersArgs {
+    /// The GPU sessions use, as their `--gpu`: a render node is where VA-API encodes.
+    #[arg(long, default_value = "auto")]
+    gpu: GpuArg,
+    /// The longest the whole test may take, in milliseconds.
+    #[arg(long, default_value_t = 10_000)]
+    budget_ms: u64,
 }
 
 #[derive(Debug, clap::Args)]
@@ -435,6 +448,7 @@ fn main() -> ExitCode {
         Command::Headless(args) => headless::run(args),
         Command::Probe(args) => probe::run(args),
         Command::Gpu => gpu::run(),
+        Command::Encoders(args) => encoders::run(&args.gpu, args.budget_ms),
         Command::ConnectionTest(args) => connection_test::run(args),
     };
     match result {

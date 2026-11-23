@@ -201,6 +201,17 @@ message asking the player to update the app, keeps a good one against the sign-i
 session's codec from it is sovereign-media/SovEmu#184; until that lands the codec is still
 `SOVEMU_VIDEO_CODEC`'s, and a client that sends no document is still served.
 
+**The startup encoder test.** Before it listens, the server runs `sovemu-worker encoders` once
+(`SovEmu.Sessions/src/encoders.rs`), as it runs `sovemu-worker gpu` for rendering: an encoder's
+presence is not proof that it works. The worker runs each encoder a session could use (libvpx
+VP8, H.264 on VA-API, on NVENC and on x264) exactly as a session would, threads included, on a
+moving picture at 256×224, 640×448 and 1280×720, and reports whether it worked and the time a
+frame took (colour conversion, any upload to the GPU, and the encode). The encoders run one
+after another so they do not slow each other, the whole test has 10 seconds, split evenly, and
+an encoder still running when its share is up counts as not working. No game can start before
+it has finished. The result is logged (`encoder test`) and shown on the admin's Streaming page;
+ordering the codecs by it is sovereign-media/SovEmu#184.
+
 ### Deployment: one Debian container
 
 SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.
