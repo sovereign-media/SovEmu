@@ -283,6 +283,11 @@ test("the Backups page backs up now, offers the file and its restore line, and d
 
 test("the About page lists the open-source packages of the server and the web client", async ({ page }) => {
   await page.goto("/admin/about/");
+  await expect(page.getByText("AGPL-3.0-or-later")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Source code" })).toHaveAttribute(
+    "href",
+    "https://github.com/sovereign-media/SovEmu",
+  );
   await page.getByRole("button", { name: "Show the packages" }).click();
   const licences = page.getByRole("list", { name: "Licences" });
   await expect(licences).toContainText("Apache-2.0");

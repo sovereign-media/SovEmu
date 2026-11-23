@@ -11,6 +11,10 @@ pub(crate) struct BuildInfo {
     /// The commit's time (ISO 8601).
     pub(crate) built: Option<&'static str>,
     pub(crate) libretro_release: &'static str,
+    /// SovEmu's own licence (SPDX), and where its source is: the AGPL asks that everyone using
+    /// the server over a network be offered the source of the version they use.
+    pub(crate) licence: &'static str,
+    pub(crate) source: &'static str,
 }
 
 const fn non_empty(value: Option<&'static str>) -> Option<&'static str> {
@@ -25,6 +29,8 @@ pub(crate) const BUILD: BuildInfo = BuildInfo {
     revision: non_empty(option_env!("SOVEMU_REVISION")),
     built: non_empty(option_env!("SOVEMU_BUILT")),
     libretro_release: sovemu_library::cores::LIBRETRO_RELEASE,
+    licence: env!("CARGO_PKG_LICENSE"),
+    source: env!("CARGO_PKG_REPOSITORY"),
 };
 
 /// A service SovEmu looks games up in.

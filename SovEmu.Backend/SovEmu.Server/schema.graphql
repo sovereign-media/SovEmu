@@ -555,6 +555,14 @@ type BuildInfoNode {
 	The libretro stable release its cores come from.
 	"""
 	libretroRelease: String!
+	"""
+	SovEmu's licence (SPDX: `AGPL-3.0-or-later`).
+	"""
+	licence: String!
+	"""
+	Where SovEmu's source is. A modified server must point this at its own.
+	"""
+	source: String!
 }
 
 """

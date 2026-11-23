@@ -166,6 +166,10 @@ pub(super) struct BuildInfoNode {
     pub(super) built: Option<String>,
     /// The libretro stable release its cores come from.
     pub(super) libretro_release: String,
+    /// SovEmu's licence (SPDX: `AGPL-3.0-or-later`).
+    pub(super) licence: String,
+    /// Where SovEmu's source is. A modified server must point this at its own.
+    pub(super) source: String,
 }
 
 #[derive(InputObject)]
@@ -217,6 +221,8 @@ impl AccountsQuery {
             revision: b.revision.map(str::to_owned),
             built: b.built.map(str::to_owned),
             libretro_release: b.libretro_release.to_owned(),
+            licence: b.licence.to_owned(),
+            source: b.source.to_owned(),
         })
     }
 
