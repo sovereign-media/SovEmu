@@ -128,6 +128,10 @@ pub(crate) struct SessionConfig {
     pub delay_video_ms: u32,
     /// Testing only: milliseconds of every 10 seconds in which all video packets are dropped.
     pub drop_video_burst_ms: u32,
+    /// Testing only: the most video the link carries, kbit/s (0: no limit).
+    pub limit_video_kbps: u32,
+    /// Testing only: the most each video packet's delay varies by, milliseconds.
+    pub jitter_video_ms: u32,
     /// How long a client must be silent before its return is taken as the end of a dropout
     /// and answered with a keyframe, in milliseconds (0: never).
     pub dropout_keyframe_ms: u32,
@@ -310,7 +314,8 @@ impl Session {
                 config.drop_video_percent,
                 config.delay_video_ms,
                 config.drop_video_burst_ms,
-            ),
+            )
+            .shaped(config.limit_video_kbps, config.jitter_video_ms),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
@@ -341,7 +346,10 @@ impl Session {
                 video_packets = self.loss.seen,
                 dropped = self.loss.dropped,
                 delay_ms = self.loss.delay_ms(),
-                "a simulated link was on (--drop-video-percent, --delay-video-ms): video packets were thrown away or held"
+                limit_kbps = self.loss.shape().0,
+                jitter_ms = self.loss.shape().1,
+                overflowed = self.loss.overflowed,
+                "a simulated link was on (--drop-video-percent, --delay-video-ms, --limit-video-kbps, …): video packets were thrown away or held"
             );
         }
         if std::mem::replace(&mut self.finished, true) {
