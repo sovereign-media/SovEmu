@@ -93,7 +93,8 @@ COPY SovEmu.Backend/ ./
 # platform, and sharing `build` and `test`'s cache while they compile raced them.
 FROM toolchain AS notices
 RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registry \
-    cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
+    mkdir -p /out \
+    && cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
 
 ## ---- build: the release binaries ------------------------------------------------------------------
 FROM toolchain AS build
