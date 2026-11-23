@@ -26,11 +26,13 @@ pub(crate) struct Gate {
     pending_since: Option<Instant>,
     /// The client's network round trip, as it last reported it.
     rtt: Option<Duration>,
+    /// When anything last arrived from the client.
+    heard_at: Option<Instant>,
 }
 
 impl Gate {
     pub(crate) fn new() -> Self {
-        Self { sent_at: None, pending_since: None, rtt: None }
+        Self { sent_at: None, pending_since: None, rtt: None, heard_at: None }
     }
 
     /// Takes the client's reported network round trip, in milliseconds.
@@ -43,6 +45,16 @@ impl Gate {
     /// A new client: nothing is known of its round trip, and its first keyframe is its own.
     pub(crate) fn new_client(&mut self) {
         *self = Self::new();
+    }
+
+    /// Something arrived from the client at `now`. Returns how long it had been silent when
+    /// that was `dropout` or longer (and `dropout` is not zero): the link was down, the client
+    /// has missed that much video, and a keyframe now saves it the wait before it asks.
+    /// A connected client is never silent for long by itself: its feedback on what it
+    /// receives comes many times a second.
+    pub(crate) fn heard(&mut self, now: Instant, dropout: Duration) -> Option<Duration> {
+        let silent = self.heard_at.replace(now).map(|at| now.saturating_duration_since(at))?;
+        (!dropout.is_zero() && silent >= dropout).then_some(silent)
     }
 
     /// How long after a keyframe a request is taken to have been sent before it arrived.
@@ -95,6 +107,28 @@ mod tests {
         assert!(!gate.asked(t + 104 * MS));
         // One sent after it had landed is a new loss.
         assert!(gate.asked(t + 105 * MS));
+    }
+
+    #[test]
+    fn a_client_heard_again_after_a_dropout_is_noticed() {
+        let mut gate = Gate::new();
+        let t = Instant::now();
+        let dropout = 700 * MS;
+        // The first packet, and packets a few milliseconds apart, are no dropout.
+        assert_eq!(gate.heard(t, dropout), None);
+        assert_eq!(gate.heard(t + 50 * MS, dropout), None);
+        assert_eq!(gate.heard(t + 700 * MS, dropout), None, "650 ms of silence is under it");
+        // Two seconds of silence, then the client is back: that long was missed.
+        assert_eq!(gate.heard(t + 2_700 * MS, dropout), Some(2_000 * MS));
+        assert_eq!(gate.heard(t + 2_710 * MS, dropout), None);
+        // A dropout's keyframe is asked for like any other, so a burst still makes one.
+        assert!(gate.asked(t + 2_710 * MS));
+        assert!(!gate.asked(t + 2_711 * MS));
+        // Zero turns it off.
+        assert_eq!(gate.heard(t + 9_000 * MS, Duration::ZERO), None);
+        // A new client's first packet is not the end of a dropout.
+        gate.new_client();
+        assert_eq!(gate.heard(t + 20_000 * MS, dropout), None);
     }
 
     #[test]

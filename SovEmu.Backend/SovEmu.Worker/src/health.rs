@@ -33,6 +33,8 @@ pub(crate) struct Stats {
     pub(crate) keyframes: u64,
     pub(crate) keyframe_requests: u64,
     pub(crate) keyframe_requests_ignored: u64,
+    /// Times the client was heard again after a dropout (`keyframes.rs`).
+    pub(crate) dropouts: u64,
     /// Frames the core ran (run-ahead's and fast-forward's included), the time inside the core,
     /// and reading GPU frames back (which waits for the GPU to finish drawing).
     pub(crate) core_frames: u64,
@@ -63,6 +65,7 @@ impl Stats {
         self.keyframes += other.keyframes;
         self.keyframe_requests += other.keyframe_requests;
         self.keyframe_requests_ignored += other.keyframe_requests_ignored;
+        self.dropouts += other.dropouts;
         self.core_frames += other.core_frames;
         self.core_time += other.core_time;
         self.worst_core = self.worst_core.max(other.worst_core);
@@ -192,6 +195,11 @@ impl Health {
         w.keyframes += u64::from(keyframe);
     }
 
+    /// The client was heard again after a dropout.
+    pub(crate) fn dropout(&mut self) {
+        self.window.dropouts += 1;
+    }
+
     /// A client asked for a keyframe; `answered` is false for a request that was ignored.
     pub(crate) fn keyframe_requested(&mut self, answered: bool) {
         self.window.keyframe_requests += 1;
@@ -263,6 +271,7 @@ impl Health {
             keyframes = t.keyframes,
             keyframe_requests = t.keyframe_requests,
             keyframe_requests_ignored = t.keyframe_requests_ignored,
+            dropouts = t.dropouts,
             inputs = t.inputs,
             paused_ticks = t.paused,
             run_ahead = at.run_ahead,
@@ -319,6 +328,7 @@ fn log_health(w: &Stats, at: &Now) {
                 keyframes = w.keyframes,
                 keyframe_requests = w.keyframe_requests,
                 keyframe_requests_ignored = w.keyframe_requests_ignored,
+                dropouts = w.dropouts,
                 inputs = w.inputs,
                 paused_ticks = w.paused,
                 run_ahead = at.run_ahead,

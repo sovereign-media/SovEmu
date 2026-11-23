@@ -128,6 +128,9 @@ pub(crate) struct SessionConfig {
     pub delay_video_ms: u32,
     /// Testing only: milliseconds of every 10 seconds in which all video packets are dropped.
     pub drop_video_burst_ms: u32,
+    /// How long a client must be silent before its return is taken as the end of a dropout
+    /// and answered with a keyframe, in milliseconds (0: never).
+    pub dropout_keyframe_ms: u32,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -168,6 +171,12 @@ pub(crate) struct Session {
     keyframes: crate::keyframes::Gate,
     /// Simulated loss on the way out, for testing; drops nothing unless asked.
     loss: crate::loss::Loss,
+    /// How long a client is silent before its return counts as the end of a dropout.
+    dropout: Duration,
+    /// The video bitrate and the send-bandwidth estimate when the client was last heard:
+    /// what to return to after a dropout.
+    kbps_when_heard: u32,
+    estimate_when_heard: Option<u64>,
     /// When the client's last stats were taken (at most every [`STATS_SPACING`], however
     /// often a client sends them), and when they were last logged.
     stats_at: Option<Instant>,
@@ -291,6 +300,9 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             keyframes: crate::keyframes::Gate::new(),
+            dropout: Duration::from_millis(u64::from(config.dropout_keyframe_ms)),
+            kbps_when_heard: limits.start_kbps,
+            estimate_when_heard: None,
             loss: crate::loss::Loss::new(
                 config.drop_video_percent,
                 config.delay_video_ms,
@@ -625,7 +637,17 @@ pub(crate) fn run(
                             Instant::now(),
                             Receive { proto: Protocol::Udp, source, destination: local, contents },
                         );
-                        if p.rtc.accepts(&input) {
+                        if session.loss.incoming_lost(Instant::now()) {
+                            // Simulated dropout (testing only): the client is not heard.
+                        } else if p.rtc.accepts(&input) {
+                            if p.connected
+                                && let Some(kbps) = session.heard_client(Instant::now())
+                            {
+                                // The estimator has watched seconds of nothing arriving and
+                                // would pace what follows (the keyframe first) at a crawl:
+                                // start it again from where it was before the dropout.
+                                p.rtc.bwe().reset(Bitrate::kbps(kbps));
+                            }
                             p.rtc.handle_input(input)?;
                         }
                     }
@@ -849,6 +871,38 @@ impl Session {
             );
             self.release_input();
         }
+    }
+
+    /// The client was heard at `now`. If it had been silent long enough to have been cut off
+    /// (a Wi-Fi dropout), it has missed that much video and will stall until it asks for a
+    /// keyframe, which it only does after waiting on retransmissions: send one now. Returns
+    /// the send-bandwidth estimate from before the dropout (kbit/s), for the caller to start
+    /// the estimator again from: a link that was down was not congested.
+    fn heard_client(&mut self, now: Instant) -> Option<u64> {
+        let Some(silent) = self.keyframes.heard(now, self.dropout) else {
+            self.kbps_when_heard = self.video.bitrate_kbps();
+            self.estimate_when_heard = self.estimate_kbps.or(self.estimate_when_heard);
+            return None;
+        };
+        self.health.dropout();
+        // The link was down, not congested: back to the bitrate from before it, at once.
+        let cut_to = self.video.bitrate_kbps();
+        self.adaptation.dropout(self.kbps_when_heard, now);
+        self.apply_bitrate(now);
+        let answered = self.keyframes.asked(now);
+        if answered {
+            self.video.request_keyframe();
+        }
+        tracing::info!(
+            silent_ms = silent.as_millis() as u64,
+            keyframe = answered,
+            kbps_during = cut_to,
+            kbps = self.video.bitrate_kbps(),
+            estimate_kbps = self.estimate_when_heard,
+            "client heard again after a dropout"
+        );
+        // With no estimate yet, the stream's own bitrate is the best there is.
+        Some(self.estimate_when_heard.unwrap_or(u64::from(self.kbps_when_heard)))
     }
 
     /// Takes a send-bandwidth estimate.
