@@ -167,6 +167,8 @@ pub(crate) struct Session {
     health: Health,
     /// The last send-bandwidth estimate, for the health lines.
     estimate_kbps: Option<u64>,
+    /// What the video is really being sent at, by which a falling estimate is judged.
+    send_rate: crate::adapt::SendRate,
     /// Which of the client's keyframe requests are answered.
     keyframes: crate::keyframes::Gate,
     /// Simulated loss on the way out, for testing; drops nothing unless asked.
@@ -299,6 +301,7 @@ impl Session {
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
+            send_rate: crate::adapt::SendRate::default(),
             keyframes: crate::keyframes::Gate::new(),
             dropout: Duration::from_millis(u64::from(config.dropout_keyframe_ms)),
             kbps_when_heard: limits.start_kbps,
@@ -909,6 +912,7 @@ impl Session {
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
         let now = Instant::now();
         self.estimate_kbps = Some(estimate_bps / 1000);
+        self.adaptation.sending(self.send_rate.kbps(now));
         self.adaptation.estimate(estimate_bps, now);
         self.apply_bitrate(now);
     }
@@ -946,6 +950,7 @@ impl Session {
     /// A new client: its connection and its decoder are unknown, so the stream starts over
     /// at the starting rate.
     fn new_client(&mut self) {
+        self.send_rate.clear();
         self.keyframes.new_client();
         self.adaptation.reset();
         self.estimate_kbps = None;
@@ -1072,6 +1077,7 @@ impl Session {
             let encoded = self.video.encode(&self.rgba, w, h)?;
             if let Some(encoded) = &encoded {
                 self.health.encoded(encode_from.elapsed(), encoded.data.len(), encoded.keyframe);
+                self.send_rate.sent(encoded.data.len(), now);
                 if encoded.keyframe {
                     self.keyframes.sent(Instant::now());
                 }
