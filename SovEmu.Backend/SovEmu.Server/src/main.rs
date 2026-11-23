@@ -17,12 +17,14 @@ mod capabilities;
 mod cheats;
 mod client_events;
 mod client_ip;
+mod codec;
 mod collections;
 mod configuration;
 mod controllers;
 mod controls;
 mod cores;
 mod db;
+mod decode_times;
 mod error;
 mod failures;
 mod graphql;
@@ -307,11 +309,12 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_VIDEO_MAX_KBPS", default_value_t = 12000)]
     pub video_max_kbps: u32,
 
-    /// Video codec for game streams: `vp8`, `h264`, or `auto` (H.264 when the client offers it,
-    /// else VP8). VP8 by default: measured on a TV (Amlogic S7D), its software VP8 decoder took
-    /// 3.6 ms a frame at 640×448 where its hardware H.264 decoder took 23 ms, for 2 ms more
-    /// encoding here. H.264 can pay off where the clients decode it quickly.
-    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "vp8",
+    /// Video codec for game streams: `auto`, `vp8` or `h264`. `auto` chooses for each client
+    /// as it connects: the cheapest of the codecs this server encodes and the client decodes,
+    /// by what the startup encoder test measured here and what the client's decoder measured
+    /// last time (or, until it has, what it declares). A client that sends no capabilities
+    /// gets VP8. Naming a codec sends it to every client.
+    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "auto",
           value_parser = ["auto", "h264", "vp8"])]
     pub video_codec: String,
 
@@ -904,6 +907,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         session_failures.clone(),
         Arc::new(activity.clone()),
         Arc::new(play_stats::PlayLog::new(db.clone())),
+        Arc::new(decode_times::DecodeTimes::new(db.clone())),
     ];
     if let Some(buffer) = logs::installed() {
         observers.push(buffer);

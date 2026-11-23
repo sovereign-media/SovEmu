@@ -618,6 +618,24 @@ async fn runs_a_game_session_in_a_worker() {
     expected["videoDecoders"][2]["name"] = Value::Null;
     assert_eq!(stored(h.ok(kept, json!({})).await), expected);
 
+    // What a device's decoder measures is kept by sign-in and codec, the latest replacing the
+    // last, and read back for the next offer's choice of codec.
+    let family: String = sqlx::query_scalar("SELECT family_id FROM sign_in_capabilities")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    crate::decode_times::keep(&h.state.db, &family, "h264", 23.0, 20).await.unwrap();
+    crate::decode_times::keep(&h.state.db, &family, "h264", 21.5, 40).await.unwrap();
+    crate::decode_times::keep(&h.state.db, &family, "vp8", 7.0, 20).await.unwrap();
+    crate::decode_times::keep(&h.state.db, "a sign-in that has ended", "vp8", 9.0, 20)
+        .await
+        .unwrap();
+    let mut measured = crate::decode_times::of(&h.state.db, &family).await.unwrap();
+    measured.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(measured, [("h264".to_owned(), 21.5), ("vp8".to_owned(), 7.0)]);
+    let gone = crate::decode_times::of(&h.state.db, "a sign-in that has ended").await.unwrap();
+    assert!(gone.is_empty(), "an ended sign-in's times are forgotten: {gone:?}");
+
     // Save states: save slot 2, see it listed, load it; an empty slot cannot be loaded.
     let saves = "query($id: Int!) { game(id: $id) { saves { slot savedAt screenshotUrl } autoSave { slot } } }";
     let save = "mutation($s: ID!, $slot: Int!) { saveState(sessionId: $s, slot: $slot) }";

@@ -28,6 +28,22 @@ pub trait Observer: Send + Sync + std::fmt::Debug {
     /// A line a session's worker logged (its stderr: its own log and its core's), as it came.
     /// It also goes on to the server's own stderr, as ever.
     fn worker_line(&self, _session_id: &str, _line: &str) {}
+    /// What a client's decoder has taken per frame so far in a session, told every
+    /// [`DECODE_REPORT_SAMPLES`] of its once-a-second reports.
+    fn decode_measured(&self, _measured: &Decoded<'_>) {}
+}
+
+/// How many of a client's reports go into each [`Observer::decode_measured`].
+pub const DECODE_REPORT_SAMPLES: u32 = 20;
+
+/// A client's measured decode time in a session: on which device ([`workers::Session::offer`]'s
+/// `device`), for which codec (`vp8`, `h264`), and the mean over `samples` reports.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Decoded<'a> {
+    pub device: &'a str,
+    pub codec: &'a str,
+    pub mean_ms: f64,
+    pub samples: u32,
 }
 
 /// Several observers told in turn, as one (the server's metrics, failures and activity log).
@@ -45,6 +61,10 @@ impl Observer for Observers {
 
     fn worker_line(&self, session_id: &str, line: &str) {
         self.0.iter().for_each(|o| o.worker_line(session_id, line));
+    }
+
+    fn decode_measured(&self, measured: &Decoded<'_>) {
+        self.0.iter().for_each(|o| o.decode_measured(measured));
     }
 }
 

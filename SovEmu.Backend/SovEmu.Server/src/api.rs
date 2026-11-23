@@ -537,9 +537,12 @@ pub(crate) async fn offer(
 ) -> ApiResult<String> {
     let Offer { sdp, client, capabilities } = offer;
     let session = owned_session(state, user.id, id)?;
-    if let Some(capabilities) = capabilities {
-        let capabilities = capabilities.checked().map_err(ApiError::bad_request)?;
-        let kept = state.identity.keep_capabilities(headers, &capabilities.to_json()).await?;
+    let capabilities =
+        capabilities.map(ClientCapabilities::checked).transpose().map_err(ApiError::bad_request)?;
+    // The sign-in the document is kept under: the device its decoder's measurements belong to.
+    let mut device = None;
+    if let Some(capabilities) = &capabilities {
+        device = state.identity.keep_capabilities(headers, &capabilities.to_json()).await?;
         tracing::info!(
             session.id = id,
             client = client.as_deref().unwrap_or_default(),
@@ -547,12 +550,32 @@ pub(crate) async fn offer(
             display.width = capabilities.display.width,
             display.height = capabilities.display.height,
             display.refresh_hz = capabilities.display.refresh_hz,
-            kept,
+            kept = device.is_some(),
             "client capabilities"
         );
     }
+    let measured = match &device {
+        Some(device) => crate::decode_times::of(&state.db, device).await?,
+        None => Vec::new(),
+    };
+    let info = session.info();
+    let choice = crate::codec::choose(&crate::codec::Inputs {
+        setting: &state.config.video_codec,
+        encoder: &state.config.video_encoder,
+        test: &state.encoders,
+        capabilities: capabilities.as_ref(),
+        measured: &measured,
+        size: (info.width, info.height),
+    });
+    tracing::info!(
+        session.id = id,
+        codec = choice.codec.map_or("the setting's", |c| c.name()),
+        reason = %choice.reason,
+        "video codec chosen"
+    );
+    let codec = choice.codec.map(|c| c.name().to_owned());
     let answer = session
-        .offer(SessionDescription { kind: SdpKind::Offer, sdp })
+        .offer(SessionDescription { kind: SdpKind::Offer, sdp }, codec, Some(choice.reason), device)
         .await
         .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
     // A name, not a message: one line, and short.

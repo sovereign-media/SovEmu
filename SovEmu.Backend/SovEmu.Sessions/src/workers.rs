@@ -187,6 +187,37 @@ pub struct Live {
     pub client_stats: Option<(ClientStats, Instant)>,
     /// The client playing it (`web`, `android 1.4.0 (…)`), as it named itself.
     pub client: Option<String>,
+    /// The codec the server chose for that client and why, in a line; none when it left the
+    /// choice to the worker's setting.
+    pub codec_choice: Option<String>,
+    /// The device behind the current offer (the server's name for it), for what its decoder
+    /// measures.
+    device: Option<String>,
+    /// The client's decode times since its offer: their sum in ms, and how many.
+    decode_ms_sum: f64,
+    decode_samples: u32,
+}
+
+impl Live {
+    /// Takes a client's report: its decode time joins the mean, and every
+    /// [`crate::DECODE_REPORT_SAMPLES`] reports the mean so far is returned to be told, with
+    /// the device and codec it was measured on.
+    fn measure(&mut self, stats: &ClientStats) -> Option<(String, String, f64, u32)> {
+        let decode_ms = stats.decode_ms.filter(|ms| ms.is_finite() && *ms >= 0.0)?;
+        self.decode_ms_sum += decode_ms;
+        self.decode_samples += 1;
+        if !self.decode_samples.is_multiple_of(crate::DECODE_REPORT_SAMPLES) {
+            return None;
+        }
+        let device = self.device.clone()?;
+        let codec = self.pipeline.as_ref()?.video.codec.clone();
+        Some((
+            device,
+            codec,
+            self.decode_ms_sum / f64::from(self.decode_samples),
+            self.decode_samples,
+        ))
+    }
 }
 
 /// Client stats older than this are dropped: the panel was closed.
@@ -496,9 +527,28 @@ impl Session {
         result
     }
 
-    pub async fn offer(&self, offer: SessionDescription) -> Result<SessionDescription> {
-        match self.request(|id| Request::Offer { id, offer }).await? {
-            Reply::Answer { answer, .. } => Ok(answer),
+    /// Answers a client's offer. `codec` is the video codec chosen for this client (`vp8`,
+    /// `h264`; none leaves it to the worker's setting) and `choice` why, in a line; `device`
+    /// names the client's device, for what its decoder then measures
+    /// ([`crate::Observer::decode_measured`]).
+    pub async fn offer(
+        &self,
+        offer: SessionDescription,
+        codec: Option<String>,
+        choice: Option<String>,
+        device: Option<String>,
+    ) -> Result<SessionDescription> {
+        match self.request(|id| Request::Offer { id, offer, codec }).await? {
+            Reply::Answer { answer, .. } => {
+                // A new client: its decoder's times start over.
+                self.with_live(|live| {
+                    live.codec_choice = choice;
+                    live.device = device;
+                    live.decode_ms_sum = 0.0;
+                    live.decode_samples = 0;
+                });
+                Ok(answer)
+            }
             other => Err(Error::Unexpected(format!("{other:?}"))),
         }
     }
@@ -823,6 +873,7 @@ impl Workers {
         self.config.observer.session_started(&launch.system);
 
         let reader = session.clone();
+        let observer = self.config.observer.clone();
         tokio::spawn(async move {
             while let Ok(Some(line)) = lines.next_line().await {
                 let Ok(reply) = serde_json::from_str::<Reply>(&line) else { continue };
@@ -838,7 +889,19 @@ impl Workers {
                     }
                     Reply::Health { health } => reader.with_live(|live| live.health = Some(health)),
                     Reply::ClientStats { stats } => {
-                        reader.with_live(|live| live.client_stats = Some((stats, Instant::now())));
+                        let mut measured = None;
+                        reader.with_live(|live| {
+                            measured = live.measure(&stats);
+                            live.client_stats = Some((stats, Instant::now()));
+                        });
+                        if let Some((device, codec, mean_ms, samples)) = measured {
+                            observer.decode_measured(&crate::Decoded {
+                                device: &device,
+                                codec: &codec,
+                                mean_ms,
+                                samples,
+                            });
+                        }
                     }
                     Reply::Answer { id, .. } | Reply::Done { id } | Reply::Error { id, .. } => {
                         let waiter =
@@ -1260,6 +1323,34 @@ exit 2
         let e = workers.start(launch(&dir, 1, 1)).await.unwrap_err();
         assert!(e.before_worker(), "{e}");
         settle(&workers, 2).await;
+    }
+
+    #[test]
+    fn a_clients_decode_times_are_told_as_a_mean_every_so_many_reports() {
+        let stats = |decode_ms| ClientStats { decode_ms, ..ClientStats::default() };
+        let mut live = Live { device: Some("family-1".into()), ..Live::default() };
+        let video = sovemu_protocol::VideoPath { codec: "vp8".into(), ..Default::default() };
+        live.pipeline = Some(Pipeline { video, ..Pipeline::default() });
+        // Reports with no decode time, or a senseless one, are not counted.
+        assert_eq!(live.measure(&stats(None)), None);
+        assert_eq!(live.measure(&stats(Some(f64::NAN))), None);
+        let mut told = Vec::new();
+        for n in 0..crate::DECODE_REPORT_SAMPLES * 2 {
+            told.extend(live.measure(&stats(Some(if n % 2 == 0 { 6.0 } else { 8.0 }))));
+        }
+        let twenty = crate::DECODE_REPORT_SAMPLES;
+        assert_eq!(
+            told,
+            [
+                ("family-1".to_owned(), "vp8".to_owned(), 7.0, twenty),
+                ("family-1".to_owned(), "vp8".to_owned(), 7.0, twenty * 2)
+            ]
+        );
+        // Nothing is told of a client whose device is not known (it sent no capabilities).
+        let mut unknown = Live { pipeline: live.pipeline.clone(), ..Live::default() };
+        for _ in 0..twenty {
+            assert_eq!(unknown.measure(&stats(Some(5.0))), None);
+        }
     }
 
     #[test]

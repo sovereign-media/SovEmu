@@ -17,8 +17,15 @@ pub const MAX_RUN_AHEAD: u32 = 4;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Request {
-    /// A client's SDP offer; answered with [`Reply::Answer`].
-    Offer { id: u64, offer: SessionDescription },
+    /// A client's SDP offer; answered with [`Reply::Answer`]. `codec` is the video codec the
+    /// server chose for this client (`vp8`, `h264`); absent, the worker keeps to its own
+    /// `--video-codec`.
+    Offer {
+        id: u64,
+        offer: SessionDescription,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        codec: Option<String>,
+    },
     /// Write a save state to `slot` (and a screenshot beside it).
     SaveState { id: u64, slot: u32 },
     /// Restore the save state in `slot`.
@@ -209,10 +216,22 @@ mod tests {
         let offer = Request::Offer {
             id: 7,
             offer: SessionDescription { kind: SdpKind::Offer, sdp: "v=0".into() },
+            codec: None,
         };
         assert_eq!(
             serde_json::to_string(&offer).unwrap(),
             r#"{"type":"offer","id":7,"offer":{"type":"offer","sdp":"v=0"}}"#
+        );
+        // The server's choice of codec rides with the offer; an offer without one still reads.
+        let Request::Offer { offer: description, .. } = offer.clone() else { unreachable!() };
+        let chosen = Request::Offer { id: 7, offer: description, codec: Some("h264".into()) };
+        assert_eq!(
+            serde_json::to_string(&chosen).unwrap(),
+            r#"{"type":"offer","id":7,"offer":{"type":"offer","sdp":"v=0"},"codec":"h264"}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<Request>(&serde_json::to_string(&offer).unwrap()).unwrap(),
+            offer
         );
         assert_eq!(offer.id(), 7);
         let save: Request =

@@ -52,7 +52,7 @@ impl Workers {
         let stdout = child.stdout.take().expect("piped");
 
         let answered = tokio::time::timeout(ANSWER_TIMEOUT, async {
-            let mut line = serde_json::to_string(&Request::Offer { id: 1, offer })?;
+            let mut line = serde_json::to_string(&Request::Offer { id: 1, offer, codec: None })?;
             line.push('\n');
             // A worker that has already gone (it could not start) has closed its stdin: that is
             // it exiting, not a fault of the pipe's ("Broken pipe" would tell the admin nothing).

@@ -174,9 +174,9 @@ fn dispatch(request: Request, commands: &mpsc::Sender<Command>, out: &Out, repli
     let id = request.id();
     let out = out.clone();
     match request {
-        Request::Offer { offer, .. } => {
+        Request::Offer { offer, codec, .. } => {
             let (reply, answer) = mpsc::channel();
-            if commands.send(Command::Offer { offer, reply }).is_err() {
+            if commands.send(Command::Offer { offer, codec, reply }).is_err() {
                 return;
             }
             replies.spawn(move || match answer.recv() {

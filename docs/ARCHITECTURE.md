@@ -15,7 +15,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |
-| Video | VP8 by default (libvpx realtime, on the CPU), or H.264 (`SOVEMU_VIDEO_CODEC`); encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`): Constrained Baseline, no B-frames, keyframes on demand. VP8 is the default because a TV's hardware H.264 decoder measured far slower than its VP8 one |
+| Video | VP8 (libvpx realtime, on the CPU's threads) or H.264, chosen for each client as it connects (`SOVEMU_VIDEO_CODEC=auto`, `codec.rs`): the cheapest to encode here and decode there; encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`): Constrained Baseline, no B-frames, keyframes on demand. A TV's hardware H.264 decoder can be far slower than its software VP8 one (23 ms against 3.6 ms a frame at 640×448 on an Amlogic TV), which is why a device's measured decode time replaces what it declares |
 | Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato`, sent as redundant audio (RED, RFC 2198) to clients that offer it, so a lost packet is rebuilt without a retransmission |
 | Input | Unreliable, unordered WebRTC DataChannel; each packet carries a sequence number and the full button state |
 | Designed for, not in v1 | Rewind/fast-forward, cheats, RetroAchievements (rcheevos), per-game controller remapping, client-side shaders |
@@ -198,8 +198,8 @@ mode or not, and the decoder's name; and its display), as Sovereign's clients do
 (`SovEmu.Server/src/capabilities.rs`). The server refuses a document of another version with a
 message asking the player to update the app, keeps a good one against the sign-in's device
 (`sign_in_capabilities`, shown on `signIns`), and logs it with the session. Choosing each
-session's codec from it is sovereign-media/SovEmu#184; until that lands the codec is still
-`SOVEMU_VIDEO_CODEC`'s, and a client that sends no document is still served.
+session's codec from it is `codec.rs` (below); a client that sends no document is still served,
+with VP8.
 
 **The startup encoder test.** Before it listens, the server runs `sovemu-worker encoders` once
 (`SovEmu.Sessions/src/encoders.rs`), as it runs `sovemu-worker gpu` for rendering: an encoder's
@@ -209,8 +209,21 @@ moving picture at 256×224, 640×448 and 1280×720, and reports whether it worke
 frame took (colour conversion, any upload to the GPU, and the encode). The encoders run one
 after another so they do not slow each other, the whole test has 10 seconds, split evenly, and
 an encoder still running when its share is up counts as not working. No game can start before
-it has finished. The result is logged (`encoder test`) and shown on the admin's Streaming page;
-ordering the codecs by it is sovereign-media/SovEmu#184.
+it has finished. The result is logged (`encoder test`) and shown on the admin's Streaming page.
+
+**Choosing a client's codec** (`SovEmu.Server/src/codec.rs`, `SOVEMU_VIDEO_CODEC=auto`). When a
+client offers, each codec the server has a working encoder for and the client lists a decoder
+for is priced in milliseconds a frame: the encoder test's time at the tested size nearest the
+game's picture, plus the decode time. The decode time is what that device measured in its last
+session with the codec (`device_decode_times`: `SovEmu.Sessions` averages the client's
+once-a-second stats and tells the server every 20), and until there is one, a judgement from
+what the device declares (4 ms for a hardware decoder with a low-latency mode, a frame more
+without one, 6 ms at 640×448 in software). The cheapest wins; prices within a millisecond are a
+tie, which goes to the codec encoded on the GPU, then to one decoded in hardware, then to VP8.
+The server sends its choice to the worker with the offer (`Request::Offer`'s `codec`), which
+answers with that codec alone. The prices are logged (`video codec chosen`) and kept on the
+session (`codecChoice`). A measurement changes the codec at the device's next start, never in
+the middle of a session.
 
 ### Deployment: one Debian container
 
