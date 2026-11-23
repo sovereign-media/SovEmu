@@ -227,6 +227,15 @@ answers with that codec alone. The prices are logged (`video codec chosen`) and 
 session (`codecChoice`). A measurement changes the codec at the device's next start, never in
 the middle of a session.
 
+**Keyframe requests** (`SovEmu.Worker/src/keyframes.rs`). A client that loses packets it cannot
+get resent asks for a keyframe, and in a burst of loss it asks several times within a round trip.
+Each keyframe is several times an ordinary frame, so the worker answers a burst with one, and
+ignores a request that arrives before the last keyframe could have reached the client: within
+the client's reported network round trip of it, at least 50 ms and at most 500 ms (100 ms until
+the client has reported one). An answered request whose keyframe never comes is forgotten after
+500 ms, so a client is never left asking. The `session health` and `session summary` lines count
+keyframes, requests and ignored requests, and give the largest frame.
+
 ### Deployment: one Debian container
 
 SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.

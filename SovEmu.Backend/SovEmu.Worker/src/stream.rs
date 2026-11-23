@@ -158,6 +158,8 @@ pub(crate) struct Session {
     health: Health,
     /// The last send-bandwidth estimate, for the health lines.
     estimate_kbps: Option<u64>,
+    /// Which of the client's keyframe requests are answered.
+    keyframes: crate::keyframes::Gate,
     /// When the client's last stats were taken (at most every [`STATS_SPACING`], however
     /// often a client sends them), and when they were last logged.
     stats_at: Option<Instant>,
@@ -280,6 +282,7 @@ impl Session {
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
+            keyframes: crate::keyframes::Gate::new(),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
@@ -681,7 +684,15 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 Event::ChannelData(data) if Some(data.id) == p.input => {
                     session.handle_input(&data.data);
                 }
-                Event::KeyframeRequest(_) => session.video.request_keyframe(),
+                Event::KeyframeRequest(_) => {
+                    // One keyframe for a burst of requests, and none for a request sent
+                    // before the last keyframe could have arrived.
+                    let answered = session.keyframes.asked(Instant::now());
+                    session.health.keyframe_requested(answered);
+                    if answered {
+                        session.video.request_keyframe();
+                    }
+                }
                 Event::EgressBitrateEstimate(
                     BweKind::Twcc { estimate, .. } | BweKind::Remb { estimate, .. },
                 ) => session.adapt_bitrate(estimate.as_u64()),
@@ -730,6 +741,9 @@ impl Session {
                     return;
                 }
                 self.stats_at = Some(now);
+                if let Some(rtt_ms) = stats.net_rtt_ms {
+                    self.keyframes.round_trip(rtt_ms);
+                }
                 let sample = ClientSample {
                     fps: stats.fps,
                     decode_ms: stats.decode_ms,
@@ -843,6 +857,7 @@ impl Session {
     /// A new client: its connection and its decoder are unknown, so the stream starts over
     /// at the starting rate.
     fn new_client(&mut self) {
+        self.keyframes.new_client();
         self.adaptation.reset();
         self.estimate_kbps = None;
         self.stats_at = None;
@@ -967,7 +982,10 @@ impl Session {
             let encode_from = Instant::now();
             let encoded = self.video.encode(&self.rgba, w, h)?;
             if let Some(encoded) = &encoded {
-                self.health.encoded(encode_from.elapsed(), encoded.data.len());
+                self.health.encoded(encode_from.elapsed(), encoded.data.len(), encoded.keyframe);
+                if encoded.keyframe {
+                    self.keyframes.sent(Instant::now());
+                }
             }
             if let (Some(encoded), Some((mid, pt))) = (encoded, p.video)
                 && let Some(writer) = p.rtc.writer(mid)

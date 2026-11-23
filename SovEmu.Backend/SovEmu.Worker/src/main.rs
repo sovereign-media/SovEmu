@@ -19,6 +19,7 @@ mod encoders;
 mod gpu;
 mod headless;
 mod health;
+mod keyframes;
 mod loading;
 mod pacing;
 mod patch;
