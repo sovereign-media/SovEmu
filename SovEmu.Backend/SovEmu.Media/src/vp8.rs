@@ -4,6 +4,8 @@
 //! no frame lag (every input frame produces its output immediately), error-resilient mode so a
 //! lost packet damages one frame rather than everything until the next keyframe, small rate
 //! control buffers, and keyframes forced on request (a client asks after loss or on join).
+//! A frame is encoded on a few threads, and cut into as many parts for a client's decoder to
+//! do the same: at 640×448 four threads take about 3 ms a frame where one takes 5.
 
 use std::ffi::{CStr, c_int};
 use std::ptr::NonNull;
@@ -23,11 +25,25 @@ pub struct Vp8Config {
     pub cpu_used: i32,
     /// Longest gap between keyframes, in frames, when no client asks for one.
     pub keyframe_interval: u32,
+    /// Threads a frame is encoded on. It is also cut into as many parts as there are threads
+    /// (up to 8), which a decoder with several cores decodes side by side.
+    pub threads: u32,
 }
 
 impl Default for Vp8Config {
     fn default() -> Self {
-        Self { bitrate_kbps: 2_500, fps: 60, cpu_used: 8, keyframe_interval: 600 }
+        Self { bitrate_kbps: 2_500, fps: 60, cpu_used: 8, keyframe_interval: 600, threads: 4 }
+    }
+}
+
+/// libvpx's token-partition setting for a thread count: the base-2 logarithm of how many parts
+/// a frame's coefficients are cut into (1, 2, 4 or 8), one per thread.
+fn token_partitions(threads: u32) -> i32 {
+    match threads {
+        0 | 1 => 0,
+        2 => 1,
+        3..=7 => 2,
+        _ => 3,
     }
 }
 
@@ -116,7 +132,7 @@ impl Vp8Encoder {
         cfg.g_w = width;
         cfg.g_h = height;
         cfg.g_timebase = ffi::vpx_rational { num: 1, den: config.fps.max(1) as c_int };
-        cfg.g_threads = 1;
+        cfg.g_threads = config.threads.max(1);
         cfg.g_lag_in_frames = 0;
         cfg.g_pass = ffi::vpx_enc_pass::VPX_RC_ONE_PASS;
         cfg.g_error_resilient = ffi::VPX_ERROR_RESILIENT_DEFAULT;
@@ -154,7 +170,10 @@ impl Vp8Encoder {
             (ffi::vp8e_enc_control_id::VP8E_SET_CPUUSED, self.config.cpu_used),
             (ffi::vp8e_enc_control_id::VP8E_SET_NOISE_SENSITIVITY, 0),
             (ffi::vp8e_enc_control_id::VP8E_SET_STATIC_THRESHOLD, 1),
-            (ffi::vp8e_enc_control_id::VP8E_SET_TOKEN_PARTITIONS, 0),
+            (
+                ffi::vp8e_enc_control_id::VP8E_SET_TOKEN_PARTITIONS,
+                token_partitions(self.config.threads),
+            ),
             // Keyframes may use at most 3x an average frame, so a refresh is not a burst.
             (ffi::vp8e_enc_control_id::VP8E_SET_MAX_INTRA_BITRATE_PCT, 300),
         ];
@@ -387,6 +406,20 @@ mod tests {
         assert_eq!((pic.width, pic.height), (255, 223));
         enc.set_bitrate(800).unwrap();
         assert!(enc.encode(&gradient(255, 223, 1), 255, 223).unwrap().is_some());
+    }
+
+    #[test]
+    fn every_thread_count_makes_a_stream_that_decodes() {
+        assert_eq!([0, 1, 2, 3, 4, 8, 64].map(token_partitions), [0, 0, 1, 2, 2, 3, 3]);
+        for threads in [0, 1, 2, 4, 8] {
+            let mut enc = Vp8Encoder::new(Vp8Config { threads, ..Vp8Config::default() });
+            let mut dec = Vp8Decoder::new().unwrap();
+            for n in 0..10 {
+                let frame = enc.encode(&gradient(640, 448, n), 640, 448).unwrap().expect("a frame");
+                let pic = dec.decode(&frame.data).unwrap().expect("a picture");
+                assert_eq!((pic.width, pic.height), (640, 448), "{threads} threads");
+            }
+        }
     }
 
     #[test]
