@@ -108,6 +108,10 @@ function About() {
               emulators and services below require. Its cores come from libretro's {a.buildInfo.libretroRelease} stable
               release.
             </p>
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              Free software: <Licence>{a.buildInfo.licence}</Licence>
+              <Link href={a.buildInfo.source}>Source code</Link>
+            </p>
             {a.buildInfo.revision && (
               <p className="mt-2 text-xs text-muted">
                 Commit <code className="font-mono">{a.buildInfo.revision}</code>

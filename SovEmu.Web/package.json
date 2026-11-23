@@ -1,6 +1,7 @@
 {
   "name": "sovemu-web",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "version": "0.1.0",
   "description": "SovEmu web client: Vite + React + TanStack Router + Tailwind, served as static files by the SovEmu Rust server",

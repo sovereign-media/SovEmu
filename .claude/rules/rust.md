@@ -7,7 +7,8 @@ paths:
 
 - **Crate layout.** One directory per crate, named `SovEmu.<Name>/`, with the package named
   `sovemu-<name>` in kebab case. Every crate inherits `version`, `edition`, `rust-version`,
-  `repository` and `publish` from `[workspace.package]` and has `[lints] workspace = true`.
+  `repository`, `license` (AGPL-3.0-or-later) and `publish` from `[workspace.package]` and has
+  `[lints] workspace = true`.
 - **Dependency direction** is the graph in `CLAUDE.md`. `LibretroFfi` depends on nothing in the
   workspace, and nothing but `RetroHost` (and `TestCore`, for types) touches it: higher crates use
   the safe API. New crates join the graph as documented there; update the graph in the same PR.

@@ -1457,6 +1457,8 @@ export const AboutQuery = graphql(`
       revision
       built
       libretroRelease
+      licence
+      source
     }
     attributions {
       fbneoCommit

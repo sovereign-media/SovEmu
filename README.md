@@ -506,3 +506,11 @@ timing, per-frame core time) to `headless-out/`. `--realtime` paces at the core'
 `--var key=value` sets a core option. Run `sovemu-worker headless --help` for everything else.
 
 Cores, ROMs and BIOS files are never committed.
+
+## Licence
+
+SovEmu is free software under the [GNU Affero General Public License v3.0 or later](LICENSE)
+(`AGPL-3.0-or-later`). You may use, change and share it; if you run a modified version as a
+service, you must offer its users the source of your version. The admin About page links the
+source (`buildInfo.source`). The emulator cores it ships, the game-information services and the
+open-source packages it is built from keep their own licences, listed on the About page.

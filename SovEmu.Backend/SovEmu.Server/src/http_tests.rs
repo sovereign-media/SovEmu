@@ -1932,10 +1932,14 @@ async fn admins_see_whether_telemetry_is_exported() {
 async fn everyone_sees_the_build_and_admins_the_attributions() {
     let mut h = Harness::new("about", false).await;
     h.sign_up_admin().await;
-    let build =
-        h.ok("{ buildInfo { version libretroRelease } }", json!({})).await["buildInfo"].clone();
+    let q = "{ buildInfo { version libretroRelease licence source } }";
+    let build = h.ok(q, json!({})).await["buildInfo"].clone();
     assert_eq!(build["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(build["libretroRelease"], sovemu_library::cores::LIBRETRO_RELEASE);
+    assert_eq!(
+        (build["licence"].as_str(), build["source"].as_str()),
+        (Some("AGPL-3.0-or-later"), Some("https://github.com/sovereign-media/SovEmu"))
+    );
     let q = "{ attributions { fbneoCommit services { name licence } components { name commit } } }";
     let a = h.ok(q, json!({})).await["attributions"].clone();
     assert_eq!(a["services"][0], json!({"name": "ScreenScraper", "licence": "CC BY-NC-SA 4.0"}));
