@@ -18,7 +18,7 @@ test("the admin can rescan the library", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Library", level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Rescan" }).click();
   await expect(page.getByRole("button", { name: "Rescan" })).toBeEnabled();
-  await expect(page.getByText("Games").locator("xpath=following-sibling::dd[1]")).toHaveText("4");
+  await expect(page.getByText("Games").locator("xpath=following-sibling::dd[1]")).toHaveText("6");
 });
 
 test("every screen has one of the backgrounds, and a system's card its photo", async ({ page }) => {

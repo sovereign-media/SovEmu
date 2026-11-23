@@ -131,6 +131,13 @@ pub(crate) async fn list_systems(state: &AppState) -> ApiResult<Vec<SystemSummar
     Ok(summaries)
 }
 
+/// The systems a player is shown: the enabled ones with at least one game. A system with no
+/// games is left out everywhere it would be listed (browsing, search, BIOS, the admin's
+/// per-system pages), so the list stays short however many systems SovEmu can play.
+pub(crate) async fn systems_with_games(state: &AppState) -> ApiResult<Vec<SystemSummary>> {
+    Ok(list_systems(state).await?.into_iter().filter(|s| s.game_count > 0).collect())
+}
+
 pub(crate) const GAME_COLUMNS: &str =
     "g.id, g.system, COALESCE(m.title, g.title) AS title, g.tags, g.path,
      g.size, h.last_played_at, h.play_count, g.media,

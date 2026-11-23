@@ -33,7 +33,7 @@ pub const BUILTIN: &str = "sovemu";
 pub const NONE: &str = "none";
 
 /// Bumped when the built-in artwork changes, so a cached copy is drawn again.
-const BUILTIN_VERSION: &str = "1";
+const BUILTIN_VERSION: &str = "2";
 
 /// Where a decoration's window is, in its image's pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -224,6 +224,16 @@ fn aspect(system: &str) -> (u32, u32) {
     match system {
         "gb" | "gbc" | "gamegear" => (10, 9),
         "gba" => (3, 2),
+        // 160×152 screens.
+        "ngp" | "ngpc" => (20, 19),
+        // 224×144.
+        "wswan" | "wswanc" => (14, 9),
+        // 160×102.
+        "lynx" => (80, 51),
+        // 384×224.
+        "virtualboy" => (12, 7),
+        // A portrait tube.
+        "vectrex" => (4, 5),
         _ => (4, 3),
     }
 }

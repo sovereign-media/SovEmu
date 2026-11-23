@@ -589,7 +589,7 @@ mod tests {
             ("nds/Game.nds", 8),
             // Another console's discs: a .chd would otherwise be taken for PlayStation.
             ("saturn/Spy Game (USA).chd", 8),
-            ("SegaCD/Disc Game (USA).cue", 8),
+            ("neogeocd/Disc Game (USA).cue", 8),
             ("psx/Epic (USA) (Disc 2).chd", 20),
             ("psx/Epic (USA) (Disc 1).chd", 10),
             ("psx/Epic (USA) (Disc 3).chd", 30),

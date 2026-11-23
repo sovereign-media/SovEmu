@@ -631,10 +631,11 @@ impl LibraryQuery {
         collections(ctx, Owner::Server).await
     }
 
-    /// Every system SovEmu offers (hidden ones left out), in SovEmu's order.
+    /// The systems with games (hidden ones and those with none left out), in SovEmu's order.
     async fn systems(&self, ctx: &Context<'_>) -> Result<Vec<SystemNode>> {
         user(ctx).await?;
-        Ok(crate::api::list_systems(state(ctx)).await.api()?.into_iter().map(SystemNode).collect())
+        let systems = crate::api::systems_with_games(state(ctx)).await.api()?;
+        Ok(systems.into_iter().map(SystemNode).collect())
     }
 
     async fn system(&self, ctx: &Context<'_>, id: ID) -> Result<Option<SystemNode>> {

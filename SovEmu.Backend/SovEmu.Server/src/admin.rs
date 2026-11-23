@@ -194,7 +194,7 @@ pub(crate) struct SystemDecoration {
 /// Every system with its decoration set and a preview, and every set found.
 pub(crate) async fn decorations_report(state: &AppState) -> ApiResult<DecorationsReport> {
     let found = state.decorations();
-    let systems = crate::api::list_systems(state).await?;
+    let systems = crate::api::systems_with_games(state).await?;
     let config = &state.config;
     Ok(DecorationsReport {
         sets: found

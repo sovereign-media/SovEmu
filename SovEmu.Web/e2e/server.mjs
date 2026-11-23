@@ -31,6 +31,9 @@ const games = {
   // A soft patch named like its game: its default (the Patches page lists it).
   snes: ["Super Stand-in (USA).sfc", "Super Stand-in (USA).ips"],
   gb: ["Pocket Stand-in (Japan).gb"],
+  // Systems that read a BIOS, for the BIOS table.
+  psx: ["Disc Stand-in (USA).chd"],
+  lynx: ["Handheld Stand-in (USA).lnx"],
 };
 for (const [system, files] of Object.entries(games)) {
   mkdirSync(join(data, "roms", system), { recursive: true });

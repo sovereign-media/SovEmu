@@ -96,6 +96,21 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 const SLOTS = [1, 2, 3, 4];
+/** Systems whose picture keeps its own shape rather than a TV's 4:3: the handhelds, and the
+ *  Vectrex's portrait tube. */
+const HANDHELDS = new Set([
+  "gb",
+  "gbc",
+  "gba",
+  "gamegear",
+  "lynx",
+  "ngp",
+  "ngpc",
+  "wswan",
+  "wswanc",
+  "virtualboy",
+  "vectrex",
+]);
 const FILTER_KEY = "sovemu.filter";
 const player = (port: number) => `Player ${port + 1}`;
 
@@ -248,7 +263,7 @@ function Player() {
         info = s;
         // The player left while the game was loading: it is not wanted any more.
         if (stopped) end();
-        setAspect(["gb", "gbc", "gba", "gamegear"].includes(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
+        setAspect(HANDHELDS.has(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
         setStatus(`${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`);
         return s;
       });

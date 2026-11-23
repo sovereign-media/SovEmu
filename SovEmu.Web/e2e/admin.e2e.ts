@@ -339,12 +339,40 @@ test("the Rendering page says where 3D systems render, and what the probe found"
   await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
 });
 
-test("the BIOS page shows each system's files with the MD5s they should have", async ({ page }) => {
+test("the BIOS page is a table of the files each system with games reads, with their MD5s", async ({ page }) => {
   await page.goto("/admin/bios/?id=psx");
   await expect(page.getByRole("heading", { name: "BIOS", level: 1 })).toBeVisible();
-  const psx = page.locator("section").filter({ has: page.getByRole("heading", { name: /psx\/$/ }) });
-  await expect(psx).toBeVisible();
-  await expect(psx.getByRole("button", { name: /^Copy [0-9a-f]{32}$/ }).first()).toBeVisible();
+  const table = page.getByRole("region", { name: "BIOS files" });
+  const search = table.getByRole("searchbox", { name: /Search BIOS files/ });
+  // `?id=psx` starts the search on the PlayStation.
+  await expect(search).toHaveValue("PlayStation");
+  const rows = table.locator("tbody tr");
+  await expect(rows.first()).toContainText("PlayStation");
+  await expect(rows.filter({ hasText: "Lynx" })).toHaveCount(0);
+  await expect(table.getByRole("button", { name: /^Copy [0-9a-f]{32}$/ }).first()).toBeVisible();
+
+  // Searching by file name finds a file of another system.
+  await search.fill("lynxboot");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Lynx");
+  await expect(rows.first()).toContainText("Missing");
+
+  // Systems without games (the Dreamcast here) are not in the table.
+  await search.fill("");
+  await expect(rows.filter({ hasText: "Dreamcast" })).toHaveCount(0);
+
+  // Sorting by file name, then the other way.
+  const file = table.getByRole("columnheader", { name: "File" });
+  const names = () => rows.locator("td:nth-child(2) > code").allTextContents();
+  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  await file.getByRole("button").click();
+  await expect(file).toHaveAttribute("aria-sort", "ascending");
+  const ascending = await names();
+  expect(ascending.length).toBeGreaterThan(2);
+  expect(ascending).toEqual([...ascending].sort(byName));
+  await file.getByRole("button").click();
+  await expect(file).toHaveAttribute("aria-sort", "descending");
+  expect(await names()).toEqual([...ascending].reverse());
 });
 
 test("the Decorations page lists the sets and frames each system", async ({ page }) => {

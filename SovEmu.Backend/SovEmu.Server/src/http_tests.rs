@@ -338,7 +338,9 @@ async fn first_run_setup_then_sign_in() {
     assert_eq!(h.err("{ users { username } }", json!({})).await.0, "FORBIDDEN");
     assert_eq!(h.err("{ activeSessions { id } }", json!({})).await.0, "FORBIDDEN");
     assert_eq!(h.err("mutation { scanLibrary { found } }", json!({})).await.0, "FORBIDDEN");
-    assert!(h.systems().await.as_array().unwrap().len() > 5);
+    let ids: Vec<Value> =
+        h.systems().await.as_array().unwrap().iter().map(|s| s["id"].clone()).collect();
+    assert_eq!(ids, [json!("nes"), json!("gba")], "only the systems with games");
 }
 
 #[tokio::test]
@@ -475,7 +477,10 @@ async fn browses_the_library() {
     assert_eq!(system(&systems, "nes")["gameCount"], 1);
     assert_eq!(system(&systems, "nes")["name"], "Nintendo Entertainment System");
     assert_eq!(system(&systems, "nes")["playable"], false, "no cores installed");
-    assert_eq!(system(&systems, "snes")["gameCount"], 0);
+    assert!(
+        systems.as_array().unwrap().iter().all(|s| s["id"] != "snes"),
+        "a system with no games is not listed"
+    );
 
     let games = h.games("nes").await;
     assert_eq!(games[0]["title"], "Test Game");
@@ -1002,6 +1007,13 @@ async fn checks_bios_files_per_system() {
     std::fs::write(bios.join("psx/SCPH1001.BIN"), vec![0u8; 512 * 1024]).unwrap();
     std::fs::create_dir_all(h.dir.join("roms/neogeo")).unwrap();
     std::fs::write(h.dir.join("roms/neogeo/neogeo.zip"), b"zip").unwrap();
+    // Only systems with games are listed: give each one checked here a game.
+    for game in ["snes/A.sfc", "ps2/A.iso", "psx/A.chd", "neogeo/mslug.zip", "lynx/A.lnx"] {
+        let path = h.dir.join("roms").join(game);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"game").unwrap();
+    }
+    h.ok("mutation { scanLibrary { found } }", json!({})).await;
 
     let query = "{ systems { id biosMissing bios { state folder groups { importance anyOne \
                  satisfied files { name state foundAt } } } } }";
@@ -1023,6 +1035,10 @@ async fn checks_bios_files_per_system() {
     let scph1001 = files.iter().find(|f| f["name"] == "scph1001.bin").unwrap();
     assert_eq!(scph1001["state"], "MISPLACED");
     assert_eq!(scph1001["foundAt"], "psx/SCPH1001.BIN");
+    let lynx = get("lynx");
+    assert_eq!(lynx["biosMissing"], true, "Handy needs its boot ROM");
+    assert_eq!(lynx["bios"]["groups"][0]["files"][0]["name"], "lynxboot.img");
+    assert!(systems.as_array().unwrap().iter().all(|s| s["id"] != "dreamcast"), "no games");
 }
 
 #[tokio::test]
@@ -2253,8 +2269,10 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     assert_eq!((nes["set"].clone(), nes["perSystem"].clone()), (json!("arcade"), json!(false)));
     let preview = nes["preview"]["url"].as_str().unwrap();
     assert!(preview.starts_with("/media/decorations/arcade/systems/nes.png?Sov-"), "{preview}");
-    let snes = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "snes");
-    assert_eq!(snes.unwrap()["preview"], Value::Null, "no image for it, and no default");
+    let gba = report["systems"].as_array().unwrap().iter().find(|s| s["system"]["id"] == "gba");
+    assert_eq!(gba.unwrap()["preview"], Value::Null, "no image for it, and no default");
+    let listed = report["systems"].as_array().unwrap().len();
+    assert_eq!(listed, 2, "only the systems with games");
     assert!(report["folders"][0].as_str().unwrap().ends_with("decorations"));
 
     // `none` turns them off for a system.

@@ -61,6 +61,97 @@ export function fileHint(file: BiosFile, folder: string): string | null {
   }
 }
 
+/** One file of the BIOS check as a table row, with what its group and system say about it. */
+export interface BiosRow {
+  /** Unique within the table: system, group and file. */
+  key: string;
+  systemId: string;
+  systemName: string;
+  color: string;
+  /** The system's folder in the BIOS folder (`psx`). */
+  folder: string;
+  systemState: SystemBios["state"];
+  group: BiosGroup;
+  file: BiosFile;
+  tone: Tone;
+  hint: string | null;
+}
+
+/** Every file of every system that uses a BIOS, in SovEmu's order. */
+export function biosRows(systems: BiosSystem[]): BiosRow[] {
+  return withBios(systems).flatMap((s) =>
+    s.bios.groups.flatMap((group) =>
+      group.files.map((file) => ({
+        key: `${s.id}/${group.label}/${file.name}/${file.foundAt ?? ""}`,
+        systemId: s.id,
+        systemName: s.name,
+        color: s.color,
+        folder: s.bios.folder,
+        systemState: s.bios.state,
+        group,
+        file,
+        tone: fileTone(file, group),
+        hint: fileHint(file, s.bios.folder),
+      })),
+    ),
+  );
+}
+
+/** Keeps the rows whose system (name or id) or file name has every word of `text`, in any case. */
+export function filterBiosRows(rows: BiosRow[], text: string): BiosRow[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return rows;
+  return rows.filter((r) => {
+    const hay = `${r.systemName} ${r.systemId} ${r.file.name}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+export type BiosSortKey = "system" | "file" | "description" | "need" | "size" | "status";
+export type SortDirection = "asc" | "desc";
+
+/** Worst first when sorted ascending: what needs doing comes to the top. */
+const TONE_ORDER: Record<Tone, number> = { bad: 0, warn: 1, info: 2, quiet: 3, good: 4 };
+const NEED_ORDER: Record<BiosGroup["importance"], number> = { REQUIRED: 0, RECOMMENDED: 1, OPTIONAL: 2 };
+
+const byText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+
+const COMPARE: Record<BiosSortKey, (a: BiosRow, b: BiosRow) => number> = {
+  system: (a, b) => byText(a.systemName, b.systemName),
+  file: (a, b) => byText(a.file.name, b.file.name),
+  description: (a, b) => byText(a.file.label, b.file.label),
+  need: (a, b) => NEED_ORDER[a.group.importance] - NEED_ORDER[b.group.importance],
+  size: (a, b) => a.file.size - b.file.size,
+  status: (a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone],
+};
+
+/** The rows sorted by one column. Ties keep their order (SovEmu's: by system, then file), so
+ *  sorting by status still groups each system's files together. */
+export function sortBiosRows(rows: BiosRow[], key: BiosSortKey, direction: SortDirection): BiosRow[] {
+  const sign = direction === "asc" ? 1 : -1;
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => sign * COMPARE[key](a.row, b.row) || a.i - b.i)
+    .map(({ row }) => row);
+}
+
+/** The direction a column sorts in when its header is chosen: the other way when it is already
+ *  the sorted column, else ascending. */
+export function nextSort(
+  current: { key: BiosSortKey; direction: SortDirection },
+  key: BiosSortKey,
+): { key: BiosSortKey; direction: SortDirection } {
+  if (current.key !== key) return { key, direction: "asc" };
+  return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
+/** What a file's status pill says: its state, or, for a missing one, whether that matters. */
+export function statusText(row: BiosRow): string {
+  if (row.file.state !== "MISSING") return FILE_STATES[row.file.state].text;
+  if (row.tone === "quiet") return row.group.satisfied ? "Not needed" : "Not added";
+  return "Missing";
+}
+
 /** One line for the page's header: how many systems need something. */
 export function summary(systems: { bios: SystemBios }[]): string {
   const missing = systems.filter((s) => s.bios.state === "MISSING").length;
