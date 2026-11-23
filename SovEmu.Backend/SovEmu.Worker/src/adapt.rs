@@ -7,6 +7,13 @@
 //!   within seconds, measured to a TV while a PS2 game ran slow and its frames went out in
 //!   bursts), and following each jump moved the quality up and down every few seconds. A dip or
 //!   a spike alone now moves nothing; a drop that lasts is followed within half the window.
+//!   A fall is followed only when the stream is sending more than the estimate leaves, and
+//!   then only when it is backed: by trouble the client has just shown (packets lost, a
+//!   keyframe asked for), or by falling again after the estimator was started again from
+//!   where it was ([`PASS_SPACING`]). Over Wi-Fi the estimator falls when packets merely
+//!   arrive unevenly, and a busy stream was cut by a quarter each time. A fall that is
+//!   followed leaves a ceiling under what was being sent, tried a step higher after a while:
+//!   the estimate alone climbs straight back past what a slow link carries.
 //! - **The client**: the stats it sends once a second ([`ClientStats`]). The estimate only sees
 //!   the network; a client whose decoder falls behind at a rate the network carries happily
 //!   shows it here, as frames it did not decode, frames it dropped, or a decode time that has
@@ -74,6 +81,34 @@ const ESTIMATE_WINDOW: Duration = Duration::from_secs(2);
 const DROPOUT_GRACE: Duration = Duration::from_secs(1);
 /// At most this many estimates are kept (str0m reports several a second).
 const ESTIMATES_KEPT: usize = 64;
+
+/// How long after a sign of trouble from the client (packets lost, a keyframe asked for) a
+/// falling estimate is believed at once.
+const TROUBLE_FRESH: Duration = Duration::from_secs(2);
+/// A falling estimate with no sign of trouble is given one pass in this long: the estimator
+/// is put back where it was and the bitrate stays. One that falls again inside it is believed.
+const PASS_SPACING: Duration = Duration::from_secs(5);
+/// How long after a pass new estimates are left alone, while the estimator starts again.
+const PASS_GRACE: Duration = Duration::from_millis(300);
+/// When a fall is believed, the link is taken to carry this share of what was being sent: the
+/// bitrate is not raised past it ([`Adaptation::ceiling_kbps`]).
+const CEILING_SHARE: f64 = 0.85;
+/// Falls this soon after one that lowered the ceiling do not lower it again: for as long as
+/// the bitrate is held from rising ([`RAISE_HOLD`]) it is under the ceiling already, and the
+/// estimator is still reeling from the packets lost (an 8 Mbit/s link's ceiling went from 6.4
+/// to 2.7 Mbit/s on a second fall two seconds after the first, and stayed there).
+const CEILING_SETTLE: Duration = RAISE_HOLD;
+/// A link's ceiling is tried a step higher after this long without a fall, and after twice as
+/// long each time the try fails (to [`CEILING_HOLD_MOST`]): a link's capacity changes rarely,
+/// and each try past it costs the player a stutter.
+const CEILING_HOLD: Duration = Duration::from_secs(30);
+const CEILING_HOLD_MOST: Duration = Duration::from_secs(300);
+/// The step a ceiling is tried higher by.
+const CEILING_RAISE: f64 = 1.05;
+/// A client is losing packets when more than this share of those sent to it are lost.
+const LOST_SHARE: f64 = 0.02;
+/// A video packet's size, for counting the packets a bitrate comes to.
+const PACKET_BYTES: f64 = 1100.0;
 
 /// The share of the estimate used for video and audio: headroom for retransmits and noise.
 const ESTIMATE_SHARE: f64 = 0.85;
@@ -166,6 +201,8 @@ pub(crate) struct ClientSample {
     pub(crate) frames_dropped: Option<u64>,
     /// Video frames sent to it, since the session began.
     pub(crate) frames_sent: u64,
+    /// Packets it has lost, since the stream began.
+    pub(crate) packets_lost: Option<u64>,
 }
 
 /// Why a client counts as struggling, for the log.
@@ -225,6 +262,26 @@ pub(crate) struct Adaptation {
     raised_at: Option<Instant>,
     /// The bitrate the player was last told of, why, and when; none before the first.
     told: Option<(u32, LimitedBy, Instant)>,
+    /// The last estimate (the window's median, bit/s) that did not ask for a cut.
+    believed_bps: Option<u64>,
+    /// When the client last showed trouble on the way to it: packets lost, a keyframe asked for.
+    trouble_at: Option<Instant>,
+    /// When a falling estimate was last given a pass.
+    passed_at: Option<Instant>,
+    /// The estimate to start the estimator again from (bit/s), until the caller takes it.
+    restart_bps: Option<u64>,
+    /// The packets the client had lost by its last sample.
+    lost_then: Option<u64>,
+    /// What the link is taken to carry for video, learnt from a fall that was believed: the
+    /// bitrate is not raised past it. None while no fall has been believed.
+    ceiling_kbps: Option<u32>,
+    /// When the ceiling was last set or tried higher, how long it then stands, and whether
+    /// it has been tried higher since it was set.
+    ceiling_at: Option<Instant>,
+    /// When a fall last lowered the ceiling.
+    ceiling_cut_at: Option<Instant>,
+    ceiling_hold: Duration,
+    ceiling_tried: bool,
 }
 
 impl Adaptation {
@@ -246,6 +303,16 @@ impl Adaptation {
             cut_at: None,
             raised_at: None,
             told: None,
+            believed_bps: None,
+            trouble_at: None,
+            passed_at: None,
+            restart_bps: None,
+            lost_then: None,
+            ceiling_kbps: None,
+            ceiling_at: None,
+            ceiling_cut_at: None,
+            ceiling_hold: CEILING_HOLD,
+            ceiling_tried: false,
         }
     }
 
@@ -335,10 +402,87 @@ impl Adaptation {
         // under proves nothing, and the bitrate stays; if the link really has shrunk, the
         // next busy picture goes over the estimate and is cut then.
         let lowers = allowed < self.network_kbps.unwrap_or(start_kbps);
-        if lowers && self.sending_kbps.is_some_and(|sending| i64::from(sending) <= usable) {
+        if !lowers {
+            self.believed_bps = Some(median);
+            self.network_kbps = Some(allowed);
             return;
         }
-        self.network_kbps = Some(allowed);
+        if self.sending_kbps.is_some_and(|sending| i64::from(sending) <= usable) {
+            return;
+        }
+        // The stream is over the estimate. On a link that is full, that is the moment to cut;
+        // but the estimator also falls (to under what is being delivered) when packets merely
+        // arrive unevenly, as they do over Wi-Fi, and a stream sending all of its bitrate is
+        // then always over it: a busy game on a home network was cut by a quarter every time,
+        // and took ten seconds and more to come back. The two are told apart by asking again.
+        // With no sign of trouble from the client, the estimator is started again from where
+        // it was and the bitrate stays: a link with room gives the same answer as before, and
+        // a full one falls again within the second, which is believed. Trouble the client has
+        // just shown (packets lost, a keyframe asked for) is believed at once.
+        let fresh = |at: Option<Instant>, within| {
+            at.is_some_and(|at: Instant| now.duration_since(at) <= within)
+        };
+        if let Some(before) = self.believed_bps
+            && self.sending_kbps.is_some()
+            && !fresh(self.trouble_at, TROUBLE_FRESH)
+            && !fresh(self.passed_at, PASS_SPACING)
+        {
+            self.passed_at = Some(now);
+            self.restart_bps = Some(before);
+            self.estimates.clear();
+            self.ignore_estimates_until = Some(now + PASS_GRACE);
+            return;
+        }
+        self.believe(allowed, now);
+    }
+
+    /// A fall is believed: the bitrate comes down to `allowed`. The estimate alone would then
+    /// climb straight back past what the link carries (it reads high between falls, and
+    /// raises come a quarter at a time): a 3 Mbit/s link was overrun every twenty seconds that
+    /// way. So what was being sent when it fell is remembered as too much, and the bitrate
+    /// stays under a ceiling below it. The ceiling also bounds the cut, at half of itself:
+    /// once packets are lost the estimator falls to a fraction of what the link carries
+    /// (741 kbit/s on an 8 Mbit/s link), and following it there costs the player the
+    /// picture for the ten seconds it takes to climb back.
+    fn believe(&mut self, allowed: u32, now: Instant) {
+        let Limits { min_kbps, start_kbps, .. } = self.limits;
+        // Not at a stream's start: the starting rate is a guess, and says nothing of the link.
+        // Nor before the send rate is known: there is then no telling what was too much.
+        if self.believed_bps.is_some() && self.sending_kbps.is_some() {
+            // One fall lowers the ceiling once: those that follow it within
+            // [`CEILING_SETTLE`] are the same fall still being measured.
+            let settled =
+                self.ceiling_cut_at.is_none_or(|at| now.duration_since(at) >= CEILING_SETTLE);
+            if settled {
+                let failed = self.sending_kbps.unwrap_or(start_kbps);
+                let ceiling = ((f64::from(failed) * CEILING_SHARE) as u32).max(min_kbps);
+                // A fall after a try higher: the try failed, and the next waits longer.
+                if std::mem::take(&mut self.ceiling_tried) {
+                    self.ceiling_hold = (self.ceiling_hold * 2).min(CEILING_HOLD_MOST);
+                }
+                self.ceiling_kbps = Some(self.ceiling_kbps.map_or(ceiling, |old| old.min(ceiling)));
+                self.ceiling_at = Some(now);
+                self.ceiling_cut_at = Some(now);
+            }
+        }
+        let floor = self.ceiling_kbps.map_or(min_kbps, |ceiling| (ceiling / 2).max(min_kbps));
+        self.network_kbps = Some(allowed.max(floor));
+    }
+
+    /// What the link is taken to carry, if a fall has been believed.
+    pub(crate) fn ceiling_kbps(&self) -> Option<u32> {
+        self.ceiling_kbps
+    }
+
+    /// The client showed trouble on the way to it at `now`: it lost packets, or asked for a
+    /// keyframe. A falling estimate is believed at once for [`TROUBLE_FRESH`] after.
+    pub(crate) fn trouble(&mut self, now: Instant) {
+        self.trouble_at = Some(now);
+    }
+
+    /// The estimate to start the estimator again from (bit/s), once: a fall was given a pass.
+    pub(crate) fn take_restart(&mut self) -> Option<u64> {
+        self.restart_bps.take()
     }
 
     /// Takes what the video is being sent at now, by which a falling estimate is judged.
@@ -353,6 +497,25 @@ impl Adaptation {
         current_kbps: u32,
         now: Instant,
     ) -> Option<LimitChange> {
+        // Packets lost on the way are the connection's trouble, not the decoder's.
+        if let (Some(lost), Some(then), Some((at, ..))) =
+            (sample.packets_lost, self.lost_then, self.last)
+        {
+            let elapsed = now.duration_since(at);
+            let sent = f64::from(self.sending_kbps.unwrap_or(current_kbps)) * 125.0 / PACKET_BYTES
+                * elapsed.as_secs_f64();
+            if elapsed <= SAMPLE_GAP && lost.saturating_sub(then) as f64 > sent * LOST_SHARE {
+                self.trouble(now);
+                // Packets lost just after a fall was given a pass: the pass was wrong, and
+                // the estimator, started again, may take seconds to say so itself.
+                if self.passed_at.is_some_and(|at| now.duration_since(at) <= PASS_SPACING) {
+                    let sending = self.sending_kbps.unwrap_or(current_kbps);
+                    self.passed_at = None;
+                    self.believe((f64::from(sending) * CEILING_SHARE) as u32, now);
+                }
+            }
+        }
+        self.lost_then = sample.packets_lost;
         let verdict = self.judge(&sample, now);
         self.last = Some((now, sample.frames_sent, sample.frames_dropped));
         match verdict? {
@@ -433,7 +596,17 @@ impl Adaptation {
             self.last = None;
             (self.bad, self.good) = (0, 0);
         }
+        // A ceiling that has stood its time without a fall is tried a step higher.
+        if let (Some(ceiling), Some(at)) = (self.ceiling_kbps, self.ceiling_at)
+            && now.duration_since(at) >= self.ceiling_hold
+        {
+            let higher = (f64::from(ceiling) * CEILING_RAISE) as u32;
+            self.ceiling_kbps = (higher < self.limits.max_kbps).then_some(higher);
+            self.ceiling_at = Some(now);
+            self.ceiling_tried = true;
+        }
         let network = self.network_kbps.unwrap_or(self.limits.start_kbps);
+        let network = self.ceiling_kbps.map_or(network, |ceiling| network.min(ceiling));
         self.client_kbps.map_or(network, |limit| network.min(limit))
     }
 
@@ -519,9 +692,10 @@ mod tests {
         // The picture turns busy and the stream sends 4 Mbit/s against that estimate: now the
         // connection is being overrun, and the bitrate is cut at once.
         a.sending(Some(4000));
+        a.trouble(ms(3700));
         a.estimate(1_200_000, ms(3800));
         let cut = a.decide(5000, false, ms(3800)).expect("cut for a connection overrun");
-        assert!(cut < 1000, "{cut}");
+        assert_eq!(cut, 1700, "bounded: half of what the link is now taken to carry");
         // Before the send rate is known, an estimate is taken at its word, as it always was.
         let mut unknown = Adaptation::new(capped, 128);
         for at in [0, 200, 400] {
@@ -547,6 +721,124 @@ mod tests {
         assert!((590..=620).contains(&kbps), "{kbps}");
         rate.clear();
         assert_eq!(rate.kbps(ms(3000)), None);
+    }
+
+    /// A LAN's stream at its ceiling of 10 Mbit/s, sending all of it, with the estimate well
+    /// above it.
+    fn busy_on_a_lan(t: Instant) -> Adaptation {
+        let limits = Limits { min_kbps: 500, start_kbps: 5000, max_kbps: 10_000 };
+        let mut a = Adaptation::new(limits, 128);
+        for at in [0, 200, 400] {
+            a.estimate(16_000_000, t + Duration::from_millis(at));
+        }
+        a.sending(Some(10_000));
+        a
+    }
+
+    #[test]
+    fn a_fall_with_no_sign_of_trouble_is_asked_again_not_followed() {
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        let mut a = busy_on_a_lan(t);
+        assert_eq!(a.take_restart(), None);
+        // A late packet over Wi-Fi: the estimator falls to under what is being delivered.
+        // Nothing was lost and no keyframe asked for, so the bitrate stays and the estimator
+        // is started again from where it was.
+        for at in [5000, 5200] {
+            a.estimate(8_500_000, ms(at));
+        }
+        assert_eq!(a.decide(10_000, false, ms(5200)), None, "not cut");
+        assert_eq!(a.take_restart(), Some(16_000_000));
+        assert_eq!(a.take_restart(), None, "taken once");
+        assert_eq!(a.ceiling_kbps(), None);
+        // The link has the room it had: the estimate comes back, and that was all.
+        a.estimate(15_000_000, ms(6200));
+        assert_eq!(a.decide(10_000, false, ms(6200)), None);
+        // A fall long after is a new question, asked again in its turn.
+        a.estimate(8_500_000, ms(20_000));
+        assert_eq!(a.decide(10_000, false, ms(20_000)), None);
+        assert_eq!(a.take_restart(), Some(15_000_000));
+    }
+
+    #[test]
+    fn a_fall_that_comes_straight_back_is_believed_and_the_link_remembered() {
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        let mut a = busy_on_a_lan(t);
+        for at in [5000, 5200] {
+            a.estimate(8_500_000, ms(at));
+        }
+        assert_eq!(a.take_restart(), Some(16_000_000), "asked again");
+        // Started again, the estimator falls again within the second: the link is full.
+        a.estimate(8_000_000, ms(5100)); // inside the grace: left alone
+        for at in [5600, 5800] {
+            a.estimate(8_000_000, ms(at));
+        }
+        assert_eq!(a.take_restart(), None, "not asked a second time");
+        // 85% of 8 Mbit/s less the audio; and the link is taken to carry 85% of what failed.
+        assert_eq!(a.decide(10_000, false, ms(5800)), Some(6672));
+        assert_eq!(a.ceiling_kbps(), Some(8500));
+        // The estimate reads high again, as it does between falls: the bitrate climbs back
+        // to the ceiling and no further.
+        a.sending(Some(6672));
+        a.estimate(14_000_000, ms(9000));
+        assert_eq!(a.decide(6672, false, ms(16_000)), Some(8340), "a quarter at a time");
+        assert_eq!(a.decide(8340, false, ms(18_000)), None, "8500 is under a tenth more");
+        // After half a minute without a fall the ceiling is tried a step higher.
+        a.estimate(14_000_000, ms(36_000));
+        let _ = a.decide(8340, false, ms(36_000));
+        assert_eq!(a.ceiling_kbps(), Some(8925));
+    }
+
+    #[test]
+    fn trouble_from_the_client_is_believed_at_once_and_bounds_the_cut() {
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        // A keyframe asked for, then the estimate falls: no asking again.
+        let mut a = busy_on_a_lan(t);
+        a.trouble(ms(4900));
+        // Packets lost: the estimator reads a fraction of what the link carries.
+        for at in [5000, 5200, 5400] {
+            a.estimate(700_000, ms(at));
+        }
+        assert_eq!(a.take_restart(), None);
+        assert_eq!(a.ceiling_kbps(), Some(8500));
+        assert_eq!(a.decide(10_000, false, ms(5400)), Some(4250), "half the ceiling, not 467");
+        // The falls that follow in the same ten seconds are the same one: the ceiling stays.
+        a.sending(Some(4250));
+        a.trouble(ms(7000));
+        a.estimate(600_000, ms(7600));
+        assert_eq!(a.ceiling_kbps(), Some(8500));
+        // One after that is a new one: what was being sent then was too much as well.
+        a.trouble(ms(16_000));
+        a.estimate(600_000, ms(16_100));
+        assert_eq!(a.ceiling_kbps(), Some(3612));
+    }
+
+    #[test]
+    fn packets_lost_after_a_pass_undo_it() {
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        let mut a = busy_on_a_lan(t);
+        let sample = |lost| ClientSample {
+            fps: Some(60.0),
+            decode_ms: Some(3.0),
+            frames_dropped: Some(0),
+            frames_sent: 0,
+            packets_lost: Some(lost),
+        };
+        assert_eq!(a.client(sample(0), 10_000, ms(4000)), None);
+        for at in [5000, 5200] {
+            a.estimate(8_500_000, ms(at));
+        }
+        assert_eq!(a.take_restart(), Some(16_000_000), "a pass");
+        // A handful lost of the 1,100 or so sent in a second: Wi-Fi does that. Nothing.
+        assert_eq!(a.client(sample(5), 10_000, ms(5300)), None);
+        assert_eq!(a.ceiling_kbps(), None);
+        // A twentieth lost: the link is full, whatever the estimator now says.
+        assert_eq!(a.client(sample(65), 10_000, ms(6300)), None);
+        assert_eq!(a.ceiling_kbps(), Some(8500));
+        assert_eq!(a.decide(10_000, false, ms(6300)), Some(8500));
     }
 
     #[test]
@@ -639,7 +931,13 @@ mod tests {
         ) -> Option<LimitChange> {
             self.now += Duration::from_secs(1);
             self.sent += 60;
-            let sample = ClientSample { fps, decode_ms, frames_dropped, frames_sent: self.sent };
+            let sample = ClientSample {
+                fps,
+                decode_ms,
+                frames_dropped,
+                frames_sent: self.sent,
+                packets_lost: None,
+            };
             a.client(sample, current_kbps, self.now)
         }
 

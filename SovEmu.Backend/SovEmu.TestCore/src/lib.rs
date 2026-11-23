@@ -6,7 +6,9 @@
 //! - **Video:** 256×224 XRGB8888, with each row padded to [`PITCH`] bytes so the frontend must
 //!   honour the pitch. Pixel `(x, y)` on frame `n` is `R = x + n`, `G = y + n` (both mod 256) and
 //!   `B` = the low byte of the held buttons. Holding SELECT dupes the frame (passes null).
-//!   With the core option `sovemu_test_pattern=solid` every pixel is [`SOLID_COLOUR`].
+//!   With the core option `sovemu_test_pattern=solid` every pixel is [`SOLID_COLOUR`]; with
+//!   `noise` every pixel is a different colour on every frame, the busiest picture there is:
+//!   an encoder then sends all of whatever bitrate it is given, as a demanding game does.
 //! - **Stdout:** prints a line to stdout in `retro_init`, as some real cores do.
 //! - **Core options:** declared through core options v2 (a "Video" category, explanations and
 //!   value labels) when the frontend reports version 2, else through `SET_VARIABLES`.
@@ -168,7 +170,7 @@ struct Callbacks {
 struct State {
     frame: u64,
     phase: f64,
-    solid: bool,
+    pattern: Pattern,
     log: ffi::retro_log_printf_t,
     pixels: Vec<u32>,
     audio: Vec<i16>,
@@ -186,11 +188,19 @@ static CALLBACKS: Mutex<Callbacks> = Mutex::new(Callbacks {
 static STATE: Mutex<State> = Mutex::new(State {
     frame: 0,
     phase: 0.0,
-    solid: false,
+    pattern: Pattern::Gradient,
     log: None,
     pixels: Vec::new(),
     audio: Vec::new(),
 });
+
+/// What every frame shows (`sovemu_test_pattern`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pattern {
+    Gradient,
+    Solid,
+    Noise,
+}
 
 const PATTERN_KEY: &CStr = c"sovemu_test_pattern";
 
@@ -216,13 +226,17 @@ fn log(message: &CStr) {
 }
 
 /// Reads `sovemu_test_pattern` from the frontend.
-fn read_pattern() -> bool {
+fn read_pattern() -> Pattern {
     let mut var = ffi::retro_variable { key: PATTERN_KEY.as_ptr(), value: std::ptr::null() };
     if env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE, (&raw mut var).cast()) && !var.value.is_null() {
         // SAFETY: the frontend returns a NUL-terminated string.
-        unsafe { CStr::from_ptr(var.value) }.to_bytes() == b"solid"
+        match unsafe { CStr::from_ptr(var.value) }.to_bytes() {
+            b"solid" => Pattern::Solid,
+            b"noise" => Pattern::Noise,
+            _ => Pattern::Gradient,
+        }
     } else {
-        false
+        Pattern::Gradient
     }
 }
 
@@ -247,7 +261,7 @@ pub extern "C" fn retro_set_environment(cb: ffi::retro_environment_t) {
     let mut vars = [
         ffi::retro_variable {
             key: PATTERN_KEY.as_ptr(),
-            value: c"Test pattern; gradient|solid".as_ptr(),
+            value: c"Test pattern; gradient|solid|noise".as_ptr(),
         },
         ffi::retro_variable { key: RENDER_KEY.as_ptr(), value: c"Rendering; software|gl".as_ptr() },
         ffi::retro_variable { key: std::ptr::null(), value: std::ptr::null() },
@@ -300,9 +314,9 @@ fn declare_options_v2() {
         definition(
             PATTERN_KEY,
             c"Test pattern",
-            c"What every frame shows: a moving gradient, or one solid colour.",
+            c"What every frame shows: a moving gradient, one solid colour, or noise.",
             c"video".as_ptr(),
-            &[(c"gradient", c"Gradient"), (c"solid", c"Solid colour")],
+            &[(c"gradient", c"Gradient"), (c"solid", c"Solid colour"), (c"noise", c"Noise")],
             c"gradient",
         ),
         definition(
@@ -364,7 +378,7 @@ pub extern "C" fn retro_init() {
         let mut s = STATE.lock().unwrap();
         s.frame = 0;
         s.phase = 0.0;
-        s.solid = false;
+        s.pattern = Pattern::Gradient;
         s.log = log_fn;
         s.pixels = vec![0; PITCH / 4 * HEIGHT as usize];
         *SAVE_RAM.lock().unwrap() = [0; SAVE_RAM_SIZE];
@@ -443,11 +457,11 @@ pub extern "C" fn retro_run() {
     let mut updated = false;
     env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, (&raw mut updated).cast());
     let refresh_pattern = updated || STATE.lock().unwrap().frame == 0;
-    let solid = if refresh_pattern { Some(read_pattern()) } else { None };
+    let pattern = if refresh_pattern { Some(read_pattern()) } else { None };
 
     let mut s = STATE.lock().unwrap();
-    if let Some(solid) = solid {
-        s.solid = solid;
+    if let Some(pattern) = pattern {
+        s.pattern = pattern;
     }
     let frame = s.frame;
 
@@ -455,15 +469,21 @@ pub extern "C" fn retro_run() {
     let dupe = buttons & (1 << ffi::RETRO_DEVICE_ID_JOYPAD_SELECT) != 0;
     if !dupe {
         let stride = PITCH / 4;
-        let solid = s.solid;
+        let pattern = s.pattern;
         for y in 0..HEIGHT as usize {
             for x in 0..WIDTH as usize {
-                s.pixels[y * stride + x] = if solid {
-                    SOLID_COLOUR
-                } else {
-                    let r = (x as u64 + frame) as u8 as u32;
-                    let g = (y as u64 + frame) as u8 as u32;
-                    (r << 16) | (g << 8) | (buttons as u8 as u32)
+                s.pixels[y * stride + x] = match pattern {
+                    Pattern::Solid => SOLID_COLOUR,
+                    Pattern::Gradient => {
+                        let r = (x as u64 + frame) as u8 as u32;
+                        let g = (y as u64 + frame) as u8 as u32;
+                        (r << 16) | (g << 8) | (buttons as u8 as u32)
+                    }
+                    // A hash of where and when: no two pixels or frames alike.
+                    Pattern::Noise => {
+                        let n = (x as u64) << 40 | (y as u64) << 24 | (frame & 0xFF_FFFF);
+                        (n.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) as u32
+                    }
                 };
             }
         }
