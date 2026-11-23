@@ -455,6 +455,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_DEBUG_DELAY_VIDEO_MS", default_value_t = 0)]
     pub debug_delay_video_ms: u32,
 
+    /// Testing only: throw away all of every game's outgoing video packets for this many
+    /// milliseconds once every 10 seconds, as a Wi-Fi dropout would. Leave it at 0.
+    #[arg(long, env = "SOVEMU_DEBUG_DROP_VIDEO_BURST_MS", default_value_t = 0)]
+    pub debug_drop_video_burst_ms: u32,
+
     /// Seconds between each game's `session health` log line while someone is playing (frame
     /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
     /// logs a `session summary` when it ends.
@@ -944,6 +949,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         keyframe_interval: config.keyframe_interval,
         drop_video_percent: config.debug_drop_video_percent,
         delay_video_ms: config.debug_delay_video_ms,
+        drop_video_burst_ms: config.debug_drop_video_burst_ms,
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),

@@ -73,6 +73,9 @@ pub struct WorkerConfig {
     /// Testing only: milliseconds workers hold each video packet
     /// (`SOVEMU_DEBUG_DELAY_VIDEO_MS`); 0 for none.
     pub delay_video_ms: u32,
+    /// Testing only: milliseconds of every 10 seconds in which workers drop all video packets
+    /// (`SOVEMU_DEBUG_DROP_VIDEO_BURST_MS`); 0 for none.
+    pub drop_video_burst_ms: u32,
     /// Seconds between a worker's `session health` log lines (0: none).
     pub health_interval_secs: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
@@ -721,6 +724,8 @@ impl Workers {
             .arg(self.config.drop_video_percent.to_string())
             .arg("--delay-video-ms")
             .arg(self.config.delay_video_ms.to_string())
+            .arg("--drop-video-burst-ms")
+            .arg(self.config.drop_video_burst_ms.to_string())
             .arg("--gpu")
             .arg(&self.config.gpu)
             .arg("--health-interval")
@@ -1118,6 +1123,7 @@ done
             keyframe_interval: 60,
             drop_video_percent: 0.0,
             delay_video_ms: 0,
+            drop_video_burst_ms: 0,
             health_interval_secs: 10,
             gpu: "off".into(),
             log_format: "text",

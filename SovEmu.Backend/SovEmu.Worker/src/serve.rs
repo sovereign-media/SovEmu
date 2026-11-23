@@ -43,6 +43,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             keyframe_interval: args.keyframe_interval,
             drop_video_percent: args.drop_video_percent,
             delay_video_ms: args.delay_video_ms,
+            drop_video_burst_ms: args.drop_video_burst_ms,
             gpu: args.gpu.0.clone(),
             video_codec: args.video_codec,
             video_encoder: args.video_encoder,
