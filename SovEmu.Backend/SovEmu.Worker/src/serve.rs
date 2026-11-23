@@ -54,6 +54,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     )?;
 
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding UDP {}", args.udp))?;
+    crate::priority::mark(&socket, args.udp_dscp);
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
     tracing::info!(udp = %udp_addr, advertised = %advertised, "WebRTC listening");

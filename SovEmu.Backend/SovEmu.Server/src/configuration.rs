@@ -169,6 +169,7 @@ fn group(env: &str) -> Option<Group> {
         "SOVEMU_HTTP"
         | "SOVEMU_UDP_PORTS"
         | "SOVEMU_UDP_BIND"
+        | "SOVEMU_UDP_DSCP"
         | "SOVEMU_ADVERTISE_IP"
         | "SOVEMU_ICE_SERVERS"
         | "SOVEMU_VIDEO_KBPS"

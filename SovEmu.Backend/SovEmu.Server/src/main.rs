@@ -145,6 +145,13 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_UDP_BIND", default_value = "0.0.0.0")]
     pub udp_bind: IpAddr,
 
+    /// The DSCP value every game's packets are marked with, so Wi-Fi access points (and
+    /// routers that honour it) send them ahead of ordinary traffic: 34 (AF41, interactive
+    /// video, the access point's video queue) by default, 46 for its voice queue, 0 for none.
+    #[arg(long, env = "SOVEMU_UDP_DSCP", default_value_t = 34,
+          value_parser = clap::value_parser!(u8).range(0..=63))]
+    pub udp_dscp: u8,
+
     /// The IP address browsers send media to: in a container, the host's address.
     #[arg(long, env = "SOVEMU_ADVERTISE_IP")]
     pub advertise_ip: Option<IpAddr>,
@@ -957,6 +964,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         delay_video_ms: config.debug_delay_video_ms,
         drop_video_burst_ms: config.debug_drop_video_burst_ms,
         dropout_keyframe_ms: config.dropout_keyframe_ms,
+        udp_dscp: config.udp_dscp,
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),

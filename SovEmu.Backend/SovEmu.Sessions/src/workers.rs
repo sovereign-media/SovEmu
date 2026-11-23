@@ -79,6 +79,8 @@ pub struct WorkerConfig {
     /// Milliseconds a client is silent before its return is answered with a keyframe
     /// (`SOVEMU_DROPOUT_KEYFRAME_MS`); 0 for never.
     pub dropout_keyframe_ms: u32,
+    /// The DSCP value workers mark the stream's packets with (`SOVEMU_UDP_DSCP`); 0 for none.
+    pub udp_dscp: u8,
     /// Seconds between a worker's `session health` log lines (0: none).
     pub health_interval_secs: u32,
     /// `--gpu` for workers: a render node, `software` or `off` (see [`crate::gpu`]).
@@ -731,6 +733,8 @@ impl Workers {
             .arg(self.config.drop_video_burst_ms.to_string())
             .arg("--dropout-keyframe-ms")
             .arg(self.config.dropout_keyframe_ms.to_string())
+            .arg("--udp-dscp")
+            .arg(self.config.udp_dscp.to_string())
             .arg("--gpu")
             .arg(&self.config.gpu)
             .arg("--health-interval")
@@ -1130,6 +1134,7 @@ done
             delay_video_ms: 0,
             drop_video_burst_ms: 0,
             dropout_keyframe_ms: 700,
+            udp_dscp: 0,
             health_interval_secs: 10,
             gpu: "off".into(),
             log_format: "text",

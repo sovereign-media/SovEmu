@@ -379,6 +379,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
 | `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent session; publish the range |
 | `SOVEMU_UDP_BIND` | `0.0.0.0` | Address the session ports bind to |
+| `SOVEMU_UDP_DSCP` | `34` | The DSCP value every game's packets are marked with (0 to 63), asking the network to send them ahead of ordinary traffic. A Wi-Fi access point maps it to one of its queues: `34` (AF41, interactive video, as WebRTC marks a picture) goes to the video queue; `46` to the voice queue; `0` leaves packets unmarked. Routers and switches on the way may honour it, ignore it or clear it |
 | `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
 | `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
 | `SOVEMU_VIDEO_KBPS` | `5000` | Video bitrate a stream starts at. It then adapts throughout the stream: up while the connection has headroom and down on congestion (the send-bandwidth estimate), and down while the client's decoder falls behind (the stats every client sends once a second: frames decoded, frames dropped, decode time), back up as it recovers. The player is told of a change of a quarter or more, at most every 15 seconds, by a notice at the top of the screen, worded and drawn as Sovereign's ("Slow connection. Playing at a lower quality."). `video_kbps_target`, `estimate_kbps` and `client_limit_kbps` in the `session health` log line show it |
