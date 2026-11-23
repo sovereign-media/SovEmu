@@ -249,6 +249,10 @@ struct SessionArgs {
     /// client's link would.
     #[arg(long, default_value_t = 0)]
     delay_video_ms: u32,
+    /// Testing only: throw away every outgoing video packet for this many milliseconds once
+    /// every 10 seconds, as a Wi-Fi dropout would.
+    #[arg(long, default_value_t = 0)]
+    drop_video_burst_ms: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
@@ -358,6 +362,10 @@ struct ServeArgs {
     /// client's link would.
     #[arg(long, default_value_t = 0)]
     delay_video_ms: u32,
+    /// Testing only: throw away every outgoing video packet for this many milliseconds once
+    /// every 10 seconds, as a Wi-Fi dropout would.
+    #[arg(long, default_value_t = 0)]
+    drop_video_burst_ms: u32,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]

@@ -3,7 +3,9 @@
 //! `--drop-video-percent` makes the worker throw away that share of the video packets it would
 //! send, retransmissions included, as a lossy link would. `--delay-video-ms` holds each video
 //! packet that long before it goes, as a distant client's link would: a retransmission then
-//! arrives late, which is when a client gives up on it and asks for a keyframe. Audio, RTCP
+//! arrives late, which is when a client gives up on it and asks for a keyframe.
+//! `--drop-video-burst-ms` throws away every video packet for that long once every
+//! [`BURST_EVERY`], as a Wi-Fi dropout would. Audio, RTCP
 //! and the connection's own packets (STUN, DTLS) always go at once, so the client still
 //! connects, still hears the game and can still ask for what it lost. Both are off (0) outside
 //! tests and measurements.
@@ -15,6 +17,9 @@ use std::collections::VecDeque;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
+/// How often a burst of loss comes, when there is one.
+pub(crate) const BURST_EVERY: Duration = Duration::from_secs(10);
+
 /// Drops a share of outgoing video packets.
 #[derive(Debug)]
 pub(crate) struct Loss {
@@ -22,6 +27,10 @@ pub(crate) struct Loss {
     share: f64,
     /// How long each video packet is held before it is sent.
     delay: Duration,
+    /// How long every video packet is dropped for, once every [`BURST_EVERY`].
+    burst: Duration,
+    /// When the first video packet went: bursts are timed from it.
+    started: Option<Instant>,
     /// Video packets waiting out the delay, oldest first, with when each may go.
     held: VecDeque<(Instant, Vec<u8>, SocketAddr)>,
     /// The sequence's state (xorshift64*); never zero.
@@ -34,11 +43,13 @@ pub(crate) struct Loss {
 impl Loss {
     /// `percent` of video packets are dropped (0, or anything not a share, drops none) and
     /// the rest are held for `delay_ms`.
-    pub(crate) fn new(percent: f64, delay_ms: u32) -> Self {
+    pub(crate) fn new(percent: f64, delay_ms: u32, burst_ms: u32) -> Self {
         let share = if percent.is_finite() { (percent / 100.0).clamp(0.0, 1.0) } else { 0.0 };
         Self {
             share,
             delay: Duration::from_millis(u64::from(delay_ms)),
+            burst: Duration::from_millis(u64::from(burst_ms)).min(BURST_EVERY),
+            started: None,
             held: VecDeque::new(),
             state: 0x9E37_79B9_7F4A_7C15,
             seen: 0,
@@ -48,7 +59,18 @@ impl Loss {
 
     /// Whether any packet can be dropped or held.
     pub(crate) fn active(&self) -> bool {
-        self.share > 0.0 || !self.delay.is_zero()
+        self.share > 0.0 || !self.delay.is_zero() || !self.burst.is_zero()
+    }
+
+    /// Whether `now` falls in a burst: the last [`Self::burst`] of every [`BURST_EVERY`]
+    /// since the first video packet, so a stream always starts cleanly.
+    fn in_burst(&mut self, now: Instant) -> bool {
+        if self.burst.is_zero() {
+            return false;
+        }
+        let since = now.saturating_duration_since(*self.started.get_or_insert(now));
+        let into = Duration::from_nanos((since.as_nanos() % BURST_EVERY.as_nanos()) as u64);
+        into >= BURST_EVERY - self.burst
     }
 
     /// The delay each video packet is held for, in milliseconds.
@@ -66,6 +88,11 @@ impl Loss {
         now: Instant,
     ) -> Option<()> {
         if self.drops(datagram, audio) {
+            return None;
+        }
+        if is_video_rtp(datagram, audio) && self.in_burst(now) {
+            self.seen += u64::from(self.share <= 0.0);
+            self.dropped += 1;
             return None;
         }
         if self.delay.is_zero() || !is_video_rtp(datagram, audio) {
@@ -139,7 +166,7 @@ mod tests {
 
     #[test]
     fn only_video_packets_are_ever_dropped() {
-        let mut loss = Loss::new(100.0, 0);
+        let mut loss = Loss::new(100.0, 0, 0);
         assert!(loss.drops(&rtp(96), Some(111)), "video");
         assert!(loss.drops(&rtp(96 | 0x80), Some(111)), "video with its marker bit");
         assert!(loss.drops(&rtp(97), Some(111)), "a video retransmission");
@@ -155,7 +182,7 @@ mod tests {
     #[test]
     fn the_share_dropped_is_the_share_asked_for_and_the_same_every_run() {
         let run = |percent| {
-            let mut loss = Loss::new(percent, 0);
+            let mut loss = Loss::new(percent, 0, 0);
             let dropped: Vec<bool> = (0..20_000).map(|_| loss.drops(&rtp(96), None)).collect();
             (loss.dropped, dropped)
         };
@@ -171,7 +198,7 @@ mod tests {
         let to: SocketAddr = "127.0.0.1:50000".parse().unwrap();
         let t = Instant::now();
         let ms = Duration::from_millis;
-        let mut link = Loss::new(0.0, 80);
+        let mut link = Loss::new(0.0, 80, 0);
         assert!(link.active());
         // Audio and RTCP are not held: the client hears the game and its requests are answered.
         assert_eq!(link.outgoing(&rtp(111), to, Some(111), t), Some(()));
@@ -187,15 +214,41 @@ mod tests {
         assert_eq!(link.due(t + ms(200)).count(), 1);
         assert_eq!(link.next_due(), None);
         // With no delay nothing is held.
-        let mut plain = Loss::new(0.0, 0);
+        let mut plain = Loss::new(0.0, 0, 0);
         assert_eq!(plain.outgoing(&rtp(96), to, Some(111), t), Some(()));
         assert_eq!(plain.next_due(), None);
     }
 
     #[test]
+    fn a_burst_drops_every_video_packet_for_its_length_once_a_period() {
+        let to: SocketAddr = "127.0.0.1:50000".parse().unwrap();
+        let t = Instant::now();
+        let ms = Duration::from_millis;
+        let mut link = Loss::new(0.0, 0, 200);
+        assert!(link.active());
+        // The stream starts cleanly: the burst is the last 200 ms of each 10 seconds.
+        assert_eq!(link.outgoing(&rtp(96), to, Some(111), t), Some(()));
+        assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(9_799)), Some(()));
+        assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(9_800)), None);
+        assert_eq!(
+            link.outgoing(&rtp(97), to, Some(111), t + ms(9_999)),
+            None,
+            "retransmissions too"
+        );
+        assert_eq!(
+            link.outgoing(&rtp(111), to, Some(111), t + ms(9_900)),
+            Some(()),
+            "audio still goes"
+        );
+        assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(10_000)), Some(()));
+        assert_eq!(link.outgoing(&rtp(96), to, Some(111), t + ms(19_850)), None, "and again");
+        assert_eq!(link.dropped, 3);
+    }
+
+    #[test]
     fn nothing_is_dropped_unless_asked() {
         for percent in [0.0, -3.0, f64::NAN] {
-            let mut loss = Loss::new(percent, 0);
+            let mut loss = Loss::new(percent, 0, 0);
             assert!(!loss.active());
             assert!((0..1000).all(|_| !loss.drops(&rtp(96), None)));
             assert_eq!(loss.seen, 0);

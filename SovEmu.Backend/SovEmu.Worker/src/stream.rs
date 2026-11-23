@@ -126,6 +126,8 @@ pub(crate) struct SessionConfig {
     pub drop_video_percent: f64,
     /// Testing only: milliseconds each outgoing video packet is held (`loss.rs`).
     pub delay_video_ms: u32,
+    /// Testing only: milliseconds of every 10 seconds in which all video packets are dropped.
+    pub drop_video_burst_ms: u32,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -289,7 +291,11 @@ impl Session {
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
             keyframes: crate::keyframes::Gate::new(),
-            loss: crate::loss::Loss::new(config.drop_video_percent, config.delay_video_ms),
+            loss: crate::loss::Loss::new(
+                config.drop_video_percent,
+                config.delay_video_ms,
+                config.drop_video_burst_ms,
+            ),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
