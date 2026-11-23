@@ -73,11 +73,32 @@ RUN apt-get update \
 ENV CARGO_TERM_COLOR=always \
     CARGO_INCREMENTAL=0 \
     CARGO_PROFILE_DEV_DEBUG=line-tables-only
+# cargo-about, which lists the licences of the crates the image is built from (`build` below):
+# its released binary, pinned and checked, before the sources so it is not fetched per commit.
+ARG CARGO_ABOUT_VERSION=0.9.3
+ARG CARGO_ABOUT_SHA256=3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4
+RUN curl -sSfL --retry 5 -o /tmp/cargo-about.tar.gz \
+        "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    && echo "${CARGO_ABOUT_SHA256}  /tmp/cargo-about.tar.gz" | sha256sum -c - \
+    && tar xzf /tmp/cargo-about.tar.gz --strip-components=1 -C /usr/local/cargo/bin \
+        "cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl/cargo-about" \
+    && rm /tmp/cargo-about.tar.gz
 WORKDIR /src
 COPY SovEmu.Backend/ ./
 
+## ---- notices: the crates' licences, listed again from the lockfile --------------------------------
+# cargo-about (`about.toml`'s accepted licences: any other fails the build) writes the list the
+# server builds in, so the image always ships the current one; the committed copy is a local
+# build's. Its own stage and registry cache: its `cargo metadata` unpacks crates for every
+# platform, and sharing `build` and `test`'s cache while they compile raced them.
+FROM toolchain AS notices
+RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registry \
+    mkdir -p /out \
+    && cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
+
 ## ---- build: the release binaries ------------------------------------------------------------------
 FROM toolchain AS build
+COPY --from=notices /out/third-party-notices.json SovEmu.Server/third-party-notices.json
 # Which build this is, for the admin About page (`option_env!` in sovemu-server): the commit and
 # its time, which CI passes (docker-bake.hcl). Empty in a local build. Declared here, not in
 # `toolchain`, so the test stage's compile does not change with every commit.

@@ -311,6 +311,52 @@ pub(super) struct GpuStatus {
     pub(super) probed_at: Option<f64>,
 }
 
+/// A package SovEmu ships.
+#[derive(SimpleObject)]
+pub(super) struct NoticePackage {
+    pub(super) name: String,
+    pub(super) version: String,
+    pub(super) repository: Option<String>,
+}
+
+/// One licence text, and the packages it covers.
+#[derive(SimpleObject)]
+pub(super) struct Notice {
+    /// SPDX (`MIT`).
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) packages: Vec<NoticePackage>,
+    pub(super) text: String,
+}
+
+impl From<&crate::notices::Notice> for Notice {
+    fn from(n: &crate::notices::Notice) -> Self {
+        Self {
+            id: n.id.clone(),
+            name: n.name.clone(),
+            packages: n
+                .crates
+                .iter()
+                .map(|p| NoticePackage {
+                    name: p.name.clone(),
+                    version: p.version.clone(),
+                    repository: p.repository.clone(),
+                })
+                .collect(),
+            text: n.text.clone(),
+        }
+    }
+}
+
+/// The open-source packages SovEmu ships, with their licences.
+#[derive(SimpleObject)]
+pub(super) struct ThirdPartyNotices {
+    /// The server's and the workers' Rust crates (cargo-about, at the image's build).
+    pub(super) server: Vec<Notice>,
+    /// The web client's npm packages (its build); empty for a development build.
+    pub(super) web: Vec<Notice>,
+}
+
 #[derive(Default)]
 pub(super) struct ServerQuery;
 
@@ -344,6 +390,17 @@ impl ServerQuery {
                 })
                 .collect(),
             fbneo_commit: own(sovemu_library::info::fbneo::FBNEO_COMMIT),
+        })
+    }
+
+    /// Admins: every open-source package the server and the web client ship, with its licence
+    /// text, grouped by licence.
+    async fn third_party_notices(&self, ctx: &Context<'_>) -> Result<ThirdPartyNotices> {
+        admin(ctx).await?;
+        let web_dir = state(ctx).config.web_dir.as_deref();
+        Ok(ThirdPartyNotices {
+            server: crate::notices::server().iter().map(Notice::from).collect(),
+            web: crate::notices::web(web_dir).iter().map(Notice::from).collect(),
         })
     }
 

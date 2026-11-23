@@ -1,13 +1,18 @@
 // About and attributions: which build of the server this is, and what SovEmu is made with and
 // draws on: the libretro cores and their licences (from the Cores page's query, so the licences
 // live in one place), the game-information services and their terms, and the components the
-// image ships.
+// image ships; then, opened on request (it is long), every open-source package the server and
+// the web client ship, by licence, with each licence's text.
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { buildText, shortCommit } from "../../lib/about";
+import type { Notice } from "../../lib/api";
 import { q } from "../../lib/data";
+import { byLicence, packagesText } from "../../lib/notices";
+import { Button } from "../ui/button";
+import { Segmented } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote, Licence } from "./AdminPage";
 
 function Link({ href, children }: { href: string; children: ReactNode }) {
@@ -20,6 +25,71 @@ function Link({ href, children }: { href: string; children: ReactNode }) {
     >
       {children} <ExternalLink aria-hidden />
     </a>
+  );
+}
+
+const SIDES = [
+  { value: "server", label: "Server" },
+  { value: "web", label: "Web client" },
+] as const;
+
+/** The packages one side ships, by licence; each licence's texts open on request. */
+function NoticeList({ notices }: { notices: Notice[] }) {
+  if (notices.length === 0) {
+    return <p className="mt-3 text-sm text-slate-400">None listed: this build was made without the list.</p>;
+  }
+  return (
+    <ul aria-label="Licences" className="mt-3 divide-y divide-white/5">
+      {byLicence(notices).map((g) => (
+        <li key={g.id} className="py-2.5">
+          <details>
+            <summary className="flex cursor-pointer flex-wrap items-center gap-3">
+              <span className="flex-1">
+                {g.packages} {g.packages === 1 ? "package" : "packages"}
+              </span>
+              <Licence>{g.id}</Licence>
+            </summary>
+            {g.texts.map((n) => (
+              <div key={n.text} className="mt-3">
+                <p className="text-xs text-slate-300">{packagesText(n)}</p>
+                <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-black/40 p-3 text-xs whitespace-pre-wrap text-slate-400">
+                  {n.text}
+                </pre>
+              </div>
+            ))}
+          </details>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OpenSource() {
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<(typeof SIDES)[number]["value"]>("server");
+  const notices = useQuery({ ...q.thirdPartyNotices(), enabled: open });
+  return (
+    <AdminSection
+      title="Open-source packages"
+      description="Every library the server and the web client are built from, with its licence: listed when each is built."
+      actions={
+        !open && (
+          <Button variant="outline" onClick={() => setOpen(true)}>
+            Show the packages
+          </Button>
+        )
+      }
+    >
+      <ErrorNote error={notices.error} />
+      {notices.data && (
+        <>
+          <div className="mt-3">
+            <Segmented label="Packages of" value={side} options={[...SIDES]} onChange={setSide} />
+          </div>
+          <NoticeList notices={notices.data[side]} />
+        </>
+      )}
+    </AdminSection>
   );
 }
 
@@ -117,6 +187,8 @@ function About() {
               <code>/usr/share/doc/*/copyright</code>.
             </p>
           </AdminSection>
+
+          <OpenSource />
         </>
       )}
     </>

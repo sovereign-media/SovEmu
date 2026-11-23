@@ -1479,6 +1479,36 @@ export const AboutQuery = graphql(`
   }
 `);
 
+// Every open-source package the server and the web client ship, with its licence: read when the
+// About page's list is opened.
+export const NoticeFields = graphql(`
+  fragment NoticeFields on Notice {
+    id
+    packages {
+      name
+      version
+      repository
+    }
+    text
+  }
+`);
+
+export const ThirdPartyNoticesQuery = graphql(
+  `
+  query ThirdPartyNotices {
+    thirdPartyNotices {
+      server {
+        ...NoticeFields
+      }
+      web {
+        ...NoticeFields
+      }
+    }
+  }
+`,
+  [NoticeFields],
+);
+
 export const BackgroundQuery = graphql(`
   query Background {
     background {

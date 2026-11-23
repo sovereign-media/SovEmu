@@ -216,6 +216,7 @@ jobs:
           cache-map: |
             {
               "cache-mount/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
+              "cache-mount/cargo-registry-notices": { "target": "/usr/local/cargo/registry", "id": "cargo-registry-notices" },
               "cache-mount/target-release": { "target": "/src/target", "id": "target-release" },
               "cache-mount/target-test": { "target": "/src/target", "id": "target-test" }
             }

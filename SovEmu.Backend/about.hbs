@@ -1,0 +1,5 @@
+{{!-- cargo-about's template for third-party-notices.json (SovEmu.Server, the admin About page): each distinct licence text, with the crates it covers. Only names, versions, repositories and texts: no paths. --}}
+[
+{{#each licenses}}  {"id": {{{json id}}}, "name": {{{json name}}}, "crates": [{{#each used_by}}{"name": {{{json crate.name}}}, "version": {{{json crate.version}}}, "repository": {{#if crate.repository}}{{{json crate.repository}}}{{else}}null{{/if}}}{{#unless @last}}, {{/unless}}{{/each}}],
+   "text": {{{json text}}}}{{#unless @last}},{{/unless}}
+{{/each}}]

@@ -96,6 +96,7 @@ import {
   SystemsQuery,
   TelemetryQuery,
   TestConnectionMutation,
+  ThirdPartyNoticesQuery,
   UserDetailsQuery,
   UsersQuery,
   ViewerQuery as ViewerDocument,
@@ -113,6 +114,7 @@ export type Overview = ResultOf<typeof OverviewQuery>;
 /** How much a log line says. */
 export type LogLevel = Enum<"LogLevel">;
 export type AttentionKind = Enum<"AttentionKind">;
+export type Notice = ResultOf<typeof ThirdPartyNoticesQuery>["thirdPartyNotices"]["server"][number];
 export type Backups = ResultOf<typeof BackupsQuery>["backups"];
 export type AttentionItem = ResultOf<typeof GamesNeedingAttentionQuery>["gamesNeedingAttention"][number];
 export type AttentionCount = ResultOf<typeof AttentionCountsQuery>["attentionCounts"][number];
@@ -315,6 +317,8 @@ export const api = {
   attentionCounts: async () => (await request(AttentionCountsQuery)).attentionCounts,
   /** Admin: looks one game up again, in the background. */
   lookUpGame: async (gameId: number) => (await request(LookUpGameMutation, { gameId })).lookUpGame,
+  /** Admin: the open-source packages the server and the web client ship, by licence. */
+  thirdPartyNotices: async () => (await request(ThirdPartyNoticesQuery)).thirdPartyNotices,
   /** Admin: the backups kept, newest first, and how they are made. */
   backups: async () => (await request(BackupsQuery)).backups,
   deleteBackup: (name: string) => request(DeleteBackupMutation, { name }),
