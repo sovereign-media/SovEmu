@@ -76,6 +76,12 @@ pub struct WorkerConfig {
     /// Testing only: milliseconds of every 10 seconds in which workers drop all video packets
     /// (`SOVEMU_DEBUG_DROP_VIDEO_BURST_MS`); 0 for none.
     pub drop_video_burst_ms: u32,
+    /// Testing only: the most video a worker's link carries, kbit/s
+    /// (`SOVEMU_DEBUG_LIMIT_VIDEO_KBPS`); 0 for no limit.
+    pub limit_video_kbps: u32,
+    /// Testing only: the most workers vary each video packet's delay by, milliseconds
+    /// (`SOVEMU_DEBUG_JITTER_VIDEO_MS`); 0 for none.
+    pub jitter_video_ms: u32,
     /// Milliseconds a client is silent before its return is answered with a keyframe
     /// (`SOVEMU_DROPOUT_KEYFRAME_MS`); 0 for never.
     pub dropout_keyframe_ms: u32,
@@ -729,6 +735,10 @@ impl Workers {
             .arg(self.config.delay_video_ms.to_string())
             .arg("--drop-video-burst-ms")
             .arg(self.config.drop_video_burst_ms.to_string())
+            .arg("--limit-video-kbps")
+            .arg(self.config.limit_video_kbps.to_string())
+            .arg("--jitter-video-ms")
+            .arg(self.config.jitter_video_ms.to_string())
             .arg("--dropout-keyframe-ms")
             .arg(self.config.dropout_keyframe_ms.to_string())
             .arg("--gpu")
@@ -1129,6 +1139,8 @@ done
             drop_video_percent: 0.0,
             delay_video_ms: 0,
             drop_video_burst_ms: 0,
+            limit_video_kbps: 0,
+            jitter_video_ms: 0,
             dropout_keyframe_ms: 700,
             health_interval_secs: 10,
             gpu: "off".into(),
