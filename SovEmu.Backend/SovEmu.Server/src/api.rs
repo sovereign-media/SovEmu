@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use serde::Serialize;
 use sovemu_protocol::{SdpKind, SessionDescription};
 
 use crate::AppState;
 use crate::assets::SignedUser;
 use crate::auth::User;
+use crate::capabilities::ClientCapabilities;
 use crate::error::{ApiError, ApiResult};
 use crate::library::ScanReport;
 use sovemu_library::systems::{self, System};
@@ -518,14 +519,38 @@ fn owned_session(
 }
 
 /// A client's SDP offer for the session; returns the worker's answer.
+/// A client's offer for a session: its SDP, what it calls itself, and what it can decode.
+pub(crate) struct Offer {
+    pub(crate) sdp: String,
+    pub(crate) client: Option<String>,
+    pub(crate) capabilities: Option<ClientCapabilities>,
+}
+
+/// Answers a client's offer. Its capabilities are checked first and kept against the sign-in
+/// that `headers`' token belongs to, so a document the server cannot read stops the offer.
 pub(crate) async fn offer(
     state: &AppState,
     user: &User,
+    headers: &HeaderMap,
     id: &str,
-    sdp: String,
-    client: Option<String>,
+    offer: Offer,
 ) -> ApiResult<String> {
+    let Offer { sdp, client, capabilities } = offer;
     let session = owned_session(state, user.id, id)?;
+    if let Some(capabilities) = capabilities {
+        let capabilities = capabilities.checked().map_err(ApiError::bad_request)?;
+        let kept = state.identity.keep_capabilities(headers, &capabilities.to_json()).await?;
+        tracing::info!(
+            session.id = id,
+            client = client.as_deref().unwrap_or_default(),
+            decoders = %capabilities.summary(),
+            display.width = capabilities.display.width,
+            display.height = capabilities.display.height,
+            display.refresh_hz = capabilities.display.refresh_hz,
+            kept,
+            "client capabilities"
+        );
+    }
     let answer = session
         .offer(SessionDescription { kind: SdpKind::Offer, sdp })
         .await

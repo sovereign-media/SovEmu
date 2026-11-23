@@ -416,16 +416,21 @@ impl SessionsMutation {
 
     /// Answers a client's WebRTC offer (SDP) for a session with the worker's answer (SDP).
     /// `client` names the app and device (`web`, `android 1.4.0 (Mi TV)`), as its stats do,
-    /// for the admin's sessions page.
+    /// for the admin's sessions page. `capabilities` is what the client can decode and show:
+    /// the whole document, every time. It is kept against the sign-in's device; `BAD_REQUEST`
+    /// for one of another version (the message asks the player to update the app) or one that
+    /// does not hold together.
     async fn session_offer(
         &self,
         ctx: &Context<'_>,
         id: ID,
         sdp: String,
         client: Option<String>,
+        capabilities: Option<crate::capabilities::ClientCapabilities>,
     ) -> Result<String> {
         let user = user(ctx).await?;
-        crate::api::offer(state(ctx), &user, &id, sdp, client).await.api()
+        let offer = crate::api::Offer { sdp, client, capabilities };
+        crate::api::offer(state(ctx), &user, request_headers(ctx), &id, offer).await.api()
     }
 
     /// Presses the console's reset button.
