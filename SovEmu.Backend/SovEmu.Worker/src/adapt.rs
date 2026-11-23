@@ -24,6 +24,43 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+/// What the video is really being sent at: the encoded bytes of the last [`SEND_WINDOW`].
+#[derive(Debug, Default)]
+pub(crate) struct SendRate {
+    /// Each frame sent: when, and its bytes.
+    frames: VecDeque<(Instant, usize)>,
+}
+
+/// The stretch a send rate is taken over: long enough to smooth one large frame, short enough
+/// to follow a picture that turns busy.
+const SEND_WINDOW: Duration = Duration::from_secs(2);
+
+impl SendRate {
+    /// A frame of `bytes` was sent at `now`.
+    pub(crate) fn sent(&mut self, bytes: usize, now: Instant) {
+        self.frames.push_back((now, bytes));
+        while self.frames.front().is_some_and(|(at, _)| now.duration_since(*at) > SEND_WINDOW) {
+            self.frames.pop_front();
+        }
+    }
+
+    /// The rate over the window, in kbit/s; none until half a window of frames is held.
+    pub(crate) fn kbps(&self, now: Instant) -> Option<u32> {
+        let (first, _) = self.frames.front()?;
+        let span = now.duration_since(*first);
+        if span < SEND_WINDOW / 2 {
+            return None;
+        }
+        let bytes: usize = self.frames.iter().map(|(_, bytes)| bytes).sum();
+        Some((bytes as f64 * 8.0 / 1000.0 / span.as_secs_f64()) as u32)
+    }
+
+    /// A new client: nothing sent to it yet.
+    pub(crate) fn clear(&mut self) {
+        self.frames.clear();
+    }
+}
+
 /// The most one raise takes the bitrate to: a quarter more (rounded up, so it is always worth
 /// an encoder's reopen).
 fn raise_step(kbps: u32) -> u32 {
@@ -165,6 +202,8 @@ pub(crate) struct Adaptation {
     audio_kbps: u32,
     /// What the estimate leaves for video; none before the first one.
     network_kbps: Option<u32>,
+    /// What the video is being sent at now ([`SendRate`]); none until it is known.
+    sending_kbps: Option<u32>,
     /// The recent estimates (when, bit/s), for their median.
     estimates: VecDeque<(Instant, u64)>,
     /// The bitrate the client last struggled above; none while it has not.
@@ -194,6 +233,7 @@ impl Adaptation {
             limits,
             audio_kbps,
             network_kbps: None,
+            sending_kbps: None,
             estimates: VecDeque::new(),
             client_kbps: None,
             bad: 0,
@@ -284,8 +324,26 @@ impl Adaptation {
         recent.sort_unstable();
         let median = recent[recent.len() / 2];
         let usable = (median as f64 * ESTIMATE_SHARE / 1000.0) as i64 - i64::from(self.audio_kbps);
-        let Limits { min_kbps, max_kbps, .. } = self.limits;
-        self.network_kbps = Some(usable.clamp(i64::from(min_kbps), i64::from(max_kbps)) as u32);
+        let Limits { min_kbps, start_kbps, max_kbps } = self.limits;
+        let allowed = usable.clamp(i64::from(min_kbps), i64::from(max_kbps)) as u32;
+        // An estimate is only as good as what was sent to take it: a quiet picture sends a
+        // fraction of its bitrate, and the estimator then sags towards that fraction at the
+        // first late packet, on a link with room to spare (a LAN's estimate swung between 1.2
+        // and 9.2 Mbit/s that way, and the player was told of a "slow connection" every
+        // fifteen seconds). So an estimate lowers the bitrate only when the stream is sending
+        // more than it leaves: that is a connection being overrun. One the stream is already
+        // under proves nothing, and the bitrate stays; if the link really has shrunk, the
+        // next busy picture goes over the estimate and is cut then.
+        let lowers = allowed < self.network_kbps.unwrap_or(start_kbps);
+        if lowers && self.sending_kbps.is_some_and(|sending| i64::from(sending) <= usable) {
+            return;
+        }
+        self.network_kbps = Some(allowed);
+    }
+
+    /// Takes what the video is being sent at now, by which a falling estimate is judged.
+    pub(crate) fn sending(&mut self, kbps: Option<u32>) {
+        self.sending_kbps = kbps;
     }
 
     /// Takes a client's stats, with the bitrate in use while it measured them.
@@ -437,6 +495,58 @@ mod tests {
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         a.estimate(bps, *BASE + ESTIMATE_WINDOW * 5 * (n as u32 + 1));
+    }
+
+    #[test]
+    fn a_falling_estimate_cuts_only_a_stream_that_is_over_it() {
+        // A stream that starts at its ceiling, so the only way is down.
+        let capped = Limits { min_kbps: 300, start_kbps: 5000, max_kbps: 5000 };
+        let mut a = Adaptation::new(capped, 128);
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        // A LAN: the estimate allows the start rate and more.
+        for at in [0, 200, 400] {
+            a.estimate(9_000_000, ms(at));
+        }
+        assert_eq!(a.decide(5000, false, ms(400)), None, "already at the start rate");
+        // A quiet picture sends 600 kbit/s, and the estimate sags to 1.2 Mbit/s at a late
+        // packet. The stream is under it: nothing is overrun, and nothing is cut.
+        a.sending(Some(600));
+        for at in [3000, 3200, 3400, 3600] {
+            a.estimate(1_200_000, ms(at));
+        }
+        assert_eq!(a.decide(5000, false, ms(3600)), None);
+        // The picture turns busy and the stream sends 4 Mbit/s against that estimate: now the
+        // connection is being overrun, and the bitrate is cut at once.
+        a.sending(Some(4000));
+        a.estimate(1_200_000, ms(3800));
+        let cut = a.decide(5000, false, ms(3800)).expect("cut for a connection overrun");
+        assert!(cut < 1000, "{cut}");
+        // Before the send rate is known, an estimate is taken at its word, as it always was.
+        let mut unknown = Adaptation::new(capped, 128);
+        for at in [0, 200, 400] {
+            unknown.estimate(1_200_000, ms(at));
+        }
+        assert!(unknown.decide(5000, false, ms(400)).is_some_and(|kbps| kbps < 1000));
+    }
+
+    #[test]
+    fn the_send_rate_is_what_went_out_over_the_last_two_seconds() {
+        let mut rate = SendRate::default();
+        let t = Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        assert_eq!(rate.kbps(t), None);
+        // 60 frames a second of 1250 bytes: 600 kbit/s.
+        for n in 0..=180 {
+            rate.sent(1250, ms(n * 1000 / 60));
+            if n == 30 {
+                assert_eq!(rate.kbps(ms(500)), None, "half a second is too little to say");
+            }
+        }
+        let kbps = rate.kbps(ms(3000)).unwrap();
+        assert!((590..=620).contains(&kbps), "{kbps}");
+        rate.clear();
+        assert_eq!(rate.kbps(ms(3000)), None);
     }
 
     #[test]
