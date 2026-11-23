@@ -1,13 +1,14 @@
 // BIOS, for admins: the BIOS check with each file's good dumps' MD5s (copyable) and each
-// system's folder in full on the server. Read-only: files are added on the server
-// (`SOVEMU_BIOS_DIR`). `?id=psx` scrolls to one system. Everyone else has `/bios/`.
+// system's folder in full on the server, in the same sortable, searchable table as `/bios/`.
+// Read-only: files are added on the server (`SOVEMU_BIOS_DIR`). `?id=psx` starts the search on
+// one system. Everyone else has `/bios/`.
 
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { summary, withBios } from "../../lib/bios";
 import { q } from "../../lib/data";
-import { SystemCard } from "../BiosCards";
+import { BiosTable } from "../BiosTable";
 import { Button } from "../ui/button";
 import { panel } from "../ui/primitives";
 import AdminPage, { EnvLine, ErrorNote } from "./AdminPage";
@@ -17,11 +18,6 @@ function Bios() {
   const bios = useQuery({ ...q.bios(), staleTime: 0 });
   const dir = useQuery(q.biosDir());
   const wanted = useRef(new URLSearchParams(location.search).get("id"));
-
-  useEffect(() => {
-    if (bios.data && wanted.current)
-      document.getElementById(`bios-${wanted.current}`)?.scrollIntoView({ block: "start" });
-  }, [bios.data]);
 
   const shown = bios.data ? withBios(bios.data) : [];
   return (
@@ -45,9 +41,7 @@ function Bios() {
           </span>
         </p>
       </section>
-      {shown.map((s) => (
-        <SystemCard key={s.id} system={s} bios={s.bios} admin biosDir={dir.data} current={s.id === wanted.current} />
-      ))}
+      {bios.data && <BiosTable systems={bios.data} initialSystem={wanted.current} admin biosDir={dir.data} />}
     </>
   );
 }

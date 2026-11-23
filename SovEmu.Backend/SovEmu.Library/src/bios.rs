@@ -233,6 +233,150 @@ pub(crate) const SPECS: &[Spec] = &[
         }],
     },
     Spec {
+        system: "segacd",
+        core_path: "",
+        beside_games: false,
+        groups: &[
+            Group {
+                label: "BIOS (USA)",
+                importance: Importance::Required,
+                help: "American Sega CD games need it. Genesis Plus GX picks the BIOS by the \
+                       game's region, so keep the one for each region you play.",
+                kind: Kind::AnyOf(&[one(
+                    "bios_CD_U.bin",
+                    "Sega CD BIOS (USA)",
+                    131_072,
+                    &["2efd74e3232ff260e371b99f84024f7f", "854b9150240a198070150e4566ae1290"],
+                )]),
+            },
+            Group {
+                label: "BIOS (Europe)",
+                importance: Importance::Required,
+                help: "European Mega-CD games need it.",
+                kind: Kind::AnyOf(&[one(
+                    "bios_CD_E.bin",
+                    "Mega-CD BIOS (Europe)",
+                    131_072,
+                    &["e66fa1dc5820d254611fdcdba0662372"],
+                )]),
+            },
+            Group {
+                label: "BIOS (Japan)",
+                importance: Importance::Required,
+                help: "Japanese Mega-CD games need it.",
+                kind: Kind::AnyOf(&[one(
+                    "bios_CD_J.bin",
+                    "Mega-CD BIOS (Japan)",
+                    131_072,
+                    &["278a9397d192149e84e820ac621a8edd"],
+                )]),
+            },
+        ],
+    },
+    Spec {
+        system: "pcenginecd",
+        core_path: "",
+        beside_games: false,
+        groups: &[Group {
+            label: "System Card",
+            importance: Importance::Required,
+            help: "Every CD game needs the Super CD-ROM² System Card 3.0. HuCard games (the \
+                   PC Engine folder) need nothing.",
+            kind: Kind::AnyOf(&[one(
+                "syscard3.pce",
+                "Super CD-ROM² System Card 3.0",
+                262_144,
+                &["38179df8f4ac870017db21ebcbf53114"],
+            )]),
+        }],
+    },
+    Spec {
+        system: "atari7800",
+        core_path: "",
+        beside_games: false,
+        groups: &[Group {
+            label: "BIOS",
+            importance: Importance::Optional,
+            help: "Shows the Atari logo at start-up. Games play the same without it.",
+            kind: Kind::AnyOf(&[
+                one(
+                    "7800 BIOS (U).rom",
+                    "7800 BIOS (USA)",
+                    4096,
+                    &["0763f1ffb006ddbe32e52d497ee848ae"],
+                ),
+                one(
+                    "7800 BIOS (E).rom",
+                    "7800 BIOS (Europe)",
+                    16_384,
+                    &["397bb566584be7b9764e7a68974c4263"],
+                ),
+            ]),
+        }],
+    },
+    Spec {
+        system: "lynx",
+        core_path: "",
+        beside_games: false,
+        groups: &[Group {
+            label: "Boot ROM",
+            importance: Importance::Required,
+            help: "Handy cannot start a game without the Lynx boot ROM.",
+            kind: Kind::AnyOf(&[one(
+                "lynxboot.img",
+                "Lynx boot ROM",
+                512,
+                &["fcd403db69f54290b51035d82f835e7b"],
+            )]),
+        }],
+    },
+    Spec {
+        system: "intellivision",
+        core_path: "",
+        beside_games: false,
+        groups: &[
+            Group {
+                label: "Executive ROM",
+                importance: Importance::Required,
+                help: "FreeIntv needs both the Executive ROM and the Graphics ROM.",
+                kind: Kind::AnyOf(&[one(
+                    "exec.bin",
+                    "Intellivision Executive ROM",
+                    8192,
+                    &["62e761035cb657903761800f4437b8af"],
+                )]),
+            },
+            Group {
+                label: "Graphics ROM",
+                importance: Importance::Required,
+                help: "FreeIntv needs both the Executive ROM and the Graphics ROM.",
+                kind: Kind::AnyOf(&[one(
+                    "grom.bin",
+                    "Intellivision Graphics ROM",
+                    2048,
+                    &["0cd5946c6473e42e8e4c2137785e427f"],
+                )]),
+            },
+        ],
+    },
+    Spec {
+        system: "colecovision",
+        core_path: "",
+        beside_games: false,
+        groups: &[Group {
+            label: "BIOS",
+            importance: Importance::Required,
+            help: "Gearcoleco cannot start a game without the ColecoVision OS-7 BIOS.",
+            kind: Kind::AnyOf(&[Known {
+                name: "colecovision.rom",
+                alt: &["coleco.rom"],
+                label: "ColecoVision OS-7 BIOS",
+                size: 8192,
+                md5: &["2c66f5911e5b42b8ebe113403548eee7"],
+            }]),
+        }],
+    },
+    Spec {
         system: "psx",
         core_path: "",
         beside_games: false,

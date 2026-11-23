@@ -2154,7 +2154,7 @@ type Query {
 	"""
 	sharedCollections: [Collection!]!
 	"""
-	Every system SovEmu offers (hidden ones left out), in SovEmu's order.
+	The systems with games (hidden ones and those with none left out), in SovEmu's order.
 	"""
 	systems: [System!]!
 	system(id: ID!): System

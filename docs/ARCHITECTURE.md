@@ -6,7 +6,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 
 | Area | Decision |
 |---|---|
-| Systems | 2D cores (NES, SNES, GB/GBC/GBA, Mega Drive, Master System, Game Gear, PS1, arcade, Neo Geo) and, since the user asked for them, 3D cores that render with OpenGL: N64 (Mupen64Plus-Next), Dreamcast (Flycast), GameCube (Dolphin) and PS2 (PCSX2). |
+| Systems | 2D cores (NES, SNES, GB/GBC/GBA, Virtual Boy, Mega Drive, Master System, Game Gear, SG-1000, Mega-CD, 32X, PC Engine and its CD, Atari 2600/7800/Lynx, Neo Geo Pocket, WonderSwan, Intellivision, ColecoVision, Vectrex, PS1, arcade, Neo Geo; a system is shown only once it has games) and, since the user asked for them, 3D cores that render with OpenGL: N64 (Mupen64Plus-Next), Dreamcast (Flycast), GameCube (Dolphin) and PS2 (PCSX2). |
 | Server | Linux. A GPU is optional: the worker renders 3D cores through headless EGL on whichever GPU passes a startup probe (AMD/Intel via Mesa), else on Mesa's software renderer, llvmpipe (playable for lighter games, slow for GameCube and PS2). Video encoding stays on the CPU. |
 | Scale | Personal/family, single node |
 | Database | SQLite (WAL mode) via `sqlx` with migrations; large files stay on disk |

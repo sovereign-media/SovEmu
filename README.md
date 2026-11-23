@@ -32,7 +32,8 @@ docker compose up --build             # then open http://localhost:8080
 
 The first visit creates the admin account. `./data` is mounted at `/data`: the database,
 `data/roms/` (one folder per system: `nes/`, `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`,
-`mastersystem/`, `gamegear/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …), `data/bios/`
+`mastersystem/`, `gamegear/`, `segacd/`, `pcengine/`, `atari2600/`, `psx/`, `n64/`, `dreamcast/`,
+`gamecube/`, `ps2/`, …; the full list is under [Supported systems](#supported-systems)), `data/bios/`
 for BIOS files (see [BIOS files](#bios-files)) and `data/saves/`. Browsers on other machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
 UDP 50000-50009 reachable.
 
@@ -43,7 +44,8 @@ BIOS files live on the server, never in the library: one folder per system in `d
 Put each file under the name below; letter case matters. **Systems → BIOS files** in the web
 client checks each one by name and MD5 against libretro's list of known dumps (`System.dat`),
 finds known dumps under the wrong name or in the wrong folder, and the Systems menu marks a
-system that cannot start games without one.
+system that cannot start games without one. It is one table, a row per file, for the systems
+that have games: sort it by any column, or search it by system or file name.
 
 | Folder | Files | Without them |
 |---|---|---|
@@ -56,6 +58,12 @@ system that cannot start games without one.
 | `bios/nes/` | `disksys.rom` | no Famicom Disk System games |
 | `bios/gb/`, `bios/gbc/` | `gb_bios.bin`, `gbc_bios.bin` | no boot logo |
 | `bios/megadrive/`, `bios/mastersystem/`, `bios/gamegear/` | `bios_MD.bin`; `bios_E.sms`, `bios_U.sms`, `bios_J.sms`; `bios.gg` | no start-up screen |
+| `bios/segacd/` | `bios_CD_U.bin`, `bios_CD_E.bin`, `bios_CD_J.bin`, one per region you play | **no games of that region start** |
+| `bios/pcenginecd/` | `syscard3.pce` | **no CD games start** (HuCards in `pcengine/` need nothing) |
+| `bios/lynx/` | `lynxboot.img` | **no games start** |
+| `bios/intellivision/` | `exec.bin` and `grom.bin` | **no games start** |
+| `bios/colecovision/` | `colecovision.rom` (or `coleco.rom`) | **no games start** |
+| `bios/atari7800/` | `7800 BIOS (U).rom` or `7800 BIOS (E).rom` | no start-up screen |
 | `bios/gamecube/` | `USA/IPL.bin`, `EUR/IPL.bin`, `JAP/IPL.bin` | no start-up animation |
 
 Each core finds its files where it expects them: the worker links the system's folder into
@@ -281,9 +289,39 @@ using a service that rejects credentials or runs out of quota, and retries those
 Games no service found are asked again once a service they were not asked is configured, so
 adding credentials later fills in the library on the next scan, without fetching everything again.
 
-Supported systems: NES, SNES, Game Boy, Game Boy Color, GBA, Mega Drive, Master System, Game
-Gear, PlayStation, and arcade / Neo Geo (FBNeo). N64, Dreamcast, GameCube and PS2 need GPU cores,
-which SovEmu doesn't run yet, so they don't appear.
+## Supported systems
+
+A system is shown once its folder has at least one game: one with none is left out of every list
+(browsing, search, the BIOS check and the admin's per-system pages), however many SovEmu can play.
+Folder names follow Recalbox and Batocera; the aliases each system also accepts are in
+`SovEmu.Library/src/systems.rs`.
+
+| Folder | System | Core |
+|---|---|---|
+| `nes` | NES / Famicom | FCEUmm |
+| `snes` | Super Nintendo | Snes9x |
+| `gb`, `gbc` | Game Boy, Game Boy Color | Gambatte (mGBA) |
+| `gba` | Game Boy Advance | mGBA |
+| `virtualboy` | Virtual Boy | Beetle VB |
+| `megadrive`, `mastersystem`, `gamegear`, `sg1000` | Mega Drive / Genesis, Master System, Game Gear, SG-1000 | Genesis Plus GX |
+| `segacd` | Mega-CD / Sega CD | Genesis Plus GX |
+| `sega32x` | 32X | PicoDrive |
+| `pcengine`, `pcenginecd` | PC Engine / TurboGrafx-16, and its CD games | Beetle PCE Fast |
+| `atari2600` | Atari 2600 | Stella |
+| `atari7800` | Atari 7800 | ProSystem |
+| `lynx` | Atari Lynx | Handy |
+| `ngp`, `ngpc` | Neo Geo Pocket, Neo Geo Pocket Color | Beetle NeoPop |
+| `wswan`, `wswanc` | WonderSwan, WonderSwan Color | Beetle WonderSwan |
+| `intellivision` | Intellivision | FreeIntv |
+| `colecovision` | ColecoVision | Gearcoleco |
+| `vectrex` | Vectrex | vecx |
+| `psx` | PlayStation | PCSX-ReARMed |
+| `fbneo`, `neogeo` | Arcade, Neo Geo | FinalBurn Neo |
+| `n64`, `dreamcast`, `gamecube`, `ps2` | Nintendo 64, Dreamcast, GameCube, PlayStation 2 | Mupen64Plus-Next, Flycast, Dolphin, LRPS2 (3D: see [3D systems and the GPU](#3d-systems-and-the-gpu)) |
+
+Everything above the 3D systems renders in software and needs little CPU. Intellivision and
+ColecoVision games that lean on the keypad are awkward on a gamepad: the keys SovEmu maps are on
+each system's controls diagram.
 
 ## Configuration
 

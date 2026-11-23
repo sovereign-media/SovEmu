@@ -92,7 +92,7 @@ fn labels(system: &str) -> Vec<(PadButton, &'static str)> {
         ],
         "gb" | "gbc" => &[(A, "A"), (B, "B"), (Start, "Start"), (Select, "Select")],
         "gba" => &[(A, "A"), (B, "B"), (L, "L"), (R, "R"), (Start, "Start"), (Select, "Select")],
-        "megadrive" => &[
+        "megadrive" | "segacd" | "sega32x" => &[
             (Y, "A"),
             (B, "B"),
             (A, "C"),
@@ -102,8 +102,46 @@ fn labels(system: &str) -> Vec<(PadButton, &'static str)> {
             (Start, "Start"),
             (Select, "Mode"),
         ],
-        "mastersystem" => &[(B, "1"), (A, "2"), (Start, "Pause")],
+        "mastersystem" | "sg1000" => &[(B, "1"), (A, "2"), (Start, "Pause")],
         "gamegear" => &[(B, "1"), (A, "2"), (Start, "Start")],
+        "pcengine" | "pcenginecd" => &[(B, "II"), (A, "I"), (Select, "Select"), (Start, "Run")],
+        "atari2600" => &[(B, "Fire"), (Select, "Select"), (Start, "Reset")],
+        "atari7800" => &[(B, "1"), (A, "2"), (Select, "Select"), (Start, "Pause"), (X, "Reset")],
+        "lynx" => &[(B, "B"), (A, "A"), (L, "Opt 1"), (R, "Opt 2"), (Start, "Pause")],
+        "ngp" | "ngpc" => &[(B, "A"), (A, "B"), (Start, "Option")],
+        "wswan" | "wswanc" => &[(B, "B"), (A, "A"), (Start, "Start")],
+        // The right D-pad is on L2, R2, L3 and R3, as Beetle VB maps it.
+        "virtualboy" => &[
+            (B, "B"),
+            (A, "A"),
+            (L, "L"),
+            (R, "R"),
+            (L2, "R↑"),
+            (L3, "R↓"),
+            (R2, "R←"),
+            (R3, "R→"),
+            (Start, "Start"),
+            (Select, "Select"),
+        ],
+        "intellivision" => {
+            &[(B, "Left"), (A, "Right"), (Y, "Top"), (L2, "Clear"), (R2, "Enter"), (Start, "Pause")]
+        }
+        // The keypad's 9 and 0 are on the left stick, as Gearcoleco maps them.
+        "colecovision" => &[
+            (B, "L"),
+            (A, "R"),
+            (Y, "1"),
+            (X, "2"),
+            (L, "3"),
+            (R, "4"),
+            (L2, "5"),
+            (R2, "6"),
+            (L3, "7"),
+            (R3, "8"),
+            (Start, "*"),
+            (Select, "#"),
+        ],
+        "vectrex" => &[(A, "1"), (B, "2"), (X, "3"), (Y, "4")],
         "psx" | "ps2" => &[
             (B, "✕"),
             (A, "○"),
@@ -301,7 +339,7 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.circle("A", 137.0, 47.0, 10.0);
             vec![rect(8.0, 25.0, 144.0, 56.0, 22.0), recess(46.0, 31.0, 68.0, 44.0, 2.0)]
         }
-        "megadrive" => {
+        "megadrive" | "segacd" | "sega32x" => {
             k.add("SELECT", 122.0, 23.0, 18.0, 6.0, 3.0);
             k.dpad(RETRO_DPAD, 38.0, 55.0, 24.0);
             k.add("START", 72.0, 46.0, 14.0, 5.0, 2.5);
@@ -313,7 +351,7 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.circle("A", 128.0, 54.0, 11.0);
             vec![rect(10.0, 28.0, 140.0, 52.0, 24.0)]
         }
-        "mastersystem" => {
+        "mastersystem" | "sg1000" => {
             k.dpad(RETRO_DPAD, 40.0, 56.0, 26.0);
             k.add("START", 72.0, 38.0, 16.0, 6.0, 2.0);
             k.circle("B", 108.0, 58.0, 13.0);
@@ -326,6 +364,107 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.circle("B", 124.0, 61.0, 11.0);
             k.circle("A", 138.0, 52.0, 11.0);
             vec![rect(4.0, 24.0, 152.0, 60.0, 26.0), recess(48.0, 31.0, 64.0, 46.0, 3.0)]
+        }
+        "pcengine" | "pcenginecd" => {
+            k.dpad(RETRO_DPAD, 38.0, 55.0, 24.0);
+            k.add("SELECT", 64.0, 60.0, 12.0, 5.0, 2.5);
+            k.add("START", 82.0, 60.0, 12.0, 5.0, 2.5);
+            k.circle("B", 112.0, 58.0, 14.0);
+            k.circle("A", 131.0, 58.0, 14.0);
+            vec![rect(10.0, 34.0, 140.0, 44.0, 8.0), recess(56.0, 54.0, 46.0, 16.0, 2.0)]
+        }
+        // A joystick on a square base, with the console's switches below it.
+        "atari2600" | "atari7800" => {
+            if id == "atari2600" {
+                k.circle("B", 50.0, 28.0, 16.0);
+                k.dpad(RETRO_DPAD, 92.0, 60.0, 30.0);
+                k.add("SELECT", 40.0, 84.0, 16.0, 6.0, 2.0);
+                k.add("START", 104.0, 84.0, 16.0, 6.0, 2.0);
+            } else {
+                k.circle("B", 46.0, 28.0, 14.0);
+                k.circle("A", 114.0, 28.0, 14.0);
+                k.dpad(RETRO_DPAD, 80.0, 58.0, 28.0);
+                k.add("SELECT", 38.0, 84.0, 16.0, 6.0, 2.0);
+                k.add("START", 72.0, 84.0, 16.0, 6.0, 2.0);
+                k.add("X", 106.0, 84.0, 16.0, 6.0, 2.0);
+            }
+            let (cx, cy) = if id == "atari2600" { (92.0, 60.0) } else { (80.0, 58.0) };
+            vec![rect(30.0, 10.0, 100.0, 86.0, 8.0), recess(cx - 20.0, cy - 20.0, 40.0, 40.0, 20.0)]
+        }
+        "lynx" => {
+            k.dpad(RETRO_DPAD, 24.0, 52.0, 20.0);
+            k.circle("START", 24.0, 74.0, 6.0);
+            k.add("L", 120.0, 30.0, 12.0, 5.0, 2.5);
+            k.add("R", 136.0, 30.0, 12.0, 5.0, 2.5);
+            k.circle("B", 128.0, 62.0, 11.0);
+            k.circle("A", 142.0, 49.0, 11.0);
+            vec![rect(4.0, 24.0, 152.0, 58.0, 20.0), recess(44.0, 30.0, 70.0, 46.0, 3.0)]
+        }
+        "ngp" | "ngpc" => {
+            k.dpad(RETRO_DPAD, 30.0, 52.0, 20.0);
+            k.circle("START", 30.0, 74.0, 6.0);
+            k.circle("B", 122.0, 60.0, 11.0);
+            k.circle("A", 136.0, 48.0, 11.0);
+            vec![rect(10.0, 22.0, 140.0, 62.0, 24.0), recess(50.0, 28.0, 60.0, 50.0, 3.0)]
+        }
+        "wswan" | "wswanc" => {
+            k.dpad(RETRO_DPAD, 22.0, 54.0, 20.0);
+            k.add("START", 124.0, 74.0, 12.0, 5.0, 2.5);
+            k.circle("B", 130.0, 60.0, 11.0);
+            k.circle("A", 144.0, 50.0, 11.0);
+            vec![rect(4.0, 26.0, 152.0, 56.0, 10.0), recess(40.0, 32.0, 78.0, 44.0, 3.0)]
+        }
+        "virtualboy" => {
+            k.add("L", 20.0, 22.0, 30.0, 6.0, 3.0);
+            k.add("R", 110.0, 22.0, 30.0, 6.0, 3.0);
+            k.dpad(RETRO_DPAD, 34.0, 46.0, 22.0);
+            k.dpad(["L2", "L3", "R2", "R3"], 126.0, 46.0, 22.0);
+            k.add("SELECT", 56.0, 60.0, 9.0, 4.0, 2.0);
+            k.add("START", 68.0, 60.0, 9.0, 4.0, 2.0);
+            k.circle("B", 96.0, 70.0, 10.0);
+            k.circle("A", 110.0, 64.0, 10.0);
+            gamepad_body()
+        }
+        // A tall controller: side buttons, a keypad and a disc below it.
+        "intellivision" => {
+            k.add("Y", 48.0, 24.0, 7.0, 14.0, 3.0);
+            k.add("B", 48.0, 44.0, 7.0, 14.0, 3.0);
+            k.add("A", 105.0, 44.0, 7.0, 14.0, 3.0);
+            k.add("START", 74.0, 12.0, 12.0, 5.0, 2.0);
+            k.add("L2", 64.0, 42.0, 12.0, 6.0, 1.0);
+            k.add("R2", 84.0, 42.0, 12.0, 6.0, 1.0);
+            k.dpad(RETRO_DPAD, 80.0, 72.0, 26.0);
+            vec![
+                rect(55.0, 4.0, 50.0, 92.0, 6.0),
+                recess(62.0, 10.0, 36.0, 40.0, 2.0),
+                recess(66.0, 58.0, 28.0, 28.0, 14.0),
+            ]
+        }
+        // A joystick over a keypad, with a fire button on each side.
+        "colecovision" => {
+            k.dpad(RETRO_DPAD, 80.0, 20.0, 24.0);
+            k.add("B", 48.0, 30.0, 7.0, 14.0, 3.0);
+            k.add("A", 105.0, 30.0, 7.0, 14.0, 3.0);
+            let keypad =
+                [["Y", "X", "L"], ["R", "L2", "R2"], ["L3", "R3", ""], ["START", "", "SELECT"]];
+            for (row, keys) in keypad.iter().enumerate() {
+                for (col, key) in keys.iter().enumerate() {
+                    if !key.is_empty() {
+                        let (x, y) = (66.0 + col as f64 * 10.0, 40.0 + row as f64 * 10.0);
+                        k.add(key, x, y, 8.0, 7.0, 1.0);
+                    }
+                }
+            }
+            vec![rect(55.0, 4.0, 50.0, 84.0, 6.0), recess(62.0, 37.0, 36.0, 44.0, 2.0)]
+        }
+        // A flat pad: a stick on the left and four buttons in a row.
+        "vectrex" => {
+            k.dpad(RETRO_DPAD, 34.0, 50.0, 24.0);
+            k.circle("A", 84.0, 50.0, 12.0);
+            k.circle("B", 102.0, 50.0, 12.0);
+            k.circle("X", 120.0, 50.0, 12.0);
+            k.circle("Y", 138.0, 50.0, 12.0);
+            vec![rect(6.0, 30.0, 148.0, 40.0, 6.0), recess(20.0, 36.0, 28.0, 28.0, 14.0)]
         }
         "psx" | "ps2" => {
             k.add("L2", 20.0, 14.0, 30.0, 6.0, 3.0);

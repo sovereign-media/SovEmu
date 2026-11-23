@@ -30,7 +30,8 @@ const fn core(
     licence: &'static str,
     source: &'static str,
 ) -> CoreLicence {
-    let non_commercial = matches!(licence.as_bytes(), b"Non-commercial");
+    // The old MAME licence (PicoDrive's) forbids commercial use too.
+    let non_commercial = matches!(licence.as_bytes(), b"Non-commercial" | b"MAME");
     CoreLicence { name, label, licence, non_commercial, source }
 }
 
@@ -48,6 +49,32 @@ pub const CORES: &[CoreLicence] = &[
     ),
     core("pcsx_rearmed", "PCSX-ReARMed", "GPLv2", "https://github.com/libretro/pcsx_rearmed"),
     core("fbneo", "FinalBurn Neo", "Non-commercial", "https://github.com/libretro/FBNeo"),
+    core("picodrive", "PicoDrive", "MAME", "https://github.com/libretro/picodrive"),
+    core(
+        "mednafen_pce_fast",
+        "Beetle PCE Fast",
+        "GPLv2",
+        "https://github.com/libretro/beetle-pce-fast-libretro",
+    ),
+    core("stella", "Stella", "GPLv2", "https://github.com/stella-emu/stella"),
+    core("prosystem", "ProSystem", "GPLv2", "https://github.com/libretro/prosystem-libretro"),
+    core("handy", "Handy", "Zlib", "https://github.com/libretro/libretro-handy"),
+    core(
+        "mednafen_ngp",
+        "Beetle NeoPop",
+        "GPLv2",
+        "https://github.com/libretro/beetle-ngp-libretro",
+    ),
+    core(
+        "mednafen_wswan",
+        "Beetle WonderSwan",
+        "GPLv2",
+        "https://github.com/libretro/beetle-wswan-libretro",
+    ),
+    core("mednafen_vb", "Beetle VB", "GPLv2", "https://github.com/libretro/beetle-vb-libretro"),
+    core("freeintv", "FreeIntv", "GPLv2+", "https://github.com/libretro/FreeIntv"),
+    core("gearcoleco", "Gearcoleco", "GPLv3", "https://github.com/drhelius/Gearcoleco"),
+    core("vecx", "vecx", "GPLv3", "https://github.com/libretro/libretro-vecx"),
     core(
         "mupen64plus_next",
         "Mupen64Plus-Next",
@@ -94,7 +121,7 @@ mod tests {
     #[test]
     fn non_commercial_cores_are_marked() {
         let marked: Vec<&str> = CORES.iter().filter(|c| c.non_commercial).map(|c| c.name).collect();
-        assert_eq!(marked, ["snes9x", "genesis_plus_gx", "fbneo"]);
+        assert_eq!(marked, ["snes9x", "genesis_plus_gx", "fbneo", "picodrive"]);
         assert_eq!(licence("mgba").map(|c| c.licence), Some("MPLv2.0"));
         assert_eq!(licence("nope"), None);
     }

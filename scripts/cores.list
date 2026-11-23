@@ -18,7 +18,8 @@
 #                                                on the BIOS folder)
 #
 # Licences (SovEmu.Library/src/cores.rs, shown on the admin Cores page): snes9x,
-# genesis_plus_gx and fbneo are non-commercial, the rest GPL or MPL. SovEmu is non-commercial,
+# genesis_plus_gx and fbneo are non-commercial, picodrive is under the (non-commercial) MAME
+# licence, handy is zlib, the rest GPL or MPL. SovEmu is non-commercial,
 # so all are usable (see docs/ARCHITECTURE.md).
 
 release 1.22.2 4b7ed8dc97d4bf035fce182c64b5658c7662e2e9e5d42129538afbd4b6096307
@@ -30,6 +31,18 @@ core gambatte
 core genesis_plus_gx
 core pcsx_rearmed
 core fbneo
+# Low-spec 2D systems, all rendered in software.
+core picodrive
+core mednafen_pce_fast
+core stella
+core prosystem
+core handy
+core mednafen_ngp
+core mednafen_wswan
+core mednafen_vb
+core freeintv
+core gearcoleco
+core vecx
 # 3D cores: render with OpenGL through the frontend's EGL context (a GPU, or Mesa's llvmpipe).
 core mupen64plus_next
 core flycast
