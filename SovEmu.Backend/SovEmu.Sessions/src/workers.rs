@@ -694,6 +694,12 @@ impl Workers {
         );
         let started = Instant::now();
         let mut command = self.worker_command("session", port);
+        // Workarounds the core's build needs (a Mesa extension hidden from a buggy renderer).
+        let core = core_name(&launch.core);
+        for (var, value) in sovemu_library::cores::worker_env(core.trim_end_matches("_libretro")) {
+            tracing::debug!(parent: &span, var, value, "core workaround");
+            command.env(var, value);
+        }
         command
             .arg("--video-kbps")
             .arg(self.config.video_kbps.to_string())

@@ -43,7 +43,9 @@ instead (as Sovereign's server takes its SPA).
   pinned commits. x86_64 only, because stable releases have no Linux arm64 cores. Moving to a
   new release also moves `FBNEO_COMMIT` (`SovEmu.Library/src/info/fbneo.rs`) and
   `LIBRETRO_RELEASE`, and a new core needs its licence, in `SovEmu.Library/src/cores.rs` (a
-  test checks that table against `cores.list`).
+  test checks that table against `cores.list`). The same file's `worker_env` holds workarounds
+  for bugs in the release's builds (Mupen64Plus-Next's black picture on Mesa): recheck each one
+  when the release moves.
 - **The server never runs a core.** Cores and codecs live only in `sovemu-worker`; the server
   starts one `sovemu-worker session` per game and talks to it over stdin/stdout. Never link
   `RetroHost` or `Media` into `SovEmu.Server` or `SovEmu.Sessions`.
