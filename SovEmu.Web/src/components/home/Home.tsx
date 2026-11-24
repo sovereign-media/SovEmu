@@ -1,6 +1,8 @@
 // Home: a hero of featured games over rows (continue playing, systems, recently added), laid out
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
-// (left/right); A plays or opens; X (or /) searches every system; Start rescans.
+// (left/right); A plays or opens; X (or /) searches every system; Start rescans. A "Continue
+// playing" card opens a panel here (where the player left off, Continue, Game details), open
+// while the URL names its game (`?game=`), so Back from the game or the details comes back to it.
 
 import { useQuery } from "@tanstack/react-query";
 import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
@@ -8,12 +10,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
-import { type Focus, moveFocus, type RowShape, startFocus } from "../../lib/home";
+import { type Focus, moveFocus, type ResumeButton, type RowShape, resumeNav, startFocus } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
-import HintBar from "../HintBar";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { useToast } from "../ui/toast";
+import { useGameInUrl } from "../useGameInUrl";
+import { ContinuePanel } from "./ContinuePanel";
 import { Hero } from "./Hero";
 import { GameCard, Row, SystemCard } from "./Row";
 
@@ -26,6 +29,8 @@ const ADDED = 4;
 const COLLECTIONS = 5;
 
 const play = (g: Game) => go(`/play/?game=${g.id}`);
+/** Plays a game as its Continue panel says: from the auto save, or from the start. */
+const resumePlay = (g: Game, start: "continue" | "new") => go(`/play/?game=${g.id}&start=${start}`);
 /** Opens the game's system with its side panel open (its own URL). */
 const browse = (g: Game) => go(`/system/?id=${encodeURIComponent(g.system)}&game=${g.id}`);
 /** Opens the game's system. */
@@ -49,6 +54,11 @@ function HomeScreen() {
   // Collections are extra: the screen shows without them.
   const error = (home.error ?? allSystems.error)?.message ?? null;
   const load = useCallback(() => invalidate(["home"], ["systems"], ["collections"]), []);
+  // The "Continue playing" game whose panel is open, and the panel's button under the pad.
+  const [resumeId, openResume, closeResume] = useGameInUrl();
+  const resume = (resumeId !== null && feed?.recent.find((g) => g.id === resumeId)) || null;
+  const [resumeAt, setResumeAt] = useState<ResumeButton>("play");
+  useEffect(() => setResumeAt("play"), [resumeId]);
 
   const rows: RowShape[] = useMemo(
     () => [
@@ -63,8 +73,12 @@ function HomeScreen() {
     [feed, systems, collections],
   );
   // Start on the first row with something in it once the feed arrives.
+  // Coming back to an open Continue panel (Back from the game), its card has the focus.
   useEffect(() => {
-    if (feed) setFocus(startFocus(rows));
+    if (!feed) return;
+    const start = startFocus(rows);
+    const i = resumeId === null ? -1 : feed.recent.findIndex((g) => g.id === resumeId);
+    setFocus(i < 0 ? start : { row: RECENT, cols: start.cols.map((c, r) => (r === RECENT ? i : c)) });
   }, [feed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const heroIndex = focus.cols[HERO] ?? 0;
@@ -75,22 +89,34 @@ function HomeScreen() {
       if (!feed) return;
       const col = f.cols[f.row] ?? 0;
       if (f.row === HERO && feed.featured[col]) play(feed.featured[col]);
-      if (f.row === RECENT && feed.recent[col]) play(feed.recent[col]);
+      if (f.row === RECENT && feed.recent[col]) openResume(feed.recent[col].id);
       if (f.row === SYSTEMS && systems[col]) openSystem(systems[col]);
       if (f.row === ADDED && feed.added[col]) browse(feed.added[col]);
       if (f.row === FAVOURITES && feed.favourites[col]) browse(feed.favourites[col]);
       const list = collections[f.row - COLLECTIONS];
       if (list?.games[col]) browse(list.games[col]);
     },
-    [feed, systems, collections],
+    [feed, systems, collections, openResume],
   );
 
   // Pad and keyboard. The handler reads the latest state through a ref.
-  const latest = useRef({ focus, rows, accept });
-  latest.current = { focus, rows, accept };
+  const latest = useRef({ focus, rows, accept, resume, resumeAt, closeResume });
+  latest.current = { focus, rows, accept, resume, resumeAt, closeResume };
   useEffect(() => {
     const nav = listenNav(async (action) => {
-      const { focus, rows, accept } = latest.current;
+      const { focus, rows, accept, resume, resumeAt, closeResume } = latest.current;
+      // The Continue panel, while open, has the pad to itself.
+      if (resume) {
+        const next = resumeNav(resumeAt, action);
+        if (next === "close") return closeResume();
+        if (next && "at" in next) {
+          setNavigating(true);
+          return setResumeAt(next.at);
+        }
+        if (next?.press === "play") return resumePlay(resume, resume.autoSave ? "continue" : "new");
+        if (next?.press === "details") return browse(resume);
+        return;
+      }
       if (action === "accept") return accept(focus);
       if (action === "search") return void go("/search/");
       if (action === "menu") {
@@ -152,7 +178,7 @@ function HomeScreen() {
                 focused={focused(RECENT, i)}
                 color={colorOf(g.system)}
                 short={shortOf(g.system)}
-                onOpen={() => play(g)}
+                onOpen={() => openResume(g.id)}
               />
             ))}
           </Row>
@@ -220,13 +246,14 @@ function HomeScreen() {
           </Row>
         ))}
       </div>
-      <HintBar
-        hints={[
-          { button: "dpad", label: "Choose" },
-          { button: "a", label: "Open" },
-          { button: "x", label: "Search" },
-          { button: "start", label: "Rescan" },
-        ]}
+      <ContinuePanel
+        game={resume}
+        colorOf={colorOf}
+        shortOf={shortOf}
+        focused={navigating ? resumeAt : null}
+        onClose={closeResume}
+        onPlay={(start) => resume && resumePlay(resume, start)}
+        onDetails={() => resume && browse(resume)}
       />
     </main>
   );

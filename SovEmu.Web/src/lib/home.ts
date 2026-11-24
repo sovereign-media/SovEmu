@@ -77,3 +77,20 @@ export function cardArt(
 export function byline(g: Game): string {
   return [g.releaseDate?.slice(0, 4), g.developer ?? g.publisher, g.genre].filter(Boolean).join(" · ");
 }
+
+/** Home's Continue panel's buttons, left to right: Continue (or Play), then Game details. */
+export type ResumeButton = "play" | "details";
+
+/** What a pad or key does while the Continue panel is open: move between its two buttons,
+ *  press the one focused, or close it (Back). Anything else does nothing: the rows behind it
+ *  stay where they are. */
+export function resumeNav(
+  at: ResumeButton,
+  action: NavAction,
+): { at: ResumeButton } | { press: ResumeButton } | "close" | null {
+  if (action === "left") return { at: "play" };
+  if (action === "right") return { at: "details" };
+  if (action === "accept") return { press: at };
+  if (action === "back") return "close";
+  return null;
+}

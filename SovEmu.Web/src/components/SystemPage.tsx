@@ -19,7 +19,6 @@ import {
   filterGames,
   type GameFilters,
   type GameSort,
-  gameFromUrl,
   gridMove,
   jumpStops,
   jumpTo,
@@ -28,7 +27,6 @@ import {
   partsLabel,
   SORTS,
   sortGames,
-  urlWithGame,
 } from "../lib/games";
 import { go } from "../lib/go";
 import { listenNav } from "../lib/nav";
@@ -37,10 +35,10 @@ import { GamePanel } from "./browse/GamePanel";
 import { JumpButton, JumpStrip } from "./browse/JumpStrip";
 import { PartIcon } from "./browse/PartIcon";
 import { CHIP, CHIP_ON, TabStrip, TabStripDivider } from "./browse/TabStrip";
-import HintBar from "./HintBar";
 import Shell from "./Shell";
 import SideNav, { NAV_SPACE } from "./SideNav";
 import { cn } from "./ui/cn";
+import { useGameInUrl } from "./useGameInUrl";
 
 const SORT_KEY = "sovemu.sort";
 /** How long the jump strip rests on a letter before the grid follows it. */
@@ -167,12 +165,10 @@ function Games() {
   const [focus, setFocus] = useState(0);
   // Focus rings show once a pad or the keyboard is used, not for the mouse.
   const [navigating, setNavigating] = useState(false);
-  const [openId, setOpenId] = useState<number | null>(() => gameFromUrl(location.search));
+  const [openId, openGame, closePanel] = useGameInUrl();
   const [jump, setJump] = useState<{ index: number; scrollY: number } | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  /** Whether this page pushed the panel's history entry (so closing it goes Back). */
-  const pushed = useRef(false);
 
   // The system and its games, cached: coming back from a game shows the list at once. Kept in
   // state too, as the panel changes a game in place (favourite, patch) before the server says so.
@@ -185,15 +181,6 @@ function Games() {
     setSystem(system);
     setGames(games);
   }, [read.isSuccess, read.data]);
-
-  useEffect(() => {
-    const onPop = () => {
-      pushed.current = false;
-      setOpenId(gameFromUrl(location.search));
-    };
-    addEventListener("popstate", onPop);
-    return () => removeEventListener("popstate", onPop);
-  }, []);
 
   const shown = useMemo(() => sortGames(filterGames(games, query, filters), sort), [games, query, filters, sort]);
   const stops = useMemo(() => jumpStops(shown), [shown]);
@@ -217,26 +204,6 @@ function Games() {
   }, [openId]);
   const slots: SaveSlot[] = useQuery({ ...q.saves(savesFor ?? 0), enabled: savesFor !== null }).data ?? [];
 
-  /** Opens the panel on a game: a new history entry, or the same one when it is already open. */
-  const openGame = (id: number) => {
-    const url = urlWithGame(location.href, id);
-    if (gameFromUrl(location.search) === null) {
-      history.pushState(null, "", url);
-      pushed.current = true;
-    } else {
-      history.replaceState(null, "", url);
-    }
-    setOpenId(id);
-  };
-  const closePanel = () => {
-    if (gameFromUrl(location.search) === null) return setOpenId(null);
-    if (pushed.current) {
-      history.back(); // popstate closes it
-    } else {
-      history.replaceState(null, "", urlWithGame(location.href, null));
-      setOpenId(null);
-    }
-  };
   const play = (g: Game | null, start: "continue" | "new") => {
     if (g) go(`/play/?game=${g.id}&start=${start}`);
   };
@@ -331,7 +298,6 @@ function Games() {
   if (!system) return null;
   const filterCount = activeFilters(filters) + (query.trim() ? 1 : 0);
   const showJump = sort === "title" && shown.length > 12 && stops.length > 1;
-  const auto = slots.some((s) => s.slot === AUTO_SLOT);
 
   return (
     <>
@@ -435,22 +401,6 @@ function Games() {
           onCancel={cancelJump}
         />
       )}
-      <HintBar
-        hints={
-          open
-            ? [
-                { button: "dpad", label: "Choose" },
-                { button: "a", label: auto ? "Continue" : "Play" },
-                { button: "b", label: "Close" },
-              ]
-            : [
-                { button: "dpad", label: "Choose" },
-                { button: "a", label: "Open" },
-                { button: "start", label: "Filters" },
-                { button: "b", label: "Home" },
-              ]
-        }
-      />
     </>
   );
 }

@@ -75,6 +75,8 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
             drop_video_percent: args.drop_video_percent,
             delay_video_ms: args.delay_video_ms,
             drop_video_burst_ms: args.drop_video_burst_ms,
+            limit_video_kbps: args.limit_video_kbps,
+            jitter_video_ms: args.jitter_video_ms,
             dropout_keyframe_ms: args.dropout_keyframe_ms,
             gpu: args.gpu.0.clone(),
             video_codec: args.video_codec,

@@ -128,6 +128,10 @@ pub(crate) struct SessionConfig {
     pub delay_video_ms: u32,
     /// Testing only: milliseconds of every 10 seconds in which all video packets are dropped.
     pub drop_video_burst_ms: u32,
+    /// Testing only: the most video the link carries, kbit/s (0: no limit).
+    pub limit_video_kbps: u32,
+    /// Testing only: the most each video packet's delay varies by, milliseconds.
+    pub jitter_video_ms: u32,
     /// How long a client must be silent before its return is taken as the end of a dropout
     /// and answered with a keyframe, in milliseconds (0: never).
     pub dropout_keyframe_ms: u32,
@@ -167,6 +171,8 @@ pub(crate) struct Session {
     health: Health,
     /// The last send-bandwidth estimate, for the health lines.
     estimate_kbps: Option<u64>,
+    /// What the video is really being sent at, by which a falling estimate is judged.
+    send_rate: crate::adapt::SendRate,
     /// Which of the client's keyframe requests are answered.
     keyframes: crate::keyframes::Gate,
     /// Simulated loss on the way out, for testing; drops nothing unless asked.
@@ -299,6 +305,7 @@ impl Session {
             run_ahead: RunAhead::new(config.run_ahead, av.fps),
             health: Health::new(config.health_interval, av.fps),
             estimate_kbps: None,
+            send_rate: crate::adapt::SendRate::default(),
             keyframes: crate::keyframes::Gate::new(),
             dropout: Duration::from_millis(u64::from(config.dropout_keyframe_ms)),
             kbps_when_heard: limits.start_kbps,
@@ -307,7 +314,8 @@ impl Session {
                 config.drop_video_percent,
                 config.delay_video_ms,
                 config.drop_video_burst_ms,
-            ),
+            )
+            .shaped(config.limit_video_kbps, config.jitter_video_ms),
             stats_at: None,
             stats_logged_at: None,
             stats_log_interval: (config.health_interval > 0)
@@ -338,7 +346,10 @@ impl Session {
                 video_packets = self.loss.seen,
                 dropped = self.loss.dropped,
                 delay_ms = self.loss.delay_ms(),
-                "a simulated link was on (--drop-video-percent, --delay-video-ms): video packets were thrown away or held"
+                limit_kbps = self.loss.shape().0,
+                jitter_ms = self.loss.shape().1,
+                overflowed = self.loss.overflowed,
+                "a simulated link was on (--drop-video-percent, --delay-video-ms, --limit-video-kbps, …): video packets were thrown away or held"
             );
         }
         if std::mem::replace(&mut self.finished, true) {
@@ -442,6 +453,7 @@ fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
     video: Limits,
+    starting_estimate_kbps: u64,
     codecs: CodecSetting,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
@@ -462,8 +474,9 @@ fn accept_offer(
         // (restricted low delay). Costs about the audio bitrate again; clients without RED get
         // plain Opus.
         .enable_opus(true, true)
-        // The estimate starts at the starting rate and probes for more, up to the ceiling.
-        .enable_bwe(Some(Bitrate::kbps(u64::from(video.start_kbps))));
+        // The estimate starts at what leaves the starting rate for video, and probes for more,
+        // up to the ceiling.
+        .enable_bwe(Some(Bitrate::kbps(starting_estimate_kbps)));
     if codecs.allows(VideoCodec::H264) {
         // Constrained Baseline, level 3.1, packetization mode 1: what every WebRTC client
         // decodes, and the profile the encoder writes.
@@ -525,8 +538,13 @@ pub(crate) fn run(
                         }
                         None => session.video.codec_setting(),
                     };
-                    let result =
-                        accept_offer(&offer, advertised, session.adaptation.limits(), codecs);
+                    let result = accept_offer(
+                        &offer,
+                        advertised,
+                        session.adaptation.limits(),
+                        session.adaptation.starting_estimate_kbps(),
+                        codecs,
+                    );
                     let answer = match result {
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {
@@ -745,6 +763,7 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     // One keyframe for a burst of requests, and none for a request sent
                     // before the last keyframe could have arrived.
                     let answered = session.keyframes.asked(Instant::now());
+                    session.adaptation.trouble(Instant::now());
                     session.health.keyframe_requested(answered);
                     if answered {
                         session.video.request_keyframe();
@@ -752,7 +771,19 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 }
                 Event::EgressBitrateEstimate(
                     BweKind::Twcc { estimate, .. } | BweKind::Remb { estimate, .. },
-                ) => session.adapt_bitrate(estimate.as_u64()),
+                ) => {
+                    session.adapt_bitrate(estimate.as_u64());
+                    // A fall with nothing to back it: the estimator starts again from where
+                    // it was, so the pacer does not slow a stream the link still carries.
+                    if let Some(bps) = session.adaptation.take_restart() {
+                        tracing::debug!(
+                            fell_to_kbps = estimate.as_u64() / 1000,
+                            back_to_kbps = bps / 1000,
+                            "the bandwidth estimate fell with no sign of trouble: asked again"
+                        );
+                        p.rtc.bwe().reset(Bitrate::kbps(bps / 1000));
+                    }
+                }
                 _ => {}
             },
         }
@@ -806,6 +837,8 @@ impl Session {
                     decode_ms: stats.decode_ms,
                     frames_dropped: stats.frames_dropped,
                     frames_sent: self.frames_sent,
+                    packets_lost: stats.packets_lost,
+                    rtt_ms: stats.net_rtt_ms,
                 };
                 match self.adaptation.client(sample, self.video.bitrate_kbps(), now) {
                     Some(LimitChange::Cut { to_kbps, why }) => tracing::info!(
@@ -909,6 +942,7 @@ impl Session {
     fn adapt_bitrate(&mut self, estimate_bps: u64) {
         let now = Instant::now();
         self.estimate_kbps = Some(estimate_bps / 1000);
+        self.adaptation.sending(self.send_rate.kbps(now));
         self.adaptation.estimate(estimate_bps, now);
         self.apply_bitrate(now);
     }
@@ -924,6 +958,7 @@ impl Session {
                 to_kbps = target,
                 estimate_kbps = self.estimate_kbps,
                 client_limit_kbps = self.adaptation.client_limit_kbps(),
+                ceiling_kbps = self.adaptation.ceiling_kbps(),
                 "video bitrate changed"
             );
             if let Err(e) = self.video.set_bitrate(target) {
@@ -946,6 +981,7 @@ impl Session {
     /// A new client: its connection and its decoder are unknown, so the stream starts over
     /// at the starting rate.
     fn new_client(&mut self) {
+        self.send_rate.clear();
         self.keyframes.new_client();
         self.adaptation.reset();
         self.estimate_kbps = None;
@@ -1072,6 +1108,7 @@ impl Session {
             let encoded = self.video.encode(&self.rgba, w, h)?;
             if let Some(encoded) = &encoded {
                 self.health.encoded(encode_from.elapsed(), encoded.data.len(), encoded.keyframe);
+                self.send_rate.sent(encoded.data.len(), now);
                 if encoded.keyframe {
                     self.keyframes.sent(Instant::now());
                 }

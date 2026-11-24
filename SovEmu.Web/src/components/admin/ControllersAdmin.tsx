@@ -24,6 +24,7 @@ import {
   POSITIONS,
   rebind,
   STICK_INPUTS,
+  stickRow,
   toBindings,
   toMapping,
 } from "../../lib/controllers";
@@ -150,6 +151,8 @@ function Controllers() {
     useQuery({ ...q.systemControls(system), enabled: !!system }).data?.controls ?? null;
   const layouts: PadLayout[] = useQuery(q.controllerLayouts()).data ?? [];
   const [lit, setLit] = useState<ButtonName | null>(null);
+  /** A stick's row is being looked at: its keys on the system's and the controller's pads. */
+  const [litStick, setLitStick] = useState<{ system: string; controller: string } | null>(null);
   const [draft, setDraft] = useState<Mapping | null>(null);
   const [said, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   // What a change said, else why the defaults could not be read.
@@ -276,9 +279,35 @@ function Controllers() {
                 controller={controller}
                 locked={locked}
                 onBind={(input) => bind(button, input)}
-                onFocus={() => setLit(button)}
+                onFocus={() => {
+                  setLit(button);
+                  setLitStick(null);
+                }}
               />
             ))}
+            {/* The system's analog controls: always their own stick (sticks are not remapped). */}
+            {system &&
+              controller !== KEYBOARD &&
+              controls?.sticks.map((s) => {
+                const stick = stickRow(s.stick);
+                const look = () => {
+                  setLit(null);
+                  setLitStick({ system: s.key, controller: stick.diagramKey });
+                };
+                return (
+                  // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable so a keyboard can light the stick
+                  <li
+                    key={s.key}
+                    tabIndex={0}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2.5"
+                    onMouseEnter={look}
+                    onFocus={look}
+                  >
+                    <span className="font-medium">{s.label}</span>
+                    <span className="text-sm text-slate-400">{stick.name} · not remapped</span>
+                  </li>
+                );
+              })}
           </ul>
           {!locked && (
             // Stays in view at the bottom while the buttons scroll.
@@ -304,12 +333,20 @@ function Controllers() {
         <aside className="grid content-start gap-4 lg:sticky lg:top-6 lg:self-start" aria-hidden>
           {system && controls && (
             <div className={panel}>
-              <PadDiagram layout={controls.layout} highlight={lit ? [lit] : []} caption={`${systemName} pad`} />
+              <PadDiagram
+                layout={controls.layout}
+                highlight={lit ? [lit] : litStick ? [litStick.system] : []}
+                caption={`${systemName} pad`}
+              />
             </div>
           )}
           {controllerPad && (
             <div className={panel}>
-              <PadDiagram layout={controllerPad} highlight={litInputs} caption={name} />
+              <PadDiagram
+                layout={controllerPad}
+                highlight={litStick ? [litStick.controller] : litInputs}
+                caption={name}
+              />
             </div>
           )}
           {!controllerPad && !(system && controls) && (

@@ -467,6 +467,16 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_DEBUG_DROP_VIDEO_BURST_MS", default_value_t = 0)]
     pub debug_drop_video_burst_ms: u32,
 
+    /// Testing only: every game's link carries at most this much video, kbit/s, as a slow
+    /// internet connection would: more than that waits, then is thrown away. 0: no limit.
+    #[arg(long, env = "SOVEMU_DEBUG_LIMIT_VIDEO_KBPS", default_value_t = 0)]
+    pub debug_limit_video_kbps: u32,
+
+    /// Testing only: hold each of every game's outgoing video packets a different time, up
+    /// to this many milliseconds, as Wi-Fi and busy routes do. Leave it at 0.
+    #[arg(long, env = "SOVEMU_DEBUG_JITTER_VIDEO_MS", default_value_t = 0)]
+    pub debug_jitter_video_ms: u32,
+
     /// A client that has been silent this many milliseconds and is then heard again was cut
     /// off (a Wi-Fi dropout): it is sent a keyframe at once, where it would otherwise stall
     /// until it asked for one. 0 leaves it to the client.
@@ -963,6 +973,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         drop_video_percent: config.debug_drop_video_percent,
         delay_video_ms: config.debug_delay_video_ms,
         drop_video_burst_ms: config.debug_drop_video_burst_ms,
+        limit_video_kbps: config.debug_limit_video_kbps,
+        jitter_video_ms: config.debug_jitter_video_ms,
         dropout_keyframe_ms: config.dropout_keyframe_ms,
         udp_dscp: config.udp_dscp,
         health_interval_secs: config.session_health_secs,

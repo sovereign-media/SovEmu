@@ -1517,8 +1517,8 @@ async fn admins_change_emulator_settings() {
     let body = h.ok(get, json!({"s": "nes"})).await["emulatorSettings"].clone();
     assert_eq!(body["core"], "SovEmu Test Core 1.0.0");
     let pattern = setting(&body, "sovemu_test_pattern");
-    assert_eq!(pattern["choices"], json!(["gradient", "solid"]));
-    assert_eq!(pattern["labels"], json!(["Gradient", "Solid colour"]));
+    assert_eq!(pattern["choices"], json!(["gradient", "solid", "noise"]));
+    assert_eq!(pattern["labels"], json!(["Gradient", "Solid colour", "Noise"]));
     assert_eq!(pattern["category"], "video");
     assert_eq!(
         (pattern["value"].clone(), pattern["source"].clone()),

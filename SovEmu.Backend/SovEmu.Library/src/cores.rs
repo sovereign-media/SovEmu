@@ -91,6 +91,23 @@ pub fn licence(name: &str) -> Option<&'static CoreLicence> {
     CORES.iter().find(|c| c.name == name)
 }
 
+/// What a shipped core's worker needs in its environment, beyond SovEmu's allow-list, by core
+/// name (`mupen64plus_next`): workarounds for bugs in this release's builds of the core, each
+/// naming the bug. Moving to a new release means checking whether each is still needed.
+pub fn worker_env(name: &str) -> &'static [(&'static str, &'static str)] {
+    match name {
+        // Release 1.22.2's Mupen64Plus-Next (680e033): GLideN64 draws only its clear colour, a
+        // black picture with the sound playing, when Mesa offers framebuffer fetch (iris,
+        // llvmpipe). Fixed upstream after that build (libretro/mupen64plus-libretro-nx#620,
+        // #610); hiding the extensions from Mesa puts the picture back.
+        "mupen64plus_next" => &[(
+            "MESA_EXTENSION_OVERRIDE",
+            "-GL_EXT_shader_framebuffer_fetch -GL_EXT_shader_framebuffer_fetch_non_coherent",
+        )],
+        _ => &[],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,6 +133,15 @@ mod tests {
             .find_map(|l| l.trim().strip_prefix("release "))
             .and_then(|r| r.split_whitespace().next());
         assert_eq!(release, Some(LIBRETRO_RELEASE));
+    }
+
+    #[test]
+    fn workarounds_are_for_shipped_cores() {
+        assert!(licence("mupen64plus_next").is_some(), "a workaround for a core not shipped");
+        let n64 = worker_env("mupen64plus_next");
+        assert!(n64.iter().any(|(k, v)| *k == "MESA_EXTENSION_OVERRIDE"
+            && v.contains("-GL_EXT_shader_framebuffer_fetch")));
+        assert!(worker_env("snes9x").is_empty());
     }
 
     #[test]

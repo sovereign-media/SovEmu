@@ -254,6 +254,14 @@ struct SessionArgs {
     /// every 10 seconds, as a Wi-Fi dropout would.
     #[arg(long, default_value_t = 0)]
     drop_video_burst_ms: u32,
+    /// Testing only: the link carries at most this much video, kbit/s, as a slow internet
+    /// connection would (0: no limit).
+    #[arg(long, default_value_t = 0)]
+    limit_video_kbps: u32,
+    /// Testing only: hold each outgoing video packet a different time, up to this many
+    /// milliseconds, as Wi-Fi and busy routes do.
+    #[arg(long, default_value_t = 0)]
+    jitter_video_ms: u32,
     /// A client silent this many milliseconds and then heard again is sent a keyframe at
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]
@@ -375,6 +383,14 @@ struct ServeArgs {
     /// every 10 seconds, as a Wi-Fi dropout would.
     #[arg(long, default_value_t = 0)]
     drop_video_burst_ms: u32,
+    /// Testing only: the link carries at most this much video, kbit/s, as a slow internet
+    /// connection would (0: no limit).
+    #[arg(long, default_value_t = 0)]
+    limit_video_kbps: u32,
+    /// Testing only: hold each outgoing video packet a different time, up to this many
+    /// milliseconds, as Wi-Fi and busy routes do.
+    #[arg(long, default_value_t = 0)]
+    jitter_video_ms: u32,
     /// A client silent this many milliseconds and then heard again is sent a keyframe at
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]

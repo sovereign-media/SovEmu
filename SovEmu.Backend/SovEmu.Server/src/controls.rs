@@ -55,12 +55,49 @@ pub(crate) struct SystemButton {
     pub label: String,
 }
 
-/// A system's buttons and its pad's diagram.
+/// One of the player's analog sticks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, async_graphql::Enum)]
+pub(crate) enum Stick {
+    Left,
+    Right,
+}
+
+/// One of a system's analog controls: the player's stick that drives it (always the same one:
+/// sticks are not remapped), what the console calls it, and the key on the system's diagram it
+/// lights.
+#[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
+pub(crate) struct SystemStick {
+    pub stick: Stick,
+    pub label: String,
+    pub key: String,
+}
+
+/// A system's buttons, its analog controls and its pad's diagram.
 #[derive(Debug, Clone, PartialEq, async_graphql::SimpleObject)]
 pub(crate) struct SystemControls {
     /// The buttons the system's pad has, in the order to list them.
     pub buttons: Vec<SystemButton>,
+    /// The analog controls the system's core reads from the player's sticks, in the order to
+    /// list them after the buttons; empty for a system without them.
+    pub sticks: Vec<SystemStick>,
     pub layout: PadLayout,
+}
+
+/// A system's analog controls, as its core reads them: the stick, the console's name for it,
+/// its diagram key, and what that key prints (`None`: the key is a button's, drawn already).
+fn sticks(system: &str) -> &'static [(Stick, &'static str, &'static str, Option<&'static str>)] {
+    use Stick::{Left, Right};
+    match system {
+        // Mupen64Plus-Next reads the C buttons from the right stick.
+        "n64" => &[(Left, "Control stick", "LS", Some("")), (Right, "C buttons", "RS", Some("C"))],
+        "gamecube" => {
+            &[(Left, "Control stick", "LS", Some("")), (Right, "C stick", "RS", Some("C"))]
+        }
+        "dreamcast" => &[(Left, "Analog stick", "LS", Some(""))],
+        // The DualShock 2's sticks are drawn already, as the L3 and R3 buttons they click.
+        "ps2" => &[(Left, "Left stick", "L3", None), (Right, "Right stick", "R3", None)],
+        _ => &[],
+    }
 }
 
 const DPAD: [(PadButton, &str); 4] = [(Up, "Up"), (Down, "Down"), (Left, "Left"), (Right, "Right")];
@@ -299,7 +336,8 @@ fn dpad_well(cx: f64, cy: f64, s: f64) -> Shape {
 fn system_layout(id: &str, name: &str) -> PadLayout {
     let names = labels(id);
     let label = |key: &str| {
-        let name = names.iter().find(|(b, _)| key_name(*b) == key).map(|(_, l)| *l)?;
+        let stick = sticks(id).iter().find(|s| s.2 == key).and_then(|s| s.3);
+        let name = names.iter().find(|(b, _)| key_name(*b) == key).map(|(_, l)| *l).or(stick)?;
         Some(arrow(key).unwrap_or(name).to_owned())
     };
     let mut k = Keys { keys: Vec::new(), label: &label };
@@ -506,6 +544,8 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.add("L2", 72.0, 88.0, 16.0, 6.0, 2.0);
             k.circle("Y", 104.0, 46.0, 10.0);
             k.circle("B", 114.0, 55.0, 10.0);
+            k.circle("LS", 80.0, 65.0, 10.0);
+            k.circle("RS", 132.0, 44.0, 14.0);
             vec![
                 rect(10.0, 29.0, 140.0, 34.0, 15.0),
                 rect(16.0, 48.0, 28.0, 44.0, 14.0),
@@ -521,6 +561,7 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.dpad(RETRO_DPAD, 46.0, 68.0, 20.0);
             k.circle("START", 80.0, 72.0, 7.0);
             k.diamond(["X", "B", "Y", "A"], 116.0, 52.0, 10.0, 9.0);
+            k.circle("LS", 46.0, 42.0, 12.0);
             vec![rect(18.0, 25.0, 124.0, 62.0, 28.0), recess(38.0, 34.0, 16.0, 16.0, 8.0)]
         }
         "gamecube" => {
@@ -533,8 +574,10 @@ fn system_layout(id: &str, name: &str) -> PadLayout {
             k.circle("Y", 104.0, 61.0, 8.0);
             k.circle("A", 133.0, 45.0, 9.0);
             k.circle("X", 118.0, 37.0, 9.0);
+            k.circle("LS", 42.0, 46.0, 12.0);
+            k.circle("RS", 98.0, 76.0, 10.0);
             let mut body = gamepad_body();
-            body.push(recess(34.0, 38.0, 16.0, 16.0, 8.0));
+            body.extend([recess(34.0, 38.0, 16.0, 16.0, 8.0), stick_well(98.0, 76.0, 10.0)]);
             body
         }
         _ => {
@@ -563,6 +606,14 @@ pub(crate) fn system_controls(system: &sovemu_library::systems::System) -> Syste
         buttons: labels(system.id)
             .into_iter()
             .map(|(button, label)| SystemButton { button, label: label.to_owned() })
+            .collect(),
+        sticks: sticks(system.id)
+            .iter()
+            .map(|&(stick, label, key, _)| SystemStick {
+                stick,
+                label: label.to_owned(),
+                key: key.to_owned(),
+            })
             .collect(),
         layout: system_layout(system.id, system.name),
     }
@@ -684,9 +735,17 @@ mod tests {
             for b in &controls.buttons {
                 assert!(keys.contains(&key_name(b.button)), "{}: {:?} is not drawn", system.id, b);
             }
+            for s in &controls.sticks {
+                assert!(keys.contains(&s.key.as_str()), "{}: {:?} is not drawn", system.id, s);
+            }
+            let stick_keys = controls
+                .sticks
+                .iter()
+                .filter(|s| !controls.buttons.iter().any(|b| key_name(b.button) == s.key))
+                .count();
             assert_eq!(
                 keys.len(),
-                controls.buttons.len(),
+                controls.buttons.len() + stick_keys,
                 "{}: a drawn key has no label",
                 system.id
             );
@@ -706,6 +765,16 @@ mod tests {
         assert!(md.contains(&(Y, "A")) && md.contains(&(B, "B")) && md.contains(&(A, "C")));
         assert!(labels("psx").contains(&(B, "✕")));
         assert_eq!(labels("nes").len(), 8, "four directions, A, B, Start, Select");
+    }
+
+    #[test]
+    fn systems_with_sticks_list_them() {
+        let n64 = sticks("n64");
+        assert_eq!(
+            n64.iter().map(|s| (s.0, s.1)).collect::<Vec<_>>(),
+            [(Stick::Left, "Control stick"), (Stick::Right, "C buttons")]
+        );
+        assert!(sticks("nes").is_empty(), "a pad without sticks lists none");
     }
 
     #[test]
