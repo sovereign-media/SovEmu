@@ -594,6 +594,11 @@ export const SystemControlsQuery = graphql(
           button
           label
         }
+        sticks {
+          stick
+          label
+          key
+        }
         layout {
           ...PadLayoutFields
         }

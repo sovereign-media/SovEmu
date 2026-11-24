@@ -102,7 +102,8 @@ The server stores one mapping per user, controller ID and system (or every syste
 Clients show each system's own labels, and side-by-side diagrams. The server gives both, so that every client draws the same thing:
 
 - **`System.controls.buttons`**: the RetroPad buttons the system's pad has, in order, each with the system's label (Mega Drive: `Y` → `A`, `B` → `B`, `A` → `C` …). A client lists these when remapping for that system; for every system, it lists all sixteen by RetroPad name.
-- **`System.controls.layout`**: the system's pad, whose keys are RetroPad buttons (`B`, `START` …) labelled as the console prints them.
+- **`System.controls.sticks`**: the analog controls the system's core reads from the player's sticks (N64: `LEFT` → Control stick, `RIGHT` → C buttons; GameCube, Dreamcast and PS2 likewise), each with the console's label and the `key` it lights on the system's diagram (`LS`, `RS`, or a button's key such as `L3`). Sticks are not remapped: the left stick always drives the left analog control and the right stick the right one. A client lists them after the buttons, for that system only, as rows that show their stick (`Left stick`, `Right stick`) and cannot be picked to rebind; focusing one lights its key on the system's diagram and the stick (`l3`, `r3`) on the controller's.
+- **`System.controls.layout`**: the system's pad, whose keys are RetroPad buttons (`B`, `START` …) labelled as the console prints them, plus the keys of its sticks.
 - **`controllerLayouts`**: the player's controllers by family (`xbox`, `playstation`, `nintendo`, `generic`), whose keys are input names (`south`, `l1` …) labelled as in Families above. The keyboard has no diagram; it shows key names.
 
 A layout is drawn on a `width` × `height` canvas (160 × 100) from rounded rectangles, `{x, y, w, h, r}`. A shape is a circle when `r` is half its size.

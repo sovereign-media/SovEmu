@@ -60,6 +60,14 @@ export function stickInputs(lx: number, ly: number, rx: number, ry: number, thre
 export const diagramKey = (input: string): string =>
   input.startsWith("ls_") ? "l3" : input.startsWith("rs_") ? "r3" : input;
 
+/**
+ * One of the player's sticks, as a system's analog controls name it: what to call it, and the
+ * controller diagram's key it lights. Sticks are not remapped (docs/CONTROLLERS.md), so a stick's
+ * row only says which stick drives the control.
+ */
+export const stickRow = (stick: "LEFT" | "RIGHT"): { name: string; diagramKey: string } =>
+  stick === "LEFT" ? { name: "Left stick", diagramKey: "l3" } : { name: "Right stick", diagramKey: "r3" };
+
 export type Family = "xbox" | "playstation" | "nintendo" | "generic";
 
 /** Input → RetroPad button. An input drives one button; a button may have several inputs. */
