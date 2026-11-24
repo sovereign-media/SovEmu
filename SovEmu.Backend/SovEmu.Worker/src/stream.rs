@@ -831,6 +831,7 @@ impl Session {
                     frames_dropped: stats.frames_dropped,
                     frames_sent: self.frames_sent,
                     packets_lost: stats.packets_lost,
+                    rtt_ms: stats.net_rtt_ms,
                 };
                 match self.adaptation.client(sample, self.video.bitrate_kbps(), now) {
                     Some(LimitChange::Cut { to_kbps, why }) => tracing::info!(
