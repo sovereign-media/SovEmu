@@ -147,8 +147,18 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         let out = core.run_frame(&[buttons])?;
         frames_run += 1;
 
-        if out.av_changed.is_some() {
-            tracing::warn!(frame = n, "core changed geometry/timing; summary shows the initial");
+        if let Some(av) = out.av_changed {
+            tracing::warn!(
+                frame = n,
+                width = av.base_width,
+                height = av.base_height,
+                fps = av.fps,
+                sample_rate = av.sample_rate,
+                "core changed geometry/timing; summary shows the initial"
+            );
+            if let Some(pacer) = &mut pacer {
+                pacer.set_fps(av.fps);
+            }
         }
         if !out.video_updated {
             duped += 1;
