@@ -12,7 +12,6 @@ import { q } from "../lib/data";
 import { go } from "../lib/go";
 import { listenNav } from "../lib/nav";
 import { BiosTable } from "./BiosTable";
-import HintBar from "./HintBar";
 import Shell from "./Shell";
 import SideNav, { NAV_SPACE } from "./SideNav";
 import { Button } from "./ui/button";
@@ -54,7 +53,6 @@ function Bios() {
         <p className="mt-3 text-sm font-semibold">{summary(shown)}</p>
       </section>
       <BiosTable systems={systems} initialSystem={wanted.current} />
-      <HintBar hints={[{ button: "b", label: "Home" }]} />
     </main>
   );
 }
