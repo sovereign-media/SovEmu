@@ -453,6 +453,7 @@ fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
     video: Limits,
+    starting_estimate_kbps: u64,
     codecs: CodecSetting,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
@@ -473,8 +474,9 @@ fn accept_offer(
         // (restricted low delay). Costs about the audio bitrate again; clients without RED get
         // plain Opus.
         .enable_opus(true, true)
-        // The estimate starts at the starting rate and probes for more, up to the ceiling.
-        .enable_bwe(Some(Bitrate::kbps(u64::from(video.start_kbps))));
+        // The estimate starts at what leaves the starting rate for video, and probes for more,
+        // up to the ceiling.
+        .enable_bwe(Some(Bitrate::kbps(starting_estimate_kbps)));
     if codecs.allows(VideoCodec::H264) {
         // Constrained Baseline, level 3.1, packetization mode 1: what every WebRTC client
         // decodes, and the profile the encoder writes.
@@ -536,8 +538,13 @@ pub(crate) fn run(
                         }
                         None => session.video.codec_setting(),
                     };
-                    let result =
-                        accept_offer(&offer, advertised, session.adaptation.limits(), codecs);
+                    let result = accept_offer(
+                        &offer,
+                        advertised,
+                        session.adaptation.limits(),
+                        session.adaptation.starting_estimate_kbps(),
+                        codecs,
+                    );
                     let answer = match result {
                         Ok((new_peer, answer)) => {
                             if peer.take().is_some_and(|p| p.connected) {

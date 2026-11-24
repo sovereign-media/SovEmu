@@ -356,6 +356,15 @@ impl Adaptation {
         }
     }
 
+    /// The estimate to start the estimator from, kbit/s: the one that leaves exactly the
+    /// starting rate for video. Started from the starting rate itself, its first word left
+    /// 85% of that less the audio, and every stream opened by cutting itself (5,000 to 4,122
+    /// kbit/s) and waiting ten seconds to climb back.
+    pub(crate) fn starting_estimate_kbps(&self) -> u64 {
+        let wanted = f64::from(self.limits.start_kbps + self.audio_kbps);
+        (wanted / ESTIMATE_SHARE).ceil() as u64 + 1
+    }
+
     pub(crate) fn limits(&self) -> Limits {
         self.limits
     }
@@ -1043,6 +1052,21 @@ mod tests {
         assert_eq!(a.decide(10_000, false, ms(5100)), None, "one long round trip: not yet");
         assert_eq!(a.client(seen(6000, 60.0, 0, Some(70.0)), 10_000, ms(6000)), None);
         assert_eq!(a.decide(10_000, false, ms(6000)), Some(8500));
+    }
+
+    #[test]
+    fn the_estimators_first_word_leaves_the_starting_rate() {
+        for (start, audio) in [(5000, 128), (3000, 96), (300, 128)] {
+            let limits = Limits::new(1, start, 20_000);
+            let mut a = Adaptation::new(limits, audio);
+            let t = Instant::now();
+            a.estimate(a.starting_estimate_kbps() * 1000, t);
+            assert_eq!(a.decide(start, false, t), None, "{start} kbit/s is not cut at the start");
+            // And it is the least that does: a little less would cut.
+            let mut b = Adaptation::new(limits, audio);
+            b.estimate((b.starting_estimate_kbps() - 3) * 1000, t);
+            assert!(b.network_kbps.is_some_and(|kbps| kbps < start), "{start}");
+        }
     }
 
     #[test]
