@@ -34,7 +34,7 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig}
 
 use crate::adapt::{Adaptation, ClientSample, LimitChange, Limits};
 use crate::health::{self, Health};
-use crate::pacing::Pacer;
+use crate::pacing::{MediaClock, Pacer};
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
 use crate::runahead::RunAhead;
@@ -154,6 +154,8 @@ struct Peer {
 pub(crate) struct Session {
     core: Core,
     fps: f64,
+    /// The video's RTP clock, which follows the core's frame rate without jumping.
+    clock: MediaClock,
     video: Video,
     audio: AudioEncoder,
     rgba: Vec<u8>,
@@ -286,6 +288,7 @@ impl Session {
             }),
             audio: AudioEncoder::new(av.sample_rate, config.audio_kbps * 1000)?,
             fps: av.fps,
+            clock: MediaClock::new(av.fps),
             core,
             rgba: Vec::new(),
             frame: 0,
@@ -686,6 +689,10 @@ pub(crate) fn run(
         {
             let behind = Instant::now().saturating_duration_since(next_frame);
             session.step(p, behind)?;
+            // The core changed its frame rate: pace at the new one from the next frame on.
+            if pacer.fps() != session.fps {
+                pacer.set_fps(session.fps);
+            }
             next_frame = pacer.next_deadline(Instant::now());
         }
         for event in session.take_events() {
@@ -1041,6 +1048,7 @@ impl Session {
                 self.audio.set_input_rate(av.sample_rate)?;
             }
             self.fps = av.fps;
+            self.clock.set_fps(tick, av.fps);
             self.health.set_fps(av.fps);
         }
 
@@ -1116,7 +1124,7 @@ impl Session {
             if let (Some(encoded), Some((mid, pt))) = (encoded, p.video)
                 && let Some(writer) = p.rtc.writer(mid)
             {
-                let rtp_time = MediaTime::from_90khz((tick as f64 * 90_000.0 / self.fps) as u64);
+                let rtp_time = MediaTime::from_90khz(self.clock.at(tick));
                 writer.playout_delay(MediaTime::from_millis(0), MediaTime::from_millis(0)).write(
                     pt,
                     now,
