@@ -75,7 +75,7 @@ const AppearanceAdmin = lazy(() => import("./components/admin/AppearanceAdmin"))
  * its path. Keyed by every path in `SCREEN_PATHS`, no more and no fewer.
  */
 const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: string[]]> = {
-  "/": ["Home", Home, []],
+  "/": ["Home", Home, ["game"]],
   "/login/": ["Sign in", LoginPage, []],
   "/auth/callback/": ["Signing in", AuthCallback, []],
   "/system/": ["Games", SystemPage, ["game"]],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
-import { byline, cardArt, heroArt, moveFocus, nextScroll, type RowShape, startFocus } from "./home";
+import { byline, cardArt, heroArt, moveFocus, nextScroll, type RowShape, resumeNav, startFocus } from "./home";
 
 const game = (over: Partial<Game> = {}): Game => ({
   id: 7,
@@ -115,5 +115,26 @@ describe("row arrows", () => {
   it("stays put when the row fits", () => {
     expect(nextScroll(0, 400, 300, 1)).toBe(0);
     expect(nextScroll(0, 400, 300, -1)).toBe(0);
+  });
+});
+
+describe("resumeNav", () => {
+  it("moves between Continue and Game details, staying at either end", () => {
+    expect(resumeNav("play", "right")).toEqual({ at: "details" });
+    expect(resumeNav("details", "right")).toEqual({ at: "details" });
+    expect(resumeNav("details", "left")).toEqual({ at: "play" });
+    expect(resumeNav("play", "left")).toEqual({ at: "play" });
+  });
+
+  it("presses the focused button, and Back closes the panel", () => {
+    expect(resumeNav("play", "accept")).toEqual({ press: "play" });
+    expect(resumeNav("details", "accept")).toEqual({ press: "details" });
+    expect(resumeNav("details", "back")).toBe("close");
+  });
+
+  it("keeps the rows behind it still", () => {
+    for (const action of ["up", "down", "menu", "search", "pageUp", "pageDown"] as const) {
+      expect(resumeNav("play", action)).toBeNull();
+    }
   });
 });
