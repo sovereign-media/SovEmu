@@ -15,6 +15,7 @@ import {
   rebind,
   slug,
   stickInputs,
+  stickRow,
   toBindings,
 } from "./controllers";
 import { bit } from "./protocol";
@@ -178,6 +179,10 @@ describe("stick directions", () => {
     expect(inputLabel("rs_up", "playstation")).toBe("RS ↑");
     expect(diagramKey("rs_up")).toBe("r3");
     expect(diagramKey("south")).toBe("south");
+  });
+  it("names a system's analog control by the stick that drives it", () => {
+    expect(stickRow("LEFT")).toEqual({ name: "Left stick", diagramKey: "l3" });
+    expect(stickRow("RIGHT")).toEqual({ name: "Right stick", diagramKey: "r3" });
   });
   it("knows when the left stick is bound (and so stops driving the D-pad)", () => {
     expect(leftStickBound({ ...DEFAULT_PAD })).toBe(false);

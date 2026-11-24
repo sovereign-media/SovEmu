@@ -2813,6 +2813,14 @@ enum StatsRange {
 	YEAR
 }
 
+"""
+One of the player's analog sticks.
+"""
+enum Stick {
+	LEFT
+	RIGHT
+}
+
 type StorageArea {
 	"""
 	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
@@ -3021,13 +3029,18 @@ type SystemButton {
 }
 
 """
-A system's buttons and its pad's diagram.
+A system's buttons, its analog controls and its pad's diagram.
 """
 type SystemControls {
 	"""
 	The buttons the system's pad has, in the order to list them.
 	"""
 	buttons: [SystemButton!]!
+	"""
+	The analog controls the system's core reads from the player's sticks, in the order to
+	list them after the buttons; empty for a system without them.
+	"""
+	sticks: [SystemStick!]!
 	layout: PadLayout!
 }
 
@@ -3056,6 +3069,17 @@ type SystemPlays {
 	sessions: Int!
 	seconds: Float!
 	players: Int!
+}
+
+"""
+One of a system's analog controls: the player's stick that drives it (always the same one:
+sticks are not remapped), what the console calls it, and the key on the system's diagram it
+lights.
+"""
+type SystemStick {
+	stick: Stick!
+	label: String!
+	key: String!
 }
 
 """

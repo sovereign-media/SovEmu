@@ -48,6 +48,7 @@ import {
   type Mapping,
   PAD_BUTTONS,
   rebind,
+  stickRow,
   toBindings,
   toMapping,
 } from "../../lib/controllers";
@@ -526,6 +527,17 @@ function Player() {
                   if (pressed) await save(rebind(mapping, pressed, button));
                   stack.replace(deviceMenu(key));
                 },
+              };
+            }),
+            // The system's analog controls: always their own stick, so shown but not rebound.
+            ...(onSystem && !keyboard ? (pads.controls?.sticks ?? []) : []).map((s) => {
+              const stick = stickRow(s.stick);
+              return {
+                label: s.label,
+                icon: "button",
+                detail: `${stick.name} · sticks are not remapped`,
+                highlight: { system: [s.key], controller: [stick.diagramKey] },
+                run: () => toast(`${s.label} is always the ${stick.name.toLowerCase()}`),
               };
             }),
             {
