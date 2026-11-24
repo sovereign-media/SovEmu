@@ -25,6 +25,7 @@ mod loss;
 mod pacing;
 mod patch;
 mod persist;
+mod priority;
 mod probe;
 mod rewind;
 mod runahead;
@@ -265,6 +266,10 @@ struct SessionArgs {
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]
     dropout_keyframe_ms: u32,
+    /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
+    /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
+    #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]
+    udp_dscp: u8,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]
@@ -390,6 +395,10 @@ struct ServeArgs {
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]
     dropout_keyframe_ms: u32,
+    /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
+    /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
+    #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]
+    udp_dscp: u8,
     /// The GPU for cores that render with OpenGL: `auto`, `software`, `off` or a render node
     /// (`/dev/dri/renderD128`). A render node also encodes H.264 (VA-API).
     #[arg(long, default_value = "auto")]

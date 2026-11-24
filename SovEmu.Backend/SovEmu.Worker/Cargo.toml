@@ -15,6 +15,8 @@ hound = "3.5.1"
 png = "0.18.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+# `all`: the IPv6 traffic class (DSCP on an IPv6 socket) is behind it on Linux.
+socket2 = { version = "0.6", features = ["all"] }
 sovemu-media = { version = "0.1.0", path = "../SovEmu.Media" }
 sovemu-protocol = { version = "0.1.0", path = "../SovEmu.Protocol" }
 sovemu-retro-host = { path = "../SovEmu.RetroHost" }
@@ -30,7 +32,6 @@ workspace = true
 hound = "3.5.1"
 png = "0.18.1"
 serde_json = "1.0.154"
-socket2 = "0.6"
 sovemu-media = { path = "../SovEmu.Media" }
 sovemu-protocol = { path = "../SovEmu.Protocol" }
 str0m = { version = "0.25.0", default-features = false, features = ["aws-lc-rs"] }

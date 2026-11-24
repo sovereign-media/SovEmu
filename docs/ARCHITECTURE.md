@@ -247,6 +247,12 @@ of that moment: a link that was down was not congested. Measured in Chromium wit
 delay, the picture came back 0.03 s after a 2-second dropout ended, where it had taken 1.3 s on
 average and 1.8 s at worst.
 
+**Packet priority** (`SovEmu.Worker/src/priority.rs`, `SOVEMU_UDP_DSCP`). Each session's socket
+marks what it sends with a DSCP value, 34 (AF41, interactive video, as WebRTC marks a picture) by
+default. A Wi-Fi access point maps that to its video queue, which is sent ahead of ordinary
+traffic, so other use of the network delays a game less. Whatever sits between the server and the
+access point may honour the mark, ignore it or clear it; 0 sends packets unmarked.
+
 ### Deployment: one Debian container
 
 SovEmu ships as a single self-contained image on Debian (glibc), the same for every host.

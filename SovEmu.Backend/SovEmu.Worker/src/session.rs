@@ -93,6 +93,7 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
     let socket = UdpSocket::bind(args.udp)
         .with_context(|| format!("binding UDP {}", args.udp))
         .map_err(failed)?;
+    crate::priority::mark(&socket, args.udp_dscp);
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
     tracing::info!(udp = %udp_addr, advertised = %advertised, "session ready");
