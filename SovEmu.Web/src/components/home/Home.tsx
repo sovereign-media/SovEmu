@@ -12,7 +12,6 @@ import { invalidate, q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { type Focus, moveFocus, type ResumeButton, type RowShape, resumeNav, startFocus } from "../../lib/home";
 import { listenNav } from "../../lib/nav";
-import HintBar from "../HintBar";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
 import { useToast } from "../ui/toast";
@@ -247,14 +246,6 @@ function HomeScreen() {
           </Row>
         ))}
       </div>
-      <HintBar
-        hints={[
-          { button: "dpad", label: "Choose" },
-          { button: "a", label: "Open" },
-          { button: "x", label: "Search" },
-          { button: "start", label: "Rescan" },
-        ]}
-      />
       <ContinuePanel
         game={resume}
         colorOf={colorOf}

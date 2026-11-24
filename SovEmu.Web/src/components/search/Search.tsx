@@ -11,7 +11,6 @@ import { q } from "../../lib/data";
 import { go } from "../../lib/go";
 import { listenNav } from "../../lib/nav";
 import { FIELD, moveSearch, SEARCH_DELAY_MS, SEARCH_LIMIT } from "../../lib/search";
-import HintBar from "../HintBar";
 import { GameCard } from "../home/Row";
 import Shell from "../Shell";
 import SideNav, { NAV_SPACE } from "../SideNav";
@@ -143,13 +142,6 @@ function SearchScreen() {
           />
         ))}
       </div>
-      <HintBar
-        hints={[
-          { button: "dpad", label: "Choose" },
-          { button: "a", label: "Open" },
-          { button: "b", label: at === FIELD ? "Home" : "Search" },
-        ]}
-      />
     </main>
   );
 }

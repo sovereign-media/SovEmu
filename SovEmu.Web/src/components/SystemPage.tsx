@@ -35,7 +35,6 @@ import { GamePanel } from "./browse/GamePanel";
 import { JumpButton, JumpStrip } from "./browse/JumpStrip";
 import { PartIcon } from "./browse/PartIcon";
 import { CHIP, CHIP_ON, TabStrip, TabStripDivider } from "./browse/TabStrip";
-import HintBar from "./HintBar";
 import Shell from "./Shell";
 import SideNav, { NAV_SPACE } from "./SideNav";
 import { cn } from "./ui/cn";
@@ -299,7 +298,6 @@ function Games() {
   if (!system) return null;
   const filterCount = activeFilters(filters) + (query.trim() ? 1 : 0);
   const showJump = sort === "title" && shown.length > 12 && stops.length > 1;
-  const auto = slots.some((s) => s.slot === AUTO_SLOT);
 
   return (
     <>
@@ -403,22 +401,6 @@ function Games() {
           onCancel={cancelJump}
         />
       )}
-      <HintBar
-        hints={
-          open
-            ? [
-                { button: "dpad", label: "Choose" },
-                { button: "a", label: auto ? "Continue" : "Play" },
-                { button: "b", label: "Close" },
-              ]
-            : [
-                { button: "dpad", label: "Choose" },
-                { button: "a", label: "Open" },
-                { button: "start", label: "Filters" },
-                { button: "b", label: "Home" },
-              ]
-        }
-      />
     </>
   );
 }
