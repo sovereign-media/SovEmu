@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue: each queued pull request is tested on top of main and the pull requests
+  # ahead of it, then merged. The required checks must run here too, or nothing ever merges.
+  merge_group:
   # By hand (Actions → CI → Run workflow): runs every job, whatever changed.
   workflow_dispatch:
 
@@ -48,10 +51,16 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # A merge group is compared with git (no pull request to ask): fetch both commits.
+          fetch-depth: ${{ github.event_name == 'merge_group' && 0 || 1 }}
 
       - uses: dorny/paths-filter@v4
         id: filter
         with:
+          # In the merge queue, what this group adds to main.
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
           filters: |
             backend:
               - .github/workflows/ci.yml
