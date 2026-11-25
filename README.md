@@ -278,10 +278,15 @@ gives (`fbneo,screenscraper`):
    `mslug` becomes *Metal Slug - Super Vehicle-001* (1996, Nazca).
 2. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
    ES-DE scrape from. It matches each file by its MD5, size and name, so it also finds hacks,
-   translations and homebrew. It needs developer credentials, requested on its forum
-   (`SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD`); a free user account raises
-   the daily quota (`SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD`). Without
-   credentials it is not asked, and the Library page says so.
+   translations and homebrew. Every request carries two sets of credentials: the *developer*
+   ones say which program asks, and SovEmu's own are built into the released image, so there is
+   nothing to request; the *user* ones say who asks. Without a user account lookups run as a
+   guest, the slowest level and the first turned away when ScreenScraper is busy; a free
+   account (`SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD`) is steadier, and
+   contributing or donating raises its limits. A build of your own has no developer credentials
+   unless you set `SOVEMU_SCREENSCRAPER_DEVID` and `SOVEMU_SCREENSCRAPER_DEVPASSWORD` (they also
+   replace the built-in ones); without any, ScreenScraper is not asked, and the Library page says
+   so.
 
 ScreenScraper's limits depend on the account: its level, and what it has contributed (data or
 money) raise the requests it may have open at once, per minute and per day. SovEmu reads the
@@ -382,7 +387,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
 | `SOVEMU_METADATA_SOURCES` | `fbneo,screenscraper` | Game-information sources, in the order they are asked |
 | `SOVEMU_METADATA_REFRESH_DAYS` | `0` | Look games up again once their information is this many days old (`0`: never) |
-| `SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD` | unset | ScreenScraper developer credentials |
+| `SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD` | SovEmu's, in released images | ScreenScraper developer credentials (which program asks); set only to use your own |
 | `SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |

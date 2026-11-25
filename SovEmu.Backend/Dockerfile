@@ -104,7 +104,14 @@ COPY --from=notices /out/third-party-notices.json SovEmu.Server/third-party-noti
 # `toolchain`, so the test stage's compile does not change with every commit.
 ARG SOVEMU_REVISION=""
 ARG SOVEMU_BUILT=""
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+# SovEmu's own ScreenScraper developer credentials, built into the server (`build.rs`) so a
+# released image needs only the admin's ScreenScraper account. BuildKit secrets, never build
+# arguments: they reach this one compile as variables and stay out of the image's history and
+# layers. CI passes them (docker-bake.hcl); without them (a local build, a fork) none are built
+# in, and SOVEMU_SCREENSCRAPER_DEVID/_DEVPASSWORD can still be set at run time.
+RUN --mount=type=secret,id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID \
+    --mount=type=secret,id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD \
+    --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-release,target=/src/target \
     cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \

@@ -707,7 +707,7 @@ async fn mock_services(
     let gba = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <Data>
-  <ssuser><id>someone</id><requeststoday>2</requeststoday><maxrequestsperday>20000</maxrequestsperday></ssuser>
+  <ssuser><id>someone</id><requeststoday>3</requeststoday><maxrequestsperday>20000</maxrequestsperday></ssuser>
   <jeu id="77">
     <noms><nom region="wor">Other Game</nom></noms>
     <developpeur>Dev Co</developpeur>
@@ -933,12 +933,15 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
              "account": {"level": 1, "maxThreads": 2, "maxRequestsPerMinute": 600}},
         ])
     );
+    // Looked up two at a time (the account allows two), so in either order.
+    let mut recent = status["recent"].as_array().unwrap().clone();
+    recent.sort_by_key(|r| r["title"].as_str().unwrap().to_owned());
     assert_eq!(
-        status["recent"],
-        json!([
-            {"title": "Castlevania", "outcome": "FOUND", "sources": ["screenscraper"]},
-            {"title": "Other Game", "outcome": "FOUND", "sources": ["screenscraper"]},
-        ])
+        recent,
+        [
+            json!({"title": "Castlevania", "outcome": "FOUND", "sources": ["screenscraper"]}),
+            json!({"title": "Other Game", "outcome": "FOUND", "sources": ["screenscraper"]}),
+        ]
     );
 
     // ScreenScraper named the NES game and described it; the file's own title is kept too.
@@ -3391,6 +3394,14 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
     );
 
     let game = duplicates[0]["gameId"].as_i64().unwrap();
+    // The scan started a lookup in the background; another is refused while it runs (on a
+    // loaded machine it can still be running here), so wait for it to finish.
+    for _ in 0..200 {
+        if !h.state.jobs.is_running(crate::jobs::Job::Metadata) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
     let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
     h.ok(look_up, json!({"id": game})).await;
     let (code, _) = h.err(look_up, json!({"id": 99_999})).await;
