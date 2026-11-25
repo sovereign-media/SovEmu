@@ -27,6 +27,7 @@
 # files by the same Rust process that serves the API.
 
 ARG DEBIAN_RELEASE=trixie
+# Also the workspace's `rust-version` (SovEmu.Backend/Cargo.toml): move them together.
 ARG RUST_VERSION=1.100
 ARG NODE_VERSION=24
 
