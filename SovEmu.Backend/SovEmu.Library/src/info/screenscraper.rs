@@ -95,6 +95,8 @@ pub struct ScreenScraper {
     next_start: tokio::sync::Mutex<Option<Instant>>,
     quota: Mutex<Option<Quota>>,
     account: Mutex<Option<Account>>,
+    /// ScreenScraper refused the user account: lookups go on as a guest, without it.
+    user_refused: std::sync::atomic::AtomicBool,
 }
 
 /// How long to back off a busy server (HTTP 401 and 429, or its "maximum threads" text) before
@@ -256,6 +258,12 @@ pub(crate) const MESSAGES: &[(&[&str], Kind, &str)] = &[
         "Required fields are missing from the request.",
     ),
     (&["problème avec l'url", "probleme avec l'url"], Kind::Other, "The request is empty."),
+    (
+        &["identifiants utilisateur"],
+        Kind::Unauthorized,
+        "Login error: the user account was refused (SOVEMU_SCREENSCRAPER_USER, \
+         SOVEMU_SCREENSCRAPER_PASSWORD).",
+    ),
     (
         &["identifiants développeur", "identifiants developpeur"],
         Kind::Unauthorized,
@@ -462,6 +470,7 @@ impl ScreenScraper {
             next_start: tokio::sync::Mutex::new(None),
             quota: Mutex::new(None),
             account: Mutex::new(None),
+            user_refused: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -541,16 +550,37 @@ impl ScreenScraper {
             ("softname", concat!("SovEmu ", env!("CARGO_PKG_VERSION")).to_owned()),
             ("output", "xml".to_owned()),
         ];
-        if let Some((user, password)) = &c.user {
+        if let Some((user, password)) = self.user() {
             query.push(("ssid", user.clone()));
             query.push(("sspassword", password.clone()));
         }
         query
     }
 
-    /// Reads the account (`ssuserInfos.php`), which spends no lookup. A user account that
-    /// ScreenScraper does not accept (level 0) is noted: lookups go on as a guest.
+    /// The user account to sign requests with: none for a guest, or once ScreenScraper refused it.
+    fn user(&self) -> Option<&(String, String)> {
+        self.credentials.user.as_ref().filter(|_| !self.user_refused.load(Ordering::SeqCst))
+    }
+
+    /// Whether an answer refuses the user account (not the developer credentials): "Erreur de
+    /// login : Vérifier les identifiants utilisateurs !".
+    fn refuses_user(body: &str) -> bool {
+        body.to_lowercase().contains("identifiants utilisateur")
+    }
+
+    /// The note an admin sees when ScreenScraper refuses the user account.
+    const USER_REFUSED: &'static str = "ScreenScraper did not accept the user account \
+        (SOVEMU_SCREENSCRAPER_USER, SOVEMU_SCREENSCRAPER_PASSWORD): looking games up as a guest, \
+        with a guest's limits";
+
+    /// Reads the account (`ssuserInfos.php`), which spends no lookup. It needs a user account
+    /// (without one ScreenScraper answers "check the user credentials"), so a guest skips it and
+    /// learns its limits from the lookups' own answers. A user account ScreenScraper refuses is
+    /// noted, and lookups go on as a guest.
     async fn check_account(&self) -> Result<Vec<String>, MetaError> {
+        if self.user().is_none() {
+            return Ok(Vec::new());
+        }
         let response = self
             .http
             .get(format!("{}/ssuserInfos.php", self.base))
@@ -562,18 +592,15 @@ impl ScreenScraper {
         match classify(status, &body) {
             Answer::Xml => {
                 self.learn(&body);
-                let mut notes = Vec::new();
-                if self.credentials.user.is_some()
-                    && self.account().is_some_and(|a| a.level == Some(0))
-                {
-                    notes.push(
-                        "ScreenScraper did not accept the user account (SOVEMU_SCREENSCRAPER_USER, \
-                         SOVEMU_SCREENSCRAPER_PASSWORD): looking games up as a guest, with a \
-                         guest's limits"
-                            .to_owned(),
-                    );
+                if self.account().is_some_and(|a| a.level == Some(0)) {
+                    self.user_refused.store(true, Ordering::SeqCst);
+                    return Ok(vec![Self::USER_REFUSED.to_owned()]);
                 }
-                Ok(notes)
+                Ok(Vec::new())
+            }
+            Answer::Failed(MetaError::Unauthorized(_)) if Self::refuses_user(&body) => {
+                self.user_refused.store(true, Ordering::SeqCst);
+                Ok(vec![Self::USER_REFUSED.to_owned()])
             }
             // Not every server answers it (mirrors, older ones): the first lookup tells instead.
             Answer::NotFound | Answer::Retry(_) | Answer::Failed(MetaError::Other(_)) => {
@@ -662,7 +689,7 @@ impl ScreenScraper {
         progress: Progress<'_>,
     ) -> Result<Option<Found>, MetaError> {
         let Some(system) = system_id(&input.system) else { return Ok(None) };
-        let query = self.query(system, input);
+        let mut query = self.query(system, input);
         let mut backoff = BACKOFF.iter();
         loop {
             let (status, body) = self.ask(&query, progress).await?;
@@ -673,6 +700,14 @@ impl ScreenScraper {
                         .map(|info| Found { info, id: game_id(&body) }));
                 }
                 Answer::NotFound => return Ok(None),
+                // The user account refused mid-job: ask again as a guest.
+                Answer::Failed(MetaError::Unauthorized(_))
+                    if self.user().is_some() && Self::refuses_user(&body) =>
+                {
+                    tracing::warn!("ScreenScraper refused the user account: going on as a guest");
+                    self.user_refused.store(true, Ordering::SeqCst);
+                    query = self.query(system, input);
+                }
                 Answer::Failed(e) => return Err(e),
                 Answer::Retry(why) => match backoff.next() {
                     Some(wait) => {
@@ -912,6 +947,8 @@ pub(crate) mod tests {
             (401, "API fermé pour les non membres ou les membres inactifs", Kind::Retry),
             (200, "API closed for non-registered members", Kind::Retry),
             (403, "Erreur de login : Vérifier vos identifiants développeur !", Kind::Unauthorized),
+            // Not in the doc's table: what ssuserInfos.php answers without a user account.
+            (403, "Erreur de login : Vérifier les identifiants utilisateurs !", Kind::Unauthorized),
             (404, "Erreur : Jeu non trouvée !", Kind::NotFound),
             (404, "Erreur : Rom/Iso/Dossier non trouvée !", Kind::NotFound),
             (423, "API totalement fermé", Kind::Unavailable),
