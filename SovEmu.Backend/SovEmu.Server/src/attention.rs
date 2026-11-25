@@ -1,5 +1,5 @@
-//! Games needing attention, for the admin page of that name: games without game information or
-//! box art, possible duplicates (the same title and tags twice in a system), multi-part games
+//! Games needing attention, for the admin page of that name: games without game information,
+//! games waiting to be looked up again, games without box art, possible duplicates (the same title and tags twice in a system), multi-part games
 //! with a part missing, and the files the last scan could not place.
 //!
 //! Each kind is one query over the library as it stands, one system's or all; the library scan
@@ -13,6 +13,10 @@ use sqlx::SqlitePool;
 pub(crate) enum Kind {
     /// No game information: never looked up, or looked up and not found.
     NoInformation,
+    /// Queued to be looked up again (`game_metadata.status = 'refresh'`): it has information,
+    /// but a lookup is owed, after a source stopped before reaching it, or for fields added since
+    /// (migrations 0031, 0032, 0034). The lookup after each scan asks it.
+    AwaitingLookup,
     /// No box art: none beside it in the library, and none downloaded.
     NoBoxArt,
     /// The same title with the same tags in two or more files of one system.
@@ -24,8 +28,9 @@ pub(crate) enum Kind {
 }
 
 impl Kind {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::NoInformation,
+        Self::AwaitingLookup,
         Self::NoBoxArt,
         Self::Duplicate,
         Self::MissingParts,
@@ -41,6 +46,13 @@ impl Kind {
                         CASE WHEN m.game_id IS NULL THEN 'never looked up' ELSE 'not found' END AS detail
                  FROM games g LEFT JOIN game_metadata m ON m.game_id = g.id
                  WHERE (m.game_id IS NULL OR m.status = 'not_found') AND (?1 IS NULL OR g.system = ?1)
+                 ORDER BY g.system, g.title LIMIT ?2"
+            }
+            Self::AwaitingLookup => {
+                "SELECT g.id AS game_id, g.system, g.title, g.path,
+                        'last looked up ' || m.fetched_at AS detail
+                 FROM games g JOIN game_metadata m ON m.game_id = g.id
+                 WHERE m.status = 'refresh' AND (?1 IS NULL OR g.system = ?1)
                  ORDER BY g.system, g.title LIMIT ?2"
             }
             Self::NoBoxArt => {
@@ -147,7 +159,8 @@ mod tests {
         game(&db, "psx/B (USA).chd", "B", "USA", "").await;
         game(&db, "psx/B (USA).cue", "B", "USA", "").await;
         let unknown = game(&db, "psx/C (Disc 1).chd", "C", "", "2").await;
-        for (id, status) in [(found, "found"), (unknown, "not_found")] {
+        let queued = game(&db, "psx/D.chd", "D", "", "").await;
+        for (id, status) in [(found, "found"), (unknown, "not_found"), (queued, "refresh")] {
             sqlx::query(
                 "INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, ?, 'box.webp')",
             )
@@ -167,6 +180,9 @@ mod tests {
         let titles = |items: Vec<Item>| items.into_iter().map(|i| i.title).collect::<Vec<_>>();
         let of = |kind| items(&db, kind, Some("psx"), 50);
         assert_eq!(titles(of(Kind::NoInformation).await.unwrap()), ["B", "B", "C"]);
+        let waiting = of(Kind::AwaitingLookup).await.unwrap();
+        assert_eq!(titles(waiting.clone()), ["D"], "queued, not without information");
+        assert!(waiting[0].detail.starts_with("last looked up "), "{}", waiting[0].detail);
         assert_eq!(titles(of(Kind::NoBoxArt).await.unwrap()), ["B", "B"]);
         assert_eq!(titles(of(Kind::Duplicate).await.unwrap()), ["B", "B"]);
         let missing = of(Kind::MissingParts).await.unwrap();
