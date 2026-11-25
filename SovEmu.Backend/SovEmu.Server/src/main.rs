@@ -517,9 +517,14 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ARTWORK_DOWNLOADS", default_value_t = 4)]
     pub artwork_downloads: usize,
 
-    /// Pause between ScreenScraper requests, milliseconds (free accounts: one at a time).
+    /// Pause between ScreenScraper requests, milliseconds, when the account does not say how
+    /// many it may make a minute.
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_DELAY_MS", default_value_t = 1200)]
     pub screenscraper_delay_ms: u64,
+
+    /// At most this many ScreenScraper requests at once (0: as many as the account allows).
+    #[arg(long, env = "SOVEMU_SCREENSCRAPER_THREADS", default_value_t = 0)]
+    pub screenscraper_threads: usize,
 
     /// The GPU for 3D systems (N64, Dreamcast, GameCube, PS2): `auto` (the first GPU that
     /// works, else software rendering), `software` (Mesa's llvmpipe), `off` (no 3D systems) or
@@ -1266,6 +1271,9 @@ async fn run(mut config: Config) -> Result<()> {
         );
     }
     let _gauges = telemetry::observe(&state);
+    // The sources' accounts (level, limits), for the Library page before the first lookup.
+    let metadata = state.metadata.clone();
+    tokio::spawn(async move { metadata.check_accounts().await });
     // Scans the library in the background: a network library can take minutes, and the last
     // scan's games are already in the database meanwhile.
     jobs::spawn(&state);

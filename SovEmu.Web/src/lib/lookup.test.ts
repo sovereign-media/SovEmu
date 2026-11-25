@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MetadataStatus } from "./api";
-import { currentText, etaText, progressText, quotaPercent, quotaText, recentText } from "./lookup";
+import { accountText, etaText, progressText, quotaPercent, quotaText, recentText, workingText } from "./lookup";
 
 const ss = {
   id: "screenscraper",
@@ -10,6 +10,17 @@ const ss = {
   notFound: 1,
   errors: 0,
   quota: { requestsToday: 1500, maxRequestsPerDay: 20000, missesToday: 40, maxMissesPerDay: 2000 },
+  threads: 2,
+  account: {
+    user: "someone",
+    level: 1,
+    contribution: 2,
+    maxThreads: 2,
+    maxRequestsPerMinute: 120,
+    maxRequestsPerDay: 20000,
+    maxMissesPerDay: 2000,
+    maxDownloadKbps: 128,
+  },
 };
 
 const status = (over: Partial<MetadataStatus>): MetadataStatus => ({
@@ -22,7 +33,7 @@ const status = (over: Partial<MetadataStatus>): MetadataStatus => ({
   sources: ["fbneo", "screenscraper"],
   notes: [],
   artwork: { running: false, total: 0, done: 0, downloaded: 0, failed: 0 },
-  current: { gameId: 1, title: "Castlevania", system: "nes", provider: "screenscraper", step: "ASKING" },
+  working: [{ gameId: 1, title: "Castlevania", system: "nes", provider: "screenscraper", step: "ASKING" }],
   startedAt: 1_700_000_000,
   finishedAt: null,
   etaSeconds: 720,
@@ -42,16 +53,34 @@ describe("a game-information lookup", () => {
     expect(etaText(4 * 3600)).toBe("about 4 hours left");
   });
 
-  it("names the game it is on and what it is doing for it", () => {
-    expect(currentText(status({}))).toBe("Castlevania (nes): asking ScreenScraper");
-    const current = { gameId: 1, title: "Castlevania", system: "nes", provider: null };
-    expect(currentText(status({ current: { ...current, step: "HASHING" } }))).toBe(
-      "Castlevania (nes): hashing the file",
+  it("names the games it is on and what it is doing for each", () => {
+    const game = { gameId: 2, title: "Contra", system: "nes", provider: null };
+    expect(
+      workingText(
+        status({
+          working: [
+            { gameId: 1, title: "Castlevania", system: "nes", provider: "screenscraper", step: "ASKING" },
+            { ...game, step: "HASHING" },
+            { ...game, gameId: 3, provider: "screenscraper", step: "WAITING" },
+          ],
+        }),
+      ),
+    ).toEqual([
+      "Castlevania (nes): asking ScreenScraper",
+      "Contra (nes): hashing the file",
+      "Contra (nes): waiting for ScreenScraper",
+    ]);
+    expect(workingText(status({ working: [] }))).toEqual([]);
+  });
+
+  it("describes a source's account and the pool SovEmu uses", () => {
+    expect(accountText(ss)).toBe(
+      "someone · level 1 · contribution 2 · 2 requests at once · 120 a minute · 20,000 a day · downloads up to 128 KB/s",
     );
-    expect(currentText(status({ current: { ...current, provider: "screenscraper", step: "WAITING" } }))).toBe(
-      "Castlevania (nes): waiting for ScreenScraper",
-    );
-    expect(currentText(status({ current: null }))).toBeNull();
+    expect(accountText({ ...ss, threads: 1 })).toContain("1 of 2 requests at once");
+    const guest = { ...ss, threads: 1, account: { ...ss.account, user: null, contribution: 0, maxThreads: null } };
+    expect(accountText(guest)).toMatch(/^level 1 · 1 request at once/);
+    expect(accountText({ ...ss, account: null })).toBe("");
   });
 
   it("shows a source's quota, its misses included", () => {

@@ -83,7 +83,10 @@ pub(crate) async fn run_claimed(state: AppState) {
     let meta = state.metadata.clone();
     // Clears `running` however the downloads end (a panic included), so the next can start.
     let _running = super::scopeguard(meta.clone(), |m| update(m, |s| s.running = false));
-    let slots = Arc::new(Semaphore::new(meta.artwork_downloads.max(1)));
+    // Downloads count against the sources' accounts too: never more at once than the busiest
+    // source allows (ScreenScraper: the account's threads).
+    let allowed = meta.providers.iter().map(|p| p.concurrency()).max().unwrap_or(1);
+    let slots = Arc::new(Semaphore::new(meta.artwork_downloads.min(allowed).max(1)));
     for _ in 0..MAX_ROUNDS {
         let queue = wanted(&state).await;
         if queue.is_empty() {

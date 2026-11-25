@@ -83,6 +83,26 @@ pub struct Quota {
     pub max_misses_per_day: Option<u64>,
 }
 
+/// What a service says about the account a provider uses: its level and the limits that come
+/// with it. Every field is optional; a service reports what it knows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Account {
+    /// The user name, when signed in as a user.
+    pub user: Option<String>,
+    /// The service's own level number for the account.
+    pub level: Option<u32>,
+    /// The account's contribution level (ScreenScraper: 2 adds a thread, 3 or more add five).
+    pub contribution: Option<u32>,
+    /// Requests the account may have open at once.
+    pub max_threads: Option<u32>,
+    pub max_requests_per_minute: Option<u32>,
+    pub max_requests_per_day: Option<u64>,
+    /// Lookups a day that may find nothing.
+    pub max_misses_per_day: Option<u64>,
+    /// Download speed the account is allowed, KB/s.
+    pub max_download_kbps: Option<u32>,
+}
+
 /// What a provider found: the information, and the service's own id for the game, which a
 /// later lookup passes back ([`LookupInput::known_ids`]) to fetch it directly.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -104,6 +124,20 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// and only when it does not know the game's id yet.
     fn wants_md5(&self) -> bool {
         false
+    }
+    /// Once before a job's lookups (and once at startup): checks the account and learns its
+    /// limits. Returns notes for the admin (an account that was not accepted, say); an error
+    /// means the provider cannot be used for this job.
+    fn prepare(&self) -> BoxFuture<'_, Result<Vec<String>, MetaError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    /// The account it uses, as the service last described it.
+    fn account(&self) -> Option<Account> {
+        None
+    }
+    /// Lookups it can take at once (the job looks this many games up together).
+    fn concurrency(&self) -> usize {
+        1
     }
     /// What it knows about `input`: `Ok(None)` when it does not know the game.
     fn lookup<'a>(

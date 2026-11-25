@@ -120,7 +120,7 @@ export const MetadataFields = graphql(`
       downloaded
       failed
     }
-    current {
+    working {
       gameId
       title
       system
@@ -147,6 +147,17 @@ export const MetadataFields = graphql(`
         maxRequestsPerDay
         missesToday
         maxMissesPerDay
+      }
+      threads
+      account {
+        user
+        level
+        contribution
+        maxThreads
+        maxRequestsPerMinute
+        maxRequestsPerDay
+        maxMissesPerDay
+        maxDownloadKbps
       }
     }
     recent {

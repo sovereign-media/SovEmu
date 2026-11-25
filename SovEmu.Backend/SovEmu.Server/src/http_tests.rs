@@ -286,8 +286,9 @@ const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
 const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
                         artwork { running total done downloaded failed } \
-                        current { title } finishedAt systems { system total done } \
-                        providers { id asked found notFound errors quota { requestsToday } } \
+                        working { title } finishedAt systems { system total done } \
+                        providers { id asked found notFound errors quota { requestsToday } \
+                        threads account { level maxThreads maxRequestsPerMinute } } \
                         recent { title outcome sources } } }";
 const LIBRARY: &str = "{ libraryStatus { mode games cacheBytes mirror { running filesDone } } }";
 
@@ -714,6 +715,16 @@ async fn mock_services(
     );
     let app = axum::Router::new()
         .route(
+            "/api2/ssuserInfos.php",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                assert_eq!(q["devid"], "dev");
+                // An account that may have two requests open, 600 a minute.
+                "<Data><ssuser><id>someone</id><niveau>1</niveau><maxthreads>2</maxthreads>\
+                 <maxrequestspermin>600</maxrequestspermin><requeststoday>1</requeststoday>\
+                 </ssuser></Data>"
+            }),
+        )
+        .route(
             "/api2/jeuInfos.php",
             get(move |Query(q): Query<HashMap<String, String>>| {
                 let gba = gba.clone();
@@ -888,7 +899,7 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
 
     // The progress: per system, per provider (with the quota ScreenScraper last reported), and
     // the games just looked up, most recent first.
-    assert_eq!(status["current"], Value::Null);
+    assert_eq!(status["working"], json!([]));
     assert!(status["finishedAt"].as_f64().is_some());
     assert_eq!(
         status["systems"],
@@ -897,9 +908,11 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(
         status["providers"],
         json!([
-            {"id": "fbneo", "asked": 2, "found": 0, "notFound": 2, "errors": 0, "quota": null},
+            {"id": "fbneo", "asked": 2, "found": 0, "notFound": 2, "errors": 0, "quota": null,
+             "threads": 1, "account": null},
             {"id": "screenscraper", "asked": 2, "found": 2, "notFound": 0, "errors": 0,
-             "quota": {"requestsToday": 3.0}},
+             "quota": {"requestsToday": 3.0}, "threads": 2,
+             "account": {"level": 1, "maxThreads": 2, "maxRequestsPerMinute": 600}},
         ])
     );
     assert_eq!(

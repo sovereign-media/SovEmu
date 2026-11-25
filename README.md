@@ -278,6 +278,13 @@ gives (`fbneo,screenscraper`):
    the daily quota (`SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD`). Without
    credentials it is not asked, and the Library page says so.
 
+ScreenScraper's limits depend on the account: its level, and what it has contributed (data or
+money) raise the requests it may have open at once, per minute and per day. SovEmu reads the
+account at startup and before each lookup (`ssuserInfos.php`, which spends no request), looks up
+as many games at once as the account allows (`SOVEMU_SCREENSCRAPER_THREADS` caps it), spaces
+requests by its per-minute limit, and downloads box art no faster. The Library page shows the
+account's level and limits. ScreenScraper reports problems in French; SovEmu shows them in English.
+
 Each game is asked about until every field a game page shows is filled; an earlier source's
 field wins. ScreenScraper's own id for each game is kept, so looking a game up again asks for
 that game instead of hashing its file. The Library page shows a lookup as it runs: the game and
@@ -374,7 +381,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD` | unset | ScreenScraper account (raises the quota) |
 | `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
-| `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests |
+| `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests, when the account does not give its per-minute limit |
+| `SOVEMU_SCREENSCRAPER_THREADS` | `0` | At most this many ScreenScraper requests at once (`0`: as many as the account allows) |
 | `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art downloaded at once, in the background after a lookup |
 | `SOVEMU_SCREENSCRAPER_URL` | ScreenScraper's | API base URL (mirrors, tests) |
 | **Streaming** | | |

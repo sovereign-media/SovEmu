@@ -160,6 +160,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_METADATA_REGIONS"
         | "SOVEMU_METADATA_LANGUAGES"
         | "SOVEMU_SCREENSCRAPER_DELAY_MS"
+        | "SOVEMU_SCREENSCRAPER_THREADS"
         | "SOVEMU_ARTWORK_DOWNLOADS"
         | "SOVEMU_SCREENSCRAPER_URL" => GameInformation,
         "SOVEMU_HTTP"

@@ -20,7 +20,7 @@
 pub(crate) mod artwork;
 
 use sovemu_library::info::{
-    Found, GameInfo, LookupInput, MetaError, Provider, Quota, Step, http_client, md5_file,
+    Account, Found, GameInfo, LookupInput, MetaError, Provider, Quota, Step, http_client, md5_file,
 };
 
 use std::collections::{BTreeMap, VecDeque};
@@ -66,6 +66,26 @@ pub struct ProviderProgress {
     pub errors: u64,
     /// Today's quota, as the service last reported it.
     pub quota: Option<Quota>,
+    /// The account it uses: its level and limits, as the service last described them.
+    pub account: Option<Account>,
+    /// Lookups it takes at once, from the account's limits.
+    pub threads: usize,
+}
+
+impl ProviderProgress {
+    fn of(p: &dyn Provider) -> Self {
+        Self {
+            id: p.id(),
+            name: p.name(),
+            asked: 0,
+            found: 0,
+            not_found: 0,
+            errors: 0,
+            quota: None,
+            account: None,
+            threads: 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +125,8 @@ pub struct JobStatus {
     pub notes: Vec<String>,
     /// The box art downloads that follow a lookup.
     pub artwork: artwork::ArtworkStatus,
-    pub current: Option<Current>,
+    /// The games being looked up now (several when a source takes lookups in parallel).
+    pub working: Vec<Current>,
     /// Unix times.
     pub started_at: Option<f64>,
     pub finished_at: Option<f64>,
@@ -194,6 +215,26 @@ impl Metadata {
         })
     }
 
+    /// Checks each source's account (level and limits), so the Library page shows them before
+    /// the first lookup. Notes go with the next job; a source that cannot be used says why.
+    pub(crate) async fn check_accounts(&self) {
+        let mut notes = Vec::new();
+        for p in &self.providers {
+            match p.prepare().await {
+                Ok(n) => notes.extend(n),
+                Err(e) => notes.push(format!("{}: {e}", p.name())),
+            }
+        }
+        for note in &notes {
+            tracing::warn!(note = %note, "game information");
+        }
+        self.update(|s| {
+            if !s.running {
+                s.notes = self.setup_notes.iter().cloned().chain(notes).collect();
+            }
+        });
+    }
+
     pub fn status(&self) -> JobStatus {
         let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner()).clone();
         status.artwork = self.artwork_status();
@@ -205,9 +246,15 @@ impl Metadata {
             }
             _ => None,
         };
+        // Before a first job, every configured source, with nothing asked yet.
+        if status.providers.is_empty() {
+            status.providers = self.providers.iter().map(|p| ProviderProgress::of(&**p)).collect();
+        }
         for p in &mut status.providers {
             if let Some(provider) = self.providers.iter().find(|x| x.id() == p.id) {
                 p.quota = provider.quota();
+                p.account = provider.account();
+                p.threads = provider.concurrency();
             }
         }
         status
@@ -425,7 +472,7 @@ pub(crate) async fn run_job(state: AppState, scope: Scope) {
     let _running = scopeguard(meta.clone(), |m| {
         m.update(|s| {
             s.running = false;
-            s.current = None;
+            s.working.clear();
         })
     });
     let providers: Vec<Arc<dyn Provider>> = meta
@@ -435,20 +482,20 @@ pub(crate) async fn run_job(state: AppState, scope: Scope) {
         .cloned()
         .collect();
     let available: Vec<&str> = providers.iter().map(|p| p.id()).collect();
-    meta.update(|s| {
-        s.providers = providers
-            .iter()
-            .map(|p| ProviderProgress {
-                id: p.id(),
-                name: p.name(),
-                asked: 0,
-                found: 0,
-                not_found: 0,
-                errors: 0,
-                quota: None,
-            })
-            .collect()
-    });
+    meta.update(|s| s.providers = providers.iter().map(|p| ProviderProgress::of(&**p)).collect());
+    // Each source checks its account first (its limits size the job); one that cannot be used
+    // is left alone for the job.
+    let stopped: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+    for p in &providers {
+        match p.prepare().await {
+            Ok(notes) => meta.update(|s| s.notes.extend(notes)),
+            Err(e) => {
+                tracing::warn!(provider = p.id(), error = %e, "metadata: provider not used");
+                meta.update(|s| s.notes.push(format!("{}: {e}", p.name())));
+                stopped.lock().unwrap_or_else(|e| e.into_inner()).push(p.id());
+            }
+        }
+    }
 
     let stale = scope.stale_after_days.map(|d| format!("-{d} days"));
     let games: Vec<Pending> = sqlx::query_as::<_, Pending>(
@@ -485,157 +532,29 @@ pub(crate) async fn run_job(state: AppState, scope: Scope) {
     });
     tracing::info!(count = games.len(), sources = ?available, "metadata lookup started");
 
-    // Providers that stopped (credentials, quota, closed) are left alone for the rest of the job.
-    let mut stopped: Vec<&'static str> = Vec::new();
+    // As many games at once as the busiest source takes (its account's threads); each source
+    // keeps to its own limit within that.
+    let parallel = providers
+        .iter()
+        .filter(|p| !stopped.lock().unwrap_or_else(|e| e.into_inner()).contains(&p.id()))
+        .map(|p| p.concurrency())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let slots = Arc::new(tokio::sync::Semaphore::new(parallel));
+    let providers = Arc::new(providers);
+    let fields = Arc::new(scope.fields.clone());
+    let mut tasks = tokio::task::JoinSet::new();
     for game in games {
-        let old: Row = sqlx::query_as(
-            "SELECT title, description, release_date, developer, publisher, genre, players,
-               rating, box_art_url, box_art_source, field_sources, provider_ids, tried
-             FROM game_metadata WHERE game_id = ?",
-        )
-        .bind(game.id)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| Row {
-            field_sources: "{}".into(),
-            provider_ids: "{}".into(),
-            ..Row::default()
-        });
-        meta.update(|s| {
-            s.current = Some(Current {
-                game_id: game.id,
-                title: game.title.clone(),
-                system: game.system.clone(),
-                provider: None,
-                step: Step::Hashing,
-            })
-        });
-        let known_ids = old.ids();
-        let path = state.config.roms_dir.join(&game.path);
-        // Hashed only for a provider that matches by hash and does not know the game yet.
-        let hash = providers.iter().any(|p| {
-            p.wants_md5() && !stopped.contains(&p.id()) && !known_ids.contains_key(p.id())
-        });
-        let input = LookupInput {
-            system: game.system.clone(),
-            title: game.title.clone(),
-            file_name: Path::new(&game.path)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            size: game.size as u64,
-            md5: if hash {
-                tokio::task::spawn_blocking(move || md5_file(&path)).await.ok().flatten()
-            } else {
-                None
-            },
-            known_ids,
-        };
-
-        let mut found = Lookup::default();
-        let mut failed = None;
-        for provider in &providers {
-            let id = provider.id();
-            if stopped.contains(&id) || found.info.complete() {
-                continue;
-            }
-            meta.update(|s| {
-                if let Some(c) = &mut s.current {
-                    c.provider = Some(id);
-                    c.step = Step::Asking;
-                }
-            });
-            let progress_meta = meta.clone();
-            let progress = move |step: Step| {
-                progress_meta.update(|s| {
-                    if let Some(c) = &mut s.current {
-                        c.step = step;
-                    }
-                })
-            };
-            let answer = provider.lookup(&input, &progress).await;
-            let count = |f: fn(&mut ProviderProgress)| {
-                meta.update(|s| {
-                    if let Some(p) = s.providers.iter_mut().find(|p| p.id == id) {
-                        p.asked += 1;
-                        f(p);
-                    }
-                })
-            };
-            match answer {
-                Ok(Some(answer)) => {
-                    count(|p| p.found += 1);
-                    found.add(id, answer);
-                    found.tried.push(id);
-                }
-                Ok(None) => {
-                    count(|p| p.not_found += 1);
-                    found.tried.push(id);
-                }
-                Err(
-                    e @ (MetaError::Unauthorized(_)
-                    | MetaError::Quota(_)
-                    | MetaError::Unavailable(_)),
-                ) => {
-                    count(|p| p.errors += 1);
-                    tracing::warn!(provider = id, error = %e, "metadata: provider stopped");
-                    let note = format!("{}: {e}", provider.name());
-                    meta.update(|s| s.notes.push(note));
-                    stopped.push(id);
-                    failed = Some(e.to_string());
-                }
-                Err(e) => {
-                    count(|p| p.errors += 1);
-                    tracing::debug!(game = %game.title, provider = id, error = %e, "metadata: lookup failed");
-                    failed = Some(e.to_string());
-                }
-            }
-        }
-
-        let any = !found.field_sources.is_empty();
-        let outcome = if any {
-            Outcome::Found
-        } else if failed.is_some() {
-            Outcome::Failed
-        } else {
-            Outcome::NotFound
-        };
-        // A lookup that failed and found nothing is not stored, so the next job asks again.
-        if outcome != Outcome::Failed {
-            let row = merge_row(&old, &found, &scope.fields);
-            if let Err(e) = store(&state, game.id, &row, &meta.providers).await {
-                tracing::warn!(game = %game.title, error = %e, "metadata: cannot store");
-            }
-        }
-        let title = found.info.title.clone().or(old.title.clone()).unwrap_or(game.title.clone());
-        let sources: Vec<&'static str> = providers
-            .iter()
-            .map(|p| p.id())
-            .filter(|id| found.field_sources.values().any(|s| s == id))
-            .collect();
-        meta.update(|s| {
-            s.done += 1;
-            match outcome {
-                Outcome::Found => s.found += 1,
-                Outcome::NotFound => s.not_found += 1,
-                Outcome::Failed => s.failed += 1,
-            }
-            if let Some(sys) = s.systems.iter_mut().find(|x| x.system == game.system) {
-                sys.done += 1;
-            }
-            s.recent.push_front(Recent {
-                game_id: game.id,
-                title,
-                system: game.system.clone(),
-                outcome,
-                sources,
-                detail: if outcome == Outcome::Failed { failed } else { None },
-            });
-            s.recent.truncate(RECENT);
+        let Ok(slot) = slots.clone().acquire_owned().await else { break };
+        let (state, providers, fields, stopped) =
+            (state.clone(), providers.clone(), fields.clone(), stopped.clone());
+        tasks.spawn(async move {
+            look_up(&state, &providers, &fields, &stopped, game).await;
+            drop(slot);
         });
     }
+    while tasks.join_next().await.is_some() {}
     // Game information renames games: which share a title may have changed.
     if let Err(e) = crate::releases::refresh(&state.db).await {
         tracing::warn!(error = %e, "metadata: updating release labels");
@@ -644,7 +563,7 @@ pub(crate) async fn run_job(state: AppState, scope: Scope) {
     let artwork = artwork::claim(&meta);
     meta.update(|s| {
         s.running = false;
-        s.current = None;
+        s.working.clear();
         s.finished_at = Some(now_unix());
     });
     let s = meta.status();
@@ -658,6 +577,166 @@ pub(crate) async fn run_job(state: AppState, scope: Scope) {
     if artwork {
         tokio::spawn(artwork::run_claimed(state));
     }
+}
+
+/// Looks one game up: asks the providers in order until its information is complete, stores
+/// what they found merged into what it had, and counts the result.
+async fn look_up(
+    state: &AppState,
+    providers: &[Arc<dyn Provider>],
+    fields: &[Field],
+    stopped: &Mutex<Vec<&'static str>>,
+    game: Pending,
+) {
+    let meta = &state.metadata;
+    let old: Row = sqlx::query_as(
+        "SELECT title, description, release_date, developer, publisher, genre, players,
+           rating, box_art_url, box_art_source, field_sources, provider_ids, tried
+         FROM game_metadata WHERE game_id = ?",
+    )
+    .bind(game.id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| Row {
+        field_sources: "{}".into(),
+        provider_ids: "{}".into(),
+        ..Row::default()
+    });
+    meta.update(|s| {
+        s.working.push(Current {
+            game_id: game.id,
+            title: game.title.clone(),
+            system: game.system.clone(),
+            provider: None,
+            step: Step::Hashing,
+        })
+    });
+    let stopped_now = || stopped.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let known_ids = old.ids();
+    let path = state.config.roms_dir.join(&game.path);
+    // Hashed only for a provider that matches by hash and does not know the game yet.
+    let hash = providers.iter().any(|p| {
+        p.wants_md5() && !stopped_now().contains(&p.id()) && !known_ids.contains_key(p.id())
+    });
+    let input = LookupInput {
+        system: game.system.clone(),
+        title: game.title.clone(),
+        file_name: Path::new(&game.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        size: game.size as u64,
+        md5: if hash {
+            tokio::task::spawn_blocking(move || md5_file(&path)).await.ok().flatten()
+        } else {
+            None
+        },
+        known_ids,
+    };
+
+    let mut found = Lookup::default();
+    let mut failed = None;
+    for provider in providers {
+        let id = provider.id();
+        if stopped_now().contains(&id) || found.info.complete() {
+            continue;
+        }
+        meta.update(|s| {
+            if let Some(c) = s.working.iter_mut().find(|c| c.game_id == game.id) {
+                c.provider = Some(id);
+                c.step = Step::Asking;
+            }
+        });
+        let progress_meta = meta.clone();
+        let game_id = game.id;
+        let progress = move |step: Step| {
+            progress_meta.update(|s| {
+                if let Some(c) = s.working.iter_mut().find(|c| c.game_id == game_id) {
+                    c.step = step;
+                }
+            })
+        };
+        let answer = provider.lookup(&input, &progress).await;
+        let count = |f: fn(&mut ProviderProgress)| {
+            meta.update(|s| {
+                if let Some(p) = s.providers.iter_mut().find(|p| p.id == id) {
+                    p.asked += 1;
+                    f(p);
+                }
+            })
+        };
+        match answer {
+            Ok(Some(answer)) => {
+                count(|p| p.found += 1);
+                found.add(id, answer);
+                found.tried.push(id);
+            }
+            Ok(None) => {
+                count(|p| p.not_found += 1);
+                found.tried.push(id);
+            }
+            Err(
+                e @ (MetaError::Unauthorized(_) | MetaError::Quota(_) | MetaError::Unavailable(_)),
+            ) => {
+                count(|p| p.errors += 1);
+                tracing::warn!(provider = id, error = %e, "metadata: provider stopped");
+                let note = format!("{}: {e}", provider.name());
+                meta.update(|s| s.notes.push(note));
+                stopped.lock().unwrap_or_else(|e| e.into_inner()).push(id);
+                failed = Some(e.to_string());
+            }
+            Err(e) => {
+                count(|p| p.errors += 1);
+                tracing::debug!(game = %game.title, provider = id, error = %e, "metadata: lookup failed");
+                failed = Some(e.to_string());
+            }
+        }
+    }
+
+    let any = !found.field_sources.is_empty();
+    let outcome = if any {
+        Outcome::Found
+    } else if failed.is_some() {
+        Outcome::Failed
+    } else {
+        Outcome::NotFound
+    };
+    // A lookup that failed and found nothing is not stored, so the next job asks again.
+    if outcome != Outcome::Failed {
+        let row = merge_row(&old, &found, fields);
+        if let Err(e) = store(state, game.id, &row, &meta.providers).await {
+            tracing::warn!(game = %game.title, error = %e, "metadata: cannot store");
+        }
+    }
+    let title = found.info.title.clone().or(old.title.clone()).unwrap_or(game.title.clone());
+    let sources: Vec<&'static str> = providers
+        .iter()
+        .map(|p| p.id())
+        .filter(|id| found.field_sources.values().any(|s| s == id))
+        .collect();
+    meta.update(|s| {
+        s.working.retain(|c| c.game_id != game.id);
+        s.done += 1;
+        match outcome {
+            Outcome::Found => s.found += 1,
+            Outcome::NotFound => s.not_found += 1,
+            Outcome::Failed => s.failed += 1,
+        }
+        if let Some(sys) = s.systems.iter_mut().find(|x| x.system == game.system) {
+            sys.done += 1;
+        }
+        s.recent.push_front(Recent {
+            game_id: game.id,
+            title,
+            system: game.system.clone(),
+            outcome,
+            sources,
+            detail: if outcome == Outcome::Failed { failed } else { None },
+        });
+        s.recent.truncate(RECENT);
+    });
 }
 
 /// Writes `row` for `game_id`. A new box art URL is downloaded afresh: the old file is dropped

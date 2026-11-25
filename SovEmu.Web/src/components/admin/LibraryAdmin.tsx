@@ -18,7 +18,7 @@ import {
 import { useCallback, useState } from "react";
 import { api, type LibraryStatus, type MetadataField, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { currentText, progressText, quotaPercent, quotaText, recentText } from "../../lib/lookup";
+import { accountText, progressText, quotaPercent, quotaText, recentText, workingText } from "../../lib/lookup";
 import { formatBytes } from "../../lib/numbers";
 import { Button } from "../ui/button";
 import { Confirm, Progress } from "../ui/primitives";
@@ -72,7 +72,7 @@ function Library() {
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
   const art = metadata.artwork;
   const artPct = art.total ? (100 * art.done) / art.total : 0;
-  const current = currentText(metadata);
+  const working = workingText(metadata);
   return (
     <>
       <AdminSection
@@ -150,7 +150,13 @@ function Library() {
         </p>
         <Progress className="mt-4" value={metaPct} color="#10b981" label="Game information" />
         <p className="mt-2 text-sm text-slate-300">{progressText(metadata)}</p>
-        {current && <p className="mt-1 text-sm text-slate-400">Now: {current}</p>}
+        {working.length > 0 && (
+          <ul className="mt-1 grid gap-0.5 text-sm text-slate-400" aria-label="Looking up now">
+            {working.map((w) => (
+              <li key={w}>Now: {w}</li>
+            ))}
+          </ul>
+        )}
 
         {metadata.systems.length > 1 && (
           <div className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -190,7 +196,10 @@ function Library() {
                 const pct = quotaPercent(p);
                 return (
                   <tr key={p.id} className="border-t border-white/5">
-                    <td className="py-1">{p.name}</td>
+                    <td className="py-1">
+                      {p.name}
+                      {p.account && <div className="text-xs text-slate-400">{accountText(p)}</div>}
+                    </td>
                     <td className="py-1">{p.asked.toLocaleString()}</td>
                     <td className="py-1">{p.found.toLocaleString()}</td>
                     <td className="py-1">{p.notFound.toLocaleString()}</td>

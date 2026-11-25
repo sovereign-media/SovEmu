@@ -1707,6 +1707,29 @@ enum MediaKind {
 }
 
 """
+A source's account: its level and the limits that come with it.
+"""
+type MetadataAccount {
+	user: String
+	"""
+	The service's own level number.
+	"""
+	level: Int
+	"""
+	ScreenScraper: 2 adds a thread, 3 or more add five.
+	"""
+	contribution: Int
+	maxThreads: Int
+	maxRequestsPerMinute: Int
+	maxRequestsPerDay: Float
+	maxMissesPerDay: Float
+	"""
+	KB/s.
+	"""
+	maxDownloadKbps: Int
+}
+
+"""
 The game a lookup is on.
 """
 type MetadataCurrent {
@@ -1752,6 +1775,15 @@ type MetadataProviderProgress {
 	notFound: Int!
 	errors: Int!
 	quota: MetadataQuota
+	"""
+	The account the source uses, as the service last described it.
+	"""
+	account: MetadataAccount
+	"""
+	Lookups the source takes at once, from its account's limits (and
+	`SOVEMU_SCREENSCRAPER_THREADS`).
+	"""
+	threads: Int!
 }
 
 """
@@ -1811,9 +1843,9 @@ type MetadataStatus {
 	"""
 	artwork: ArtworkStatus!
 	"""
-	The game being looked up now.
+	The games being looked up now: several at once when a source's account allows it.
 	"""
-	current: MetadataCurrent
+	working: [MetadataCurrent!]!
 	"""
 	When the current (or last) lookup started and finished, Unix seconds.
 	"""

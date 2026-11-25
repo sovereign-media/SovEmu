@@ -155,8 +155,8 @@ pub(super) struct MetadataStatus {
     pub(super) notes: Vec<String>,
     /// The box art downloads that follow a lookup, in the background.
     pub(super) artwork: ArtworkStatus,
-    /// The game being looked up now.
-    pub(super) current: Option<MetadataCurrent>,
+    /// The games being looked up now: several at once when a source's account allows it.
+    pub(super) working: Vec<MetadataCurrent>,
     /// When the current (or last) lookup started and finished, Unix seconds.
     pub(super) started_at: Option<f64>,
     pub(super) finished_at: Option<f64>,
@@ -217,6 +217,27 @@ pub(super) struct MetadataProviderProgress {
     pub(super) not_found: i64,
     pub(super) errors: i64,
     pub(super) quota: Option<MetadataQuota>,
+    /// The account the source uses, as the service last described it.
+    pub(super) account: Option<MetadataAccount>,
+    /// Lookups the source takes at once, from its account's limits (and
+    /// `SOVEMU_SCREENSCRAPER_THREADS`).
+    pub(super) threads: i32,
+}
+
+/// A source's account: its level and the limits that come with it.
+#[derive(SimpleObject)]
+pub(super) struct MetadataAccount {
+    pub(super) user: Option<String>,
+    /// The service's own level number.
+    pub(super) level: Option<i32>,
+    /// ScreenScraper: 2 adds a thread, 3 or more add five.
+    pub(super) contribution: Option<i32>,
+    pub(super) max_threads: Option<i32>,
+    pub(super) max_requests_per_minute: Option<i32>,
+    pub(super) max_requests_per_day: Option<f64>,
+    pub(super) max_misses_per_day: Option<f64>,
+    /// KB/s.
+    pub(super) max_download_kbps: Option<i32>,
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
@@ -303,17 +324,21 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
                 downloaded: j.artwork.downloaded as i64,
                 failed: j.artwork.failed as i64,
             },
-            current: j.current.map(|c| MetadataCurrent {
-                game_id: c.game_id,
-                title: c.title,
-                system: c.system,
-                provider: c.provider.map(str::to_owned),
-                step: match c.step {
-                    Step::Hashing => MetadataStep::Hashing,
-                    Step::Asking => MetadataStep::Asking,
-                    Step::Waiting => MetadataStep::Waiting,
-                },
-            }),
+            working: j
+                .working
+                .into_iter()
+                .map(|c| MetadataCurrent {
+                    game_id: c.game_id,
+                    title: c.title,
+                    system: c.system,
+                    provider: c.provider.map(str::to_owned),
+                    step: match c.step {
+                        Step::Hashing => MetadataStep::Hashing,
+                        Step::Asking => MetadataStep::Asking,
+                        Step::Waiting => MetadataStep::Waiting,
+                    },
+                })
+                .collect(),
             started_at: j.started_at,
             finished_at: j.finished_at,
             eta_seconds: j.eta_seconds,
@@ -342,6 +367,17 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
                         misses_today: q.misses_today as f64,
                         max_misses_per_day: q.max_misses_per_day.map(|n| n as f64),
                     }),
+                    account: p.account.map(|a| MetadataAccount {
+                        user: a.user,
+                        level: a.level.map(|n| n as i32),
+                        contribution: a.contribution.map(|n| n as i32),
+                        max_threads: a.max_threads.map(|n| n as i32),
+                        max_requests_per_minute: a.max_requests_per_minute.map(|n| n as i32),
+                        max_requests_per_day: a.max_requests_per_day.map(|n| n as f64),
+                        max_misses_per_day: a.max_misses_per_day.map(|n| n as f64),
+                        max_download_kbps: a.max_download_kbps.map(|n| n as i32),
+                    }),
+                    threads: p.threads as i32,
                 })
                 .collect(),
             recent: j

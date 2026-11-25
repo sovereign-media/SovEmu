@@ -33,10 +33,14 @@ export function progressText(s: MetadataStatus): string {
   return "";
 }
 
-/** What the lookup is doing for the game it is on. */
-export function currentText(s: MetadataStatus): string | null {
-  const c = s.current;
-  if (!c) return null;
+type Working = MetadataStatus["working"][number];
+
+/** What the lookup is doing for each game it is on (several at once when a source allows). */
+export function workingText(s: MetadataStatus): string[] {
+  return s.working.map((c) => gameText(s, c));
+}
+
+function gameText(s: MetadataStatus, c: Working): string {
   const source = c.provider ? sourceName(s, c.provider) : null;
   const doing =
     c.step === "HASHING"
@@ -47,6 +51,26 @@ export function currentText(s: MetadataStatus): string | null {
           ? `asking ${source}`
           : "starting";
   return `${c.title} (${c.system}): ${doing}`;
+}
+
+/** A source's account: its level and the limits that come with it, and the pool SovEmu uses. */
+export function accountText(p: Provider): string {
+  const a = p.account;
+  if (!a) return "";
+  const parts: string[] = [];
+  if (a.user) parts.push(a.user);
+  if (a.level !== null) parts.push(`level ${a.level}`);
+  if (a.contribution) parts.push(`contribution ${a.contribution}`);
+  const threads = a.maxThreads ?? p.threads;
+  parts.push(
+    p.threads < threads
+      ? `${p.threads} of ${threads} requests at once`
+      : `${threads} request${threads === 1 ? "" : "s"} at once`,
+  );
+  if (a.maxRequestsPerMinute) parts.push(`${n(a.maxRequestsPerMinute)} a minute`);
+  if (a.maxRequestsPerDay) parts.push(`${n(a.maxRequestsPerDay)} a day`);
+  if (a.maxDownloadKbps) parts.push(`downloads up to ${n(a.maxDownloadKbps)} KB/s`);
+  return parts.join(" · ");
 }
 
 /** A source's quota today, if it reports one. */
