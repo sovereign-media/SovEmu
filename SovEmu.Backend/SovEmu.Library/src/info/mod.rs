@@ -32,6 +32,8 @@ pub struct GameInfo {
     pub rating: Option<f64>,
     /// Front box art.
     pub box_art_url: Option<String>,
+    /// A gameplay video (MP4).
+    pub video_url: Option<String>,
 }
 
 impl GameInfo {
@@ -49,7 +51,8 @@ impl GameInfo {
             genre,
             players,
             rating,
-            box_art_url
+            box_art_url,
+            video_url
         );
     }
 
@@ -149,8 +152,10 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     fn quota(&self) -> Option<Quota> {
         None
     }
-    /// The URL to download a box art URL it gave from (credentials added again).
-    fn box_art_url(&self, stored: &str) -> String {
+    /// The URL to download a media URL it gave from (box art, a video): credentials added
+    /// again, and for an image, at most `max_px` wide and high where the service can scale it.
+    fn media_url(&self, stored: &str, max_px: Option<u32>) -> String {
+        let _ = max_px;
         stored.to_owned()
     }
 }

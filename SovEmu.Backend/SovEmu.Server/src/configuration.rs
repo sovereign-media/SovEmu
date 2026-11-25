@@ -162,6 +162,8 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_SCREENSCRAPER_DELAY_MS"
         | "SOVEMU_SCREENSCRAPER_THREADS"
         | "SOVEMU_ARTWORK_DOWNLOADS"
+        | "SOVEMU_ARTWORK_MAX_PX"
+        | "SOVEMU_METADATA_VIDEOS"
         | "SOVEMU_SCREENSCRAPER_URL" => GameInformation,
         "SOVEMU_HTTP"
         | "SOVEMU_UDP_PORTS"

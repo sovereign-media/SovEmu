@@ -206,6 +206,10 @@ type ArtworkStatus {
 	done: Int!
 	downloaded: Int!
 	failed: Int!
+	"""
+	Of `downloaded`, the gameplay videos.
+	"""
+	videos: Int!
 }
 
 """
@@ -1756,6 +1760,7 @@ enum MetadataField {
 	PLAYERS
 	RATING
 	BOX_ART
+	VIDEO
 }
 
 enum MetadataOutcome {
@@ -3154,7 +3159,10 @@ type System {
 	playable: Boolean!
 	"""
 	A 3D system: its cores render with OpenGL and read analog sticks.
+	The shape of its games' boxes, width over height (US and European releases): game cards
+	take it so box art fills them.
 	"""
+	boxAspect: Float!
 	needsGpu: Boolean!
 	"""
 	For a 3D system, where it renders here.

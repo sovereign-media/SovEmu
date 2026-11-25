@@ -67,6 +67,12 @@ impl SystemNode {
         self.0.playable
     }
     /// A 3D system: its cores render with OpenGL and read analog sticks.
+    /// The shape of its games' boxes, width over height (US and European releases): game cards
+    /// take it so box art fills them.
+    async fn box_aspect(&self) -> f64 {
+        self.0.system.box_aspect()
+    }
+
     async fn needs_gpu(&self) -> bool {
         self.0.system.needs_gpu
     }

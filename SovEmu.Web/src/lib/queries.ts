@@ -45,6 +45,7 @@ export const SystemFields = graphql(`
     needsGpu
     rendering
     biosMissing
+    boxAspect
   }
 `);
 
@@ -119,6 +120,7 @@ export const MetadataFields = graphql(`
       done
       downloaded
       failed
+      videos
     }
     working {
       gameId

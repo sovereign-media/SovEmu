@@ -264,9 +264,14 @@ and `none` turns frames off.
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
-publishers, genres, player counts, ratings and box art. The information is stored as each game
-is looked up. Box art follows in the background, only for games with no thumb of their own,
-`SOVEMU_ARTWORK_DOWNLOADS` at a time. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
+publishers, genres, player counts, ratings, box art and gameplay videos. The information is
+stored as each game is looked up. Box art and videos follow in the background, only for games
+with no thumb or video of their own, `SOVEMU_ARTWORK_DOWNLOADS` at a time. Box art is asked for
+at the size the largest screen shows it (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
+scan; videos are ScreenScraper's normalised ones where it has them (smaller, one encoding), and
+`SOVEMU_METADATA_VIDEOS=false` skips them. A system's game cards take the shape of its boxes
+(SNES and N64 landscape, CD systems square, cartridge systems portrait), so box art fills them;
+a box of another shape (a Super Famicom's) is fitted inside its card. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
 gives (`fbneo,screenscraper`):
 
 1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
@@ -383,7 +388,9 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
 | `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests, when the account does not give its per-minute limit |
 | `SOVEMU_SCREENSCRAPER_THREADS` | `0` | At most this many ScreenScraper requests at once (`0`: as many as the account allows) |
-| `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art downloaded at once, in the background after a lookup |
+| `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art and videos downloaded at once, in the background after a lookup (never more than the account allows) |
+| `SOVEMU_ARTWORK_MAX_PX` | `1000` | Box art is asked for at most this many pixels wide and high (`0`: full size) |
+| `SOVEMU_METADATA_VIDEOS` | `true` | Download gameplay videos for games with none of their own |
 | `SOVEMU_SCREENSCRAPER_URL` | ScreenScraper's | API base URL (mirrors, tests) |
 | **Streaming** | | |
 | `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |

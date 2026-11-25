@@ -55,6 +55,9 @@ pub(crate) struct Game {
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
+    /// A downloaded gameplay video (a file under `<data>/metadata/media`), served as `video`.
+    #[serde(skip)]
+    pub(crate) box_video: Option<String>,
     /// How many discs (1 for most games).
     pub(crate) discs: i64,
     /// One of this user's favourites (filled in by `collections::mark_favourites`).
@@ -72,12 +75,15 @@ pub(crate) struct Game {
 impl Game {
     /// Downloaded box art stands in for a missing local `thumb`.
     pub(crate) fn with_box_art(mut self) -> Self {
-        if self.box_art.is_some() && !self.media.split(',').any(|k| k == "thumb") {
-            self.media = if self.media.is_empty() {
-                "thumb".into()
-            } else {
-                format!("{},thumb", self.media)
-            };
+        for (kind, file) in [("thumb", self.box_art.is_some()), ("video", self.box_video.is_some())]
+        {
+            if file && !self.media.split(',').any(|k| k == kind) {
+                self.media = if self.media.is_empty() {
+                    kind.into()
+                } else {
+                    format!("{},{kind}", self.media)
+                };
+            }
         }
         self
     }
@@ -144,7 +150,7 @@ pub(crate) const GAME_COLUMNS: &str =
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art, g.release, g.parts,
+     m.box_art, m.video AS box_video, g.release, g.parts,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
 /// What a list of games carries for this user beyond its rows: which are favourites, and the
@@ -809,9 +815,11 @@ pub(crate) async fn game_media(
     };
     let file = match found {
         Some(file) => file,
-        // No local artwork: box art a metadata service supplied stands in for the thumb.
-        None => match (kind.as_str(), &game.box_art) {
-            ("thumb", Some(name)) => state.metadata.media_dir.join(name),
+        // No local artwork: box art and a video a metadata service supplied stand in.
+        None => match (kind.as_str(), &game.box_art, &game.box_video) {
+            ("thumb", Some(name), _) | ("video", _, Some(name)) => {
+                state.metadata.media_dir.join(name)
+            }
             _ => return Err(ApiError::not_found("media")),
         },
     };

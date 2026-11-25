@@ -513,9 +513,19 @@ pub struct Config {
     )]
     pub metadata_languages: Vec<String>,
 
-    /// Box art downloaded at once by the background job that follows a lookup.
+    /// Box art and videos downloaded at once by the background job that follows a lookup
+    /// (never more than the sources' accounts allow).
     #[arg(long, env = "SOVEMU_ARTWORK_DOWNLOADS", default_value_t = 4)]
     pub artwork_downloads: usize,
+
+    /// Box art is asked for at most this many pixels wide and high, the size the largest screen
+    /// shows it at (0: full size, as scanned).
+    #[arg(long, env = "SOVEMU_ARTWORK_MAX_PX", default_value_t = 1000)]
+    pub artwork_max_px: u32,
+
+    /// Download gameplay videos for games with none of their own.
+    #[arg(long, env = "SOVEMU_METADATA_VIDEOS", default_value_t = true, action = clap::ArgAction::Set)]
+    pub metadata_videos: bool,
 
     /// Pause between ScreenScraper requests, milliseconds, when the account does not say how
     /// many it may make a minute.
@@ -1083,8 +1093,14 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     }
     let (providers, setup_notes) = metadata_providers(&config, &paths)?;
     metadata::tidy(&paths, &db).await;
-    let metadata =
-        metadata::Metadata::new(&paths, providers, setup_notes, config.artwork_downloads);
+    let metadata = metadata::Metadata::new(
+        &paths,
+        providers,
+        setup_notes,
+        config.artwork_downloads,
+        config.artwork_max_px,
+        config.metadata_videos,
+    );
     let copy_threads = config.copy_threads;
     // The built-in set: drawn here unless the image already holds it (it does, once per version).
     if config.decorations_builtin.is_none()

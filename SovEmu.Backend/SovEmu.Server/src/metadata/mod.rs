@@ -150,6 +150,7 @@ pub(crate) enum Field {
     Players,
     Rating,
     BoxArt,
+    Video,
 }
 
 impl Field {
@@ -165,6 +166,7 @@ impl Field {
             Field::Players => "players",
             Field::Rating => "rating",
             Field::BoxArt => "box_art",
+            Field::Video => "video",
         }
     }
 }
@@ -178,8 +180,12 @@ pub struct Metadata {
     pub media_dir: PathBuf,
     pub status: Mutex<JobStatus>,
     pub artwork: Mutex<artwork::ArtworkStatus>,
-    /// Box art downloads at once.
+    /// Box art and video downloads at once (within the sources' own limits).
     pub artwork_downloads: usize,
+    /// Box art is asked for at most this many pixels wide and high (`SOVEMU_ARTWORK_MAX_PX`).
+    pub artwork_max_px: Option<u32>,
+    /// Whether gameplay videos are downloaded (`SOVEMU_METADATA_VIDEOS`).
+    pub videos: bool,
     http: reqwest::Client,
     /// When the running job started, for its ETA.
     started: Mutex<Option<Instant>>,
@@ -197,6 +203,8 @@ impl Metadata {
         providers: Vec<Arc<dyn Provider>>,
         setup_notes: Vec<String>,
         artwork_downloads: usize,
+        artwork_max_px: u32,
+        videos: bool,
     ) -> Arc<Self> {
         let sources = providers.iter().map(|p| p.id()).collect();
         Arc::new(Self {
@@ -210,6 +218,8 @@ impl Metadata {
             media_dir: paths.artwork(),
             artwork: Mutex::new(artwork::ArtworkStatus::default()),
             artwork_downloads,
+            artwork_max_px: (artwork_max_px > 0).then_some(artwork_max_px),
+            videos,
             http: http_client(),
             started: Mutex::new(None),
         })
@@ -348,6 +358,8 @@ pub(crate) struct Row {
     pub(crate) rating: Option<f64>,
     pub(crate) box_art_url: Option<String>,
     pub(crate) box_art_source: Option<String>,
+    pub(crate) video_url: Option<String>,
+    pub(crate) video_source: Option<String>,
     /// JSON: field key → provider id.
     pub(crate) field_sources: String,
     /// JSON: provider id → its id for the game.
@@ -392,6 +404,7 @@ impl Lookup {
             (Field::Players, before.players.is_some(), i.players.is_some()),
             (Field::Rating, before.rating.is_some(), i.rating.is_some()),
             (Field::BoxArt, before.box_art_url.is_some(), i.box_art_url.is_some()),
+            (Field::Video, before.video_url.is_some(), i.video_url.is_some()),
         ] {
             if filled(was, now) {
                 self.field_sources.insert(field.key(), provider);
@@ -430,7 +443,9 @@ pub(crate) fn merge_row(old: &Row, new: &Lookup, fields: &[Field]) -> Row {
     take!(Field::Players, players, i.players);
     take!(Field::Rating, rating, i.rating);
     take!(Field::BoxArt, box_art_url, i.box_art_url);
+    take!(Field::Video, video_url, i.video_url);
     row.box_art_source = row.box_art_url.as_ref().and_then(|_| sources.get("box_art").cloned());
+    row.video_source = row.video_url.as_ref().and_then(|_| sources.get("video").cloned());
     row.field_sources = serde_json::to_string(&sources).unwrap_or_else(|_| "{}".into());
     let mut ids = old.ids();
     ids.extend(new.ids.iter().map(|(k, v)| ((*k).to_owned(), v.clone())));
@@ -591,7 +606,8 @@ async fn look_up(
     let meta = &state.metadata;
     let old: Row = sqlx::query_as(
         "SELECT title, description, release_date, developer, publisher, genre, players,
-           rating, box_art_url, box_art_source, field_sources, provider_ids, tried
+           rating, box_art_url, box_art_source, video_url, video_source, field_sources,
+           provider_ids, tried
          FROM game_metadata WHERE game_id = ?",
     )
     .bind(game.id)
@@ -756,8 +772,8 @@ async fn store(
     sqlx::query(
         "INSERT INTO game_metadata (game_id, status, sources, title, description, release_date,
            developer, publisher, genre, players, rating, box_art_url, box_art_source, tried,
-           field_sources, provider_ids, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           field_sources, provider_ids, video_url, video_source, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(game_id) DO UPDATE SET status = excluded.status, sources = excluded.sources,
            title = excluded.title, description = excluded.description,
            release_date = excluded.release_date, developer = excluded.developer,
@@ -768,6 +784,11 @@ async fn store(
            box_art_attempts = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
              THEN game_metadata.box_art_attempts ELSE 0 END,
            box_art_url = excluded.box_art_url, box_art_source = excluded.box_art_source,
+           video = CASE WHEN excluded.video_url IS game_metadata.video_url
+             THEN game_metadata.video ELSE NULL END,
+           video_attempts = CASE WHEN excluded.video_url IS game_metadata.video_url
+             THEN game_metadata.video_attempts ELSE 0 END,
+           video_url = excluded.video_url, video_source = excluded.video_source,
            tried = excluded.tried, field_sources = excluded.field_sources,
            provider_ids = excluded.provider_ids, fetched_at = excluded.fetched_at",
     )
@@ -787,6 +808,8 @@ async fn store(
     .bind(&row.tried)
     .bind(&row.field_sources)
     .bind(&row.provider_ids)
+    .bind(&row.video_url)
+    .bind(&row.video_source)
     .execute(&state.db)
     .await?;
     Ok(())
@@ -807,7 +830,8 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
         }
     }
     let Ok(kept) = sqlx::query_scalar::<_, String>(
-        "SELECT box_art FROM game_metadata WHERE box_art IS NOT NULL",
+        "SELECT box_art FROM game_metadata WHERE box_art IS NOT NULL
+         UNION ALL SELECT video FROM game_metadata WHERE video IS NOT NULL",
     )
     .fetch_all(db)
     .await
@@ -818,7 +842,7 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
     let mut removed = 0u64;
     while let Ok(Some(entry)) = dir.next_entry().await {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if is_box_art_file(&name)
+        if (is_box_art_file(&name) || is_video_file(&name))
             && !kept.contains(&name)
             && tokio::fs::remove_file(entry.path()).await.is_ok()
         {
@@ -826,8 +850,14 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
         }
     }
     if removed > 0 {
-        tracing::info!(files = removed, "removed box art no game refers to");
+        tracing::info!(files = removed, "removed box art and videos no game refers to");
     }
+}
+
+/// Whether `name` is a downloaded video (`<game id>-video.mp4`).
+fn is_video_file(name: &str) -> bool {
+    name.strip_suffix("-video.mp4")
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether `name` is a downloaded box art file (`<game id>-box.<ext>`).
@@ -850,6 +880,45 @@ fn image_extension(bytes: &[u8]) -> Option<&'static str> {
         [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Some("webp"),
         _ => None,
     }
+}
+
+/// Videos larger than this are not a preview anyone meant to send: refused.
+const MAX_VIDEO_BYTES: u64 = 200 << 20;
+
+/// Downloads a video into the media directory, streamed to a temp file and renamed once whole;
+/// returns its file name. Only an MP4 (`ftyp` at its start), of a sane size.
+async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Option<String> {
+    use tokio::io::AsyncWriteExt;
+    let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
+    if response.content_length().is_some_and(|n| n > MAX_VIDEO_BYTES) {
+        return None;
+    }
+    let name = format!("{game_id}-video.mp4");
+    tokio::fs::create_dir_all(&meta.media_dir).await.ok()?;
+    let temp = meta.media_dir.join(format!("{name}.part"));
+    let written = async {
+        let mut file = tokio::fs::File::create(&temp).await.ok()?;
+        let (mut size, mut head) = (0u64, Vec::new());
+        while let Some(chunk) = response.chunk().await.ok()? {
+            size += chunk.len() as u64;
+            if size > MAX_VIDEO_BYTES {
+                return None;
+            }
+            if head.len() < 8 {
+                head.extend_from_slice(&chunk[..chunk.len().min(8 - head.len())]);
+            }
+            file.write_all(&chunk).await.ok()?;
+        }
+        file.flush().await.ok()?;
+        (head.get(4..8) == Some(b"ftyp".as_slice())).then_some(())
+    }
+    .await;
+    if written.is_none() {
+        let _ = tokio::fs::remove_file(&temp).await;
+        return None;
+    }
+    tokio::fs::rename(&temp, meta.media_dir.join(&name)).await.ok()?;
+    Some(name)
 }
 
 /// Downloads box art into the media directory; returns its file name. Only an image, of a sane
@@ -964,6 +1033,14 @@ mod tests {
         // A source that finds nothing changes nothing.
         let row2 = merge_row(&row, &Lookup::default(), &[]);
         assert_eq!(row2, row);
+    }
+
+    #[test]
+    fn video_files_are_told_by_name() {
+        assert!(is_video_file("12-video.mp4"));
+        assert!(!is_video_file("12-video.mp4.part"));
+        assert!(!is_video_file("-video.mp4"));
+        assert!(!is_video_file("x-video.mp4"));
     }
 
     #[test]

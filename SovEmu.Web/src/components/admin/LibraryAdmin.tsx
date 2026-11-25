@@ -224,11 +224,11 @@ function Library() {
 
         {art.total > 0 && (
           <>
-            <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Box art" />
+            <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Box art and videos" />
             <p className="mt-2 text-sm text-slate-300">
               {art.running
-                ? `Downloading box art in the background: ${art.done.toLocaleString()} of ${art.total.toLocaleString()} games without a local thumb…`
-                : `Box art: ${art.downloaded.toLocaleString()} downloaded${art.failed ? `, ${art.failed.toLocaleString()} failed` : ""}.`}
+                ? `Downloading box art and videos in the background: ${art.done.toLocaleString()} of ${art.total.toLocaleString()}, for games without their own…`
+                : `Box art and videos: ${art.downloaded.toLocaleString()} downloaded${art.videos ? ` (${art.videos.toLocaleString()} videos)` : ""}${art.failed ? `, ${art.failed.toLocaleString()} failed` : ""}.`}
             </p>
           </>
         )}

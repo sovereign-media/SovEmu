@@ -15,6 +15,7 @@ const sys = (over: Partial<SystemSummary>): SystemSummary => ({
   needsGpu: false,
   rendering: null,
   biosMissing: false,
+  boxAspect: 1.4,
   ...over,
 });
 

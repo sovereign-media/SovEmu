@@ -32,7 +32,7 @@ const status = (over: Partial<MetadataStatus>): MetadataStatus => ({
   failed: 5,
   sources: ["fbneo", "screenscraper"],
   notes: [],
-  artwork: { running: false, total: 0, done: 0, downloaded: 0, failed: 0 },
+  artwork: { running: false, total: 0, done: 0, downloaded: 0, failed: 0, videos: 0 },
   working: [{ gameId: 1, title: "Castlevania", system: "nes", provider: "screenscraper", step: "ASKING" }],
   startedAt: 1_700_000_000,
   finishedAt: null,

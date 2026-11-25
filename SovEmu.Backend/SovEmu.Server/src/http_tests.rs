@@ -285,7 +285,7 @@ const START: &str =
 const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
 const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
-                        artwork { running total done downloaded failed } \
+                        artwork { running total done downloaded failed videos } \
                         working { title } finishedAt systems { system total done } \
                         providers { id asked found notFound errors quota { requestsToday } \
                         threads account { level maxThreads maxRequestsPerMinute } } \
@@ -699,7 +699,11 @@ async fn mock_services(
     let base = format!("http://{}", listener.local_addr().unwrap());
     let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = calls.clone();
-    let box_url = format!("{base}/img/box.png?devid=dev&amp;devpassword=pw&amp;media=box-2D");
+    let box_url =
+        format!("{base}/api2/mediaJeu.php?devid=dev&amp;devpassword=pw&amp;media=box-2D(wor)");
+    let video_url = format!(
+        "{base}/api2/mediaVideoJeu.php?devid=dev&amp;devpassword=pw&amp;media=video-normalized"
+    );
     let gba = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <Data>
@@ -709,7 +713,8 @@ async fn mock_services(
     <developpeur>Dev Co</developpeur>
     <joueurs>2</joueurs>
     <synopsis><synopsis langue="en">From ScreenScraper</synopsis></synopsis>
-    <medias><media type="box-2D" region="wor" format="png">{box_url}</media></medias>
+    <medias><media type="box-2D" region="wor" format="png">{box_url}</media>
+      <media type="video-normalized" format="mp4">{video_url}</media></medias>
   </jeu>
 </Data>"#
     );
@@ -766,16 +771,29 @@ async fn mock_services(
             }),
         )
         .route(
-            "/img/box.png",
+            "/api2/mediaJeu.php",
             get(|Query(q): Query<HashMap<String, String>>| async move {
                 if q.get("devid").map(String::as_str) != Some("dev") {
                     return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], vec![]);
                 }
+                // Asked for at the size it is shown, not as a full scan.
+                assert_eq!((q["maxwidth"].as_str(), q["maxheight"].as_str()), ("1000", "1000"));
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, "image/png")],
                     vec![0x89u8, b'P', b'N', b'G'],
                 )
+            }),
+        )
+        .route(
+            "/api2/mediaVideoJeu.php",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                if q.get("devid").map(String::as_str) != Some("dev") {
+                    return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], vec![]);
+                }
+                assert!(!q.contains_key("maxwidth"), "videos are not scaled");
+                let mp4 = [&[0u8, 0, 0, 24][..], b"ftypisom", &[0u8; 16]].concat();
+                (StatusCode::OK, [(header::CONTENT_TYPE, "video/mp4")], mp4)
             }),
         );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -884,11 +902,11 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
         (json!(2), json!(0)),
         "{status}"
     );
-    // Box art in the background, only for the GBA game (the NES one has a local thumb), and
-    // downloaded with the credentials the stored URL was stripped of.
+    // Box art and a video in the background, only for the GBA game (the NES one has a local
+    // thumb), downloaded with the credentials the stored URLs were stripped of.
     assert_eq!(
         status["artwork"],
-        json!({"running": false, "total": 1, "done": 1, "downloaded": 1, "failed": 0})
+        json!({"running": false, "total": 2, "done": 2, "downloaded": 2, "failed": 0, "videos": 1})
     );
     let stored: String =
         sqlx::query_scalar("SELECT box_art_url FROM game_metadata WHERE box_art_url IS NOT NULL")
@@ -936,7 +954,7 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(gba[0]["description"], "From ScreenScraper");
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
-    assert_eq!(gba[0]["media"], json!(["THUMB"]));
+    assert_eq!(gba[0]["media"], json!(["THUMB", "VIDEO"]));
     let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
     assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK);
 
@@ -1004,13 +1022,16 @@ async fn startup_removes_the_launchbox_dump_and_orphaned_box_art() {
         .execute(&h.state.db)
         .await
         .unwrap();
-    for name in [format!("{id}-box.png"), "999-box.jpg".into(), "notes.txt".into()] {
+    for name in
+        [format!("{id}-box.png"), "999-box.jpg".into(), "999-video.mp4".into(), "notes.txt".into()]
+    {
         std::fs::write(media.join(name), b"x").unwrap();
     }
     crate::metadata::tidy(&paths, &h.state.db).await;
     assert!(!paths.removed_launchbox().exists());
     assert!(media.join(format!("{id}-box.png")).exists(), "box art a game refers to stays");
     assert!(!media.join("999-box.jpg").exists(), "orphaned box art goes");
+    assert!(!media.join("999-video.mp4").exists(), "and orphaned videos");
     assert!(media.join("notes.txt").exists(), "nothing else is touched");
 }
 

@@ -34,3 +34,15 @@ test("every screen has one of the backgrounds, and a system's card its photo", a
   expect(await photo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await page.screenshot({ path: "test-results/home-background.png" });
 });
+
+test("a system's game cards take the shape of its boxes", async ({ page }) => {
+  const shape = async (system: string) => {
+    await page.goto(`/system/?id=${system}`);
+    const card = page.locator("[data-game-card] > div").first();
+    await expect(card).toBeVisible();
+    const box = await card.boundingBox();
+    return box ? box.width / box.height : 0;
+  };
+  expect(await shape("snes")).toBeGreaterThan(1.2); // landscape boxes
+  expect(await shape("nes")).toBeLessThan(0.8); // portrait boxes
+});

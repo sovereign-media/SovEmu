@@ -274,6 +274,7 @@ pub(super) enum MetadataField {
     Players,
     Rating,
     BoxArt,
+    Video,
 }
 
 impl From<MetadataField> for crate::metadata::Field {
@@ -289,6 +290,7 @@ impl From<MetadataField> for crate::metadata::Field {
             MetadataField::Players => F::Players,
             MetadataField::Rating => F::Rating,
             MetadataField::BoxArt => F::BoxArt,
+            MetadataField::Video => F::Video,
         }
     }
 }
@@ -302,6 +304,8 @@ pub(super) struct ArtworkStatus {
     pub(super) done: i64,
     pub(super) downloaded: i64,
     pub(super) failed: i64,
+    /// Of `downloaded`, the gameplay videos.
+    pub(super) videos: i64,
 }
 
 impl From<crate::metadata::JobStatus> for MetadataStatus {
@@ -323,6 +327,7 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
                 done: j.artwork.done as i64,
                 downloaded: j.artwork.downloaded as i64,
                 failed: j.artwork.failed as i64,
+                videos: j.artwork.videos as i64,
             },
             working: j
                 .working

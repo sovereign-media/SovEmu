@@ -123,6 +123,30 @@ pub(crate) fn strip_credentials(url: &str) -> String {
     parsed.into()
 }
 
+/// `url` asking for an image at most `max_px` wide and high: `mediaJeu.php` scales images
+/// (`maxwidth`, `maxheight`; it does not crop), so box art arrives at the size it is shown
+/// rather than as a full scan. Other URLs are left as they are.
+pub(crate) fn sized(url: &str, max_px: Option<u32>) -> String {
+    let (Some(px), Ok(mut parsed)) = (max_px.filter(|p| *p > 0), reqwest::Url::parse(url)) else {
+        return url.to_owned();
+    };
+    if !parsed.path().ends_with("mediaJeu.php") {
+        return url.to_owned();
+    }
+    let kept: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(k, _)| k != "maxwidth" && k != "maxheight")
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    parsed
+        .query_pairs_mut()
+        .clear()
+        .extend_pairs(kept)
+        .append_pair("maxwidth", &px.to_string())
+        .append_pair("maxheight", &px.to_string());
+    parsed.into()
+}
+
 /// Default region preference for names, dates and media: USA first, as most sets are.
 pub(crate) const DEFAULT_REGIONS: &[&str] = &["us", "wor", "eu", "ss", "uk", "jp"];
 pub(crate) const DEFAULT_LANGUAGES: &[&str] = &["en", "wor"];
@@ -399,6 +423,14 @@ pub(crate) fn parse_with<S: AsRef<str>>(
         .find_map(|r| box_art.iter().find(|(reg, _)| *reg == r.as_ref()))
         .or_else(|| box_art.first())
         .map(|(_, url)| strip_credentials(url));
+    // The normalised video (smaller, one encoding) where there is one, else the original.
+    let video_url = ["video-normalized", "video"].iter().find_map(|kind| {
+        list("medias", "media")
+            .filter(|m| m.attribute("type") == Some(*kind))
+            .filter_map(|m| m.text())
+            .map(|t| strip_credentials(&t.trim().replace(' ', "%20")))
+            .next()
+    });
 
     Some(GameInfo {
         title,
@@ -410,6 +442,7 @@ pub(crate) fn parse_with<S: AsRef<str>>(
         players: text("joueurs"),
         rating,
         box_art_url,
+        video_url,
     })
 }
 
@@ -691,8 +724,8 @@ impl Provider for ScreenScraper {
         self.threads()
     }
 
-    fn box_art_url(&self, stored: &str) -> String {
-        self.authorize(stored)
+    fn media_url(&self, stored: &str, max_px: Option<u32>) -> String {
+        sized(&self.authorize(stored), max_px)
     }
 }
 
@@ -770,6 +803,32 @@ pub(crate) mod tests {
         assert_eq!(q["sspassword"], "secret2");
         assert_eq!(q["jeuid"], "1234");
         assert_eq!(q["media"], "box-2D(us)");
+    }
+
+    #[test]
+    fn picks_the_normalised_video_and_sizes_images() {
+        let xml = r#"<Data><jeu id="1"><noms><nom region="wor">X</nom></noms><medias>
+            <media type="video" format="mp4">https://x.invalid/api2/mediaVideoJeu.php?devid=d&amp;media=video</media>
+            <media type="video-normalized" format="mp4">https://x.invalid/api2/mediaVideoJeu.php?devid=d&amp;media=video-normalized</media>
+        </medias></jeu></Data>"#;
+        let info = parse(xml).unwrap();
+        assert_eq!(
+            info.video_url.as_deref(),
+            Some("https://x.invalid/api2/mediaVideoJeu.php?media=video-normalized"),
+            "the normalised one, without credentials"
+        );
+        assert_eq!(parse(SAMPLE).unwrap().video_url, None);
+
+        let image = "https://x.invalid/api2/mediaJeu.php?jeuid=1&media=box-2D(us)&maxwidth=50";
+        let q = |url: &str| -> std::collections::HashMap<String, String> {
+            reqwest::Url::parse(url).unwrap().query_pairs().into_owned().collect()
+        };
+        let big = sized(image, Some(1000));
+        assert_eq!((q(&big)["maxwidth"].as_str(), q(&big)["maxheight"].as_str()), ("1000", "1000"));
+        assert_eq!(q(&big)["media"], "box-2D(us)");
+        assert_eq!(sized(image, None), image, "full size");
+        let video = "https://x.invalid/api2/mediaVideoJeu.php?media=video";
+        assert_eq!(sized(video, Some(1000)), video, "videos are not scaled");
     }
 
     #[test]
