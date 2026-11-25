@@ -13,6 +13,7 @@
     "lint": "biome ci .",
     "format": "biome check --write .",
     "schema": "gql.tada generate-output",
+    "esrb-badges": "node scripts/esrb-badges/render.mjs",
     "schema:check": "gql.tada generate-output && git diff --exit-code -- src/graphql-env.d.ts",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",

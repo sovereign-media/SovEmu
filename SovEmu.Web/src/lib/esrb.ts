@@ -1,12 +1,14 @@
-// The ESRB's age ratings, as the game panel shows them: SovEmu's own badge for each
-// (`src/assets/esrb/`, the rating's code over its ages; not the ESRB's icons) and its name.
-import ao from "../assets/esrb/ao.svg";
-import e from "../assets/esrb/e.svg";
-import e10 from "../assets/esrb/e10.svg";
-import ec from "../assets/esrb/ec.svg";
-import m from "../assets/esrb/m.svg";
-import rp from "../assets/esrb/rp.svg";
-import t from "../assets/esrb/t.svg";
+// The ESRB's age ratings, as the game panel shows them: SovEmu's own badge for each (the
+// rating's code over its ages; not the ESRB's icons) and its name. The badges are WebP images
+// shipped with the client (`src/assets/esrb/`), generated from the SVGs in
+// `scripts/esrb-badges/` by `npm run esrb-badges`; the apps ship the same files.
+import ao from "../assets/esrb/esrb_ao.webp";
+import e from "../assets/esrb/esrb_e.webp";
+import e10 from "../assets/esrb/esrb_e10.webp";
+import ec from "../assets/esrb/esrb_ec.webp";
+import m from "../assets/esrb/esrb_m.webp";
+import rp from "../assets/esrb/esrb_rp.webp";
+import t from "../assets/esrb/esrb_t.webp";
 import type { EsrbRating } from "./api";
 
 export interface EsrbInfo {
