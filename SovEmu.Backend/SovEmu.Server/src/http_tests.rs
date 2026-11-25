@@ -1356,6 +1356,31 @@ async fn stops_a_service_that_is_out_of_quota() {
 }
 
 #[tokio::test]
+async fn games_a_stopped_service_skipped_are_asked_again() {
+    // One game at a time: the first runs the quota out, the second is not asked at all.
+    let (base, _) = mock_services(true).await;
+    let mut args = metadata_args(&base);
+    args.extend(["--screenscraper-threads".into(), "1".into()]);
+    let mut h = Harness::new_with("metadata-skipped", false, args).await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({"s": null})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(
+        (status["total"].clone(), status["failed"].clone()),
+        (json!(2), json!(2)),
+        "{status}"
+    );
+    // Neither is stored as looked up: the next job asks both again.
+    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_metadata")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0);
+    h.ok(FETCH, json!({"s": null})).await;
+    assert_eq!(wait_for_job(&mut h).await["total"], 2);
+}
+
+#[tokio::test]
 async fn mirror_mode_copies_the_library_and_plays_from_it() {
     let mut h =
         Harness::new_with("mirror", false, vec!["--library-mode".into(), "mirror".into()]).await;
