@@ -3740,16 +3740,20 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
     );
 
     let game = duplicates[0]["gameId"].as_i64().unwrap();
-    // The scan started a lookup in the background; another is refused while it runs (on a
-    // loaded machine it can still be running here), so wait for it to finish.
-    for _ in 0..200 {
-        if !h.state.jobs.is_running(crate::jobs::Job::Metadata) {
+    // The scan started a lookup in the background, and another is refused (CONFLICT) while it
+    // runs. On a loaded machine it may not even have started yet, so ask until it is let in
+    // rather than guessing how long it takes.
+    let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let (_, errors) = h.gql(look_up, json!({"id": game})).await;
+        if errors.is_null() {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        let busy = errors[0]["extensions"]["code"] == "CONFLICT";
+        assert!(busy && std::time::Instant::now() < deadline, "{look_up}: {errors}");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
-    h.ok(look_up, json!({"id": game})).await;
     let (code, _) = h.err(look_up, json!({"id": 99_999})).await;
     assert_eq!(code, "NOT_FOUND");
 }
