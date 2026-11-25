@@ -6,6 +6,9 @@
 //!   rescans it (at startup, then `SOVEMU_MIRROR_INTERVAL_MINUTES`).
 //! - [`Job::Metadata`]: looks up game information for games without it (after each scan with
 //!   `SOVEMU_METADATA_AUTO`).
+//! - [`Job::Reconcile`]: after every scan (and before its lookup), the game information and
+//!   artwork of games no longer in the library deleted, and downloaded files that went missing
+//!   queued to download again (`metadata/reconcile.rs`).
 //! - [`Job::Maintenance`] (`SOVEMU_MAINTENANCE_INTERVAL_MINUTES`): expired sign-ins and old job
 //!   history deleted, the query planner's statistics refreshed (`PRAGMA optimize`) and the
 //!   write-ahead log folded back into the database, so none of them grows without end.
@@ -54,18 +57,20 @@ pub(crate) enum Job {
     Metadata,
     Maintenance,
     Backup,
+    Reconcile,
 }
 
 /// Jobs that must not run at the same time share a lane, and wait for each other in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Lane {
-    /// Rewrites the games table: a scan, and a mirror sync (which ends with one).
+    /// Rewrites the games table: a scan, and a mirror sync (which ends with one); or reads it to
+    /// delete what removed games left (a reconcile).
     Library,
 }
 
 impl Job {
-    pub(crate) const ALL: [Job; 5] =
-        [Job::Scan, Job::MirrorSync, Job::Metadata, Job::Maintenance, Job::Backup];
+    pub(crate) const ALL: [Job; 6] =
+        [Job::Scan, Job::MirrorSync, Job::Reconcile, Job::Metadata, Job::Maintenance, Job::Backup];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
@@ -74,6 +79,7 @@ impl Job {
             Job::Metadata => "metadata",
             Job::Maintenance => "maintenance",
             Job::Backup => "backup",
+            Job::Reconcile => "reconcile",
         }
     }
 
@@ -85,6 +91,7 @@ impl Job {
             Job::Metadata => "Game information",
             Job::Maintenance => "Database upkeep",
             Job::Backup => "Backup",
+            Job::Reconcile => "Library check",
         }
     }
 
@@ -107,12 +114,15 @@ impl Job {
             Job::Backup => {
                 "Backs up the database, the signing keys and every save into one file, keeping the newest."
             }
+            Job::Reconcile => {
+                "Deletes the game information and artwork of games no longer in the library, and fetches again what is missing."
+            }
         }
     }
 
     fn lane(self) -> Option<Lane> {
         match self {
-            Job::Scan | Job::MirrorSync => Some(Lane::Library),
+            Job::Scan | Job::MirrorSync | Job::Reconcile => Some(Lane::Library),
             Job::Metadata | Job::Maintenance | Job::Backup => None,
         }
     }
@@ -127,8 +137,8 @@ impl Job {
         let minutes = match self {
             Job::Scan => state.config.scan_interval_minutes,
             Job::MirrorSync => state.config.mirror_interval_minutes,
-            // Follows each scan rather than keeping a clock of its own.
-            Job::Metadata => 0,
+            // Follow each scan rather than keeping a clock of their own.
+            Job::Metadata | Job::Reconcile => 0,
             Job::Maintenance => state.config.maintenance_interval_minutes,
             Job::Backup => state.config.backup_interval_hours.saturating_mul(60),
         };
@@ -726,6 +736,13 @@ pub(crate) fn start_by_admin(state: &AppState, job: Job) -> Result<(), JobError>
             .map(drop),
         Job::Maintenance => jobs.start(Job::Maintenance, Trigger::Admin, maintain(s)).map(drop),
         Job::Backup => jobs.start(Job::Backup, Trigger::Admin, admin::back_up(s)).map(drop),
+        Job::Reconcile => jobs
+            .start(Job::Reconcile, Trigger::Admin, async move {
+                let report = admin::reconcile(&s).await?;
+                admin::fetch_missing(&s, Trigger::Admin);
+                Ok(report)
+            })
+            .map(drop),
     }
 }
 

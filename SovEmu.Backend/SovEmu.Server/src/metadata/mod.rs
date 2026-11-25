@@ -18,6 +18,7 @@
 //! than matching the file again.
 
 pub(crate) mod artwork;
+pub(crate) mod reconcile;
 
 use sovemu_library::info::{
     Account, Found, GameInfo, LookupInput, MetaError, Provider, Quota, Step, http_client, md5_file,
@@ -852,13 +853,10 @@ async fn store(
     Ok(())
 }
 
-/// Removes what earlier versions left: LaunchBox's database dump (no longer a source), the
-/// play cache's copies of the library's own artwork (no longer read), and downloaded pictures
-/// and videos no game refers to (all of them after the lookup data was cleared, in migration
-/// 0030). Those are only ever `<game id>-<box|shot|marquee>.<png|jpg|webp>` and
-/// `<game id>-video.mp4` in the media folder; nothing else there, and nothing in the library,
-/// is touched.
-pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool) {
+/// Removes what earlier versions left: LaunchBox's database dump (no longer a source) and the
+/// play cache's copies of the library's own artwork (no longer read). Downloaded files no game
+/// refers to are [`reconcile`]'s, after the startup scan.
+pub(crate) async fn tidy(paths: &crate::paths::DataPaths) {
     for (old, what) in [
         (paths.removed_launchbox(), "the LaunchBox database dump"),
         (paths.removed_cache_artwork(), "cached copies of the library's artwork"),
@@ -869,31 +867,6 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
                 Err(e) => tracing::warn!(path = %old.display(), what, error = %e, "cannot remove"),
             }
         }
-    }
-    let Ok(kept) = sqlx::query_scalar::<_, String>(
-        "SELECT box_art FROM game_metadata WHERE box_art IS NOT NULL
-         UNION ALL SELECT screenshot FROM game_metadata WHERE screenshot IS NOT NULL
-         UNION ALL SELECT marquee FROM game_metadata WHERE marquee IS NOT NULL
-         UNION ALL SELECT video FROM game_metadata WHERE video IS NOT NULL",
-    )
-    .fetch_all(db)
-    .await
-    else {
-        return;
-    };
-    let Ok(mut dir) = tokio::fs::read_dir(paths.artwork()).await else { return };
-    let mut removed = 0u64;
-    while let Ok(Some(entry)) = dir.next_entry().await {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if (is_picture_file(&name) || is_video_file(&name))
-            && !kept.contains(&name)
-            && tokio::fs::remove_file(entry.path()).await.is_ok()
-        {
-            removed += 1;
-        }
-    }
-    if removed > 0 {
-        tracing::info!(files = removed, "removed pictures and videos no game refers to");
     }
 }
 

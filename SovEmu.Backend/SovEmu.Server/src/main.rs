@@ -1127,7 +1127,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ),
     }
     let (providers, setup_notes) = metadata_providers(&config, &paths)?;
-    metadata::tidy(&paths, &db).await;
+    metadata::tidy(&paths).await;
     let metadata = metadata::Metadata::new(
         &paths,
         providers,
