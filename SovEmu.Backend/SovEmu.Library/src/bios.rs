@@ -1,9 +1,19 @@
-//! BIOS files: which each system uses, where they go, and whether they are there.
+//! BIOS files: which each system uses, where they are, and whether they are there.
 //!
-//! They live on the server, one folder per system under `SOVEMU_BIOS_DIR` (`<data>/bios`),
-//! named like the system's ROM folder: `bios/psx/scph5501.bin`, `bios/dreamcast/dc_boot.bin`.
-//! The worker links a system's folder in where its core looks ([`core_path`], see
-//! `SovEmu.Worker/src/sysdir.rs`).
+//! They live on the server under `SOVEMU_BIOS_DIR` (`<data>/bios`), in any layout: one folder
+//! per system as SovEmu recommends (`bios/psx/scph5501.bin`, `bios/dreamcast/dc_boot.bin`),
+//! Batocera's (`bios/scph5501.bin`, `bios/dc/dc_boot.bin`), or a read-only share as it is. The
+//! whole folder is indexed, and each file a core reads is chosen by ([`choose`]):
+//!
+//! 1. a known dump's MD5, anywhere (when that MD5 is this file's alone in the system: the
+//!    GameCube's USA and JAP IPLs share theirs, so those also need their name);
+//! 2. its name (any letter case), preferring the system's own folder, then a folder named like
+//!    the system (`dc`, `ps2`), then the shallowest;
+//! 3. for cores that also look beside the games (FBNeo), its exact name in a ROM folder.
+//!
+//! Nothing is renamed or moved: each session gets a folder of links, each file under the name
+//! and in the place its core expects ([`link_session`]), which the worker shows the core
+//! (`SovEmu.Worker/src/sysdir.rs`).
 //!
 //! The names, sizes and MD5s are those of libretro's `System.dat` (libretro-database
 //! b2e5eaa256eb30c6301ed42a8eab3ba2afd74b8a), limited to the files SovEmu's cores read. Each
@@ -11,15 +21,13 @@
 //! a game without it), `Recommended` (the core has a built-in replacement that plays most
 //! games) or `Optional` (a boot logo, an add-on).
 //!
-//! A file counts as present when it is where the core looks, under its exact name. One with a
-//! checksum none of the known dumps has is *unverified*: possibly a bad dump, possibly a
-//! revision the list lacks. A known dump elsewhere in the BIOS folder, or the right name in
-//! the wrong case (`SCPH5501.BIN`: Linux names are case-sensitive), is *misplaced*.
+//! A file found by its name whose checksum none of the known dumps has is *unverified*:
+//! possibly a bad dump, possibly a revision the list lacks. It is used all the same.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
-use std::time::SystemTime;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 use md5::{Digest, Md5};
 
@@ -606,11 +614,12 @@ pub fn core_path(system: &str) -> &'static str {
     spec(system).map_or("", |s| s.core_path)
 }
 
-/// Creates a folder for every system, so it is plain where each one's files go.
+/// Creates a folder for every system (the recommended layout, so it is plain where each one's
+/// files can go), when the BIOS folder can be written: a read-only share is left as it is.
 pub fn prepare(bios_dir: &Path) {
     for s in crate::systems::SYSTEMS {
         if let Err(e) = std::fs::create_dir_all(bios_dir.join(s.id)) {
-            tracing::warn!(path = %bios_dir.join(s.id).display(), error = %e, "cannot create BIOS folder");
+            tracing::debug!(path = %bios_dir.display(), error = %e, "BIOS folder not writable: layout left as it is");
             return;
         }
     }
@@ -633,9 +642,9 @@ pub fn game_dirs(roms: &Path, system: &crate::systems::System) -> Vec<PathBuf> {
 pub enum FileState {
     /// Where the core looks, and a known good dump.
     Ok,
-    /// Where the core looks, but not a dump the list knows.
+    /// Found by its name, but not a dump the list knows: used all the same.
     Unverified,
-    /// A known dump, or the right name, but not where the core looks.
+    /// No longer reported: files are found wherever they are.
     Misplaced,
     Missing,
 }
@@ -644,7 +653,7 @@ pub enum FileState {
 pub enum State {
     /// Everything required and recommended is there and verified.
     Ready,
-    /// Playable, but a file is unverified or misplaced.
+    /// Playable, but a file is unverified.
     Warning,
     /// Playable, without a recommended file.
     Incomplete,
@@ -680,40 +689,240 @@ pub struct Report {
     pub groups: Vec<GroupReport>,
 }
 
-/// Whether a required file is missing (quick: no checksums, no search).
+/// Whether a required file is missing.
 pub fn missing_required(bios_dir: &Path, games: impl Fn() -> Vec<PathBuf>, system: &str) -> bool {
     let Some(spec) = spec(system) else { return false };
-    let folder = bios_dir.join(system);
-    spec.groups.iter().filter(|g| g.importance == Importance::Required).any(|g| match &g.kind {
-        Kind::AnyOf(files) => {
-            let mut dirs = vec![folder.clone()];
-            let found = |dirs: &[PathBuf]| {
-                files.iter().any(|k| names(k).any(|n| dirs.iter().any(|d| exact_file(&d.join(n)))))
-            };
-            if found(&dirs) {
-                return false;
-            }
-            if spec.beside_games {
-                dirs = games();
-                return !found(&dirs);
-            }
-            true
-        }
-        Kind::Dumps { size, .. } => !list_files(&folder).iter().any(|(_, len)| len == size),
-    })
+    let required = || spec.groups.iter().filter(|g| g.importance == Importance::Required);
+    if required().next().is_none() {
+        return false;
+    }
+    let all = listing(bios_dir);
+    let games = if spec.beside_games { games() } else { Vec::new() };
+    required().any(|g| !choose(bios_dir, &all, spec, g, &games).iter().any(|c| c.found()))
 }
 
 fn names(k: &Known) -> impl Iterator<Item = &'static str> {
     std::iter::once(k.name).chain(k.alt.iter().copied())
 }
 
+/// What was chosen for one file a core reads, or a dump of a system that takes any number.
+#[derive(Debug, Clone)]
+struct Choice {
+    /// Where the core reads it, in its folder (`USA/IPL.bin`), or a dump's own name.
+    name: String,
+    label: String,
+    state: FileState,
+    path: Option<PathBuf>,
+    md5: Option<String>,
+    expected_md5: Vec<String>,
+    size: u64,
+    /// Found beside the games, where the core looks itself: not linked for it.
+    beside_games: bool,
+}
+
+impl Choice {
+    fn found(&self) -> bool {
+        matches!(self.state, FileState::Ok | FileState::Unverified)
+    }
+}
+
+/// The BIOS folder's files and sizes. A listing is reused while the folder and its subfolders
+/// keep their modification times (a file added or removed in one changes it) and for at most a
+/// minute (deeper changes): a share is slow to walk, and the systems list asks about every
+/// system at once.
+fn listing(bios_dir: &Path) -> Arc<Vec<(PathBuf, u64)>> {
+    type Listed = HashMap<PathBuf, (Instant, Vec<SystemTime>, Arc<Vec<(PathBuf, u64)>>)>;
+    static LISTED: LazyLock<Mutex<Listed>> = LazyLock::new(Default::default);
+    const AT_MOST: Duration = Duration::from_secs(60);
+    let stamp = folder_times(bios_dir);
+    if let Ok(listed) = LISTED.lock()
+        && let Some((at, was, files)) = listed.get(bios_dir)
+        && at.elapsed() < AT_MOST
+        && *was == stamp
+    {
+        return files.clone();
+    }
+    let files = Arc::new(list_files(bios_dir));
+    if let Ok(mut listed) = LISTED.lock() {
+        listed.insert(bios_dir.to_owned(), (Instant::now(), stamp, files.clone()));
+    }
+    files
+}
+
+/// The modification times of `dir` and of the folders in it, in name order.
+fn folder_times(dir: &Path) -> Vec<SystemTime> {
+    let time = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let mut folders: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|e| e.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+        .unwrap_or_default();
+    folders.sort();
+    std::iter::once(dir.to_owned()).chain(folders).filter_map(|p| time(&p)).collect()
+}
+
+/// `path`'s place in the BIOS folder, as lower-case names (`["dc", "dc_boot.bin"]`).
+fn parts(bios_dir: &Path, path: &Path) -> Vec<String> {
+    path.strip_prefix(bios_dir)
+        .unwrap_or(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect()
+}
+
+/// Whether `path` is named `name` (which may hold folders: `USA/IPL.bin`), any letter case.
+fn named(bios_dir: &Path, path: &Path, name: &str) -> bool {
+    let have = parts(bios_dir, path);
+    let want: Vec<String> = name.split('/').map(str::to_lowercase).collect();
+    have.len() >= want.len() && have[have.len() - want.len()..] == want[..]
+}
+
+/// How well `path` fits `system`, lowest first: in the system's own folder, then in a folder
+/// named like it (any of its ROM folder names, Batocera's `dc`), then anywhere; shallower
+/// first, then by path.
+fn rank(bios_dir: &Path, system: &str, path: &Path) -> (u8, usize, PathBuf) {
+    let p = parts(bios_dir, path);
+    let folders = &p[..p.len().saturating_sub(1)];
+    let aliases = crate::systems::by_id(system).map_or(&[][..], |s| s.folders);
+    let place = if folders.first().is_some_and(|f| *f == system) {
+        0
+    } else if folders.iter().any(|f| f == system || aliases.contains(&f.as_str())) {
+        1
+    } else {
+        2
+    };
+    (place, p.len(), path.to_owned())
+}
+
+/// What a group's files are found as (see the module's notes).
+fn choose(
+    bios_dir: &Path,
+    all: &[(PathBuf, u64)],
+    spec: &Spec,
+    group: &Group,
+    games: &[PathBuf],
+) -> Vec<Choice> {
+    let best = |mut found: Vec<&PathBuf>| {
+        found.sort_by_key(|p| rank(bios_dir, spec.system, p));
+        found.first().map(|p| (*p).to_owned())
+    };
+    match &group.kind {
+        Kind::AnyOf(known) => known
+            .iter()
+            .map(|k| {
+                let choice = |state, path: Option<PathBuf>, md5: Option<String>, beside| Choice {
+                    name: k.name.to_owned(),
+                    label: k.label.to_owned(),
+                    state,
+                    path,
+                    md5,
+                    expected_md5: k.md5.iter().map(|m| (*m).to_owned()).collect(),
+                    size: k.size,
+                    beside_games: beside,
+                };
+                let state_of = |md5: Option<&str>| {
+                    if k.md5.is_empty() || md5.is_some_and(|m| k.md5.contains(&m)) {
+                        FileState::Ok
+                    } else {
+                        FileState::Unverified
+                    }
+                };
+                // 1. A known dump, by its checksum: anywhere when no other file of the system
+                // has that checksum, else only under its own name.
+                if !k.md5.is_empty() {
+                    let alone = k.md5.iter().all(|m| !shared_md5(spec, k, m));
+                    let dumps: Vec<&PathBuf> = all
+                        .iter()
+                        .filter(|(p, len)| {
+                            *len == k.size
+                                && (alone || names(k).any(|n| named(bios_dir, p, n)))
+                                && md5_of(p).is_some_and(|m| k.md5.contains(&m.as_str()))
+                        })
+                        .map(|(p, _)| p)
+                        .collect();
+                    if let Some(p) = best(dumps) {
+                        let md5 = md5_of(&p);
+                        return choice(FileState::Ok, Some(p), md5, false);
+                    }
+                }
+                // 2. Its name, anywhere in the BIOS folder.
+                let by_name: Vec<&PathBuf> = all
+                    .iter()
+                    .filter(|(p, _)| names(k).any(|n| named(bios_dir, p, n)))
+                    .map(|(p, _)| p)
+                    .collect();
+                if let Some(p) = best(by_name) {
+                    let md5 = md5_of(&p);
+                    return choice(state_of(md5.as_deref()), Some(p), md5, false);
+                }
+                // 3. Beside the games, where the core looks itself: its exact name there.
+                if spec.beside_games
+                    && let Some(p) = games
+                        .iter()
+                        .flat_map(|d| names(k).map(move |n| d.join(n)))
+                        .find(|p| exact_file(p))
+                {
+                    let md5 = md5_of(&p);
+                    return choice(state_of(md5.as_deref()), Some(p), md5, true);
+                }
+                choice(FileState::Missing, None, None, false)
+            })
+            .collect(),
+        Kind::Dumps { size, known } => {
+            let mut files: Vec<Choice> = Vec::new();
+            let mut dumps: Vec<&PathBuf> =
+                all.iter().filter(|(_, len)| len == size).map(|(p, _)| p).collect();
+            dumps.sort_by_key(|p| rank(bios_dir, spec.system, p));
+            for p in dumps {
+                let Some(md5) = md5_of(p) else { continue };
+                let name = known.iter().find(|(m, _)| *m == md5).map(|(_, n)| *n);
+                // An unknown file of the right size counts only in a folder of the system's.
+                if name.is_none() && rank(bios_dir, spec.system, p).0 == 2 {
+                    continue;
+                }
+                let file = p.file_name().map_or_else(String::new, |n| n.to_string_lossy().into());
+                if files.iter().any(|f| f.name == file || f.md5.as_deref() == Some(&md5)) {
+                    continue;
+                }
+                files.push(Choice {
+                    name: file,
+                    label: name.map_or_else(|| "Unknown dump".to_owned(), ps2_label),
+                    state: if name.is_some() { FileState::Ok } else { FileState::Unverified },
+                    path: Some(p.to_owned()),
+                    md5: Some(md5),
+                    expected_md5: Vec::new(),
+                    size: *size,
+                    beside_games: false,
+                });
+            }
+            if files.is_empty() {
+                files.push(Choice {
+                    name: "*.bin".to_owned(),
+                    label: "A BIOS dump".to_owned(),
+                    state: FileState::Missing,
+                    path: None,
+                    md5: None,
+                    expected_md5: Vec::new(),
+                    size: *size,
+                    beside_games: false,
+                });
+            }
+            files
+        }
+    }
+}
+
+/// Whether another file of `spec` than `k` also has `md5` as a good dump.
+fn shared_md5(spec: &Spec, k: &Known, md5: &str) -> bool {
+    spec.groups.iter().any(|g| match &g.kind {
+        Kind::AnyOf(files) => files.iter().any(|o| !std::ptr::eq(o, k) && o.md5.contains(&md5)),
+        Kind::Dumps { .. } => false,
+    })
+}
+
 /// Checks a system's BIOS files: `games` are its ROM folders, searched when its core looks
 /// there too. `None` for a system that uses none.
 pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report> {
     let spec = spec(system)?;
-    let folder = bios_dir.join(system);
-    // Everything in the BIOS folder, for finding misplaced files.
-    let all = list_files(bios_dir);
+    let all = listing(bios_dir);
     let rel = |p: &Path| -> String {
         if let Ok(r) = p.strip_prefix(bios_dir) {
             return slash(r);
@@ -729,109 +938,24 @@ pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report>
     };
     let mut groups = Vec::new();
     for group in spec.groups {
-        let files = match &group.kind {
-            Kind::AnyOf(known) => known
-                .iter()
-                .map(|k| {
-                    let mut places = vec![folder.clone()];
-                    if spec.beside_games {
-                        places.extend(games.iter().cloned());
-                    }
-                    let at = places
-                        .iter()
-                        .flat_map(|d| names(k).map(move |n| d.join(n)))
-                        .find(|p| exact_file(p));
-                    let report = |state, path: Option<&Path>, md5: Option<String>| FileReport {
-                        name: k.name.to_owned(),
-                        label: k.label.to_owned(),
-                        state,
-                        found_at: path.map(&rel),
-                        md5,
-                        expected_md5: k.md5.iter().map(|m| (*m).to_owned()).collect(),
-                        size: k.size,
-                    };
-                    if let Some(at) = at {
-                        let md5 = md5_of(&at);
-                        let good =
-                            k.md5.is_empty() || md5.as_deref().is_some_and(|m| k.md5.contains(&m));
-                        let state = if good { FileState::Ok } else { FileState::Unverified };
-                        return report(state, Some(&at), md5);
-                    }
-                    // The right name in the wrong case, in its folder.
-                    let wrong_case = all.iter().find(|(p, _)| {
-                        p.strip_prefix(&folder)
-                            .is_ok_and(|r| names(k).any(|n| slash(r).eq_ignore_ascii_case(n)))
-                    });
-                    if let Some((p, _)) = wrong_case {
-                        return report(FileState::Misplaced, Some(p), md5_of(p));
-                    }
-                    // A known dump somewhere else.
-                    if !k.md5.is_empty() {
-                        for (p, len) in &all {
-                            if *len == k.size
-                                && let Some(m) = md5_of(p)
-                                && k.md5.contains(&m.as_str())
-                            {
-                                return report(FileState::Misplaced, Some(p), Some(m));
-                            }
-                        }
-                    }
-                    report(FileState::Missing, None, None)
-                })
-                .collect::<Vec<_>>(),
-            Kind::Dumps { size, known } => {
-                let mut files = Vec::new();
-                let mut misplaced = Vec::new();
-                for (p, len) in all.iter().filter(|(_, len)| len == size) {
-                    let Some(md5) = md5_of(p) else { continue };
-                    let name = known.iter().find(|(m, _)| *m == md5).map(|(_, n)| *n);
-                    let file = |state| FileReport {
-                        name: p
-                            .file_name()
-                            .map_or_else(String::new, |n| n.to_string_lossy().into()),
-                        label: name.map_or_else(|| "Unknown dump".to_owned(), ps2_label),
-                        state,
-                        found_at: Some(rel(p)),
-                        md5: Some(md5.clone()),
-                        expected_md5: Vec::new(),
-                        size: *len,
-                    };
-                    if p.starts_with(&folder) {
-                        files.push(file(if name.is_some() {
-                            FileState::Ok
-                        } else {
-                            FileState::Unverified
-                        }));
-                    } else if name.is_some() {
-                        misplaced.push(file(FileState::Misplaced));
-                    }
-                }
-                if files.is_empty() {
-                    files = misplaced;
-                }
-                if files.is_empty() {
-                    files.push(FileReport {
-                        name: "*.bin".to_owned(),
-                        label: "A BIOS dump".to_owned(),
-                        state: FileState::Missing,
-                        found_at: None,
-                        md5: None,
-                        expected_md5: Vec::new(),
-                        size: *size,
-                    });
-                }
-                files
-            }
-        };
+        let files: Vec<FileReport> = choose(bios_dir, &all, spec, group, games)
+            .into_iter()
+            .map(|c| FileReport {
+                found_at: c.path.as_deref().map(&rel),
+                name: c.name,
+                label: c.label,
+                state: c.state,
+                md5: c.md5,
+                expected_md5: c.expected_md5,
+                size: c.size,
+            })
+            .collect();
         let satisfied =
             files.iter().any(|f| matches!(f.state, FileState::Ok | FileState::Unverified));
         groups.push(GroupReport { group, satisfied, files });
     }
     let unmet = |i: Importance| groups.iter().any(|g| g.group.importance == i && !g.satisfied);
-    let doubtful = groups
-        .iter()
-        .flat_map(|g| &g.files)
-        .any(|f| matches!(f.state, FileState::Unverified | FileState::Misplaced));
+    let doubtful = groups.iter().flat_map(|g| &g.files).any(|f| f.state == FileState::Unverified);
     let state = if unmet(Importance::Required) {
         State::Missing
     } else if unmet(Importance::Recommended) {
@@ -842,6 +966,44 @@ pub fn check(bios_dir: &Path, games: &[PathBuf], system: &str) -> Option<Report>
         State::Ready
     };
     Some(Report { state, groups })
+}
+
+/// Fills `dest` (a new, empty folder) with links to the BIOS files a session of `system` uses,
+/// each under the name and in the place its core reads it (`USA/IPL.bin`), wherever it is in
+/// `bios_dir`. Files the core finds beside the games are left to it. Returns how many.
+pub fn link_session(bios_dir: &Path, system: &str, dest: &Path) -> std::io::Result<usize> {
+    std::fs::create_dir_all(dest)?;
+    let Some(spec) = spec(system) else { return Ok(0) };
+    let all = listing(bios_dir);
+    let mut linked = 0;
+    for group in spec.groups {
+        for c in choose(bios_dir, &all, spec, group, &[]) {
+            if !c.found() || c.beside_games {
+                continue;
+            }
+            let Some(source) = c.path else { continue };
+            let link = dest.join(&c.name);
+            if link.symlink_metadata().is_ok() {
+                continue;
+            }
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            symlink(&source, &link)?;
+            linked += 1;
+        }
+    }
+    Ok(linked)
+}
+
+#[cfg(unix)]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(not(unix))]
+fn symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::fs::copy(target, link).map(drop)
 }
 
 /// `ps2-0230a-20080220` → "v2.30 USA (2008-02-20)".
@@ -889,7 +1051,7 @@ fn slash(p: &Path) -> String {
 
 /// The files under `dir` with their sizes, a few levels deep and at most a few thousand.
 fn list_files(dir: &Path) -> Vec<(PathBuf, u64)> {
-    const MAX_DEPTH: usize = 4;
+    const MAX_DEPTH: usize = 6;
     const MAX_FILES: usize = 5000;
     let mut out = Vec::new();
     let mut stack = vec![(dir.to_owned(), 0)];
@@ -1020,15 +1182,105 @@ mod tests {
     }
 
     #[test]
-    fn misplaced_files_are_found() {
-        let bios = tmp("misplaced");
+    fn a_file_is_found_by_its_name_in_any_layout_and_any_case() {
+        let bios = tmp("any-case");
         std::fs::create_dir_all(bios.join("psx")).unwrap();
         std::fs::write(bios.join("psx/SCPH5501.BIN"), junk(PSX)).unwrap();
         let r = check(&bios, &[], "psx").unwrap();
         let f = file(&r, "scph5501.bin");
-        assert_eq!(f.state, FileState::Misplaced, "the wrong case");
+        assert_eq!(f.state, FileState::Unverified, "found by name, not a known dump");
         assert_eq!(f.found_at.as_deref(), Some("psx/SCPH5501.BIN"));
-        assert_eq!(r.state, State::Incomplete, "a misplaced file does not count");
+        assert_eq!(r.state, State::Warning, "used, but worth a look");
+        std::fs::remove_dir_all(&bios).ok();
+
+        // Batocera's layout: the Dreamcast's in `dc/`, beside another copy deeper down.
+        let bios = tmp("batocera");
+        std::fs::create_dir_all(bios.join("dc")).unwrap();
+        std::fs::create_dir_all(bios.join("old/stuff")).unwrap();
+        std::fs::write(bios.join("dc/dc_boot.bin"), junk(2 << 20)).unwrap();
+        std::fs::write(bios.join("old/stuff/dc_boot.bin"), junk(2 << 20)).unwrap();
+        let r = check(&bios, &[], "dreamcast").unwrap();
+        assert_eq!(
+            file(&r, "dc_boot.bin").found_at.as_deref(),
+            Some("dc/dc_boot.bin"),
+            "a folder named like the system wins"
+        );
+        assert!(!missing_required(&bios, Vec::new, "dreamcast"));
+        std::fs::remove_dir_all(bios).ok();
+    }
+
+    const fn known(name: &'static str, md5: &'static [&'static str]) -> Known {
+        one(name, "Test", 4, md5)
+    }
+
+    // MD5 of b"bios".
+    const BIOS_MD5: &str = "88264747405203a0502c8d242fdad7df";
+
+    fn test_spec(files: &'static [Known]) -> Spec {
+        Spec {
+            system: "test",
+            core_path: "",
+            beside_games: false,
+            groups: Box::leak(Box::new([Group {
+                label: "Test",
+                importance: Importance::Required,
+                help: "",
+                kind: Kind::AnyOf(files),
+            }])),
+        }
+    }
+
+    #[test]
+    fn a_known_dump_is_found_under_any_name() {
+        assert_eq!(md5_of_bytes(b"bios"), BIOS_MD5);
+        let bios = tmp("by-md5");
+        std::fs::create_dir_all(bios.join("misc")).unwrap();
+        std::fs::write(bios.join("misc/renamed.rom"), b"bios").unwrap();
+        std::fs::write(bios.join("expected.bin"), b"nope").unwrap();
+        static FILES: [Known; 1] = [known("expected.bin", &[BIOS_MD5])];
+        let spec = test_spec(&FILES);
+        let all = list_files(&bios);
+        let c = &choose(&bios, &all, &spec, &spec.groups[0], &[])[0];
+        assert_eq!(c.state, FileState::Ok, "the checksum beats the name");
+        assert_eq!(c.path.as_deref(), Some(bios.join("misc/renamed.rom").as_path()));
+        std::fs::remove_dir_all(bios).ok();
+    }
+
+    #[test]
+    fn a_checksum_two_files_share_also_needs_the_name() {
+        let bios = tmp("shared-md5");
+        std::fs::create_dir_all(bios.join("gc/USA")).unwrap();
+        std::fs::write(bios.join("gc/USA/IPL.bin"), b"bios").unwrap();
+        static FILES: [Known; 2] =
+            [known("USA/IPL.bin", &[BIOS_MD5]), known("JAP/IPL.bin", &[BIOS_MD5])];
+        let spec = test_spec(&FILES);
+        let all = list_files(&bios);
+        let picked: Vec<FileState> =
+            choose(&bios, &all, &spec, &spec.groups[0], &[]).iter().map(|c| c.state).collect();
+        assert_eq!(picked, [FileState::Ok, FileState::Missing], "the USA IPL is not the JAP one");
+        std::fs::remove_dir_all(bios).ok();
+    }
+
+    #[test]
+    fn a_session_gets_each_file_where_its_core_reads_it() {
+        let bios = tmp("link");
+        std::fs::create_dir_all(bios.join("gamecube/usa")).unwrap();
+        std::fs::write(bios.join("gamecube/usa/ipl.BIN"), junk(2 << 20)).unwrap();
+        std::fs::write(bios.join("SCPH5501.BIN"), junk(PSX)).unwrap();
+        let dest = bios.join("../link-session-out");
+        let _ = std::fs::remove_dir_all(&dest);
+        assert_eq!(link_session(&bios, "gamecube", &dest.join("gc")).unwrap(), 1);
+        let linked = std::fs::read_link(dest.join("gc/USA/IPL.bin")).unwrap();
+        assert_eq!(linked, bios.join("gamecube/usa/ipl.BIN"), "named as the core reads it");
+        assert_eq!(link_session(&bios, "psx", &dest.join("psx")).unwrap(), 1);
+        assert!(dest.join("psx/scph5501.bin").exists());
+        assert_eq!(link_session(&bios, "nes", &dest.join("nes")).unwrap(), 0, "nothing there");
+        assert_eq!(
+            std::fs::read(bios.join("SCPH5501.BIN")).unwrap().len() as u64,
+            PSX,
+            "untouched"
+        );
+        std::fs::remove_dir_all(dest).ok();
         std::fs::remove_dir_all(bios).ok();
     }
 
@@ -1057,6 +1309,10 @@ mod tests {
         assert_eq!(ps2_label("ps2-0120ed-20000902"), "v1.20 Europe (development) (2000-09-02)");
         assert_eq!(ps2_label("ps2-0120j-20001027-185015"), "v1.20 Japan (2000-10-27)");
         assert_eq!(ps2_label("odd"), "odd");
+    }
+
+    fn md5_of_bytes(bytes: &[u8]) -> String {
+        hex::encode(Md5::digest(bytes))
     }
 
     #[test]

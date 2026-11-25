@@ -39,15 +39,16 @@ UDP 50000-50009 reachable.
 
 ## BIOS files
 
-BIOS files live on the server, never in the library: one folder per system in `data/bios/`
-(`SOVEMU_BIOS_DIR`), named like the system's folder of games. The server creates the folders.
-Put each file under the name below; letter case matters. **Systems → BIOS files** in the web
-client checks each one by name and MD5 against libretro's list of known dumps (`System.dat`),
-finds known dumps under the wrong name or in the wrong folder, and the Systems menu marks a
-system that cannot start games without one. It is one table, a row per file, for the systems
+BIOS files live on the server, in `data/bios/` (`SOVEMU_BIOS_DIR`), in **any layout**: SovEmu
+indexes the whole folder and finds each file a core needs by its MD5 (a known dump, under any
+name) or else by its name in any letter case. A Batocera `bios/` folder, or a read-only share,
+works as it is. The recommended layout is a folder per system, named like its folder of games, as
+below; the server creates those folders when it can write there. **Systems → BIOS files** in the
+web client checks each file against libretro's list of known dumps (`System.dat`) and says where
+it was found, and the Systems menu marks a system that cannot start games without one. It is one table, a row per file, for the systems
 that have games: sort it by any column, or search it by system or file name.
 
-| Folder | Files | Without them |
+| Recommended folder | Files | Without them |
 |---|---|---|
 | `bios/ps2/` | any PS2 BIOS dump, any name (`*.bin`) | **no games start** |
 | `bios/neogeo/` | `neogeo.zip` (or beside the games in `roms/neogeo/`) | **no games start** |
@@ -66,10 +67,11 @@ that have games: sort it by any column, or search it by system or file name.
 | `bios/atari7800/` | `7800 BIOS (U).rom` or `7800 BIOS (E).rom` | no start-up screen |
 | `bios/gamecube/` | `USA/IPL.bin`, `EUR/IPL.bin`, `JAP/IPL.bin` | no start-up animation |
 
-Each core finds its files where it expects them: the worker links the system's folder into
-the core's system directory (Flycast's `dc/`, PCSX2's `pcsx2/bios/`, Dolphin's
-`dolphin-emu/Sys/GC/`). Files a core writes there (Flycast's `dc_nvmem.bin`) land in the
-system's folder.
+Each core finds its files where it expects them: every session gets a folder of links, each file
+under the name and in the place its core reads it (Flycast's `dc/`, PCSX2's `pcsx2/bios/`,
+Dolphin's `dolphin-emu/Sys/GC/USA/IPL.bin`), wherever it is in the BIOS folder. Nothing in the
+BIOS folder is renamed, moved or written: files a core creates beside its BIOS (Flycast's
+`dc_nvmem.bin`, PCSX2's NVRAM) last the session.
 
 ## 3D systems and the GPU
 
@@ -199,8 +201,8 @@ Android and iOS clients all use it. The schema, with every type and field docume
 `compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a
 Batocera-style layout: `roms/<system>/`. Only the ROMs are read: artwork folders beside them
 (`images/`, `videos/`) are skipped, and every game's artwork comes from ScreenScraper.
-BIOS files stay local, in `data/bios/` (copy a Batocera `bios/` folder's files into the
-per-system folders). Put the share, credentials and mode in `.env`, which git ignores (see
+BIOS files can stay on the share: point `SOVEMU_BIOS_DIR` at its `bios/` folder (any layout,
+read-only is fine), or copy them into `data/bios/`. Put the share, credentials and mode in `.env`, which git ignores (see
 `.env.example`), then:
 
 ```bash
@@ -388,7 +390,7 @@ effective configuration at startup, with secrets redacted.
 | **Library** | | |
 | `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
 | `SOVEMU_ROMS_DIR` | `<data>/roms` | The library, one folder per system |
-| `SOVEMU_BIOS_DIR` | `<data>/bios` | BIOS files, one folder per system (see [BIOS files](#bios-files)) |
+| `SOVEMU_BIOS_DIR` | `<data>/bios` | BIOS files, in any layout; a read-only share is fine (see [BIOS files](#bios-files)) |
 | `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
 | `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB kept locally |
 | `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids |

@@ -46,7 +46,7 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
-    /// BIOS files, a folder per system (see [`sovemu_library::bios`]).
+    /// BIOS files, in any layout (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
     /// The video bitrate a stream starts at, and the floor and ceiling it adapts between.
@@ -668,12 +668,38 @@ impl Workers {
         after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
     ) -> Result<Arc<Session>> {
         std::fs::create_dir_all(&launch.save_dir)?;
-        // Most systems need no BIOS, so a missing folder is no reason to refuse the game.
-        let bios = self.config.bios_dir.join(&launch.system);
-        if let Err(e) = std::fs::create_dir_all(&bios) {
-            tracing::debug!(path = %bios.display(), error = %e, "cannot create the BIOS folder");
-        }
         let id = random_id();
+        // The system's BIOS files, wherever they are in the BIOS folder, linked under the names
+        // the core reads them by: the worker's system folder, removed once it exits. Most
+        // systems need none, so a folder that cannot be made is no reason to refuse the game.
+        let bios = std::env::temp_dir().join(format!("sovemu-bios-{id}"));
+        let linked = {
+            let (dir, system, dest) =
+                (self.config.bios_dir.clone(), launch.system.clone(), bios.clone());
+            tokio::task::spawn_blocking(move || {
+                sovemu_library::bios::link_session(&dir, &system, &dest)
+            })
+            .await
+        };
+        match linked {
+            Ok(Ok(n)) => tracing::debug!(files = n, "BIOS files linked"),
+            Ok(Err(e)) => tracing::warn!(error = %e, "cannot link the BIOS files"),
+            Err(e) => tracing::warn!(error = %e, "cannot link the BIOS files"),
+        }
+        let forget_bios = {
+            let bios = bios.clone();
+            // Removes the links only, never the files they point to.
+            move || {
+                let _ = std::fs::remove_dir_all(&bios);
+            }
+        };
+        let after_exit: Option<Box<dyn FnOnce() + Send + Sync>> = Some(match after_exit {
+            Some(then) => Box::new(move || {
+                forget_bios();
+                then();
+            }),
+            None => Box::new(forget_bios),
+        });
         let span = tracing::info_span!(
             "session",
             session.id = %id,
@@ -778,6 +804,7 @@ impl Workers {
             Ok(child) => child,
             Err(e) => {
                 self.release_port(port);
+                let _ = std::fs::remove_dir_all(&bios);
                 return Err(e);
             }
         };
