@@ -465,6 +465,19 @@ impl GameNode {
     async fn esrb(&self) -> Option<EsrbRating> {
         self.0.esrb.as_deref().and_then(sovemu_library::info::Esrb::parse).map(EsrbRating::from)
     }
+    /// The ESRB rating's icon (PNG), if the game has a rating and the decoration folders an icon
+    /// for it: the built-in set's `ratings/esrb/<rating>.png`, or an admin's own at that path in
+    /// an earlier decorations folder. A URL signed for this user.
+    async fn esrb_badge_url(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let Some(rating) = self.0.esrb.as_deref().and_then(sovemu_library::info::Esrb::parse)
+        else {
+            return Ok(None);
+        };
+        let state = state(ctx);
+        let Some(path) = state.decorations().esrb_badge(rating) else { return Ok(None) };
+        let user = user(ctx).await?;
+        Ok(Some(state.assets.sign(user.id, &path)))
+    }
     /// Ways to play: "Single player", "Multiplayer (simultaneous)" …
     async fn modes(&self) -> Vec<&str> {
         split_names(self.0.modes.as_deref())

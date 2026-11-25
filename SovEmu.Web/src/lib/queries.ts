@@ -28,6 +28,8 @@ export const GameFields = graphql(`
     players
     rating
     esrb
+    # The rating's icon, from the server's decoration folders (an admin may replace it).
+    esrbBadgeUrl
     modes
     series
     themes

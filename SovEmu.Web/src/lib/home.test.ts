@@ -25,6 +25,7 @@ const game = (over: Partial<Game> = {}): Game => ({
   players: null,
   rating: null,
   esrb: null,
+  esrbBadgeUrl: null,
   modes: [],
   series: [],
   themes: [],

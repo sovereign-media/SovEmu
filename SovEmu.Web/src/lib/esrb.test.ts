@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { ESRB, esrbLabel, stars } from "./esrb";
 
 describe("ESRB ratings", () => {
-  it("has a badge and a name for every rating", () => {
+  it("has a code and a name for every rating", () => {
     for (const info of Object.values(ESRB)) {
-      expect(info.badge).toBeTruthy();
+      expect(info.code).toBeTruthy();
       expect(info.name).toBeTruthy();
     }
     expect(Object.keys(ESRB)).toHaveLength(7);

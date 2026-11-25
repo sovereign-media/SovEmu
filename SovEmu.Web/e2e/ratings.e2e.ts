@@ -3,11 +3,20 @@
 // information (nothing is looked up in these tests), so the test gives one game some: every
 // answer from the server is its own, with that game's fields filled in wherever it appears.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+
+/** The Teen icon as the server wrote it into its built-in decoration set (`server.mjs`'s data
+ *  folder): the test's game has no rating in the database, so the server gives it no icon URL,
+ *  and the test serves the server's own file at a URL of its own. */
+const TEEN_ICON = join("test-results/e2e-data/cache/decorations/sovemu/ratings/esrb/t.png");
+const ICON_URL = "/media/decorations/sovemu/ratings/esrb/t.png?e2e";
 
 const RATED = {
   rating: 0.8,
   esrb: "TEEN",
+  esrbBadgeUrl: ICON_URL,
   modes: ["Single player", "Multiplayer (alternating)"],
   series: ["Stand-in Saga"],
   themes: ["Fantasy"],
@@ -25,6 +34,9 @@ function rate(value: unknown, title: string): unknown {
 }
 
 async function withARatedGame(page: Page) {
+  await page.route(`**${ICON_URL}`, (route) =>
+    route.fulfill({ contentType: "image/png", body: readFileSync(TEEN_ICON) }),
+  );
   await page.route("**/graphql", async (route) => {
     const response = await route.fetch();
     const json = await response.json();

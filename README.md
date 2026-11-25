@@ -255,8 +255,12 @@ is the largest centred 4:3 area. Sets are read from `SOVEMU_DECORATIONS_DIRS`, t
 the earlier folder winning for the same file. Folders are listed again with every library scan.
 
 SovEmu's own set, `sovemu`, is a frame per system in its colour, shaped to its screen (4:3, or
-10:9 and 3:2 for handhelds), drawn by the server's own code. SovEmu ships no third-party artwork
-and has no downloader: packs such as the Bezel Project carry no license, so add them yourself.
+10:9 and 3:2 for handhelds), drawn by the server's own code. It also holds the ESRB's rating
+icons that a game's panel shows, `sovemu/ratings/esrb/<rating>.png` (`ec`, `e`, `e10`, `t`, `m`,
+`ao`, `rp`: the 2013 set from Wikimedia Commons). To use your own, put a PNG at that path in
+`data/decorations/sovemu/` (or a `SOVEMU_DECORATIONS_DIRS` folder): the earlier folder wins.
+SovEmu ships no other third-party artwork and has no downloader: packs such as the Bezel
+Project carry no license, so add them yourself.
 Choose the set with `SOVEMU_DECORATION`, per system with `SOVEMU_SYSTEMS__<id>__DECORATION`,
 and `none` turns frames off.
 
@@ -265,9 +269,8 @@ and `none` turns frames off.
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
 publishers, genres, player counts, ratings, ESRB age ratings, play modes, series, themes, box
 art and gameplay videos. The information is stored as each game is looked up. A game's panel
-shows its ESRB rating as the ESRB's own icon: WebP images each client ships, rendered from the
-2013 set's SVGs (Wikimedia Commons, `SovEmu.Web/scripts/esrb-badges/`) with
-`npm run esrb-badges`, so they cache as app assets rather than per-user signed URLs and its rating as stars, and Home has a **Top rated** row of the library's best rated
+shows its ESRB rating as the ESRB's own icon (served from the built-in decoration set, where an
+admin can replace it; see Decorations) and its rating as stars, and Home has a **Top rated** row of the library's best rated
 games (ScreenScraper's players' ratings). Its artwork follows in the background,
 `SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
 else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for

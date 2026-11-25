@@ -116,6 +116,19 @@ impl Esrb {
         }
     }
 
+    /// Its badge's file name in a decoration set's `ratings/esrb/` (`e10` for E10+).
+    pub fn file_stem(self) -> &'static str {
+        match self {
+            Esrb::EarlyChildhood => "ec",
+            Esrb::Everyone => "e",
+            Esrb::Everyone10Plus => "e10",
+            Esrb::Teen => "t",
+            Esrb::Mature => "m",
+            Esrb::AdultsOnly => "ao",
+            Esrb::RatingPending => "rp",
+        }
+    }
+
     /// A rating as a source writes it: the code in any case, with or without "ESRB" before it
     /// ("ESRB - T", "e10"), and "K-A" (Kids to Adults, the ESRB's name for E until 1998).
     pub fn parse(text: &str) -> Option<Esrb> {

@@ -19,7 +19,7 @@ import {
 import { Dialog } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
-import { ESRB, esrbLabel, stars } from "../../lib/esrb";
+import { esrbLabel, stars } from "../../lib/esrb";
 import { maxPlayers } from "../../lib/games";
 import { formatBytes } from "../../lib/numbers";
 import { ago, agoFromSqlite } from "../../lib/time";
@@ -150,9 +150,9 @@ export function GamePanel({
                   {shown.themes.length > 0 && <Fact icon={<Sparkles />}>{shown.themes.join(", ")}</Fact>}
                 </div>
               </div>
-              {shown.esrb && (
+              {shown.esrb && shown.esrbBadgeUrl && (
                 <Tooltip content={esrbLabel(shown.esrb)}>
-                  <img src={ESRB[shown.esrb].badge} alt={esrbLabel(shown.esrb)} className="h-14 w-auto shrink-0" />
+                  <img src={shown.esrbBadgeUrl} alt={esrbLabel(shown.esrb)} className="h-14 w-auto shrink-0" />
                 </Tooltip>
               )}
             </div>
