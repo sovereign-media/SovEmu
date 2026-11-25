@@ -11,7 +11,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Scale | Personal/family, single node |
 | Database | SQLite (WAL mode) via `sqlx` with migrations; large files stay on disk |
 | Licensing | Non-commercial, so non-commercial cores (snes9x, genesis_plus_gx, etc.) are allowed |
-| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are local, in `bios/<system>/` (named like the ROM folder), checked by name and MD5. No user uploads. |
+| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are in `SOVEMU_BIOS_DIR` in any layout (a folder per system recommended), found by MD5 or by name and linked per session where each core reads them. No user uploads. |
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |

@@ -34,17 +34,21 @@ const group = (over: Partial<BiosGroup>): BiosGroup => ({
 const bios = (state: SystemBios["state"]) => ({ bios: { state, folder: "x", groups: [] } });
 
 describe("BIOS hints", () => {
-  it("says where a missing file goes", () => {
-    expect(fileHint(file({ state: "MISSING", foundAt: null }), "psx")).toBe("Put it at bios/psx/scph5501.bin");
-    expect(fileHint(file({ name: "*.bin", state: "MISSING", foundAt: null }), "ps2")).toBe("Put a dump in bios/ps2/");
+  it("says a missing file can go anywhere, and where is tidy", () => {
+    expect(fileHint(file({ state: "MISSING", foundAt: null }), "psx")).toBe(
+      "Put it anywhere in the BIOS folder: a known dump under any name, or this name (bios/psx/scph5501.bin keeps it tidy).",
+    );
+    expect(fileHint(file({ name: "*.bin", state: "MISSING", foundAt: null }), "ps2")).toBe(
+      "Put a dump anywhere in the BIOS folder (bios/ps2/ keeps it tidy).",
+    );
   });
 
-  it("tells a wrong case from a wrong place", () => {
-    expect(fileHint(file({ state: "MISPLACED", foundAt: "psx/SCPH5501.BIN" }), "psx")).toBe(
-      "Found as bios/psx/SCPH5501.BIN: rename it scph5501.bin (letter case matters).",
-    );
-    expect(fileHint(file({ state: "MISPLACED", foundAt: "scph5501.bin" }), "psx")).toBe(
-      "Found at bios/scph5501.bin: move it to bios/psx/scph5501.bin.",
+  it("says where a file was found, unless it is in the tidy place", () => {
+    expect(fileHint(file({ state: "OK", foundAt: "psx/scph5501.bin" }), "psx")).toBeNull();
+    expect(fileHint(file({ state: "OK", foundAt: "psx/SCPH5501.BIN" }), "psx")).toBeNull();
+    expect(fileHint(file({ state: "OK", foundAt: "scph5501.bin" }), "psx")).toBe("Found at bios/scph5501.bin.");
+    expect(fileHint(file({ state: "MISPLACED", foundAt: "old/scph5501.bin" }), "psx")).toBe(
+      "Found at bios/old/scph5501.bin.",
     );
   });
 
@@ -119,7 +123,9 @@ describe("BIOS table", () => {
       "psx:scph1001.bin",
       "lynx:lynxboot.img",
     ]);
-    expect(rows[2].hint).toBe("Put it at bios/lynx/lynxboot.img");
+    expect(rows[2].hint).toBe(
+      "Put it anywhere in the BIOS folder: a known dump under any name, or this name (bios/lynx/lynxboot.img keeps it tidy).",
+    );
     expect(new Set(rows.map((r) => r.key)).size).toBe(3);
   });
 

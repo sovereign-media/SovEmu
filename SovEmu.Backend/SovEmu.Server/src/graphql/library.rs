@@ -134,11 +134,13 @@ pub(super) enum BiosImportance {
 /// One BIOS file.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BiosFileState {
-    /// Where the core looks, and a known good dump.
+    /// A known good dump (found by its checksum or its name, anywhere in the BIOS folder).
     Ok,
-    /// Where the core looks, but not a dump the list knows: a bad dump, or a revision it lacks.
+    /// Found by its name, but not a dump the list knows: a bad dump, or a revision it lacks.
+    /// Used all the same.
     Unverified,
-    /// A known dump, or the right name in the wrong case, but not where the core looks.
+    /// No longer reported: BIOS files are found wherever they are in the BIOS folder.
+    #[graphql(deprecation = "BIOS files are found in any layout; nothing is misplaced")]
     Misplaced,
     Missing,
 }
@@ -148,7 +150,7 @@ pub(super) enum BiosFileState {
 pub(super) enum BiosState {
     /// Everything required and recommended is there and verified.
     Ready,
-    /// Playable, but a file is unverified or misplaced.
+    /// Playable, but a file is unverified.
     Warning,
     /// Playable, without a recommended file.
     Incomplete,
@@ -159,7 +161,8 @@ pub(super) enum BiosState {
 #[derive(SimpleObject)]
 pub(super) struct SystemBios {
     pub(super) state: BiosState,
-    /// The system's folder, relative to the server's BIOS folder (`SOVEMU_BIOS_DIR`).
+    /// The folder SovEmu recommends for the system's files, relative to the server's BIOS folder
+    /// (`SOVEMU_BIOS_DIR`). Files are found in any layout; this one keeps them tidy.
     pub(super) folder: String,
     pub(super) groups: Vec<BiosGroup>,
 }
@@ -179,7 +182,7 @@ pub(super) struct BiosGroup {
 
 #[derive(SimpleObject)]
 pub(super) struct BiosFile {
-    /// Its name in the system's folder.
+    /// The name the core reads it by (in the recommended folder: `USA/IPL.bin`).
     pub(super) name: String,
     pub(super) label: String,
     pub(super) state: BiosFileState,
