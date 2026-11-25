@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 80" role="img" aria-label="ESRB T: Teen">
-  <!-- SovEmu's own age-rating badge: the rating's code over its ages. Not the ESRB's icon. -->
-  <rect x="2" y="2" width="56" height="76" rx="6" fill="#fff" stroke="#111" stroke-width="4"/>
-  <text x="30" y="53.8" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="44" font-weight="900" fill="#111">T</text>
-  <path d="M2 60H58V72a6 6 0 0 1-6 6H8a6 6 0 0 1-6-6Z" fill="#111"/>
-  <text x="30" y="71" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="8.5" font-weight="800" fill="#fff" textLength="25" lengthAdjust="spacingAndGlyphs">TEEN</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 60" role="img" aria-label="ESRB T: Teen">
+  <!-- SovEmu's own age-rating badge, after the proportions of the ESRB's: the rating's code
+       filling a white panel in a dark frame, its ages along the foot. Not the ESRB's icon. -->
+  <rect width="40" height="60" rx="3" fill="#111"/>
+  <rect x="2.5" y="2.5" width="35" height="46" rx="1.5" fill="#fff"/>
+  <text x="20" y="44.40" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="54" font-weight="900" fill="#111" textLength="29" lengthAdjust="spacingAndGlyphs">T</text>
+  <text x="20" y="56.6" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="6" font-weight="800" fill="#fff" textLength="14.2" lengthAdjust="spacingAndGlyphs">TEEN</text>
 </svg>

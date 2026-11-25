@@ -1,7 +1,7 @@
 // Renders the ESRB age-rating badges (the SVGs beside this file: SovEmu's own design, the
 // rating's code over its ages, not the ESRB's icons) to WebP images that ship with each client:
-// this web client (src/assets/esrb/), and copies for the Android and iOS apps. 240×320 pixels
-// (4× the 60×80 design), transparent outside the rounded tile.
+// this web client (src/assets/esrb/), and copies for the Android and iOS apps. 240×360 pixels
+// (6× the 40×60 design, 2:3 as the ESRB's own icons), transparent outside the rounded frame.
 //
 //   npm run esrb-badges                 → src/assets/esrb/esrb_<rating>.webp
 //   npm run esrb-badges -- <folder>     → <folder>/esrb_<rating>.webp
@@ -17,7 +17,7 @@ import { chromium } from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(process.argv[2] ?? join(here, "../../src/assets/esrb"));
-const [width, height] = [240, 320];
+const [width, height] = [240, 360];
 /** Lossy WebP at this quality: flat shapes and type, so small and sharp. */
 const quality = 0.92;
 
