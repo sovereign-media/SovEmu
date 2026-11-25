@@ -28,7 +28,9 @@ instead (as Sovereign's server takes its SPA).
 - **Never edit `SovEmu.LibretroFfi/include/libretro.h`** or the generated bindings. Update the
   header from upstream and record the commit in `include/README.md`.
 - **Never commit secrets.** NAS credentials live in `.env` (gitignored and dockerignored; see
-  `.env.example`), read by `compose.nas.yaml`. The NAS library is mounted read-only; SovEmu never
+  `.env.example`), read by `compose.nas.yaml`. SovEmu's ScreenScraper developer credentials are
+  the repository's GitHub secrets `SCREENSCRAPER_DEVID` and `SCREENSCRAPER_DEVPASSWORD`, built
+  into the image as BuildKit secrets (`build.rs`), never build arguments and never in the tree. The NAS library is mounted read-only; SovEmu never
   writes to a ROM library.
 - **Never commit cores, ROMs or BIOS files.** `cores/`, `roms/`, `system/` and `data/` are
   gitignored; `scripts/fetch-cores.sh` downloads cores for local testing. Tests use

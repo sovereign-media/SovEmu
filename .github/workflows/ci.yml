@@ -227,6 +227,11 @@ jobs:
 
       - name: Test suite and runtime image (probes every core)
         uses: docker/bake-action@v7
+        # SovEmu's own ScreenScraper developer credentials, built into the image (docker-bake.hcl
+        # passes them as BuildKit secrets). Empty for a fork's pull request: none built in.
+        env:
+          SOVEMU_BUILD_SCREENSCRAPER_DEVID: ${{ secrets.SCREENSCRAPER_DEVID }}
+          SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD: ${{ secrets.SCREENSCRAPER_DEVPASSWORD }}
         with:
           source: .
           files: SovEmu.Backend/docker-bake.hcl

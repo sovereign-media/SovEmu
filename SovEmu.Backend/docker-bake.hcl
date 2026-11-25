@@ -51,6 +51,12 @@ target "image" {
     SOVEMU_REVISION = GITHUB_SHA
     SOVEMU_BUILT    = SOVEMU_BUILT
   }
+  # SovEmu's ScreenScraper developer credentials, as BuildKit secrets from the environment
+  # (ci.yml sets them from the repository's secrets; unset, none are built in).
+  secret = [
+    "id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID",
+    "id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD",
+  ]
   output     = ["type=docker"]
   cache-from = ["type=gha,scope=image", "type=gha,scope=test"]
   cache-to   = ["type=gha,scope=image,mode=max"]

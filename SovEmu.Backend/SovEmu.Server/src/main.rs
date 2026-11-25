@@ -902,6 +902,38 @@ fn default_worker() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
+include!(concat!(env!("OUT_DIR"), "/builtin_screenscraper.rs"));
+
+/// Keep in step with `KEY` in `build.rs`.
+const BUILTIN_KEY: &[u8] = b"SovEmu/ScreenScraper";
+
+/// Undoes `build.rs`'s scrambling.
+fn unscramble(bytes: &[u8]) -> String {
+    bytes.iter().zip(BUILTIN_KEY.iter().cycle()).map(|(b, k)| (b ^ k) as char).collect()
+}
+
+/// SovEmu's own ScreenScraper developer credentials, if this build has them (release images do;
+/// see `build.rs`).
+fn builtin_screenscraper() -> Option<(String, String)> {
+    let (id, password) = (unscramble(BUILTIN_DEVID), unscramble(BUILTIN_DEVPASSWORD));
+    (!id.is_empty() && !password.is_empty()).then_some((id, password))
+}
+
+/// The ScreenScraper developer credentials to use: the settings when both are set, else the
+/// ones this build carries. ScreenScraper answers no request without a pair; they say which
+/// program asks, while the user account (`SOVEMU_SCREENSCRAPER_USER`) says who.
+fn screenscraper_developer(
+    config: &Config,
+    builtin: Option<(String, String)>,
+) -> Option<((String, String), &'static str)> {
+    match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
+        (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => {
+            Some(((id.clone(), pw.clone()), "settings"))
+        }
+        _ => builtin.map(|pair| (pair, "built in")),
+    }
+}
+
 /// The game-information providers `SOVEMU_METADATA_SOURCES` names, in its order, and a note for
 /// each one named but not usable (ScreenScraper without its developer credentials).
 fn metadata_providers(
@@ -922,41 +954,38 @@ fn metadata_providers(
             "fbneo" => {
                 providers.push(Arc::new(fbneo::FbNeoDats::new(paths.fbneo_dats(), http.clone())))
             }
-            "screenscraper" => {
-                match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
-                    (Some(dev_id), Some(dev_password))
-                        if !dev_id.is_empty() && !dev_password.is_empty() =>
-                    {
-                        let credentials = screenscraper::Credentials {
-                            dev_id: dev_id.clone(),
-                            dev_password: dev_password.clone(),
-                            user: config
-                                .screenscraper_user
-                                .clone()
-                                .filter(|u| !u.is_empty())
-                                .zip(config.screenscraper_password.clone()),
-                        };
-                        let ss = screenscraper::ScreenScraper::new(
-                            config.screenscraper_url.clone(),
-                            credentials,
-                            http.clone(),
-                        )
-                        .with_preferences(
-                            config.metadata_regions.clone(),
-                            config.metadata_languages.clone(),
-                        )
-                        .with_delay(std::time::Duration::from_millis(
-                            config.screenscraper_delay_ms,
-                        ));
-                        providers.push(Arc::new(ss));
-                    }
-                    _ => notes.push(
-                        "ScreenScraper: no developer credentials (SOVEMU_SCREENSCRAPER_DEVID and \
-                     SOVEMU_SCREENSCRAPER_DEVPASSWORD), so it is not asked"
-                            .to_owned(),
-                    ),
+            "screenscraper" => match screenscraper_developer(config, builtin_screenscraper()) {
+                Some(((dev_id, dev_password), from)) => {
+                    tracing::info!(developer_credentials = from, "ScreenScraper");
+                    let credentials = screenscraper::Credentials {
+                        dev_id: dev_id.clone(),
+                        dev_password: dev_password.clone(),
+                        user: config
+                            .screenscraper_user
+                            .clone()
+                            .filter(|u| !u.is_empty())
+                            .zip(config.screenscraper_password.clone()),
+                    };
+                    let ss = screenscraper::ScreenScraper::new(
+                        config.screenscraper_url.clone(),
+                        credentials,
+                        http.clone(),
+                    )
+                    .with_preferences(
+                        config.metadata_regions.clone(),
+                        config.metadata_languages.clone(),
+                    )
+                    .with_delay(std::time::Duration::from_millis(config.screenscraper_delay_ms))
+                    .with_threads(config.screenscraper_threads);
+                    providers.push(Arc::new(ss));
                 }
-            }
+                None => notes.push(
+                    "ScreenScraper: this build has no developer credentials of its own \
+                         (release images do), and SOVEMU_SCREENSCRAPER_DEVID and \
+                         SOVEMU_SCREENSCRAPER_DEVPASSWORD are not set, so it is not asked"
+                        .to_owned(),
+                ),
+            },
             other => anyhow::bail!(
                 "SOVEMU_METADATA_SOURCES: unknown source {other:?} (known: {})",
                 KNOWN.join(", ")
@@ -1348,6 +1377,73 @@ mod tests {
         let config = Config::parse_from(["sovemu-server", "--metadata-sources", "launchbox"]);
         let err = metadata_providers(&config, &paths).err().unwrap().to_string();
         assert!(err.contains("launchbox") && err.contains("screenscraper"), "{err}");
+    }
+
+    #[test]
+    fn developer_credentials_come_from_settings_else_the_build() {
+        let builtin = Some(("sovemu".to_owned(), "secret".to_owned()));
+        let none = Config::parse_from(["sovemu-server"]);
+        assert_eq!(screenscraper_developer(&none, None), None);
+        assert_eq!(
+            screenscraper_developer(&none, builtin.clone()),
+            Some((("sovemu".into(), "secret".into()), "built in"))
+        );
+        let own = Config::parse_from([
+            "sovemu-server",
+            "--screenscraper-devid",
+            "mine",
+            "--screenscraper-devpassword",
+            "pw",
+        ]);
+        assert_eq!(
+            screenscraper_developer(&own, builtin.clone()),
+            Some((("mine".into(), "pw".into()), "settings")),
+            "the settings win"
+        );
+        // Half a pair is not a pair: the build's are used.
+        let half = Config::parse_from(["sovemu-server", "--screenscraper-devid", "mine"]);
+        assert_eq!(screenscraper_developer(&half, builtin).unwrap().1, "built in");
+    }
+
+    #[test]
+    fn built_in_credentials_unscramble() {
+        let scrambled: Vec<u8> =
+            "dev-42".bytes().zip(BUILTIN_KEY.iter().cycle()).map(|(b, k)| b ^ k).collect();
+        assert_ne!(scrambled, b"dev-42", "not stored as they are");
+        assert_eq!(unscramble(&scrambled), "dev-42");
+        assert_eq!(unscramble(&[]), "");
+    }
+
+    #[tokio::test]
+    async fn the_thread_cap_reaches_screenscraper() {
+        // An account that may have four requests open; the setting allows two.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new().route(
+            "/ssuserInfos.php",
+            axum::routing::get(|| async {
+                "<Data><ssuser><niveau>1</niveau><maxthreads>4</maxthreads>\
+                 <requeststoday>0</requeststoday></ssuser></Data>"
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let paths = paths::DataPaths::new(std::env::temp_dir().join("sovemu-threads"));
+        let config = Config::parse_from([
+            "sovemu-server",
+            "--screenscraper-devid",
+            "d",
+            "--screenscraper-devpassword",
+            "p",
+            "--screenscraper-url",
+            &base,
+            "--screenscraper-threads",
+            "2",
+        ]);
+        let (providers, _) = metadata_providers(&config, &paths).unwrap();
+        let ss = providers.iter().find(|p| p.id() == "screenscraper").unwrap();
+        ss.prepare().await.unwrap();
+        assert_eq!(ss.account().unwrap().max_threads, Some(4));
+        assert_eq!(ss.concurrency(), 2, "capped by SOVEMU_SCREENSCRAPER_THREADS");
     }
 
     #[test]
