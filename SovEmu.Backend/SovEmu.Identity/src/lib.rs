@@ -322,6 +322,52 @@ impl Identity {
         Ok(user)
     }
 
+    /// Signs a TV (or any device showing a code) in as `user`, from an app that is signed in
+    /// already: the user typed the code the device shows (*Sign in a TV*). The same approval the
+    /// `/device` page gives in a browser. The code is checked as typed, dash or not, in any
+    /// letter case. A code no device is waiting with is [`Error::NotFound`]; wrong codes count
+    /// against the user (and oauth-as's own limiter counts every attempt), so guessing them is
+    /// [`Error::TooManyRequests`] soon.
+    pub async fn approve_device(
+        &self,
+        headers: &HeaderMap,
+        user: &User,
+        user_code: &str,
+    ) -> Result<()> {
+        let inner = &self.inner;
+        let key = format!("device-code:{}", user.id);
+        let now = Instant::now();
+        if let Err(wait) = inner.throttle.check(&key, now) {
+            return Err(Error::TooManyRequests(format!(
+                "too many wrong codes; try again in {wait} s"
+            )));
+        }
+        let code: String = user_code.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let code = code.to_ascii_uppercase();
+        let code = if code.len() == 8 { format!("{}-{}", &code[..4], &code[4..]) } else { code };
+        let issuer = inner.provider.issuer(headers).unwrap_or_else(|| &inner.provider.issuers[0]);
+        match issuer.server.approve_device(&code, user.id.to_string()).await {
+            Ok(()) => {
+                inner.throttle.succeeded(&key);
+                tracing::info!(user.name = %user.username, "approved a device's sign-in from an app");
+                Ok(())
+            }
+            Err(oauth_as::server::DeviceApprovalError::RateLimited) => {
+                Err(Error::TooManyRequests("too many codes tried; try again in a minute".into()))
+            }
+            Err(oauth_as::server::DeviceApprovalError::Storage(e)) => Err(Error::internal(e)),
+            Err(e) => {
+                inner.throttle.failed(&key, now);
+                tracing::warn!(user.name = %user.username, why = %e, "a device code was refused");
+                Err(Error::NotFound(
+                    "No TV is waiting with that code. Check the code, and that the TV is \
+                     connected to this server."
+                        .into(),
+                ))
+            }
+        }
+    }
+
     /// The account with this id, if there is one.
     pub async fn user(&self, id: i64) -> Result<Option<User>> {
         accounts::user_by_id(&self.inner.db, id).await

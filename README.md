@@ -216,6 +216,8 @@ Android and iOS clients all use it. The schema, with every type and field docume
     - or the password fallback, `POST /oauth/password` (`client_id`, `username`, `password`,
       `scope`), which answers like the token endpoint. `SovEmu__Authentication__PasswordSignIn=false` turns it
       off.
+    A phone or tablet already signed in can approve a TV's code too (*Sign in a TV*): the
+    `approveDeviceCode(userCode)` mutation, as the signed-in user.
   - The **mobile** client, for the phone and tablet apps signing in through the system browser:
     the authorization code flow with PKCE back to the apps' own scheme
     (`media.sovereign.sovemu:/oauth2redirect`). No password and no device grant.
