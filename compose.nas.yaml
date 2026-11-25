@@ -39,9 +39,9 @@ volumes:
     <<: *nas
     driver_opts:
       <<: *nas-opts
-      device: "//${SOVEMU_NAS_HOST:-nas.blh.casa}/${SOVEMU_NAS_PATH:-MEDIA/emulation}/roms"
+      device: "//${SOVEMU_NAS_HOST:?set SOVEMU_NAS_HOST in .env}/${SOVEMU_NAS_PATH:?set SOVEMU_NAS_PATH in .env}/roms"
   nas-bios:
     <<: *nas
     driver_opts:
       <<: *nas-opts
-      device: "//${SOVEMU_NAS_HOST:-nas.blh.casa}/${SOVEMU_NAS_PATH:-MEDIA/emulation}/bios"
+      device: "//${SOVEMU_NAS_HOST:?set SOVEMU_NAS_HOST in .env}/${SOVEMU_NAS_PATH:?set SOVEMU_NAS_PATH in .env}/bios"
