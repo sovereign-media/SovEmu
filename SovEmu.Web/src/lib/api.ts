@@ -115,6 +115,7 @@ export type Overview = ResultOf<typeof OverviewQuery>;
 /** How much a log line says. */
 export type LogLevel = Enum<"LogLevel">;
 export type AttentionKind = Enum<"AttentionKind">;
+export type EsrbRating = Enum<"EsrbRating">;
 export type Notice = ResultOf<typeof ThirdPartyNoticesQuery>["thirdPartyNotices"]["server"][number];
 export type Backups = ResultOf<typeof BackupsQuery>["backups"];
 export type AttentionItem = ResultOf<typeof GamesNeedingAttentionQuery>["gamesNeedingAttention"][number];

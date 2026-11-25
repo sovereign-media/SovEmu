@@ -126,6 +126,8 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Artwork from ScreenScraper only: box art, screenshots (backdrops), logos (marquees) and
       videos downloaded as WebP (videos as MP4); the scan and the mirror read ROM folders only,
       never the artwork beside them
+- [x] ESRB age ratings (badges of SovEmu's own), play modes, series and themes from ScreenScraper,
+      and a Top rated row on Home
 - [ ] Live-test the ScreenScraper client once credentials exist (tested against a mock service
       built from ES-DE's parsing code): status codes, quota fields, the GameCube and PS2 system
       ids, whether stored box art URLs expire

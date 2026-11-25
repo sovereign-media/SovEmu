@@ -16,6 +16,9 @@ pub(super) enum JobName {
     Maintenance,
     /// A backup of the database, the signing keys and the saves.
     Backup,
+    /// After each scan: removed games' information and artwork deleted, missing files fetched
+    /// again.
+    Reconcile,
 }
 
 impl From<crate::jobs::Job> for JobName {
@@ -27,6 +30,7 @@ impl From<crate::jobs::Job> for JobName {
             Job::Metadata => Self::Metadata,
             Job::Maintenance => Self::Maintenance,
             Job::Backup => Self::Backup,
+            Job::Reconcile => Self::Reconcile,
         }
     }
 }
@@ -39,6 +43,7 @@ impl From<JobName> for crate::jobs::Job {
             JobName::Metadata => Self::Metadata,
             JobName::Maintenance => Self::Maintenance,
             JobName::Backup => Self::Backup,
+            JobName::Reconcile => Self::Reconcile,
         }
     }
 }

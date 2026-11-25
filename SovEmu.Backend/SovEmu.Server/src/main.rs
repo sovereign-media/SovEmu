@@ -434,7 +434,7 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_HOME_FEATURED", default_value_t = 8)]
     pub home_featured: u32,
 
-    /// Games in each of the home screen's rows (recently played, recently added).
+    /// Games in each of the home screen's rows (recently played, recently added, top rated).
     #[arg(long, env = "SOVEMU_HOME_ROW", default_value_t = 20)]
     pub home_row: u32,
 
@@ -1127,7 +1127,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ),
     }
     let (providers, setup_notes) = metadata_providers(&config, &paths)?;
-    metadata::tidy(&paths, &db).await;
+    metadata::tidy(&paths).await;
     let metadata = metadata::Metadata::new(
         &paths,
         providers,

@@ -257,16 +257,23 @@ is the largest centred 4:3 area. Sets are read from `SOVEMU_DECORATIONS_DIRS`, t
 the earlier folder winning for the same file. Folders are listed again with every library scan.
 
 SovEmu's own set, `sovemu`, is a frame per system in its colour, shaped to its screen (4:3, or
-10:9 and 3:2 for handhelds), drawn by the server's own code. SovEmu ships no third-party artwork
-and has no downloader: packs such as the Bezel Project carry no license, so add them yourself.
+10:9 and 3:2 for handhelds), drawn by the server's own code. It also holds the ESRB's rating
+icons that a game's panel shows, `sovemu/ratings/esrb/<rating>.png` (`ec`, `e`, `e10`, `t`, `m`,
+`ao`, `rp`: the 2013 set from Wikimedia Commons). To use your own, put a PNG at that path in
+`data/decorations/sovemu/` (or a `SOVEMU_DECORATIONS_DIRS` folder): the earlier folder wins.
+SovEmu ships no other third-party artwork and has no downloader: packs such as the Bezel
+Project carry no license, so add them yourself.
 Choose the set with `SOVEMU_DECORATION`, per system with `SOVEMU_SYSTEMS__<id>__DECORATION`,
 and `none` turns frames off.
 
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
-publishers, genres, player counts, ratings, box art and gameplay videos. The information is
-stored as each game is looked up. Its artwork follows in the background,
+publishers, genres, player counts, ratings, ESRB age ratings, play modes, series, themes, box
+art and gameplay videos. The information is stored as each game is looked up. A game's panel
+shows its ESRB rating as the ESRB's own icon (served from the built-in decoration set, where an
+admin can replace it; see Decorations) and its rating as stars, and Home has a **Top rated** row of the library's best rated
+games (ScreenScraper's players' ratings). Its artwork follows in the background,
 `SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
 else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for
 at the size the largest screen shows them (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
@@ -315,6 +322,12 @@ library on the next scan. A lookup can also refresh only some fields, ask only s
 take the games looked up more than so many days ago (`fetchMetadata`); with
 `SOVEMU_METADATA_REFRESH_DAYS` the lookup after each scan does that on its own. A refresh replaces
 only the fields it was asked for, and never clears one a source no longer knows.
+
+After every scan, before its lookup, a **library check** (the `reconcile` job, on the Jobs page)
+keeps what was downloaded in step with the library: a game whose ROM is gone loses its
+information, its downloaded artwork and video, and its resized copies; a downloaded file that has
+gone missing from `data/metadata/media` is downloaded again. An admin can run it from the Jobs
+page, and then it also looks up games without information even when `SOVEMU_METADATA_AUTO` is off.
 
 ## Supported systems
 
@@ -433,7 +446,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SESSION_HEALTH_SECS` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
 | `SOVEMU_SESSION_FAILURES` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
 | `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |
-| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added) |
+| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added, top rated) |
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
@@ -443,7 +456,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_BACKUP_INTERVAL_HOURS` | `0` | A backup every this many hours (0: none on a schedule; the admin's Backups page still makes one) |
 | `SOVEMU_BACKUP_KEEP` | `7` | Backups kept, the newest (0: every one) |
 | `SOVEMU_RESTORE_FROM` | none | A backup to restore at startup, before the database opens. What it replaces is moved into `<data>/before-restore-<time>/`, never deleted, and each backup is restored once however often the server restarts with this set |
-| `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, library check, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
 | `SOVEMU_LOG_BUFFER_LINES` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
 | `SOVEMU_ACTIVITY_HISTORY_DAYS` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |
 | `SOVEMU_CLIENT_EVENT_DAYS` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |

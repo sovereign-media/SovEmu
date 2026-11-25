@@ -18,6 +18,7 @@
 //! than matching the file again.
 
 pub(crate) mod artwork;
+pub(crate) mod reconcile;
 
 use sovemu_library::info::{
     Account, Found, GameInfo, LookupInput, MetaError, Provider, Quota, Step, http_client, md5_file,
@@ -149,6 +150,10 @@ pub(crate) enum Field {
     Genre,
     Players,
     Rating,
+    Esrb,
+    Modes,
+    Series,
+    Themes,
     BoxArt,
     Screenshot,
     Marquee,
@@ -167,6 +172,10 @@ impl Field {
             Field::Genre => "genre",
             Field::Players => "players",
             Field::Rating => "rating",
+            Field::Esrb => "esrb",
+            Field::Modes => "modes",
+            Field::Series => "series",
+            Field::Themes => "themes",
             Field::BoxArt => "box_art",
             Field::Screenshot => "screenshot",
             Field::Marquee => "marquee",
@@ -315,7 +324,8 @@ struct Pending {
 /// then while one it was not asked is now configured.
 fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -> bool {
     match status {
-        // Found before ScreenScraper was asked for screenshots and logos (migration 0031).
+        // Found before ScreenScraper was asked for screenshots and logos (migration 0031), and
+        // for age ratings, modes, series and themes (0032).
         None | Some("refresh") => true,
         Some("not_found") => {
             let tried: Vec<&str> = tried.unwrap_or("").split(',').collect();
@@ -365,6 +375,10 @@ pub(crate) struct Row {
     pub(crate) genre: Option<String>,
     pub(crate) players: Option<String>,
     pub(crate) rating: Option<f64>,
+    pub(crate) esrb: Option<String>,
+    pub(crate) modes: Option<String>,
+    pub(crate) series: Option<String>,
+    pub(crate) themes: Option<String>,
     pub(crate) box_art_url: Option<String>,
     pub(crate) box_art_source: Option<String>,
     pub(crate) screenshot_url: Option<String>,
@@ -416,6 +430,10 @@ impl Lookup {
             (Field::Genre, before.genre.is_some(), i.genre.is_some()),
             (Field::Players, before.players.is_some(), i.players.is_some()),
             (Field::Rating, before.rating.is_some(), i.rating.is_some()),
+            (Field::Esrb, before.esrb.is_some(), i.esrb.is_some()),
+            (Field::Modes, before.modes.is_some(), i.modes.is_some()),
+            (Field::Series, before.series.is_some(), i.series.is_some()),
+            (Field::Themes, before.themes.is_some(), i.themes.is_some()),
             (Field::BoxArt, before.box_art_url.is_some(), i.box_art_url.is_some()),
             (Field::Screenshot, before.screenshot_url.is_some(), i.screenshot_url.is_some()),
             (Field::Marquee, before.marquee_url.is_some(), i.marquee_url.is_some()),
@@ -457,6 +475,10 @@ pub(crate) fn merge_row(old: &Row, new: &Lookup, fields: &[Field]) -> Row {
     take!(Field::Genre, genre, i.genre);
     take!(Field::Players, players, i.players);
     take!(Field::Rating, rating, i.rating);
+    take!(Field::Esrb, esrb, i.esrb);
+    take!(Field::Modes, modes, i.modes);
+    take!(Field::Series, series, i.series);
+    take!(Field::Themes, themes, i.themes);
     take!(Field::BoxArt, box_art_url, i.box_art_url);
     take!(Field::Screenshot, screenshot_url, i.screenshot_url);
     take!(Field::Marquee, marquee_url, i.marquee_url);
@@ -626,7 +648,8 @@ async fn look_up(
     let meta = &state.metadata;
     let old: Row = sqlx::query_as(
         "SELECT title, description, release_date, developer, publisher, genre, players,
-           rating, box_art_url, box_art_source, screenshot_url, screenshot_source, marquee_url,
+           rating, esrb, modes, series, themes, box_art_url, box_art_source, screenshot_url,
+           screenshot_source, marquee_url,
            marquee_source, video_url, video_source, field_sources, provider_ids, tried
          FROM game_metadata WHERE game_id = ?",
     )
@@ -793,14 +816,16 @@ async fn store(
         "INSERT INTO game_metadata (game_id, status, sources, title, description, release_date,
            developer, publisher, genre, players, rating, box_art_url, box_art_source, tried,
            field_sources, provider_ids, video_url, video_source, screenshot_url,
-           screenshot_source, marquee_url, marquee_source, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           screenshot_source, marquee_url, marquee_source, esrb, modes, series, themes,
+           fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
            datetime('now'))
          ON CONFLICT(game_id) DO UPDATE SET status = excluded.status, sources = excluded.sources,
            title = excluded.title, description = excluded.description,
            release_date = excluded.release_date, developer = excluded.developer,
            publisher = excluded.publisher, genre = excluded.genre, players = excluded.players,
-           rating = excluded.rating,
+           rating = excluded.rating, esrb = excluded.esrb, modes = excluded.modes,
+           series = excluded.series, themes = excluded.themes,
            box_art = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
              THEN game_metadata.box_art ELSE NULL END,
            box_art_attempts = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
@@ -847,18 +872,19 @@ async fn store(
     .bind(&row.screenshot_source)
     .bind(&row.marquee_url)
     .bind(&row.marquee_source)
+    .bind(&row.esrb)
+    .bind(&row.modes)
+    .bind(&row.series)
+    .bind(&row.themes)
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Removes what earlier versions left: LaunchBox's database dump (no longer a source), the
-/// play cache's copies of the library's own artwork (no longer read), and downloaded pictures
-/// and videos no game refers to (all of them after the lookup data was cleared, in migration
-/// 0030). Those are only ever `<game id>-<box|shot|marquee>.<png|jpg|webp>` and
-/// `<game id>-video.mp4` in the media folder; nothing else there, and nothing in the library,
-/// is touched.
-pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool) {
+/// Removes what earlier versions left: LaunchBox's database dump (no longer a source) and the
+/// play cache's copies of the library's own artwork (no longer read). Downloaded files no game
+/// refers to are [`reconcile`]'s, after the startup scan.
+pub(crate) async fn tidy(paths: &crate::paths::DataPaths) {
     for (old, what) in [
         (paths.removed_launchbox(), "the LaunchBox database dump"),
         (paths.removed_cache_artwork(), "cached copies of the library's artwork"),
@@ -869,31 +895,6 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
                 Err(e) => tracing::warn!(path = %old.display(), what, error = %e, "cannot remove"),
             }
         }
-    }
-    let Ok(kept) = sqlx::query_scalar::<_, String>(
-        "SELECT box_art FROM game_metadata WHERE box_art IS NOT NULL
-         UNION ALL SELECT screenshot FROM game_metadata WHERE screenshot IS NOT NULL
-         UNION ALL SELECT marquee FROM game_metadata WHERE marquee IS NOT NULL
-         UNION ALL SELECT video FROM game_metadata WHERE video IS NOT NULL",
-    )
-    .fetch_all(db)
-    .await
-    else {
-        return;
-    };
-    let Ok(mut dir) = tokio::fs::read_dir(paths.artwork()).await else { return };
-    let mut removed = 0u64;
-    while let Ok(Some(entry)) = dir.next_entry().await {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if (is_picture_file(&name) || is_video_file(&name))
-            && !kept.contains(&name)
-            && tokio::fs::remove_file(entry.path()).await.is_ok()
-        {
-            removed += 1;
-        }
-    }
-    if removed > 0 {
-        tracing::info!(files = removed, "removed pictures and videos no game refers to");
     }
 }
 

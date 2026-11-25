@@ -4,7 +4,8 @@
   // format` rewrites. Generated code (src/graphql) and the build are left alone.
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!src/graphql-env.d.ts", "!dist"]
+    // The ESRB icons are third-party files, kept as Commons has them.
+    "includes": ["**", "!src/graphql-env.d.ts", "!dist", "!scripts/esrb-badges/*.svg"]
   },
   "formatter": {
     "enabled": true,

@@ -334,7 +334,9 @@ test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await page.goto("/admin/jobs/");
   const upkeep = page.getByRole("listitem").filter({ hasText: "Database upkeep" });
   await expect(page.getByRole("listitem").filter({ hasText: "Library scan" })).toContainText("Every 1 h");
-  await expect(page.getByRole("listitem").filter({ hasText: "Game information" })).toContainText("After each scan");
+  const job = (name: string) => page.getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
+  await expect(job("Game information")).toContainText("After each scan");
+  await expect(job("Library check")).toContainText("After each scan");
   await upkeep.getByRole("button", { name: "Run now" }).click();
   await expect(upkeep).toContainText("Succeeded");
   await expect(upkeep).toContainText("expired sign-ins deleted");

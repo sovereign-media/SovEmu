@@ -48,6 +48,8 @@ impl Summary for ScanReport {
 /// After a scan: look up game information for games that have none yet, if configured to, and
 /// wait for it.
 pub(crate) async fn after_scan(state: &AppState, trigger: Trigger) {
+    let s = state.clone();
+    let _ = state.jobs.run(Job::Reconcile, trigger, async move { reconcile(&s).await }).await;
     if state.config.metadata_auto {
         let _ = state
             .jobs
@@ -57,17 +59,45 @@ pub(crate) async fn after_scan(state: &AppState, trigger: Trigger) {
                 lookup(state.clone(), metadata::Scope::automatic(&state.config)),
             )
             .await;
+    } else {
+        download_missing(state);
     }
 }
 
 /// [`after_scan`] without waiting: a scheduled scan's run ends when the scan does.
 pub(crate) fn after_scan_in_background(state: &AppState) {
-    if state.config.metadata_auto {
+    let s = state.clone();
+    let _ = state.jobs.start(Job::Reconcile, Trigger::Schedule, async move {
+        let report = reconcile(&s).await?;
+        fetch_missing(&s, Trigger::Schedule);
+        Ok(report)
+    });
+}
+
+/// Reconciles game information and artwork with the library ([`Job::Reconcile`]'s work).
+pub(crate) async fn reconcile(state: &AppState) -> anyhow::Result<String> {
+    Ok(metadata::reconcile::reconcile(state).await?.to_string())
+}
+
+/// What follows a reconcile, without waiting: the lookup of games without information, which
+/// ends by downloading the artwork that is missing (with `SOVEMU_METADATA_AUTO`, or when an admin
+/// asked); else only the downloads.
+pub(crate) fn fetch_missing(state: &AppState, trigger: Trigger) {
+    if state.config.metadata_auto || trigger == Trigger::Admin {
         let _ = state.jobs.start(
             Job::Metadata,
-            Trigger::Schedule,
+            trigger,
             lookup(state.clone(), metadata::Scope::automatic(&state.config)),
         );
+    } else {
+        download_missing(state);
+    }
+}
+
+/// Starts the artwork downloads unless they are running.
+fn download_missing(state: &AppState) {
+    if metadata::artwork::claim(&state.metadata) {
+        tokio::spawn(metadata::artwork::run_claimed(state.clone()));
     }
 }
 
