@@ -111,11 +111,11 @@ by path, so game ids (and with them play history and saves) survive a rescan.
 ### Library modes
 
 `SOVEMU_LIBRARY_MODE` sets how the server uses the library:
-- **`direct`** (the default): read games and artwork from where they are. This is right for local
+- **`direct`** (the default): read games from where they are. This is right for local
   disk or a NAS on the LAN.
 - **`cache`**: for a remote share; see below.
-- **`mirror`**: copy the library (optionally only some systems) into `data/library` and play
-  from there. A background sync copies new and changed files (size, and modification time
+- **`mirror`**: copy the library's games (optionally only some systems; never the artwork
+  folders beside them) into `data/library` and play from there. A background sync copies new and changed files (size, and modification time
   within 2 s), removes deleted ones, and then rescans. The NAS stays mounted read-only as its
   source.
 
@@ -135,12 +135,14 @@ one row per game, found or not, so the next job skips it. Each row remembers whi
 each field (`field_sources`) and each source's id for the game (`provider_ids`); a lookup merges
 into the row, replacing only the fields it was asked to refresh and never clearing one a source
 no longer knows. A lookup that failed is not stored, so it's retried next time. A source that
-rejects credentials, runs out of quota or is closed is skipped for the rest of the job. A lookup stores box art only as a URL, with its source, never with
+rejects credentials, runs out of quota or is closed is skipped for the rest of the job. A lookup stores pictures (box art, a screenshot, the logo) and a video only as URLs, with their source, never with
 credentials (ScreenScraper's are stripped, and added again when downloading). When the lookup
-ends, a second background job (`metadata/artwork.rs`) downloads, `SOVEMU_ARTWORK_DOWNLOADS` at a
-time, the box art of the games that will show it (no local thumb), giving up on a URL after
-three failures. Its queue is the table, so a restart resumes it. Downloaded box art lives in
-`data/metadata/media` and stands in for a missing local thumb. The game API returns the looked-up title, with the file's own title in
+ends, a second background job (`metadata/artwork.rs`) downloads them, `SOVEMU_ARTWORK_DOWNLOADS`
+at a time, giving up on a URL after three failures. Its queue is the table, so a restart resumes
+it. The files live in `data/metadata/media`, pictures as lossy WebP, and are a game's only
+artwork: the scan reads ROMs alone, never the artwork folders a Batocera library keeps beside them
+(`images/`, `videos/`; migration `0031` dropped what it had found there). The API's artwork
+kinds map onto them: `thumb` is the box art, `image` the screenshot, `marquee` the logo. The game API returns the looked-up title, with the file's own title in
 `file_title`, plus description, release date, developer, publisher, genre, players and rating.
 
 ### A remote library
@@ -151,7 +153,7 @@ few MB/s. Three things keep the slowness away from playing:
   network.
 - **Disc games:** a disc is read during play on the core's own CD thread (PCSX-ReARMed, read-ahead
   256 sectors).
-- **The cache:** `data/cache/games` holds what has been played and seen:
+- **The cache:** `data/cache/games` holds what has been played:
   - a game is served from its copy once it has been played;
   - small files are copied straight away; disc images are copied after their first session;
   - least recently used files go first;

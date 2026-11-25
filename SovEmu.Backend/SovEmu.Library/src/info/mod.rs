@@ -32,6 +32,10 @@ pub struct GameInfo {
     pub rating: Option<f64>,
     /// Front box art.
     pub box_art_url: Option<String>,
+    /// A screenshot of the game, shown behind it (the `image` artwork).
+    pub screenshot_url: Option<String>,
+    /// Its logo (the `marquee` artwork).
+    pub marquee_url: Option<String>,
     /// A gameplay video (MP4).
     pub video_url: Option<String>,
 }
@@ -52,6 +56,8 @@ impl GameInfo {
             players,
             rating,
             box_art_url,
+            screenshot_url,
+            marquee_url,
             video_url
         );
     }

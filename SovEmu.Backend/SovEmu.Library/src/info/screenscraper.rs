@@ -420,17 +420,26 @@ pub(crate) fn parse_with<S: AsRef<str>>(
     });
     let rating =
         text("note").and_then(|n| n.parse::<f64>().ok()).map(|n| (n / 20.0).clamp(0.0, 1.0));
-    let box_art = list("medias", "media")
-        .filter(|m| m.attribute("type") == Some("box-2D"))
-        .filter_map(|m| {
-            Some((m.attribute("region").unwrap_or(""), m.text()?.trim().replace(' ', "%20")))
-        })
-        .collect::<Vec<_>>();
-    let box_art_url = regions
-        .iter()
-        .find_map(|r| box_art.iter().find(|(reg, _)| *reg == r.as_ref()))
-        .or_else(|| box_art.first())
-        .map(|(_, url)| strip_credentials(url));
+    // An image of one of `kinds`: the preferred region first (a logo's words are the region's),
+    // then the earlier kind; any region when none is preferred.
+    let image = |kinds: &[&str]| {
+        let found = list("medias", "media")
+            .filter_map(|m| {
+                let kind = kinds.iter().position(|k| m.attribute("type") == Some(*k))?;
+                let url = m.text()?.trim().replace(' ', "%20");
+                Some((kind, m.attribute("region").unwrap_or(""), url))
+            })
+            .collect::<Vec<_>>();
+        regions
+            .iter()
+            .find_map(|r| found.iter().filter(|h| h.1 == r.as_ref()).min_by_key(|h| h.0))
+            .or_else(|| found.iter().min_by_key(|h| h.0))
+            .map(|(_, _, url)| strip_credentials(url))
+    };
+    let box_art_url = image(&["box-2D"]);
+    // In play, else the title screen: shown behind the game, as a library's `-image` is.
+    let screenshot_url = image(&["ss", "sstitle"]);
+    let marquee_url = image(&["wheel-hd", "wheel"]);
     // The normalised video (smaller, one encoding) where there is one, else the original.
     let video_url = ["video-normalized", "video"].iter().find_map(|kind| {
         list("medias", "media")
@@ -450,6 +459,8 @@ pub(crate) fn parse_with<S: AsRef<str>>(
         players: text("joueurs"),
         rating,
         box_art_url,
+        screenshot_url,
+        marquee_url,
         video_url,
     })
 }
@@ -785,6 +796,8 @@ pub(crate) mod tests {
         assert_eq!(info.players.as_deref(), Some("1"));
         assert_eq!(info.rating, Some(0.8), "ScreenScraper rates out of 20");
         assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20us.png"));
+        assert_eq!(info.screenshot_url.as_deref(), Some("https://example.invalid/ss.png"));
+        assert_eq!(info.marquee_url.as_deref(), Some("https://example.invalid/wheel%20us.png"));
     }
 
     #[test]
@@ -794,6 +807,7 @@ pub(crate) mod tests {
         assert_eq!(info.release_date.as_deref(), Some("1986-09-26"));
         assert_eq!(info.description.as_deref(), Some("Simon Belmont part affronter Dracula."));
         assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20jp.png"));
+        assert_eq!(info.marquee_url.as_deref(), Some("https://example.invalid/wheel-hd%20jp.png"));
     }
 
     #[test]

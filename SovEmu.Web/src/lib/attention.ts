@@ -10,7 +10,7 @@ export const KINDS: { value: AttentionKind; label: string; help: string }[] = [
     label: "No information",
     help: "Games with no description, year or publisher: never looked up, or not found.",
   },
-  { value: "NO_BOX_ART", label: "No box art", help: "Games with no picture beside them, and none downloaded." },
+  { value: "NO_BOX_ART", label: "No box art", help: "Games with no box art downloaded." },
   {
     value: "DUPLICATE",
     label: "Duplicates",

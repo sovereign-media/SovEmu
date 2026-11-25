@@ -2,7 +2,6 @@
 //! tapes) folded into one game, the soft patches beside them and their artwork's file names.
 //! Reads the disk only; the server stores what it finds.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -21,8 +20,6 @@ pub struct Found {
     pub tags: String,
     pub size: i64,
     pub modified: i64,
-    /// Artwork found beside it, e.g. `"image,thumb,video"` (see [`MEDIA_KINDS`]).
-    pub media: String,
     /// A multi-disc game's discs in order (disc 1's is [`Found::path`]); empty for one disc.
     pub discs: Vec<String>,
     /// Soft patches found with it (see [`PATCH_EXTENSIONS`]).
@@ -309,28 +306,20 @@ pub fn group_discs(found: Vec<Found>) -> Vec<Found> {
     out
 }
 
-/// The artwork kinds SovEmu shows, as named in Batocera/EmulationStation libraries:
-/// `images/<rom stem>-<kind>.<png|jpg>` and `videos/<rom stem>-video.mp4`.
-pub const MEDIA_KINDS: &[&str] = &["image", "thumb", "marquee", "video"];
-
-/// Folders that hold artwork, not games; never scanned for ROMs.
+/// Folders that hold artwork, as Batocera/EmulationStation libraries keep it beside the ROMs:
+/// never scanned for ROMs, and never read. A game's artwork comes from ScreenScraper.
 const MEDIA_DIRS: &[&str] =
     &["images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos"];
 
-/// Where a game's artwork of `kind` would be, relative to the ROM's folder.
-pub fn media_candidates(stem: &str, kind: &str) -> Vec<String> {
-    if kind == "video" {
-        vec![format!("videos/{stem}-video.mp4")]
-    } else {
-        vec![format!("images/{stem}-{kind}.png"), format!("images/{stem}-{kind}.jpg")]
-    }
+/// Whether a folder named `name` holds artwork, not games ([`MEDIA_DIRS`]).
+pub(crate) fn is_media_dir(name: &str) -> bool {
+    MEDIA_DIRS.contains(&name.to_ascii_lowercase().as_str())
 }
 
 /// A ROM found while listing, before its size and date are read.
 struct Candidate {
     path: PathBuf,
     system: &'static System,
-    media: String,
     /// Its patches, and whether each is beside it (named as it).
     patches: Vec<(PathBuf, bool)>,
 }
@@ -367,7 +356,7 @@ pub fn walk(root: &Path) -> std::io::Result<Walk> {
             }
             folders.push((path, system));
         } else if let Some(system) = pick_system(&path, None) {
-            candidates.push(Candidate { path, system, media: String::new(), patches: Vec::new() });
+            candidates.push(Candidate { path, system, patches: Vec::new() });
         }
     }
     std::thread::scope(|scope| -> std::io::Result<()> {
@@ -430,15 +419,6 @@ fn walk_dir(
         return Ok(());
     }
     let entries = std::fs::read_dir(dir).map_err(|e| unreadable(dir, e))?;
-    // List the artwork folders once per directory rather than probing per game.
-    let mut media = HashSet::new();
-    for sub in ["images", "videos"] {
-        if let Ok(files) = std::fs::read_dir(dir.join(sub)) {
-            media.extend(
-                files.flatten().map(|f| format!("{sub}/{}", f.file_name().to_string_lossy())),
-            );
-        }
-    }
     for entry in entries {
         let entry = entry.map_err(|e| unreadable(dir, e))?;
         let path = entry.path();
@@ -447,21 +427,13 @@ fn walk_dir(
             continue;
         }
         if is_dir(&entry) {
-            if !MEDIA_DIRS.contains(&name.to_ascii_lowercase().as_str()) {
+            if !is_media_dir(&name) {
                 walk_dir(&path, system, depth + 1, found)?;
             }
         } else if patch_extension(&path).is_some() {
             found.patches.push(path);
         } else if let Some(sys) = pick_system(&path, system) {
-            let stem =
-                path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            let media = MEDIA_KINDS
-                .iter()
-                .filter(|kind| media_candidates(&stem, kind).iter().any(|c| media.contains(c)))
-                .copied()
-                .collect::<Vec<_>>()
-                .join(",");
-            found.candidates.push(Candidate { path, system: sys, media, patches: Vec::new() });
+            found.candidates.push(Candidate { path, system: sys, patches: Vec::new() });
         } else if worth_listing(&path) {
             let reason = match system {
                 Some(sys) => format!("{} games are not .{} files", sys.name, extension(&path)),
@@ -555,7 +527,6 @@ fn to_found(root: &Path, c: &Candidate) -> Option<Found> {
             .ok()
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs() as i64),
-        media: c.media.clone(),
         discs: Vec::new(),
         patches,
         parts: None,
@@ -740,7 +711,6 @@ mod tests {
                 tags,
                 size: 1,
                 modified: 0,
-                media: String::new(),
                 discs: Vec::new(),
                 patches: Vec::new(),
                 parts: None,
@@ -771,7 +741,6 @@ mod tests {
                 tags,
                 size: 1,
                 modified: 0,
-                media: String::new(),
                 discs: Vec::new(),
                 patches: Vec::new(),
                 parts: None,
@@ -874,8 +843,6 @@ mod tests {
             ]
         );
         assert_eq!(found[3].tags, "Europe, h");
-        assert_eq!(found[2].media, "image,marquee,video", "artwork beside the ROM");
-        assert_eq!(found[3].media, "", "none for this one");
         assert_eq!(found[2].size, 16);
         std::fs::remove_dir_all(root).ok();
     }

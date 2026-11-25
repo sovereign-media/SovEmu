@@ -1,7 +1,7 @@
-//! A local copy of a slow (network) library: ROMs and artwork, least recently used first out.
+//! A local copy of a slow (network) library's games, least recently used first out.
 //!
 //! On a library reached over a high-latency link (an SMB share through a tunnel), opening a
-//! game or showing its art can take seconds. The cache keeps a copy on local disk:
+//! game can take seconds. The cache keeps a copy on local disk:
 //!
 //! - [`Cache::local_or_fetch`] returns the cached copy if it is current, and otherwise returns
 //!   the original while copying it in the background, so the first use never waits for the copy
@@ -9,7 +9,6 @@
 //! - A copy is current when its size and modification time match the original's.
 //! - Past the size cap, the least recently used files go. Use is recorded as the modification
 //!   time of a `.used` sidecar, so the copy's own time keeps mirroring the original's.
-//! - [`Cache::prefetch_many`] warms a batch (a system's artwork) on one background thread.
 //!
 //! Files that name other files (`.cue`, `.m3u`, `.ccd`, `.gdi`) are never cached: a copy without
 //! its tracks would not load.
@@ -26,11 +25,8 @@ const MULTI_FILE: &[&str] = &["cue", "m3u", "ccd", "gdi", "toc"];
 pub struct Cache {
     dir: PathBuf,
     max_bytes: u64,
-    threads: usize,
     /// Copies in flight, by destination, so one file is never copied twice at once.
     copying: Mutex<HashSet<PathBuf>>,
-    /// Batches being prefetched, by name, so opening a system twice does not queue it twice.
-    batches: Mutex<HashSet<String>>,
 }
 
 /// Whether a file at `path` should be cached at all.
@@ -60,15 +56,8 @@ fn current(copy: &Path, original: &Path) -> bool {
 
 impl Cache {
     /// `max_bytes` of 0 disables caching.
-    /// `threads` copies run at once when prefetching artwork.
-    pub fn new(dir: PathBuf, max_bytes: u64, threads: usize) -> Arc<Self> {
-        Arc::new(Self {
-            dir,
-            max_bytes,
-            threads: threads.max(1),
-            copying: Mutex::new(HashSet::new()),
-            batches: Mutex::new(HashSet::new()),
-        })
+    pub fn new(dir: PathBuf, max_bytes: u64) -> Arc<Self> {
+        Arc::new(Self { dir, max_bytes, copying: Mutex::new(HashSet::new()) })
     }
 
     pub fn enabled(&self) -> bool {
@@ -114,56 +103,6 @@ impl Cache {
             self.spawn_copy(original.to_owned(), copy);
         }
         original.to_owned()
-    }
-
-    /// Copies a batch of `(namespace, relative, original)` in the background, [`PREFETCH_THREADS`]
-    /// at a time, skipping what is already cached. `name` identifies the batch.
-    pub fn prefetch_many(
-        self: &Arc<Self>,
-        name: String,
-        items: Vec<(&'static str, String, PathBuf)>,
-    ) {
-        if !self.enabled()
-            || !self.batches.lock().unwrap_or_else(|e| e.into_inner()).insert(name.clone())
-        {
-            return;
-        }
-        let cache = self.clone();
-        std::thread::spawn(move || {
-            let queue = Mutex::new(items.into_iter());
-            let copied = std::sync::atomic::AtomicUsize::new(0);
-            std::thread::scope(|scope| {
-                for _ in 0..cache.threads {
-                    scope.spawn(|| {
-                        loop {
-                            let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
-                            let Some((namespace, relative, original)) = next else { break };
-                            let Some(copy) = cache.path_for(namespace, &relative) else { continue };
-                            if !cacheable(&original) || current(&copy, &original) {
-                                continue;
-                            }
-                            if cache
-                                .copying
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .insert(copy.clone())
-                            {
-                                if cache.copy(&original, &copy).is_ok() {
-                                    copied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                }
-                                cache
-                                    .copying
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner())
-                                    .remove(&copy);
-                            }
-                        }
-                    });
-                }
-            });
-            tracing::info!(game = %name, count = copied.into_inner(), "prefetched files");
-            cache.batches.lock().unwrap_or_else(|e| e.into_inner()).remove(&name);
-        });
     }
 
     fn spawn_copy(self: &Arc<Self>, original: PathBuf, copy: PathBuf) {
@@ -290,7 +229,7 @@ mod tests {
     #[test]
     fn first_use_reads_the_original_and_later_ones_the_copy() {
         let lib = tmp("lib");
-        let cache = Cache::new(tmp("store"), 1 << 20, 4);
+        let cache = Cache::new(tmp("store"), 1 << 20);
         let rom = lib.join("nes/Game.nes");
         std::fs::create_dir_all(rom.parent().unwrap()).unwrap();
         std::fs::write(&rom, [7u8; 100]).unwrap();
@@ -314,7 +253,7 @@ mod tests {
     #[test]
     fn evicts_the_least_recently_used_past_the_cap() {
         let lib = tmp("lib-evict");
-        let cache = Cache::new(tmp("store-evict"), 250, 4);
+        let cache = Cache::new(tmp("store-evict"), 250);
         for name in ["a", "b", "c"] {
             let src = lib.join(format!("{name}.gba"));
             std::fs::write(&src, [0u8; 100]).unwrap();
@@ -329,7 +268,7 @@ mod tests {
     #[test]
     fn clearing_keeps_what_is_being_played() {
         let lib = tmp("lib-clear");
-        let cache = Cache::new(tmp("store-clear"), 1 << 20, 4);
+        let cache = Cache::new(tmp("store-clear"), 1 << 20);
         for name in ["a", "b"] {
             let src = lib.join(format!("{name}.gba"));
             std::fs::write(&src, [0u8; 100]).unwrap();
@@ -347,9 +286,9 @@ mod tests {
     fn skips_multi_file_formats_traversal_and_a_disabled_cache() {
         assert!(!cacheable(Path::new("psx/Game.cue")));
         assert!(cacheable(Path::new("psx/Game.chd")));
-        let cache = Cache::new(tmp("store-skip"), 1 << 20, 4);
+        let cache = Cache::new(tmp("store-skip"), 1 << 20);
         assert!(cache.path_for("roms", "../../etc/passwd").is_none());
-        let off = Cache::new(tmp("store-off"), 0, 4);
+        let off = Cache::new(tmp("store-off"), 0);
         let rom = tmp("lib-off").join("x.nes");
         std::fs::write(&rom, [1u8]).unwrap();
         assert_eq!(off.local_or_fetch("roms", "x.nes", &rom), rom);

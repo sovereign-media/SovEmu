@@ -46,8 +46,7 @@ impl Kind {
             Self::NoBoxArt => {
                 "SELECT g.id AS game_id, g.system, g.title, g.path, '' AS detail
                  FROM games g LEFT JOIN game_metadata m ON m.game_id = g.id
-                 WHERE g.media NOT LIKE '%image%' AND g.media NOT LIKE '%thumb%'
-                   AND m.box_art IS NULL AND (?1 IS NULL OR g.system = ?1)
+                 WHERE m.box_art IS NULL AND (?1 IS NULL OR g.system = ?1)
                  ORDER BY g.system, g.title LIMIT ?2"
             }
             Self::Duplicate => {
@@ -127,22 +126,14 @@ mod tests {
         crate::db::open(&dir.join("attention.db")).await.unwrap()
     }
 
-    async fn game(
-        db: &SqlitePool,
-        path: &str,
-        title: &str,
-        tags: &str,
-        media: &str,
-        missing: &str,
-    ) -> i64 {
+    async fn game(db: &SqlitePool, path: &str, title: &str, tags: &str, missing: &str) -> i64 {
         sqlx::query_scalar(
-            "INSERT INTO games (system, path, title, tags, size, modified, media, missing_parts)
-             VALUES ('psx', ?, ?, ?, 1, 0, ?, ?) RETURNING id",
+            "INSERT INTO games (system, path, title, tags, size, modified, missing_parts)
+             VALUES ('psx', ?, ?, ?, 1, 0, ?) RETURNING id",
         )
         .bind(path)
         .bind(title)
         .bind(tags)
-        .bind(media)
         .bind(missing)
         .fetch_one(db)
         .await
@@ -152,15 +143,20 @@ mod tests {
     #[tokio::test]
     async fn each_kind_finds_its_games_and_counts_them_per_system() {
         let db = db().await;
-        let found = game(&db, "psx/A.chd", "A", "USA", "image,thumb", "").await;
-        game(&db, "psx/B (USA).chd", "B", "USA", "", "").await;
-        game(&db, "psx/B (USA).cue", "B", "USA", "", "").await;
-        game(&db, "psx/C (Disc 1).chd", "C", "", "thumb", "2").await;
-        sqlx::query("INSERT INTO game_metadata (game_id, status) VALUES (?, 'found')")
-            .bind(found)
+        let found = game(&db, "psx/A.chd", "A", "USA", "").await;
+        game(&db, "psx/B (USA).chd", "B", "USA", "").await;
+        game(&db, "psx/B (USA).cue", "B", "USA", "").await;
+        let unknown = game(&db, "psx/C (Disc 1).chd", "C", "", "2").await;
+        for (id, status) in [(found, "found"), (unknown, "not_found")] {
+            sqlx::query(
+                "INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, ?, 'box.webp')",
+            )
+            .bind(id)
+            .bind(status)
             .execute(&db)
             .await
             .unwrap();
+        }
         sqlx::query(
             "INSERT INTO scan_skipped (path, system, reason) VALUES ('psx/x.abc', 'psx', 'no')",
         )

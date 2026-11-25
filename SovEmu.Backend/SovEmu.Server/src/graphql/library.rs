@@ -248,13 +248,13 @@ impl SystemBios {
 /// Artwork and video kinds a game can have.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MediaKind {
-    /// A screenshot or composite image.
+    /// A screenshot, shown behind the game.
     Image,
     /// Box art.
     Thumb,
     /// The title's logo.
     Marquee,
-    /// A short video snap.
+    /// A short gameplay video.
     Video,
 }
 

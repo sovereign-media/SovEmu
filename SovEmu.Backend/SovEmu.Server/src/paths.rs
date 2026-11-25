@@ -12,7 +12,7 @@
 //!   backups/              backups, unless SOVEMU_BACKUP_DIR points elsewhere
 //!   restored.json         the backup last restored (SOVEMU_RESTORE_FROM), so it is restored once
 //!   before-restore-<time>/  what a restore replaced, kept
-//!   cache/games/          mode `cache`: games and art copied from the library as they are used
+//!   cache/games/          mode `cache`: games copied from the library as they are played
 //!   cache/discs/          generated .m3u playlists for multi-disc games
 //!   cache/artwork-widths/ artwork copies at the widths clients asked for (WebP)
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
@@ -21,7 +21,7 @@
 //!   systems/              system photos of your own, `<system id>.webp`
 //!   metadata/             game information:
 //!   metadata/fbneo/       FBNeo's DATs, by commit
-//!   metadata/media/       downloaded box art
+//!   metadata/media/       downloaded box art, screenshots, logos and videos
 //! ```
 //!
 //! A new file or folder in the data directory gets its method here.
@@ -81,6 +81,12 @@ impl DataPaths {
     /// everything in it: never put anything else there.
     pub fn cache_games(&self) -> PathBuf {
         self.cache().join("games")
+    }
+
+    /// The play cache's copies of the library's own artwork, from before artwork came only from
+    /// ScreenScraper: removed at startup.
+    pub fn removed_cache_artwork(&self) -> PathBuf {
+        self.cache_games().join("media")
     }
 
     /// Where copies were kept before they had a folder of their own (`cache/roms`,
@@ -165,6 +171,7 @@ mod tests {
         assert_eq!(p.removed_launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
         assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
+        assert_eq!(p.removed_cache_artwork(), Path::new("/data/cache/games/media"));
     }
 
     #[test]

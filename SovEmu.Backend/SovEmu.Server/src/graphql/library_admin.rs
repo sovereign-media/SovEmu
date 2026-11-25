@@ -274,6 +274,10 @@ pub(super) enum MetadataField {
     Players,
     Rating,
     BoxArt,
+    /// A screenshot, shown behind the game.
+    Screenshot,
+    /// The game's logo.
+    Marquee,
     Video,
 }
 
@@ -290,12 +294,14 @@ impl From<MetadataField> for crate::metadata::Field {
             MetadataField::Players => F::Players,
             MetadataField::Rating => F::Rating,
             MetadataField::BoxArt => F::BoxArt,
+            MetadataField::Screenshot => F::Screenshot,
+            MetadataField::Marquee => F::Marquee,
             MetadataField::Video => F::Video,
         }
     }
 }
 
-/// Box art being downloaded after a lookup, for the games that have no local thumb.
+/// Artwork (box art, screenshots, logos) and videos being downloaded after a lookup.
 #[derive(SimpleObject)]
 pub(super) struct ArtworkStatus {
     pub(super) running: bool,

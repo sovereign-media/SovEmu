@@ -1,7 +1,8 @@
 //! `mirror` library mode: keep a full local copy of a network library and play from it.
 //!
 //! A sync walks the source's system folders (optionally only some systems), copies every file
-//! that is new or changed (ROMs and their `images/` / `videos/` artwork alike), and deletes local
+//! that is new or changed (ROMs, never the artwork folders beside them: a game's
+//! artwork comes from ScreenScraper), and deletes local
 //! files the source no longer has. Copies go through a temporary file and keep the source's
 //! modification time, so the next sync can tell them apart from changed originals. Several files
 //! copy at once: on a network share each file costs round trips.
@@ -38,8 +39,9 @@ fn same(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
     a.len() == b.len() && apart < Duration::from_secs(2)
 }
 
-/// Every file under `dir` (relative paths, `/`-separated), skipping hidden entries.
-fn list(dir: &Path, prefix: &str, out: &mut Vec<(String, u64)>) {
+/// Every file under `dir` (relative paths, `/`-separated), skipping hidden entries and, with
+/// `games_only`, artwork folders ([`crate::scan::is_media_dir`]).
+fn list(dir: &Path, prefix: &str, games_only: bool, out: &mut Vec<(String, u64)>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -49,7 +51,9 @@ fn list(dir: &Path, prefix: &str, out: &mut Vec<(String, u64)>) {
         let rel = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
         let Ok(kind) = entry.file_type() else { continue };
         if kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()) {
-            list(&entry.path(), &rel, out);
+            if !(games_only && crate::scan::is_media_dir(&name)) {
+                list(&entry.path(), &rel, games_only, out);
+            }
         } else if let Ok(meta) = entry.metadata() {
             out.push((rel, meta.len()));
         }
@@ -117,7 +121,7 @@ pub fn sync(
     // What the source has, and what of it needs copying.
     let mut wanted = Vec::new();
     for folder in folders(source, only) {
-        list(&source.join(&folder), &folder, &mut wanted);
+        list(&source.join(&folder), &folder, true, &mut wanted);
     }
     let todo: Vec<(String, u64)> = wanted
         .iter()
@@ -176,11 +180,12 @@ pub fn sync(
         }
     });
 
-    // Remove what the source no longer has (only inside the mirrored folders).
+    // Remove what the source no longer has (only inside the mirrored folders), and the artwork
+    // folders earlier versions copied.
     let keep: HashSet<&str> = wanted.iter().map(|(rel, _)| rel.as_str()).collect();
     let mut present = Vec::new();
     for folder in folders(dest, only) {
-        list(&dest.join(&folder), &folder, &mut present);
+        list(&dest.join(&folder), &folder, false, &mut present);
     }
     let mut removed = 0;
     for (rel, _) in present {
@@ -225,14 +230,16 @@ mod tests {
         let (src, dst) = (tmp("src"), tmp("dst"));
         put(&src, "nes/A.nes", b"aaaa");
         put(&src, "nes/images/A-thumb.png", b"png");
+        put(&dst, "nes/videos/A-video.mp4", b"an earlier version's copy");
         put(&src, "snes/B.sfc", b"bbbb");
         put(&src, "notes/readme.txt", b"not a system folder");
         let status = Mutex::new(SyncStatus::default());
 
         sync(&src, &dst, &[], 4, &status);
         let s = status.lock().unwrap().clone();
-        assert_eq!((s.running, s.files_total, s.files_done, s.failed), (false, 3, 3, 0));
-        assert_eq!(std::fs::read(dst.join("nes/images/A-thumb.png")).unwrap(), b"png");
+        assert_eq!((s.running, s.files_total, s.files_done, s.failed), (false, 2, 2, 0));
+        assert!(!dst.join("nes/images").exists(), "artwork folders are not copied");
+        assert!(!dst.join("nes/videos/A-video.mp4").exists(), "nor kept from before");
         assert!(!dst.join("notes").exists(), "only system folders are mirrored");
 
         // Nothing changed: nothing to copy.

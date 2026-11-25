@@ -109,13 +109,12 @@ held 59.93 fps over 300 frames with no resyncs.
       cleared environment
 - [x] OIDC sign-in (Phase 6)
 - [x] NAS library: `compose.nas.yaml` mounts the SMB share read-only (credentials in a gitignored
-      `.env`); Batocera artwork (box art, image, marquee, video snaps) is scanned and served with
-      range support; the game list shows it; scans run in the background, in parallel
+      `.env`); scans run in the background, in parallel
       (3,497 games over SMB in ~20 s)
 - [x] PlayStation (PCSX-ReARMed, CHD) and arcade / Neo Geo (FBNeo) cores; `SOVEMU_SYSTEM_DIR` for BIOS
 - [x] Remote library (Cloudflare Zero Trust, ~100 ms per request, a few MB/s): a local LRU cache
-      of played games and artwork (`SOVEMU_CACHE_GB`), disc images cached only after their first
-      session, system artwork prefetched, PlayStation CD read-ahead raised to 256 sectors, worker
+      of played games (`SOVEMU_CACHE_GB`), disc images cached only after their first
+      session, PlayStation CD read-ahead raised to 256 sectors, worker
       load deadline raised to 2 minutes
 - [x] Library modes: `direct` (NAS on the LAN, the default), `cache` (remote NAS), `mirror`
       (a full local copy synced in the background, optionally per system), with a Library page
@@ -124,6 +123,9 @@ held 59.93 fps over 300 frames with no resyncs.
       downloaded; descriptions, dates, developers, genres and players in the game list
 - [x] ScreenScraper as the only online source, behind a provider interface (#207): LaunchBox and
       TheGamesDB removed, detailed lookup progress, partial refreshes by field, source and age
+- [x] Artwork from ScreenScraper only: box art, screenshots (backdrops), logos (marquees) and
+      videos downloaded as WebP (videos as MP4); the scan and the mirror read ROM folders only,
+      never the artwork beside them
 - [ ] Live-test the ScreenScraper client once credentials exist (tested against a mock service
       built from ES-DE's parsing code): status codes, quota fields, the GameCube and PS2 system
       ids, whether stored box art URLs expire

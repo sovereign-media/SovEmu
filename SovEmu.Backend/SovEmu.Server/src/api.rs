@@ -39,7 +39,7 @@ pub(crate) struct Game {
     pub(crate) size: i64,
     pub(crate) last_played_at: Option<String>,
     pub(crate) play_count: Option<i64>,
-    /// Artwork available through `/api/games/{id}/media/{kind}`.
+    /// Artwork downloaded for it (`image`, `thumb`, `marquee`, `video`), comma-separated.
     #[serde(serialize_with = "split_media")]
     pub(crate) media: String,
     /// The title from the file name, when metadata supplied a better `title`.
@@ -55,7 +55,13 @@ pub(crate) struct Game {
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
-    /// A downloaded gameplay video (a file under `<data>/metadata/media`), served as `video`.
+    /// A downloaded screenshot (the same folder), served as `image`.
+    #[serde(skip)]
+    pub(crate) screenshot: Option<String>,
+    /// The downloaded logo (the same folder), served as `marquee`.
+    #[serde(skip)]
+    pub(crate) marquee: Option<String>,
+    /// A downloaded gameplay video (the same folder), served as `video`.
     #[serde(skip)]
     pub(crate) box_video: Option<String>,
     /// How many discs (1 for most games).
@@ -73,19 +79,15 @@ pub(crate) struct Game {
 }
 
 impl Game {
-    /// Downloaded box art stands in for a missing local `thumb`.
-    pub(crate) fn with_box_art(mut self) -> Self {
-        for (kind, file) in [("thumb", self.box_art.is_some()), ("video", self.box_video.is_some())]
-        {
-            if file && !self.media.split(',').any(|k| k == kind) {
-                self.media = if self.media.is_empty() {
-                    kind.into()
-                } else {
-                    format!("{},{kind}", self.media)
-                };
-            }
+    /// The downloaded file of its artwork of `kind` (`image`, `thumb`, `marquee`, `video`).
+    fn media_file_name(&self, kind: &str) -> Option<&str> {
+        match kind {
+            "image" => self.screenshot.as_deref(),
+            "thumb" => self.box_art.as_deref(),
+            "marquee" => self.marquee.as_deref(),
+            "video" => self.box_video.as_deref(),
+            _ => None,
         }
-        self
     }
 }
 
@@ -147,10 +149,14 @@ pub(crate) async fn systems_with_games(state: &AppState) -> ApiResult<Vec<System
 
 pub(crate) const GAME_COLUMNS: &str =
     "g.id, g.system, COALESCE(m.title, g.title) AS title, g.tags, g.path,
-     g.size, h.last_played_at, h.play_count, g.media,
+     g.size, h.last_played_at, h.play_count,
+     TRIM(CASE WHEN m.screenshot IS NOT NULL THEN 'image,' ELSE '' END
+       || CASE WHEN m.box_art IS NOT NULL THEN 'thumb,' ELSE '' END
+       || CASE WHEN m.marquee IS NOT NULL THEN 'marquee,' ELSE '' END
+       || CASE WHEN m.video IS NOT NULL THEN 'video' ELSE '' END, ',') AS media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art, m.video AS box_video, g.release, g.parts,
+     m.box_art, m.screenshot, m.marquee, m.video AS box_video, g.release, g.parts,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
 /// What a list of games carries for this user beyond its rows: which are favourites, and the
@@ -190,8 +196,7 @@ pub(crate) async fn list_games(
         .await?;
     let mut games = games;
     annotate(state, user.id, &mut games).await?;
-    prefetch_art(state, system, &games);
-    Ok(games.into_iter().map(Game::with_box_art).collect())
+    Ok(games)
 }
 
 /// One game, as this user sees it (favourite, patch).
@@ -211,7 +216,6 @@ async fn fetch_row(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
         .fetch_optional(&state.db)
         .await?
         .filter(|g| enabled(state, &g.system))
-        .map(Game::with_box_art)
         .ok_or_else(|| ApiError::not_found("game"))
 }
 
@@ -786,41 +790,18 @@ pub(crate) async fn decoration_file(
 }
 
 /// The file of a game's artwork or video (`image`, `thumb`, `marquee`, `video`) for a signed
-/// user: the library's own, else what a metadata service supplied.
+/// user: what a metadata service supplied, downloaded under `<data>/metadata/media`.
 async fn media_file(
     state: &AppState,
     user_id: i64,
     id: i64,
     kind: &str,
 ) -> ApiResult<std::path::PathBuf> {
-    if !sovemu_library::scan::MEDIA_KINDS.contains(&kind) {
-        return Err(ApiError::not_found("media"));
-    }
     // The row alone: an image needs no favourites or patch (one query per thumbnail, not three).
     let game = fetch_row(state, user_id, id).await?;
-    // Probing the library's files (a network share, perhaps) blocks: off the async threads.
-    let found = {
-        let state = state.clone();
-        let (game, kind) = (game.clone(), kind.to_owned());
-        tokio::task::spawn_blocking(move || {
-            media_relative(&state, &game, &kind).map(|relative| {
-                let original = state.config.roms_dir.join(&relative);
-                state.cache.local_or_fetch("media", &relative, &original)
-            })
-        })
-        .await
-        .map_err(ApiError::internal)?
-    };
-    match found {
-        Some(file) => Ok(file),
-        // No local artwork: box art and a video a metadata service supplied stand in.
-        None => match (kind, &game.box_art, &game.box_video) {
-            ("thumb", Some(name), _) | ("video", _, Some(name)) => {
-                Ok(state.metadata.media_dir.join(name))
-            }
-            _ => Err(ApiError::not_found("media")),
-        },
-    }
+    game.media_file_name(kind)
+        .map(|name| state.metadata.media_dir.join(name))
+        .ok_or_else(|| ApiError::not_found("media"))
 }
 
 /// Serves `file`, with range support (so browsers can stream a video), kept a day by browsers:
@@ -901,51 +882,4 @@ pub(crate) async fn game_media_width(
             serve_media(original, request).await
         }
     }
-}
-
-/// Where a game's artwork of `kind` is, relative to the library root, if it exists.
-fn media_relative(state: &AppState, game: &Game, kind: &str) -> Option<String> {
-    let rom = std::path::Path::new(&game.path);
-    let stem = rom.file_stem()?.to_string_lossy().into_owned();
-    let folder = rom.parent().unwrap_or(std::path::Path::new(""));
-    sovemu_library::scan::media_candidates(&stem, kind)
-        .into_iter()
-        .map(|c| folder.join(c).to_string_lossy().replace('\\', "/"))
-        .find(|rel| state.config.roms_dir.join(rel).is_file())
-}
-
-/// Opening a system warms the cache with its games' stills (not videos), in the background.
-fn prefetch_art(state: &AppState, system: &str, games: &[Game]) {
-    if !state.cache.enabled() {
-        return;
-    }
-    let state2 = state.clone();
-    let games: Vec<(String, String)> =
-        games.iter().map(|g| (g.path.clone(), g.media.clone())).collect();
-    let system = system.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let mut items = Vec::new();
-        for (path, media) in games {
-            let rom = std::path::Path::new(&path);
-            let Some(stem) = rom.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
-                continue;
-            };
-            let folder = rom.parent().unwrap_or(std::path::Path::new("")).to_path_buf();
-            for kind in ["thumb", "image"] {
-                if !media.split(',').any(|m| m == kind) {
-                    continue;
-                }
-                // Media file names come from the scan; the first candidate that exists wins.
-                for candidate in sovemu_library::scan::media_candidates(&stem, kind) {
-                    let rel = folder.join(&candidate).to_string_lossy().replace('\\', "/");
-                    let original = state2.config.roms_dir.join(&rel);
-                    if original.is_file() {
-                        items.push(("media", rel, original));
-                        break;
-                    }
-                }
-            }
-        }
-        state2.cache.prefetch_many(format!("{system} artwork"), items);
-    });
 }
