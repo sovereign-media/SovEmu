@@ -1,7 +1,8 @@
 // GraphQL documents typed from the server's schema with gql.tada: each `graphql(...)` call's
 // result and variables are inferred by TypeScript from `src/graphql-env.d.ts`, which
 // `npm run schema` writes from SovEmu.Server/schema.graphql (kept current by a server test).
-// No generated code per operation: a query that asks for a field the schema lacks fails `tsc`.
+// No generated code per operation: a query that asks for a field the schema lacks fails
+// `gql.tada check`, which `npm run build` runs after `tsc` (`tsc` alone does not catch it).
 import { initGraphQLTada } from "gql.tada";
 import type { introspection, introspection_types } from "../graphql-env.d.ts";
 
