@@ -6,7 +6,7 @@
 #   scripts/fetch-free-roms.sh                 # into data/roms (what compose mounts)
 #   scripts/fetch-free-roms.sh /path/to/roms
 #
-# Stand-in until the NAS library (nas.blh.casa/emulation) is connected.
+# For trying SovEmu out before a library of your own is connected.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
