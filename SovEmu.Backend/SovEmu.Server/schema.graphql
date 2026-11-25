@@ -399,7 +399,7 @@ input BindingInput {
 
 type BiosFile {
 	"""
-	Its name in the system's folder.
+	The name the core reads it by (in the recommended folder: `USA/IPL.bin`).
 	"""
 	name: String!
 	label: String!
@@ -428,17 +428,18 @@ One BIOS file.
 """
 enum BiosFileState {
 	"""
-	Where the core looks, and a known good dump.
+	A known good dump (found by its checksum or its name, anywhere in the BIOS folder).
 	"""
 	OK
 	"""
-	Where the core looks, but not a dump the list knows: a bad dump, or a revision it lacks.
+	Found by its name, but not a dump the list knows: a bad dump, or a revision it lacks.
+	Used all the same.
 	"""
 	UNVERIFIED
 	"""
-	A known dump, or the right name in the wrong case, but not where the core looks.
+	No longer reported: BIOS files are found wherever they are in the BIOS folder.
 	"""
-	MISPLACED
+	MISPLACED @deprecated(reason: "BIOS files are found in any layout; nothing is misplaced")
 	MISSING
 }
 
@@ -487,7 +488,7 @@ enum BiosState {
 	"""
 	READY
 	"""
-	Playable, but a file is unverified or misplaced.
+	Playable, but a file is unverified.
 	"""
 	WARNING
 	"""
@@ -3196,7 +3197,8 @@ type System {
 type SystemBios {
 	state: BiosState!
 	"""
-	The system's folder, relative to the server's BIOS folder (`SOVEMU_BIOS_DIR`).
+	The folder SovEmu recommends for the system's files, relative to the server's BIOS folder
+	(`SOVEMU_BIOS_DIR`). Files are found in any layout; this one keeps them tidy.
 	"""
 	folder: String!
 	groups: [BiosGroup!]!
@@ -3469,6 +3471,10 @@ type Viewer {
 	user: User
 }
 
+"""
+Marks an element of a GraphQL schema as no longer supported.
+"""
+directive @deprecated(reason: String = "No longer supported") on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 """
 Directs the executor to include this field or fragment only when the `if` argument is true.
 """

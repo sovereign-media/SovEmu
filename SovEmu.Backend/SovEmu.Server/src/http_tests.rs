@@ -1322,7 +1322,7 @@ async fn checks_bios_files_per_system() {
     let mut h = Harness::new("bios", false).await;
     h.sign_up_admin().await;
     let bios = h.dir.join("bios");
-    assert!(bios.join("ps2").is_dir() && bios.join("snes").is_dir(), "a folder per system");
+    assert!(bios.join("ps2").is_dir() && bios.join("snes").is_dir(), "the recommended layout");
     // A PCSX-ReARMed BIOS in the wrong case, and a Neo Geo set beside the games.
     std::fs::write(bios.join("psx/SCPH1001.BIN"), vec![0u8; 512 * 1024]).unwrap();
     std::fs::create_dir_all(h.dir.join("roms/neogeo")).unwrap();
@@ -1347,18 +1347,25 @@ async fn checks_bios_files_per_system() {
     assert_eq!(get("neogeo")["biosMissing"], false, "found beside the games");
     assert_eq!(get("neogeo")["bios"]["state"], "WARNING", "not the known version");
     let psx = get("psx")["bios"].clone();
-    assert_eq!(psx["state"], "INCOMPLETE");
+    assert_eq!(psx["state"], "WARNING", "used, though not a known dump");
     assert_eq!(psx["folder"], "psx");
     assert_eq!(psx["groups"][0]["importance"], "RECOMMENDED");
     assert_eq!(psx["groups"][0]["anyOne"], true);
     let files = psx["groups"][0]["files"].as_array().unwrap();
     let scph1001 = files.iter().find(|f| f["name"] == "scph1001.bin").unwrap();
-    assert_eq!(scph1001["state"], "MISPLACED");
+    assert_eq!(scph1001["state"], "UNVERIFIED", "found by its name in any case");
     assert_eq!(scph1001["foundAt"], "psx/SCPH1001.BIN");
     let lynx = get("lynx");
     assert_eq!(lynx["biosMissing"], true, "Handy needs its boot ROM");
     assert_eq!(lynx["bios"]["groups"][0]["files"][0]["name"], "lynxboot.img");
     assert!(systems.as_array().unwrap().iter().all(|s| s["id"] != "dreamcast"), "no games");
+
+    // Any layout: Batocera keeps it at the top of its BIOS folder.
+    std::fs::write(bios.join("lynxboot.img"), vec![0u8; 512]).unwrap();
+    let systems = h.ok(query, json!({})).await["systems"].clone();
+    let lynx = systems.as_array().unwrap().iter().find(|s| s["id"] == "lynx").unwrap().clone();
+    assert_eq!(lynx["biosMissing"], false);
+    assert_eq!(lynx["bios"]["groups"][0]["files"][0]["foundAt"], "lynxboot.img");
 }
 
 #[tokio::test]

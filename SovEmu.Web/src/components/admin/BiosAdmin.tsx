@@ -31,8 +31,9 @@ function Bios() {
           </Button>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">
-          Each system has a folder of its own in the BIOS folder, named like its folder of games. Files are checked by
-          name (letter case matters) and by MD5 against libretro's list of known dumps.
+          Files are found anywhere in the BIOS folder, in any layout (a Batocera <code>bios/</code> folder or a
+          read-only share as it is): a known dump by its MD5 under any name, anything else by its name in any letter
+          case. A folder per system, named like its folder of games, keeps them tidy.
         </p>
         <p className="mt-3 text-sm">
           BIOS folder: {dir.data ? <EnvLine>{dir.data}</EnvLine> : "…"}{" "}

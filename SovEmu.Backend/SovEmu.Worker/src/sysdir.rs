@@ -1,10 +1,10 @@
 //! The system (BIOS) directory a core sees.
 //!
-//! BIOS files are kept one folder per system (`<bios>/psx/scph5501.bin`,
-//! `<bios>/dreamcast/dc_boot.bin`), named like the system's ROM folder, and the server hands the
-//! worker that system's folder. Cores look for them elsewhere: Flycast reads `dc/dc_boot.bin`,
-//! PCSX2 `pcsx2/bios/`, Dolphin `dolphin-emu/Sys/GC/`, most others the root. `--bios-path`
-//! says where; the folder's files appear there.
+//! The server hands the worker a folder of the session's BIOS files (`--system-dir`): links to
+//! wherever they are in its BIOS folder, which may have any layout, each under the name the
+//! core reads it by (`sovemu_library::bios::link_session`). Cores look for them in different
+//! places: Flycast reads `dc/dc_boot.bin`, PCSX2 `pcsx2/bios/`, Dolphin `dolphin-emu/Sys/GC/`,
+//! most others the root. `--bios-path` says where; the folder's files appear there.
 //!
 //! Some cores also need data files of their own: Dolphin reads `<system>/dolphin-emu/Sys`,
 //! which SovEmu ships in a `system/` folder beside the cores. When the BIOS files must move or

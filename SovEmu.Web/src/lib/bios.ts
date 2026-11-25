@@ -41,23 +41,33 @@ export function fileTone(file: BiosFile, group: BiosGroup): Tone {
   return FILE_STATES[file.state].tone;
 }
 
-/** What to do about a file, or where it was found; null when there is nothing to say. */
+/** What to do about a file, or where it was found; null when there is nothing to say. Files are
+ *  found anywhere in the BIOS folder, by checksum or by name in any case; the system's own
+ *  folder (`bios/psx/`) is only the tidy place for them. */
 export function fileHint(file: BiosFile, folder: string): string | null {
   const dest = file.name.includes("*") ? `bios/${folder}/` : `bios/${folder}/${file.name}`;
+  const at = file.foundAt ?? "";
+  const where = at.startsWith("roms/")
+    ? `Found beside the games, in ${at}.`
+    : at && at.toLowerCase() !== `${folder}/${file.name}`.toLowerCase()
+      ? `Found at bios/${at}.`
+      : null;
   switch (file.state) {
     case "OK":
-      return file.foundAt?.startsWith("roms/") ? `Found beside the games, in ${file.foundAt}.` : null;
+      return where;
     case "UNVERIFIED":
-      return `Its MD5 (${file.md5 ?? "?"}) is not a known dump: a bad copy, or a revision the list lacks. It may still work.`;
-    case "MISPLACED": {
-      const at = file.foundAt ?? "";
-      const sameFolder = at.toLowerCase() === `${folder}/${file.name}`.toLowerCase();
-      return sameFolder
-        ? `Found as bios/${at}: rename it ${file.name} (letter case matters).`
-        : `Found at bios/${at}: move it to ${dest}.`;
-    }
+      return [
+        `Its MD5 (${file.md5 ?? "?"}) is not a known dump: a bad copy, or a revision the list lacks. It is used, and may still work.`,
+        where,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "MISPLACED":
+      return where;
     case "MISSING":
-      return file.name.includes("*") ? `Put a dump in ${dest}` : `Put it at ${dest}`;
+      return file.name.includes("*")
+        ? `Put a dump anywhere in the BIOS folder (${dest} keeps it tidy).`
+        : `Put it anywhere in the BIOS folder: a known dump under any name, or this name (${dest} keeps it tidy).`;
   }
 }
 
