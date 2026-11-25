@@ -10,6 +10,11 @@ export const KINDS: { value: AttentionKind; label: string; help: string }[] = [
     label: "No information",
     help: "Games with no description, year or publisher: never looked up, or not found.",
   },
+  {
+    value: "AWAITING_LOOKUP",
+    label: "Waiting for a lookup",
+    help: "Games with information that are queued to be looked up again: a source stopped (out of quota) before reaching them, or SovEmu asks for more than it did. The lookup after each scan asks them.",
+  },
   { value: "NO_BOX_ART", label: "No box art", help: "Games with no box art downloaded." },
   {
     value: "DUPLICATE",
@@ -26,7 +31,7 @@ export const KINDS: { value: AttentionKind; label: string; help: string }[] = [
 
 /** Whether looking a game up again could help: it lacks what a lookup fetches. */
 export function canLookUp(kind: AttentionKind): boolean {
-  return kind === "NO_INFORMATION" || kind === "NO_BOX_ART";
+  return kind === "NO_INFORMATION" || kind === "AWAITING_LOOKUP" || kind === "NO_BOX_ART";
 }
 
 /** The kinds' totals, and one kind's count per system (empty: a folder no system uses). */

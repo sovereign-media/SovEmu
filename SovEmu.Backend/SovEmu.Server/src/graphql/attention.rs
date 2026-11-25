@@ -11,6 +11,9 @@ use crate::attention::Kind;
 pub(super) enum AttentionKind {
     /// No game information: never looked up, or not found.
     NoInformation,
+    /// Has information, but is queued to be looked up again (a source stopped before reaching
+    /// it, or fields were added since); the lookup after each scan asks it.
+    AwaitingLookup,
     /// No box art, beside it or downloaded.
     NoBoxArt,
     /// The same title and tags in two or more files of a system.
@@ -25,6 +28,7 @@ impl From<AttentionKind> for Kind {
     fn from(k: AttentionKind) -> Self {
         match k {
             AttentionKind::NoInformation => Self::NoInformation,
+            AttentionKind::AwaitingLookup => Self::AwaitingLookup,
             AttentionKind::NoBoxArt => Self::NoBoxArt,
             AttentionKind::Duplicate => Self::Duplicate,
             AttentionKind::MissingParts => Self::MissingParts,
@@ -37,6 +41,7 @@ impl From<Kind> for AttentionKind {
     fn from(k: Kind) -> Self {
         match k {
             Kind::NoInformation => Self::NoInformation,
+            Kind::AwaitingLookup => Self::AwaitingLookup,
             Kind::NoBoxArt => Self::NoBoxArt,
             Kind::Duplicate => Self::Duplicate,
             Kind::MissingParts => Self::MissingParts,
