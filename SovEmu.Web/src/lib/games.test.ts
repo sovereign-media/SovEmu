@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Game } from "./api";
 import {
   activeFilters,
+  esrbCounts,
   filterGames,
   gameFromUrl,
-  genreCounts,
+  genresOf,
   gridMove,
   jumpStops,
   jumpTo,
   knowsPlayers,
+  knowsRatings,
   letterOf,
   maxPlayers,
   partsLabel,
@@ -16,6 +18,7 @@ import {
   stepStop,
   stripWindow,
   urlWithGame,
+  valueCounts,
 } from "./games";
 
 let nextId = 1;
@@ -57,6 +60,11 @@ const game = (title: string, over: Partial<Game> = {}): Game => ({
 const metroid = game("Metroid", {
   releaseDate: "1986-08-06",
   genre: "Action",
+  rating: 0.85,
+  esrb: "EVERYONE",
+  modes: ["Single player"],
+  series: ["Metroid"],
+  themes: ["Science fiction"],
   players: "1",
   playCount: 3,
   lastPlayedAt: "2026-11-13 10:00:00",
@@ -65,12 +73,23 @@ const metroid = game("Metroid", {
 const mario = game("Super Mario Bros.", {
   releaseDate: "1985-09-13",
   genre: "Platform",
+  rating: 0.95,
+  esrb: "EVERYONE",
+  modes: ["Single player", "Multiplayer (alternating)"],
+  series: ["Mario"],
   players: "1-2",
   playCount: 1,
   lastPlayedAt: "2026-11-14 09:00:00",
   tags: ["USA", "Europe"],
 });
-const pokemon = game("Pokémon Puzzle", { players: "2", genre: "Puzzle, Action", tags: ["Europe"] });
+const pokemon = game("Pokémon Puzzle", {
+  players: "2",
+  genre: "Puzzle, Action",
+  tags: ["Europe"],
+  rating: 0.6,
+  esrb: "TEEN",
+  modes: ["Multiplayer (simultaneous)"],
+});
 const tetris = game("Tetris", { releaseDate: "1989" });
 const all = [tetris, pokemon, mario, metroid];
 
@@ -91,7 +110,7 @@ describe("searching and filtering", () => {
     ).toEqual(["Metroid", "Super Mario Bros."]);
     expect(filterGames(all, "", { played: "unplayed" })).toHaveLength(2);
     expect(
-      filterGames(all, "", { multiplayer: true })
+      filterGames(all, "", { minPlayers: 2 })
         .map((g) => g.title)
         .sort(),
     ).toEqual(["Pokémon Puzzle", "Super Mario Bros."]);
@@ -100,7 +119,24 @@ describe("searching and filtering", () => {
       "Pokémon Puzzle",
       "Super Mario Bros.",
     ]);
-    expect(activeFilters({ played: "played", multiplayer: true, genres: ["Action"] })).toBe(3);
+    expect(activeFilters({ played: "played", minPlayers: 2, genres: ["Action"] })).toBe(3);
+  });
+
+  it("filters by rating, age rating, play modes, series and themes", () => {
+    const titles = (f: Parameters<typeof filterGames>[2]) =>
+      filterGames(all, "", f)
+        .map((g) => g.title)
+        .sort();
+    expect(titles({ minStars: 4 })).toEqual(["Metroid", "Super Mario Bros."]);
+    expect(titles({ minStars: 4.5 })).toEqual(["Super Mario Bros."]);
+    expect(titles({ esrb: ["TEEN"] })).toEqual(["Pokémon Puzzle"]);
+    expect(titles({ esrb: ["TEEN", "EVERYONE"] })).toHaveLength(3);
+    expect(titles({ modes: ["Single player"] })).toEqual(["Metroid", "Super Mario Bros."]);
+    expect(titles({ series: ["Mario"], modes: ["Single player"] })).toEqual(["Super Mario Bros."]);
+    expect(titles({ themes: ["Science fiction"] })).toEqual(["Metroid"]);
+    expect(titles({ themes: [] })).toHaveLength(4);
+    expect(filterGames(all, "science", {}).map((g) => g.title)).toEqual(["Metroid"]);
+    expect(activeFilters({ minStars: 4, esrb: ["TEEN", "EVERYONE"], series: ["Mario"] })).toBe(4);
   });
 
   it("reads the most players from the metadata's wording", () => {
@@ -109,6 +145,8 @@ describe("searching and filtering", () => {
     expect(maxPlayers(null)).toBeNull();
     expect(knowsPlayers(all)).toBe(true);
     expect(knowsPlayers([tetris])).toBe(false);
+    expect(knowsRatings(all)).toBe(true);
+    expect(knowsRatings([tetris])).toBe(false);
   });
 });
 
@@ -120,6 +158,11 @@ describe("sorting", () => {
     expect(titles("recent")).toEqual(["Super Mario Bros.", "Metroid", "Pokémon Puzzle", "Tetris"]);
     expect(titles("year")).toEqual(["Super Mario Bros.", "Metroid", "Tetris", "Pokémon Puzzle"]);
     expect(titles("plays")).toEqual(["Metroid", "Super Mario Bros.", "Pokémon Puzzle", "Tetris"]);
+  });
+
+  it("sorts by rating and by age rating, the unrated last", () => {
+    expect(titles("rating")).toEqual(["Super Mario Bros.", "Metroid", "Pokémon Puzzle", "Tetris"]);
+    expect(titles("age")).toEqual(["Metroid", "Super Mario Bros.", "Pokémon Puzzle", "Tetris"]);
   });
 
   it("sorts numbers naturally", () => {
@@ -144,11 +187,16 @@ describe("the A–Z strip", () => {
     expect(jumpTo([], "A")).toBe(-1);
   });
 
-  it("counts genres for the filters, splitting a game's list", () => {
-    expect(genreCounts(all)).toEqual([
-      { genre: "Action", count: 2 },
-      { genre: "Platform", count: 1 },
-      { genre: "Puzzle", count: 1 },
+  it("counts each filter's values, most common first", () => {
+    expect(valueCounts(all, genresOf)).toEqual([
+      { value: "Action", count: 2 },
+      { value: "Platform", count: 1 },
+      { value: "Puzzle", count: 1 },
+    ]);
+    expect(valueCounts(all, (g) => g.modes)[0]).toEqual({ value: "Single player", count: 2 });
+    expect(esrbCounts(all)).toEqual([
+      { value: "EVERYONE", count: 2 },
+      { value: "TEEN", count: 1 },
     ]);
   });
 });

@@ -1,38 +1,25 @@
 // Search and filters for a system's games, in a drawer from the right (Sovereign's
-// SearchFilterDrawer): search, played or not, and, once game information has been fetched,
-// players and genres.
-import { Check, Search, SlidersHorizontal, X } from "lucide-react";
+// SearchFilterDrawer): search, played or not, favourites and, once game information has been
+// fetched, players, rating, age rating, genre, play modes, series and themes. Each filter is a
+// dropdown: one choice, or (for the lists) any number of values, each with how many games have it.
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import type { Game } from "../../lib/api";
-import { activeFilters, type GameFilters, genreCounts, knowsPlayers } from "../../lib/games";
-import { cn } from "../ui/cn";
+import { ESRB } from "../../lib/esrb";
+import {
+  activeFilters,
+  esrbCounts,
+  type GameFilters,
+  knowsPlayers,
+  knowsRatings,
+  LIST_FILTERS,
+  valueCounts,
+} from "../../lib/games";
+import { Field, MultiSelect, Select } from "../ui/primitives";
 
-function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        "flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-white/60 [&_svg]:size-3.5",
-        on ? "border-transparent bg-accent text-white" : "border-white/15 text-slate-300 hover:bg-white/10",
-      )}
-    >
-      {on && <Check />}
-      {children}
-    </button>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="grid gap-2">
-      <h3 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">{title}</h3>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </section>
-  );
-}
+/** How many values a list filter offers at most: the most common. */
+const MAX_VALUES = 60;
 
 export function FilterDrawer({
   open,
@@ -53,13 +40,18 @@ export function FilterDrawer({
   onFilters: (f: GameFilters) => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
-  const genres = useMemo(() => genreCounts(games).slice(0, 24), [games]);
   const players = useMemo(() => knowsPlayers(games), [games]);
+  const ratings = useMemo(() => knowsRatings(games), [games]);
+  const esrb = useMemo(() => esrbCounts(games), [games]);
+  const lists = useMemo(
+    () =>
+      LIST_FILTERS.map((f) => ({ ...f, counts: valueCounts(games, f.values).slice(0, MAX_VALUES) })).filter(
+        (f) => f.counts.length > 0,
+      ),
+    [games],
+  );
   const n = activeFilters(filters) + (query.trim() ? 1 : 0);
-  const toggleGenre = (x: string) => {
-    const has = filters.genres?.includes(x);
-    onFilters({ ...filters, genres: has ? filters.genres!.filter((y) => y !== x) : [...(filters.genres ?? []), x] });
-  };
+  const set = (change: Partial<GameFilters>) => onFilters({ ...filters, ...change });
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
@@ -100,51 +92,93 @@ export function FilterDrawer({
                 className="h-10 w-full rounded-full border border-white/15 bg-black/30 pr-4 pl-9 text-sm outline-none focus:border-accent"
               />
             </label>
-            <Section title="Played">
-              <Toggle
-                on={filters.played === "played"}
-                onClick={() => onFilters({ ...filters, played: filters.played === "played" ? undefined : "played" })}
-              >
-                Played before
-              </Toggle>
-              <Toggle
-                on={filters.played === "unplayed"}
-                onClick={() =>
-                  onFilters({ ...filters, played: filters.played === "unplayed" ? undefined : "unplayed" })
-                }
-              >
-                Not played yet
-              </Toggle>
-              <Toggle
-                on={!!filters.favourites}
-                onClick={() => onFilters({ ...filters, favourites: !filters.favourites || undefined })}
-              >
-                Favourites
-              </Toggle>
-            </Section>
-            {players && (
-              <Section title="Players">
-                <Toggle
-                  on={!!filters.multiplayer}
-                  onClick={() => onFilters({ ...filters, multiplayer: !filters.multiplayer || undefined })}
-                >
-                  2 players or more
-                </Toggle>
-              </Section>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+              <Field label="Played">
+                <Select
+                  label="Played"
+                  className="w-full max-w-none"
+                  value={filters.played ?? ""}
+                  onChange={(v) => set({ played: (v || undefined) as GameFilters["played"] })}
+                  options={[
+                    { value: "", label: "Any" },
+                    { value: "played", label: "Played before" },
+                    { value: "unplayed", label: "Not played yet" },
+                  ]}
+                />
+              </Field>
+              <Field label="Favourites">
+                <Select
+                  label="Favourites"
+                  className="w-full max-w-none"
+                  value={filters.favourites ? "only" : ""}
+                  onChange={(v) => set({ favourites: v === "only" || undefined })}
+                  options={[
+                    { value: "", label: "Any" },
+                    { value: "only", label: "Favourites only" },
+                  ]}
+                />
+              </Field>
+              {players && (
+                <Field label="Players">
+                  <Select
+                    label="Players"
+                    className="w-full max-w-none"
+                    value={String(filters.minPlayers ?? "")}
+                    onChange={(v) => set({ minPlayers: Number(v) || undefined })}
+                    options={[
+                      { value: "", label: "Any" },
+                      { value: "2", label: "2 or more" },
+                      { value: "3", label: "3 or more" },
+                      { value: "4", label: "4 or more" },
+                    ]}
+                  />
+                </Field>
+              )}
+              {ratings && (
+                <Field label="Rating">
+                  <Select
+                    label="Rating"
+                    className="w-full max-w-none"
+                    value={String(filters.minStars ?? "")}
+                    onChange={(v) => set({ minStars: Number(v) || undefined })}
+                    options={[
+                      { value: "", label: "Any" },
+                      { value: "3", label: "3 stars or more" },
+                      { value: "4", label: "4 stars or more" },
+                      { value: "4.5", label: "4.5 stars or more" },
+                    ]}
+                  />
+                </Field>
+              )}
+            </div>
+            {esrb.length > 0 && (
+              <Field label="Age rating (ESRB)">
+                <MultiSelect
+                  label="Age rating"
+                  selected={filters.esrb ?? []}
+                  onChange={(v) => set({ esrb: v.length ? v : undefined })}
+                  options={esrb.map(({ value, count }) => ({
+                    value,
+                    label: `${ESRB[value].name} (${ESRB[value].code})`,
+                    count,
+                  }))}
+                />
+              </Field>
             )}
-            {genres.length > 0 && (
-              <Section title="Genre">
-                {genres.map(({ genre, count }) => (
-                  <Toggle key={genre} on={!!filters.genres?.includes(genre)} onClick={() => toggleGenre(genre)}>
-                    {genre}
-                    <span className="text-xs opacity-60 tabular-nums">{count}</span>
-                  </Toggle>
-                ))}
-              </Section>
-            )}
-            {!players && genres.length === 0 && (
+            {lists.map(({ key, label, counts }) => (
+              <Field key={key} label={label}>
+                <MultiSelect
+                  label={label}
+                  selected={filters[key] ?? []}
+                  onChange={(v) => set({ [key]: v.length ? v : undefined })}
+                  options={counts.map(({ value, count }) => ({ value, label: value, count }))}
+                />
+              </Field>
+            ))}
+            {!players && !ratings && esrb.length === 0 && lists.length === 0 && (
               <p className="text-sm text-slate-500">
-                Player and genre filters appear once game information has been fetched for these games.
+                Filters for players, ratings, genres and more appear once game information has been fetched for these
+                games.
               </p>
             )}
           </div>

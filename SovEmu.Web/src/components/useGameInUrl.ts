@@ -1,12 +1,19 @@
 // A screen's side panel, open on a game named in its URL (`?game=`): opening it pushes a history
 // entry, so the browser's Back closes it, and coming back to the screen (Back from a game) finds
 // it open again.
+//
+// The URL changes through the router with `resetScroll: false`: the router sees every history
+// change, and would otherwise take this one for a new page and scroll the grid back to the top.
 
+import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { gameFromUrl, urlWithGame } from "../lib/games";
 
 export function useGameInUrl(): [openId: number | null, open: (id: number) => void, close: () => void] {
+  const router = useRouter();
   const [openId, setOpenId] = useState<number | null>(() => gameFromUrl(location.search));
+  /** Changes the URL where the screen stays as it is, scrolled where it was. */
+  const go = (href: string, replace: boolean) => router.navigate({ href, replace, resetScroll: false });
   /** Whether this screen pushed the panel's history entry (so closing it goes Back). */
   const pushed = useRef(false);
 
@@ -23,10 +30,10 @@ export function useGameInUrl(): [openId: number | null, open: (id: number) => vo
   const open = (id: number) => {
     const url = urlWithGame(location.href, id);
     if (gameFromUrl(location.search) === null) {
-      history.pushState(null, "", url);
+      go(url, false);
       pushed.current = true;
     } else {
-      history.replaceState(null, "", url);
+      go(url, true);
     }
     setOpenId(id);
   };
@@ -35,7 +42,7 @@ export function useGameInUrl(): [openId: number | null, open: (id: number) => vo
     if (pushed.current) {
       history.back(); // popstate closes it
     } else {
-      history.replaceState(null, "", urlWithGame(location.href, null));
+      go(urlWithGame(location.href, null), true);
       setOpenId(null);
     }
   };
