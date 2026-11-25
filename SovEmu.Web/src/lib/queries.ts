@@ -13,8 +13,12 @@ export const GameFields = graphql(`
     size
     lastPlayedAt
     playCount
-    image: mediaUrl(kind: IMAGE)
-    thumb: mediaUrl(kind: THUMB)
+    # Artwork at the widths it is shown at (device pixels, for 2x screens): a lossy WebP copy
+    # of each, made once by the server. Backdrops, the box over one, cards.
+    image: mediaUrl(kind: IMAGE, width: 1600)
+    imageSmall: mediaUrl(kind: IMAGE, width: 480)
+    cover: mediaUrl(kind: THUMB, width: 800)
+    thumb: mediaUrl(kind: THUMB, width: 400)
     video: mediaUrl(kind: VIDEO)
     description
     releaseDate

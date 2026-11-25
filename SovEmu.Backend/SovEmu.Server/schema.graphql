@@ -1258,9 +1258,12 @@ type Game {
 	media: [MediaKind!]!
 	"""
 	Where to load a kind of artwork from, if the game has it: a URL signed for this user
-	(valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one).
+	(valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one). With `width` (the box it is
+	shown in, in device pixels), a lossy WebP copy at most that wide: the width is rounded up
+	to the grid copies are made on (16 px steps, from 144), and a picture narrower than it is
+	not enlarged. Without it, the original. Videos are always the original.
 	"""
-	mediaUrl(kind: MediaKind!): String
+	mediaUrl(kind: MediaKind!, width: Int): String
 	description: String
 	"""
 	`YYYY-MM-DD`, `YYYY-MM` or `YYYY`.

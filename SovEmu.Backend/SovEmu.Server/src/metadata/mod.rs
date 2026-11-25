@@ -184,6 +184,8 @@ pub struct Metadata {
     pub artwork_downloads: usize,
     /// Box art is asked for at most this many pixels wide and high (`SOVEMU_ARTWORK_MAX_PX`).
     pub artwork_max_px: Option<u32>,
+    /// Box art is kept as lossy WebP at this quality (`SOVEMU_ARTWORK_WEBP_QUALITY`).
+    pub artwork_quality: f32,
     /// Whether gameplay videos are downloaded (`SOVEMU_METADATA_VIDEOS`).
     pub videos: bool,
     http: reqwest::Client,
@@ -204,6 +206,7 @@ impl Metadata {
         setup_notes: Vec<String>,
         artwork_downloads: usize,
         artwork_max_px: u32,
+        artwork_quality: u8,
         videos: bool,
     ) -> Arc<Self> {
         let sources = providers.iter().map(|p| p.id()).collect();
@@ -219,6 +222,7 @@ impl Metadata {
             artwork: Mutex::new(artwork::ArtworkStatus::default()),
             artwork_downloads,
             artwork_max_px: (artwork_max_px > 0).then_some(artwork_max_px),
+            artwork_quality: f32::from(artwork_quality),
             videos,
             http: http_client(),
             started: Mutex::new(None),
@@ -921,8 +925,9 @@ async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Option<Stri
     Some(name)
 }
 
-/// Downloads box art into the media directory; returns its file name. Only an image, of a sane
-/// size, written whole (a temp file, then a rename); a copy kept under another format goes.
+/// Downloads box art into the media directory as lossy WebP, capped at `artwork_max_px` (the
+/// service may already have scaled it), and returns its file name (`<game id>-box.webp`). Only a
+/// picture, of a sane size, written whole; a copy kept under another format goes.
 async fn download_box_art(meta: &Metadata, game_id: i64, url: &str) -> Option<String> {
     let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
     if response.content_length().is_some_and(|n| n > MAX_BOX_ART_BYTES as u64) {
@@ -935,13 +940,21 @@ async fn download_box_art(meta: &Metadata, game_id: i64, url: &str) -> Option<St
         }
         bytes.extend_from_slice(&chunk);
     }
-    let ext = image_extension(&bytes)?;
-    let name = format!("{game_id}-box.{ext}");
-    tokio::fs::create_dir_all(&meta.media_dir).await.ok()?;
-    let temp = meta.media_dir.join(format!("{name}.part"));
-    tokio::fs::write(&temp, &bytes).await.ok()?;
-    tokio::fs::rename(&temp, meta.media_dir.join(&name)).await.ok()?;
-    for other in ["png", "jpg", "webp"].into_iter().filter(|e| *e != ext) {
+    image_extension(&bytes)?;
+    let name = format!("{game_id}-box.webp");
+    let path = meta.media_dir.join(&name);
+    let (max, quality) = (meta.artwork_max_px, meta.artwork_quality);
+    let written = tokio::task::spawn_blocking(move || {
+        let webp = sovemu_library::artwork::to_webp(&bytes, max, max, quality)?;
+        sovemu_library::artwork::write_whole(&path, &webp)
+    })
+    .await
+    .ok()?;
+    if let Err(e) = written {
+        tracing::debug!(game_id, error = %e, "box art not kept");
+        return None;
+    }
+    for other in ["png", "jpg"] {
         let _ = tokio::fs::remove_file(meta.media_dir.join(format!("{game_id}-box.{other}"))).await;
     }
     Some(name)

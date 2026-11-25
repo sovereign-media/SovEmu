@@ -7,6 +7,7 @@
 //! It reads files and asks services; the server stores what it learns. Nothing here opens the
 //! database, so the server's tables are the only place the library's state lives.
 
+pub mod artwork;
 pub mod bios;
 pub mod cache;
 pub mod cores;

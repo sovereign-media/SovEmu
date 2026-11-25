@@ -163,6 +163,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_SCREENSCRAPER_THREADS"
         | "SOVEMU_ARTWORK_DOWNLOADS"
         | "SOVEMU_ARTWORK_MAX_PX"
+        | "SOVEMU_ARTWORK_WEBP_QUALITY"
         | "SOVEMU_METADATA_VIDEOS"
         | "SOVEMU_SCREENSCRAPER_URL" => GameInformation,
         "SOVEMU_HTTP"

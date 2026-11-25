@@ -377,15 +377,26 @@ impl GameNode {
         self.0.media.split(',').filter_map(MediaKind::parse).collect()
     }
     /// Where to load a kind of artwork from, if the game has it: a URL signed for this user
-    /// (valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one).
-    async fn media_url(&self, ctx: &Context<'_>, kind: MediaKind) -> Result<Option<String>> {
+    /// (valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one). With `width` (the box it is
+    /// shown in, in device pixels), a lossy WebP copy at most that wide: the width is rounded up
+    /// to the grid copies are made on (16 px steps, from 144), and a picture narrower than it is
+    /// not enlarged. Without it, the original. Videos are always the original.
+    async fn media_url(
+        &self,
+        ctx: &Context<'_>,
+        kind: MediaKind,
+        width: Option<i32>,
+    ) -> Result<Option<String>> {
         if !self.0.media.split(',').any(|k| k == kind.name()) {
             return Ok(None);
         }
         let user = user(ctx).await?;
-        Ok(Some(
-            state(ctx).assets.sign(user.id, &format!("/media/games/{}/{}", self.0.id, kind.name())),
-        ))
+        let mut path = format!("/media/games/{}/{}", self.0.id, kind.name());
+        if let Some(w) = width.filter(|_| kind != MediaKind::Video) {
+            let w = sovemu_library::artwork::grid_width(w.max(1) as u32);
+            path.push_str(&format!("/w{w}"));
+        }
+        Ok(Some(state(ctx).assets.sign(user.id, &path)))
     }
     async fn description(&self) -> Option<&str> {
         self.0.description.as_deref()
