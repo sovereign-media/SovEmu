@@ -314,6 +314,12 @@ take the games looked up more than so many days ago (`fetchMetadata`); with
 `SOVEMU_METADATA_REFRESH_DAYS` the lookup after each scan does that on its own. A refresh replaces
 only the fields it was asked for, and never clears one a source no longer knows.
 
+After every scan, before its lookup, a **library check** (the `reconcile` job, on the Jobs page)
+keeps what was downloaded in step with the library: a game whose ROM is gone loses its
+information, its downloaded artwork and video, and its resized copies; a downloaded file that has
+gone missing from `data/metadata/media` is downloaded again. An admin can run it from the Jobs
+page, and then it also looks up games without information even when `SOVEMU_METADATA_AUTO` is off.
+
 ## Supported systems
 
 A system is shown once its folder has at least one game: one with none is left out of every list
@@ -441,7 +447,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_BACKUP_INTERVAL_HOURS` | `0` | A backup every this many hours (0: none on a schedule; the admin's Backups page still makes one) |
 | `SOVEMU_BACKUP_KEEP` | `7` | Backups kept, the newest (0: every one) |
 | `SOVEMU_RESTORE_FROM` | none | A backup to restore at startup, before the database opens. What it replaces is moved into `<data>/before-restore-<time>/`, never deleted, and each backup is restored once however often the server restarts with this set |
-| `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, library check, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
 | `SOVEMU_LOG_BUFFER_LINES` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
 | `SOVEMU_ACTIVITY_HISTORY_DAYS` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |
 | `SOVEMU_CLIENT_EVENT_DAYS` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |

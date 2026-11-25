@@ -35,6 +35,9 @@ describe("jobs", () => {
     expect(scheduleText(job({ name: "METADATA", intervalMinutes: null, nextRunAt: null }), NOW)).toBe(
       "After each scan",
     );
+    expect(scheduleText(job({ name: "RECONCILE", intervalMinutes: null, nextRunAt: null }), NOW)).toBe(
+      "After each scan",
+    );
     expect(scheduleText(job({ intervalMinutes: null, nextRunAt: null }), NOW)).toBe("Not scheduled");
   });
 

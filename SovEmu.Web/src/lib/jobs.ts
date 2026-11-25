@@ -20,7 +20,9 @@ export function formatTook(seconds: number): string {
 
 /** When the job runs on its own. */
 export function scheduleText(job: JobState, now = Date.now()): string {
-  if (job.intervalMinutes === null) return job.name === "METADATA" ? "After each scan" : "Not scheduled";
+  if (job.intervalMinutes === null) {
+    return job.name === "METADATA" || job.name === "RECONCILE" ? "After each scan" : "Not scheduled";
+  }
   const every = `Every ${formatSpan(job.intervalMinutes * 60)}`;
   if (job.running || job.nextRunAt === null) return every;
   return `${every} · next in ${formatSpan(job.nextRunAt - now / 1000)}`;

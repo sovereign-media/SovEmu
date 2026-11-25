@@ -260,10 +260,11 @@ impl Harness {
     /// Gives the NES test game downloaded box art with these bytes, as a lookup and the
     /// download job would (artwork comes only from metadata services); returns its file.
     async fn give_box_art(&self, bytes: &[u8]) -> PathBuf {
-        let id: i64 = sqlx::query_scalar("SELECT id FROM games WHERE system = 'nes'")
-            .fetch_one(&self.state.db)
-            .await
-            .unwrap();
+        let id: i64 =
+            sqlx::query_scalar("SELECT id FROM games WHERE path = 'nes/Test Game (USA).nes'")
+                .fetch_one(&self.state.db)
+                .await
+                .unwrap();
         let name = format!("{id}-box.webp");
         sqlx::query(
             "INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)
@@ -1172,35 +1173,105 @@ async fn artwork_at_a_width_is_a_kept_webp_copy() {
 }
 
 #[tokio::test]
-async fn startup_removes_the_launchbox_dump_and_orphaned_box_art() {
-    let mut h = Harness::new("metadata-tidy", false).await;
+async fn startup_removes_the_launchbox_dump() {
+    let h = Harness::new("metadata-tidy", false).await;
+    let paths = h.state.config.paths();
+    std::fs::create_dir_all(paths.removed_launchbox()).unwrap();
+    std::fs::write(paths.removed_launchbox().join("Metadata.zip"), b"zip").unwrap();
+    let old_art = paths.removed_cache_artwork().join("nes/images/A-thumb.png");
+    std::fs::create_dir_all(old_art.parent().unwrap()).unwrap();
+    std::fs::write(&old_art, b"png").unwrap();
+    crate::metadata::tidy(&paths).await;
+    assert!(!paths.removed_launchbox().exists());
+    assert!(!paths.removed_cache_artwork().exists(), "nor the library's cached artwork");
+}
+
+#[tokio::test]
+async fn reconciling_deletes_what_removed_games_left_and_fetches_missing_files_again() {
+    let mut h = Harness::new("reconcile", false).await;
     h.sign_up_admin().await;
     let paths = h.state.config.paths();
     let media = paths.artwork();
-    std::fs::create_dir_all(paths.removed_launchbox()).unwrap();
-    std::fs::write(paths.removed_launchbox().join("Metadata.zip"), b"zip").unwrap();
-    std::fs::create_dir_all(&media).unwrap();
-    let id: i64 = sqlx::query_scalar("SELECT id FROM games ORDER BY id LIMIT 1")
+    // A game about to leave the library, with information, artwork and a copy at a width.
+    let rom = h.dir.join("roms/nes/Gone (USA).nes");
+    std::fs::write(&rom, [0u8; 16]).unwrap();
+    crate::library::scan(&h.state.db, &h.state.config.roms_dir).await.unwrap();
+    let gone: i64 = sqlx::query_scalar("SELECT id FROM games WHERE path = 'nes/Gone (USA).nes'")
         .fetch_one(&h.state.db)
         .await
         .unwrap();
+    let kept = h.give_box_art(b"box").await;
+    let nes: i64 = sqlx::query_scalar("SELECT id FROM games WHERE path LIKE 'nes/Test%'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    // The kept game's screenshot is named, but its file has gone.
+    sqlx::query(
+        "UPDATE game_metadata SET screenshot = ?, screenshot_url = 'https://x.invalid/ss.png',
+           screenshot_attempts = 3 WHERE game_id = ?",
+    )
+    .bind(format!("{nes}-shot.webp"))
+    .bind(nes)
+    .execute(&h.state.db)
+    .await
+    .unwrap();
     sqlx::query("INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)")
-        .bind(id)
-        .bind(format!("{id}-box.png"))
+        .bind(gone)
+        .bind(format!("{gone}-box.webp"))
         .execute(&h.state.db)
         .await
         .unwrap();
-    for name in
-        [format!("{id}-box.png"), "999-box.jpg".into(), "999-video.mp4".into(), "notes.txt".into()]
-    {
+    for name in [format!("{gone}-box.webp"), format!("{gone}-video.mp4"), "notes.txt".into()] {
         std::fs::write(media.join(name), b"x").unwrap();
     }
-    crate::metadata::tidy(&paths, &h.state.db).await;
-    assert!(!paths.removed_launchbox().exists());
-    assert!(media.join(format!("{id}-box.png")).exists(), "box art a game refers to stays");
-    assert!(!media.join("999-box.jpg").exists(), "orphaned box art goes");
-    assert!(!media.join("999-video.mp4").exists(), "and orphaned videos");
+    let widths = paths.artwork_widths().join("games");
+    for id in [gone, nes] {
+        std::fs::create_dir_all(widths.join(format!("{id}/thumb"))).unwrap();
+        std::fs::write(widths.join(format!("{id}/thumb/w160.webp")), b"webp").unwrap();
+    }
+
+    std::fs::remove_file(&rom).unwrap();
+    crate::library::scan(&h.state.db, &h.state.config.roms_dir).await.unwrap();
+    let report = crate::metadata::reconcile::reconcile(&h.state).await.unwrap();
+    assert_eq!(
+        report,
+        crate::metadata::reconcile::Report { rows: 0, files: 2, copies: 1, missing: 1, unknown: 1 },
+        "the scan's delete took the row; the GBA game has no information"
+    );
+    assert!(!media.join(format!("{gone}-box.webp")).exists(), "a removed game's art goes");
+    assert!(!media.join(format!("{gone}-video.mp4")).exists(), "and its video");
+    assert!(!widths.join(gone.to_string()).exists(), "and its copies");
+    assert!(kept.exists(), "a kept game's art stays");
+    assert!(widths.join(format!("{nes}/thumb/w160.webp")).exists(), "and its copies");
     assert!(media.join("notes.txt").exists(), "nothing else is touched");
+    let (shot, attempts): (Option<String>, i64) = sqlx::query_as(
+        "SELECT screenshot, screenshot_attempts FROM game_metadata WHERE game_id = ?",
+    )
+    .bind(nes)
+    .fetch_one(&h.state.db)
+    .await
+    .unwrap();
+    assert_eq!((shot, attempts), (None, 0), "the missing screenshot is downloaded again");
+    let again = crate::metadata::reconcile::reconcile(&h.state).await.unwrap();
+    assert_eq!((again.files, again.copies, again.missing), (0, 0, 0), "nothing more to do");
+
+    // An admin can run it: recorded as a job, with what it did.
+    h.ok("mutation { runJob(job: RECONCILE) { name } }", json!({})).await;
+    let mut last = Value::Null;
+    for _ in 0..200 {
+        last = h.ok("{ jobRuns(job: RECONCILE) { trigger outcome message } }", json!({})).await
+            ["jobRuns"][0]
+            .clone();
+        if last["outcome"] != "RUNNING" && !last.is_null() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        (last["trigger"].clone(), last["outcome"].clone()),
+        (json!("ADMIN"), json!("SUCCEEDED"))
+    );
+    assert!(last["message"].as_str().unwrap().contains("1 games without information"), "{last}");
 }
 
 #[tokio::test]
@@ -1258,16 +1329,17 @@ async fn admins_see_the_jobs_and_start_them() {
         jobs.as_array().unwrap().iter().map(|j| j["name"].as_str().unwrap()).collect();
     assert_eq!(
         names,
-        ["SCAN", "METADATA", "MAINTENANCE", "BACKUP"],
+        ["SCAN", "RECONCILE", "METADATA", "MAINTENANCE", "BACKUP"],
         "no mirror sync outside mirror mode"
     );
     assert_eq!(jobs[0]["intervalMinutes"], 60.0);
-    assert_eq!(jobs[1]["intervalMinutes"], Value::Null, "the lookup follows each scan");
+    assert_eq!(jobs[1]["intervalMinutes"], Value::Null, "the check follows each scan");
+    assert_eq!(jobs[2]["intervalMinutes"], Value::Null, "and so does the lookup");
 
     h.ok("mutation { runJob(job: MAINTENANCE) { name } }", json!({})).await;
     let mut last = Value::Null;
     for _ in 0..200 {
-        last = h.ok(JOBS, json!({})).await["jobs"][2]["lastRun"].clone();
+        last = h.ok(JOBS, json!({})).await["jobs"][3]["lastRun"].clone();
         if last["outcome"] != "RUNNING" && !last.is_null() {
             break;
         }
