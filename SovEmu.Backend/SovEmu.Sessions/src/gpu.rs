@@ -3,7 +3,7 @@
 //! As Sovereign does for its codecs, a device's presence is not proof that it works: the server
 //! runs `sovemu-worker gpu`, which makes a GL context on every device EGL lists, draws a frame
 //! and reads it back, and only devices that pass are used. (The server never loads GL or a
-//! core itself; the probe runs in a worker like everything else that does.) `SOVEMU_GPU`
+//! core itself; the probe runs in a worker like everything else that does.) `SovEmu__Rendering__Gpu`
 //! chooses, and anything that fails falls back to Mesa's software renderer, then to having no
 //! 3D systems at all.
 
@@ -52,7 +52,7 @@ pub enum Mode {
 /// The decision, kept for the life of the process and shown to admins.
 #[derive(Debug, Clone, Serialize)]
 pub struct GpuStatus {
-    /// `SOVEMU_GPU` as configured.
+    /// `SovEmu__Rendering__Gpu` as configured.
     pub setting: String,
     pub mode: Mode,
     /// What workers get as `--gpu`.
@@ -138,7 +138,7 @@ fn renderer_of(devices: &[Device], node: Option<&str>) -> Option<String> {
     devices.iter().find(|d| d.works && d.node.as_deref() == node).and_then(|d| d.renderer.clone())
 }
 
-/// Turns `SOVEMU_GPU` and a probe into a decision.
+/// Turns `SovEmu__Rendering__Gpu` and a probe into a decision.
 pub(crate) fn decide(setting: &str, probe: Probe) -> GpuStatus {
     let setting = setting.trim();
     if let Some(error) = probe.error {
@@ -200,7 +200,7 @@ pub async fn detect(worker: &Path, setting: &str, env: &[(String, String)]) -> G
 
 async fn probe_and_decide(worker: &Path, setting: &str, env: &[(String, String)]) -> GpuStatus {
     if setting.trim() == "off" {
-        return GpuStatus::off(setting, Some("SOVEMU_GPU=off".into()));
+        return GpuStatus::off(setting, Some("SovEmu__Rendering__Gpu=off".into()));
     }
     let mut command = tokio::process::Command::new(worker);
     command

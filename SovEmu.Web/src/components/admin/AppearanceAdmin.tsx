@@ -1,5 +1,5 @@
 // Appearance: the background behind every screen, one for everyone, in every client (web, Android,
-// TV). The admin picks it here; `SOVEMU_BACKGROUND` sets it from the environment instead, and then
+// TV). The admin picks it here; `SovEmu__Appearance__Background` sets it from the environment instead, and then
 // the page shows it locked. Backgrounds of one's own go in the background folders; system photos
 // of one's own in `<data>/systems/`.
 
@@ -110,9 +110,9 @@ function Appearance() {
           </div>
           <p className="mt-4 text-xs text-muted">
             Your own backgrounds: WebP, PNG or JPEG images in <code>backgrounds/</code> in the data folder (or a folder{" "}
-            <code>SOVEMU_BACKGROUNDS_DIRS</code> names), offered by file name; one named like a built-in one replaces
-            it. Your own system photos: <code>systems/&lt;system id&gt;.webp</code> in the data folder. Both are found
-            by the next library scan.
+            <code>SovEmu__Appearance__BackgroundDirectories</code> names), offered by file name; one named like a
+            built-in one replaces it. Your own system photos: <code>systems/&lt;system id&gt;.webp</code> in the data
+            folder. Both are found by the next library scan.
           </p>
         </AdminSection>
       )}

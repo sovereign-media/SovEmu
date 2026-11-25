@@ -53,7 +53,7 @@ test("a game the server will not start is listed under the Sessions page's failu
 test("the Streaming page tests this browser's connection to a game port", async ({ page }) => {
   await page.goto("/admin/streaming/");
   await expect(page.getByRole("heading", { name: "Streaming", level: 1 })).toBeVisible();
-  await expect(page.getByText("SOVEMU_VIDEO_KBPS", { exact: true })).toBeVisible();
+  await expect(page.getByText("SovEmu__Streaming__Video__Kbps", { exact: true })).toBeVisible();
   // The startup encoder test: VP8 on libvpx's four threads is in every build, and timed.
   const encoders = page.getByRole("region", { name: "Encoders" });
   const vp8 = encoders.getByRole("row", { name: /VP8 \(libvpx\)/ });
@@ -278,7 +278,7 @@ test("a shared collection is filled from a game's panel and reaches everyone's H
 
   // Out again, and as environment lines while it holds the game.
   await page.goto("/admin/collections/");
-  await expect(page.getByText("SOVEMU_COLLECTIONS__0__GAMES__0=nes/Stand-in Quest (USA).nes")).toBeVisible();
+  await expect(page.getByText("SovEmu__Collections__0__Games__0=nes/Stand-in Quest (USA).nes")).toBeVisible();
   await page.getByRole("button", { name: "Take Stand-in Quest out" }).click();
   await expect(shared).toContainText("No games yet");
   await page.getByRole("button", { name: "Delete" }).click();
@@ -370,7 +370,7 @@ test("the Rendering page says where 3D systems render, and what the probe found"
   await page.goto("/admin/rendering/");
   await expect(page.getByRole("heading", { name: "Rendering", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: /3D systems (render|are off)/ })).toBeVisible();
-  await expect(page.getByText(/SOVEMU_GPU=/)).toBeVisible();
+  await expect(page.getByText(/SovEmu__Rendering__Gpu=/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
 });
 
@@ -414,7 +414,7 @@ test("the Decorations page lists the sets and frames each system", async ({ page
   await page.goto("/admin/decorations/");
   await expect(page.getByRole("heading", { name: "Decorations", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sets" })).toBeVisible();
-  await expect(page.getByText(/SOVEMU_DECORATION=/)).toBeVisible();
+  await expect(page.getByText(/SovEmu__Decorations__Set=/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Systems" })).toBeVisible();
   await expect(page.getByRole("listitem").filter({ hasText: "Nintendo Entertainment System" })).toBeVisible();
 });
@@ -447,10 +447,10 @@ test("the Configuration page shows every setting and where it came from", async 
     await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
   // The e2e server is started with an admin from the environment, and its password redacted.
-  const password = page.getByRole("listitem").filter({ hasText: "SOVEMU_ADMIN_PASSWORD" });
+  const password = page.getByRole("listitem").filter({ hasText: "SovEmu__Authentication__AdminPassword" });
   await expect(password).toContainText("(set)");
   await page.getByRole("searchbox", { name: "Find a setting" }).fill("udp ports");
-  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "SovEmu__Streaming__Udp__Ports" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toHaveCount(0);
 });
 
@@ -462,7 +462,7 @@ test("the Network page shows where streams go and how this request arrived", asy
   await expect(page.getByRole("heading", { name: "Sign-in addresses" })).toBeVisible();
   // The e2e server is reached at its own address, so signing in works here: no warning about it.
   await expect(page.getByText(/Signing in does not work/)).toHaveCount(0);
-  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_UDP_PORTS" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "SovEmu__Streaming__Udp__Ports" })).toBeVisible();
 });
 
 test("the Storage page shows where the space goes", async ({ page }) => {
@@ -482,8 +482,8 @@ test("the Telemetry page says how to turn export on", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Telemetry", level: 1 })).toBeVisible();
   // The e2e server exports nothing.
   await expect(page.getByRole("heading", { name: "Nothing is exported" })).toBeVisible();
-  await expect(page.getByText("SOVEMU_OTEL_ENDPOINT=http://otel-collector:4318")).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: "SOVEMU_LOG_FORMAT" })).toBeVisible();
+  await expect(page.getByText("SovEmu__Telemetry__Otlp__Endpoint=http://otel-collector:4318")).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "SovEmu__Logging__Format" })).toBeVisible();
 });
 
 test("the About page names the build and credits what SovEmu uses", async ({ page }) => {
@@ -501,7 +501,7 @@ test("the Appearance page chooses the background everyone sees", async ({ page }
   const lattice = page.getByRole("button", { name: "Lattice" });
   await lattice.click();
   await expect(lattice).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("SOVEMU_BACKGROUND=lattice")).toBeVisible();
+  await expect(page.getByText("SovEmu__Appearance__Background=lattice")).toBeVisible();
   // Every screen draws it, from the server.
   await page.goto("/");
   const background = page.locator("[data-background]");

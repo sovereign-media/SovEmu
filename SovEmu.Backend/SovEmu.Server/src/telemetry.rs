@@ -1,11 +1,11 @@
 //! Logs, traces and metrics.
 //!
 //! Logs go to stderr through `tracing`, as text for a person or as JSON lines for a log
-//! collector (`SOVEMU_LOG_FORMAT`). Every request runs in a `request` span and every game session
+//! collector (`SovEmu__Logging__Format`). Every request runs in a `request` span and every game session
 //! in a `session` span, so their fields (route, status, session id, game) come with each line
 //! logged inside them.
 //!
-//! With `SOVEMU_OTEL_ENDPOINT` set, the same spans are exported as OpenTelemetry traces and the
+//! With `SovEmu__Telemetry__Otlp__Endpoint` set, the same spans are exported as OpenTelemetry traces and the
 //! server's metrics as OpenTelemetry metrics, over OTLP/HTTP to that collector (`/v1/traces`,
 //! `/v1/metrics`). The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`,
 //! `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`, …).

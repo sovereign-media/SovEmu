@@ -36,7 +36,7 @@ and `./data/roms` read-only at `/sov-library`, the library: one folder per syste
 `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`, `mastersystem/`, `gamegear/`, `segacd/`,
 `pcengine/`, `atari2600/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …; the full list is
 under [Supported systems](#supported-systems)). Browsers on other machines need
-`SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus UDP
+`SovEmu__Streaming__AdvertiseAddress` set to this host's LAN address (it defaults to `127.0.0.1`), plus UDP
 50000-50009 reachable.
 
 ### Folders
@@ -69,7 +69,7 @@ refuses to start, so a volume still mounted at the old place never looks like an
 
 ## BIOS files
 
-BIOS files live on the server, in `data/bios/` (`SOVEMU_BIOS_DIR`), in **any layout**: SovEmu
+BIOS files live on the server, in `data/bios/` (`SovEmu__Paths__Bios`), in **any layout**: SovEmu
 indexes the whole folder and finds each file a core needs by its MD5 (a known dump, under any
 name) or else by its name in any letter case. A Batocera `bios/` folder, or a read-only share,
 works as it is. The recommended layout is a folder per system, named like its folder of games, as
@@ -161,7 +161,7 @@ A game starts with each setting taken from these, in order, the last one winning
 1. the emulator's default;
 2. SovEmu's default for the system (Dreamcast memory cards per game, for example);
 3. the admin's choice;
-4. the environment (`SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`).
+4. the environment (`SovEmu__Systems__<id>__Options__<name>`).
 
 The environment always wins, and those settings show as locked on the page. The page also
 lists the admin's changes as environment variables to copy into `.env` or the Helm values, so
@@ -176,7 +176,7 @@ timeline and its sound are untouched. Most games need 1 or 2; too many and the g
 skips ahead. Each frame costs N more emulated frames and a save state, so it is only for the
 systems that render in software (not N64, Dreamcast, GameCube or PS2), and a worker that
 cannot keep up runs fewer frames ahead by itself. It is on by default, 1 frame on every
-system that supports it; change it per system with `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` (0 to 4,
+system that supports it; change it per system with `SovEmu__Systems__<id>__RunAhead` (0 to 4,
 0 turns it off; this wins) or as an admin (`setRunAhead`).
 
 ## Loading progress
@@ -206,7 +206,7 @@ Android and iOS clients all use it. The schema, with every type and field docume
     - the device grant (`/oauth/device_authorization`): the TV shows a code, approved at
       `/device` in a signed-in browser;
     - or the password fallback, `POST /oauth/password` (`client_id`, `username`, `password`,
-      `scope`), which answers like the token endpoint. `SOVEMU_PASSWORD_SIGN_IN=false` turns it
+      `scope`), which answers like the token endpoint. `SovEmu__Authentication__PasswordSignIn=false` turns it
       off.
 
   An app's first question is the anonymous `bootstrapConfig` query, as Sovereign's apps ask
@@ -240,13 +240,13 @@ from ScreenScraper. Put the share, credentials and mode in `.env`, which git ign
 docker compose -f compose.yaml -f compose.nas.yaml up -d
 ```
 
-Choose how the server uses the share with `SOVEMU_LIBRARY_MODE`:
+Choose how the server uses the share with `SovEmu__Library__Mode`:
 
 | Mode | When | What happens |
 |---|---|---|
 | `direct` (default) | The NAS is on the same network | Games are read straight from the share |
-| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games are kept in `data/cache/games` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
-| `mirror` | You want a full local copy | A background sync copies the library's games into `data/library` (not its artwork folders), copying only what changed and removing what was deleted. Games are played from the copy. `SOVEMU_MIRROR_SYSTEMS=nes,snes` limits it. Start a sync from the Library page. |
+| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games are kept in `data/cache/games` (`SovEmu__Library__Cache__MaxGigabytes`, least recently used out). Small games are copied on first play; disc images are copied after their first session. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
+| `mirror` | You want a full local copy | A background sync copies the library's games into `data/library` (not its artwork folders), copying only what changed and removing what was deleted. Games are played from the copy. `SovEmu__Library__Mirror__Systems=nes,snes` limits it. Start a sync from the Library page. |
 
 Scans run in the background, in parallel.
 
@@ -283,7 +283,7 @@ decorations/<set>/default.png         + default.info  everything else
 
 Each `.info` gives the image's size and the margins of its transparent window
 (`{"width":1920,"height":1080,"top":0,"left":240,"bottom":0,"right":240}`); without one, the window
-is the largest centred 4:3 area. Sets are read from `SOVEMU_DECORATIONS_DIRS`, then
+is the largest centred 4:3 area. Sets are read from `SovEmu__Decorations__Directories`, then
 `data/artwork/decorations`, then the built-in folder (`/opt/sovemu/artwork/decorations`). A set found in several of them is merged, with
 the earlier folder winning for the same file. Folders are listed again with every library scan.
 
@@ -295,7 +295,7 @@ yourself.
 The ESRB's rating icons that a game's panel shows are built-in artwork too:
 `artwork/ratings/esrb/<rating>.png` (`ec`, `e`, `e10`, `t`, `m`, `ao`, `rp`; the 2013 set from
 Wikimedia Commons). Put your own PNG at that path in `data/artwork/` to replace one.
-Choose the set with `SOVEMU_DECORATION`, per system with `SOVEMU_SYSTEMS__<id>__DECORATION`,
+Choose the set with `SovEmu__Decorations__Set`, per system with `SovEmu__Systems__<id>__Decoration`,
 and `none` turns frames off.
 
 ## Game information
@@ -306,17 +306,17 @@ art and gameplay videos. The information is stored as each game is looked up. A 
 shows its ESRB rating as the ESRB's own icon (served from the built-in decoration set, where an
 admin can replace it; see Decorations) and its rating as stars, and Home has a **Top rated** row of the library's best rated
 games (ScreenScraper's players' ratings). Its artwork follows in the background,
-`SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
+`SovEmu__Artwork__MaxConcurrentDownloads` at a time: box art, a screenshot (shown behind the game; in play,
 else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for
-at the size the largest screen shows them (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
+at the size the largest screen shows them (`SovEmu__Artwork__MaxPixels`, 1000 pixels), not as a full
 scan; videos are ScreenScraper's normalised ones where it has them (smaller, one encoding), and
-`SOVEMU_METADATA_VIDEOS=false` skips them. Pictures are kept as lossy WebP
-(`SOVEMU_ARTWORK_WEBP_QUALITY`), and every client asks for artwork at the width it shows it: the
+`SovEmu__Metadata__Videos=false` skips them. Pictures are kept as lossy WebP
+(`SovEmu__Artwork__WebpQuality`), and every client asks for artwork at the width it shows it: the
 server makes a WebP copy at that width the first time and
 keeps it in `data/cache/artwork`, so a grid of covers moves a few kilobytes a card rather
 than the original files. Clearing the cache clears the copies; they are made again as needed. A system's game cards take the shape of its boxes
 (SNES and N64 landscape, CD systems square, cartridge systems portrait), so box art fills them;
-a box of another shape (a Super Famicom's) is fitted inside its card. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
+a box of another shape (a Super Famicom's) is fitted inside its card. Sources, asked in the order `SovEmu__Metadata__Sources`
 gives (`fbneo,screenscraper`):
 
 1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
@@ -327,16 +327,16 @@ gives (`fbneo,screenscraper`):
    ones say which program asks, and SovEmu's own are built into the released image, so there is
    nothing to request; the *user* ones say who asks. Without a user account lookups run as a
    guest, the slowest level and the first turned away when ScreenScraper is busy; a free
-   account (`SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD`) is steadier, and
+   account (`SovEmu__Metadata__ScreenScraper__Username`, `SovEmu__Metadata__ScreenScraper__Password`) is steadier, and
    contributing or donating raises its limits. A build of your own has no developer credentials
-   unless you set `SOVEMU_SCREENSCRAPER_DEVID` and `SOVEMU_SCREENSCRAPER_DEVPASSWORD` (they also
+   unless you set `SovEmu__Metadata__ScreenScraper__DevId` and `SovEmu__Metadata__ScreenScraper__DevPassword` (they also
    replace the built-in ones); without any, ScreenScraper is not asked, and the Library page says
    so.
 
 ScreenScraper's limits depend on the account: its level, and what it has contributed (data or
 money) raise the requests it may have open at once, per minute and per day. SovEmu reads the
 account at startup and before each lookup (`ssuserInfos.php`, which spends no request), looks up
-as many games at once as the account allows (`SOVEMU_SCREENSCRAPER_THREADS` caps it), spaces
+as many games at once as the account allows (`SovEmu__Metadata__ScreenScraper__Threads` caps it), spaces
 requests by its per-minute limit, and downloads box art no faster. The Library page shows the
 account's level and limits. ScreenScraper reports problems in French; SovEmu shows them in English.
 
@@ -352,14 +352,14 @@ the next one carries on with the games it did not reach. Games no service found 
 once a service they were not asked is configured, so adding credentials later fills in the
 library on the next scan. A lookup can also refresh only some fields, ask only some sources, or
 take the games looked up more than so many days ago (`fetchMetadata`); with
-`SOVEMU_METADATA_REFRESH_DAYS` the lookup after each scan does that on its own. A refresh replaces
+`SovEmu__Metadata__RefreshDays` the lookup after each scan does that on its own. A refresh replaces
 only the fields it was asked for, and never clears one a source no longer knows.
 
 After every scan, before its lookup, a **library check** (the `reconcile` job, on the Jobs page)
 keeps what was downloaded in step with the library: a game whose ROM is gone loses its
 information, its downloaded artwork and video, and its resized copies; a downloaded file that has
 gone missing from `data/artwork/games/` is downloaded again. An admin can run it from the Jobs
-page, and then it also looks up games without information even when `SOVEMU_METADATA_AUTO` is off.
+page, and then it also looks up games without information even when `SovEmu__Metadata__AutoLookup` is off.
 
 ## Supported systems
 
@@ -399,111 +399,116 @@ each system's controls diagram.
 
 Every setting is an environment variable. There's nothing to set up by clicking through the app.
 `compose.yaml` loads `.env` whole, so put settings there; `.env.example` lists them all. The same
-names work as `--flags` on `sovemu-server`. An empty value means "unset". Each secret can instead
-be read from a file named by `<VAR>_FILE`, for Docker or Kubernetes secrets. The server logs its
-effective configuration at startup, with secrets redacted.
+names work as `--flags` on `sovemu-server`. An empty value means "unset". Secrets come the same
+way: put Docker or Kubernetes secrets in the environment. The server logs its effective
+configuration at startup, with secrets redacted.
+
+Names follow the hierarchy .NET (and Sovereign) use: `SovEmu__<Area>__<Name>`, PascalCase levels
+joined by a double underscore, read in any letter case (`SOVEMU__HTTP__LISTEN` works too). A list
+takes one entry per index, `SovEmu__Network__TrustedProxyNetwork__0`, `__1`, …, in order; one plain
+value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 
 | Variable | Default | What |
 |---|---|---|
 | **Accounts** | | |
-| `SOVEMU_ADMIN_USERNAME`, `SOVEMU_ADMIN_PASSWORD` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
-| `SOVEMU_USERS__<n>__USERNAME`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ROLE` | none | More accounts, kept in step like the admin (see below). `__ROLE` is `viewer` (default) or `admin`; `__ADMIN=true` still means `admin` |
-| `SOVEMU_USERS_PRUNE` | off | Delete accounts not declared above at startup |
-| `SOVEMU_SESSION_DAYS` | `90` | How long a sign-in lasts before signing in again (an app's counts from signing in; refreshing does not extend it), and the browser's sign-in at the server. 0: until signed out |
-| `SOVEMU_ACCESS_TOKEN_MINUTES` | `60` | How long an access token lasts before the app refreshes it |
-| `SOVEMU_REFRESH_RETRY_SECONDS` | `30` | How long a just-used refresh token is honoured again (two tabs refreshing at once); after that, presenting it ends the sign-in. 0: strictly once |
-| `SOVEMU_PUBLIC_URL` | `localhost`, `127.0.0.1` and `SOVEMU_ADVERTISE_IP` on the HTTP port | The addresses people reach the server at, comma-separated (`https://games.example.com,http://192.168.1.10:8080`). Each issues sign-in tokens; signing in elsewhere is refused. Set it when you use a hostname or a proxy |
-| `SOVEMU_PASSWORD_SIGN_IN` | `true` | Whether the apps may sign in with a username and password, as well as with a code shown on the screen |
-| `SOVEMU_CLIENT_EVENTS` | `true` | Whether what goes wrong on a client (a failed connection, a stalled picture, a screen error) is logged as `client event` and kept for the admin Client errors page (`SOVEMU_CLIENT_EVENT_DAYS`). Off, clients' reports are dropped |
-| `SOVEMU_TOKEN_KEY` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret: `_FILE` works |
-| `SOVEMU_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins before a username is locked out (0: never) |
-| `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
-| `SOVEMU_LOGIN_LOCKOUT_MINUTES` | `5` | How long the lockout lasts |
+| `SovEmu__Authentication__AdminUsername`, `SovEmu__Authentication__AdminPassword` | unset | The admin. Created at startup, and the password follows this value (changing it signs old sessions out). Without it, the first visit asks for an admin. |
+| `SovEmu__Users__<n>__Username`, `__Password`, `__Role` | none | More accounts, kept in step like the admin (see below). `__Role` is `viewer` (default) or `admin` |
+| `SovEmu__Users__Prune` | off | Delete accounts not declared above at startup |
+| `SovEmu__Authentication__SessionDays` | `90` | How long a sign-in lasts before signing in again (an app's counts from signing in; refreshing does not extend it), and the browser's sign-in at the server. 0: until signed out |
+| `SovEmu__Authentication__Tokens__AccessTokenMinutes` | `60` | How long an access token lasts before the app refreshes it |
+| `SovEmu__Authentication__Tokens__RefreshRetrySeconds` | `30` | How long a just-used refresh token is honoured again (two tabs refreshing at once); after that, presenting it ends the sign-in. 0: strictly once |
+| `SovEmu__Http__PublicUrl__<n>` | `localhost`, `127.0.0.1` and `SovEmu__Streaming__AdvertiseAddress` on the HTTP port | The addresses people reach the server at, one per index (`__0=https://games.example.com`, `__1=http://192.168.1.10:8080`). Each issues sign-in tokens; signing in elsewhere is refused. Set it when you use a hostname or a proxy |
+| `SovEmu__Authentication__PasswordSignIn` | `true` | Whether the apps may sign in with a username and password, as well as with a code shown on the screen |
+| `SovEmu__ClientErrors__Enabled` | `true` | Whether what goes wrong on a client (a failed connection, a stalled picture, a screen error) is logged as `client event` and kept for the admin Client errors page (`SovEmu__ClientErrors__RetentionDays`). Off, clients' reports are dropped |
+| `SovEmu__Authentication__TokenSigningKey` | generated, in `data/server.json` | The secret the ID-token signing key (ES256) is derived from. A secret |
+| `SovEmu__Authentication__Lockout__MaxFailures` | `5` | Failed sign-ins before a username is locked out (0: never) |
+| `SovEmu__Authentication__Lockout__MaxFailuresPerAddress` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
+| `SovEmu__Authentication__Lockout__Minutes` | `5` | How long the lockout lasts |
 | **Library** | | |
-| `SOVEMU_DATA_DIR` | `data` (`/sov-data`) | Everything SovEmu writes: database, saves, artwork, cache, mirror (see [Folders](#folders)) |
-| `SOVEMU_ROMS_DIR` | `<data>/roms` (`/sov-library`) | The library, one folder per system, read-only |
-| `SOVEMU_BIOS_DIR` | `<data>/bios` | BIOS files, in any layout; a read-only share is fine (see [BIOS files](#bios-files)) |
-| `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
-| `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB kept locally |
-| `SOVEMU_MIRROR_SYSTEMS` | all | `mirror` mode: comma-separated system ids |
-| `SOVEMU_SCAN_INTERVAL_MINUTES` | `60` | Rescan period (0: startup only) |
-| `SOVEMU_MIRROR_INTERVAL_MINUTES` | `360` | `mirror` mode: sync period (0: startup only) |
-| `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
-| `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
-| `SOVEMU_COPY_THREADS` | `4` | Files copied at once by the mirror sync |
-| `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__DECORATION`, `__RUN_AHEAD`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), core options (see below) |
-| `SOVEMU_COLLECTIONS__<n>__NAME`, `__GAMES__<m>` | none | A shared collection everyone sees, its games as `<system id>/<file name>` (`nes/Super Stand-in (USA).nes`), in order. Kept in step after each scan; locked on the admin page, which offers the collections made there in this form. A collection no longer declared is deleted |
-| `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
+| `SovEmu__Paths__Data` | `data` (`/sov-data`) | Everything SovEmu writes: database, saves, artwork, cache, mirror (see [Folders](#folders)) |
+| `SovEmu__Paths__Library` | `<data>/roms` (`/sov-library`) | The library, one folder per system, read-only |
+| `SovEmu__Paths__Bios` | `<data>/bios` | BIOS files, in any layout; a read-only share is fine (see [BIOS files](#bios-files)) |
+| `SovEmu__Library__Mode` | `direct` | `direct`, `cache` or `mirror` (see above) |
+| `SovEmu__Library__Cache__MaxGigabytes` | `20` | `cache` mode: GiB kept locally |
+| `SovEmu__Library__Mirror__Systems__<n>` | all | `mirror` mode: these systems only, by id, one per index |
+| `SovEmu__Library__ScanIntervalMinutes` | `60` | Rescan period (0: startup only) |
+| `SovEmu__Library__Mirror__IntervalMinutes` | `360` | `mirror` mode: sync period (0: startup only) |
+| `SovEmu__Paths__Cores` | `cores` (`/opt/sovemu/cores`) | libretro cores |
+| `SovEmu__Library__Cache__LargeGameMegabytes` | `64` | `cache` mode: larger games are cached after their session, not before |
+| `SovEmu__Library__CopyThreads` | `4` | Files copied at once by the mirror sync |
+| `SovEmu__Systems__<id>__Core`, `__Enabled`, `__Decoration`, `__RunAhead`, `__Options__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), core options (see below) |
+| `SovEmu__Collections__<n>__Name`, `__Games__<m>` | none | A shared collection everyone sees, its games as `<system id>/<file name>` (`nes/Super Stand-in (USA).nes`), in order. Kept in step after each scan; locked on the admin page, which offers the collections made there in this form. A collection no longer declared is deleted |
+| `SovEmu__Controllers__<n>__Id`, `__Bindings`, `__System`, `__Name` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
-| `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
-| `SOVEMU_METADATA_SOURCES` | `fbneo,screenscraper` | Game-information sources, in the order they are asked |
-| `SOVEMU_METADATA_REFRESH_DAYS` | `0` | Look games up again once their information is this many days old (`0`: never) |
-| `SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD` | SovEmu's, in released images | ScreenScraper developer credentials (which program asks); set only to use your own |
-| `SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD` | unset | ScreenScraper account (raises the quota) |
-| `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
-| `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
-| `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests, when the account does not give its per-minute limit |
-| `SOVEMU_SCREENSCRAPER_THREADS` | `0` | At most this many ScreenScraper requests at once (`0`: as many as the account allows) |
-| `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art and videos downloaded at once, in the background after a lookup (never more than the account allows) |
-| `SOVEMU_ARTWORK_MAX_PX` | `1000` | Box art is asked for, and kept, at most this many pixels wide and high (`0`: full size) |
-| `SOVEMU_ARTWORK_WEBP_QUALITY` | `80` | Quality (1-100) of the lossy WebP box art is kept in and artwork copies are made in |
-| `SOVEMU_METADATA_VIDEOS` | `true` | Download gameplay videos for games with none of their own |
-| `SOVEMU_SCREENSCRAPER_URL` | ScreenScraper's | API base URL (mirrors, tests) |
+| `SovEmu__Metadata__AutoLookup` | `true` | Look up new games after every scan |
+| `SovEmu__Metadata__Sources__<n>` | `fbneo`, `screenscraper` | Game-information sources, in the order they are asked |
+| `SovEmu__Metadata__RefreshDays` | `0` | Look games up again once their information is this many days old (`0`: never) |
+| `SovEmu__Metadata__ScreenScraper__DevId`, `SovEmu__Metadata__ScreenScraper__DevPassword` | SovEmu's, in released images | ScreenScraper developer credentials (which program asks); set only to use your own |
+| `SovEmu__Metadata__ScreenScraper__Username`, `SovEmu__Metadata__ScreenScraper__Password` | unset | ScreenScraper account (raises the quota) |
+| `SovEmu__Metadata__Regions__<n>` | `us`, `wor`, `eu`, `ss`, `uk`, `jp` | Region preference for titles, dates and box art, most preferred first |
+| `SovEmu__Metadata__Languages__<n>` | `en`, `wor` | Language preference for descriptions, most preferred first |
+| `SovEmu__Metadata__ScreenScraper__DelayMilliseconds` | `1200` | Pause between ScreenScraper requests, when the account does not give its per-minute limit |
+| `SovEmu__Metadata__ScreenScraper__Threads` | `0` | At most this many ScreenScraper requests at once (`0`: as many as the account allows) |
+| `SovEmu__Artwork__MaxConcurrentDownloads` | `4` | Box art and videos downloaded at once, in the background after a lookup (never more than the account allows) |
+| `SovEmu__Artwork__MaxPixels` | `1000` | Box art is asked for, and kept, at most this many pixels wide and high (`0`: full size) |
+| `SovEmu__Artwork__WebpQuality` | `80` | Quality (1-100) of the lossy WebP box art is kept in and artwork copies are made in |
+| `SovEmu__Metadata__Videos` | `true` | Download gameplay videos for games with none of their own |
+| `SovEmu__Metadata__ScreenScraper__Url` | ScreenScraper's | API base URL (mirrors, tests) |
 | **Streaming** | | |
-| `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
-| `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent session; publish the range |
-| `SOVEMU_UDP_BIND` | `0.0.0.0` | Address the session ports bind to |
-| `SOVEMU_UDP_DSCP` | `34` | The DSCP value every game's packets are marked with (0 to 63), asking the network to send them ahead of ordinary traffic. A Wi-Fi access point maps it to one of its queues: `34` (AF41, interactive video, as WebRTC marks a picture) goes to the video queue; `46` to the voice queue; `0` leaves packets unmarked. Routers and switches on the way may honour it, ignore it or clear it |
-| `SOVEMU_ADVERTISE_IP` | detected (`127.0.0.1` in compose) | The address browsers send media to |
-| `SOVEMU_ICE_SERVERS` | `[]` | STUN/TURN for browsers, as JSON `RTCIceServer`s |
-| `SOVEMU_VIDEO_KBPS` | `5000` | Video bitrate a stream starts at. It then adapts throughout the stream: up while the connection has headroom and down on congestion (the send-bandwidth estimate, when the stream is sending more than it leaves: an estimate the stream is already under cuts nothing, since a quiet picture makes the estimator read low on a link with room to spare. A fall is checked against the client's own report, sent once a second. Trouble it has just shown (packets lost, a keyframe asked for, or for two samples running frames arriving short or a long round trip) is believed at once. On a link that has shown no trouble yet, a client reporting a clean link overrules the estimator: it starts again from where it was and the bitrate stays, since over Wi-Fi the estimator also falls when packets merely arrive unevenly. A client that sends no stats, or a link that has shown trouble before, gets one such pass in five seconds, and a second fall is believed. A fall that is believed leaves a ceiling at 85% of what was being sent, which the bitrate does not climb past; the ceiling is tried 5% higher after 30 seconds without a fall (a try that stands doubles the next step, to 20%; one that fails goes back to the ceiling that stood and waits twice as long, to 5 minutes). One fall cuts to no less than half the ceiling), and down while the client's decoder falls behind (the stats every client sends once a second: frames decoded, frames dropped, decode time), back up as it recovers. The player is told of a change of a quarter or more, at most every 15 seconds, by a notice at the top of the screen, worded and drawn as Sovereign's ("Slow connection. Playing at a lower quality."). `video_kbps_target`, `estimate_kbps` and `client_limit_kbps` in the `session health` log line show it |
-| `SOVEMU_VIDEO_MIN_KBPS` | `300` | The lowest video bitrate a stream adapts down to |
-| `SOVEMU_VIDEO_MAX_KBPS` | `12000` | The highest video bitrate a stream adapts up to (never below `SOVEMU_VIDEO_KBPS`). Set it to `SOVEMU_VIDEO_KBPS` for a stream that only adapts down |
-| `SOVEMU_VIDEO_CODEC` | `auto` | `auto`, `vp8` or `h264`. `auto` chooses for each client as it connects: every codec this server encodes and the client decodes is priced in milliseconds a frame, and the cheapest is sent. Encoding is priced by the startup encoder test (the admin's Streaming page shows it); decoding by what that device's decoder measured the last time it played with the codec, and until it has, by what the device declares (a hardware decoder with a low-latency mode is taken as fast). Close prices go to the codec encoded on the GPU. A client that sends no capabilities gets VP8. Naming a codec sends it to every client. The `video codec chosen` log line, and each session on the admin's Sessions page, show the prices |
-| `SOVEMU_VIDEO_ENCODER` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
-| `SOVEMU_AUDIO_KBPS` | `128` | Opus bitrate |
-| `SOVEMU_IDLE_TIMEOUT` | `300` | Seconds a session survives with no client |
-| `SOVEMU_WORKER_START_TIMEOUT` | `120` | Seconds a game may take to load (disc images on a slow share) |
-| `SOVEMU_WORKER_STOP_TIMEOUT` | `15` | Seconds a game may take to write its saves and exit before it is killed |
-| `SOVEMU_REWIND_SECONDS` | `60` | Rewind history (0: rewind off). A session turns rewind off by itself where a save state is too large or too slow to take every other frame (PS2) |
-| `SOVEMU_REWIND_MAX_MB` | `64` | Memory cap for one session's rewind history |
-| `SOVEMU_FAST_FORWARD` | `4` | Fast-forward speed |
-| `SOVEMU_KEYFRAME_INTERVAL` | `600` | Frames between video keyframes |
-| `SOVEMU_DROPOUT_KEYFRAME_MS` | `700` | A client that has been silent this many milliseconds and is then heard again was cut off (a Wi-Fi dropout). It is sent a keyframe at once, and the bandwidth estimate starts again from what it was before, so the picture returns as the link does; left to itself a client waits a second or more before asking for a keyframe, and the estimate stays collapsed for many seconds. `dropouts` in the `session health` line counts them. 0 leaves it to the client |
-| `SOVEMU_DEBUG_DROP_VIDEO_PERCENT` | `0` | Testing only: every game throws away this share (percent) of its outgoing video packets, retransmissions included, as a lossy link would, to see how a stream recovers. Audio and the connection's own packets always go, and the same packets are lost on every run. The worker logs how many it dropped when the session ends. Leave it at 0 |
-| `SOVEMU_DEBUG_DELAY_VIDEO_MS` | `0` | Testing only: every game holds each outgoing video packet this many milliseconds before sending it, as a distant client's link would, so a retransmission arrives late. Audio and the connection's own packets go at once. Leave it at 0 |
-| `SOVEMU_DEBUG_DROP_VIDEO_BURST_MS` | `0` | Testing only: every game's link is cut both ways for this many milliseconds once every 10 seconds, as a Wi-Fi dropout does: nothing is sent and nothing the client sends is heard. Leave it at 0 |
-| `SOVEMU_DEBUG_LIMIT_VIDEO_KBPS` | `0` | Testing only: every game's link carries at most this much video (kbit/s), as a slow internet connection does: packets leave one after another at that rate, video that comes faster waits up to 300 ms, and what would wait longer is thrown away. Audio and the connection's own packets are not limited. 0 is no limit; leave it there |
-| `SOVEMU_DEBUG_JITTER_VIDEO_MS` | `0` | Testing only: every game holds each outgoing video packet a different time, from nothing up to this many milliseconds (on top of `SOVEMU_DEBUG_DELAY_VIDEO_MS`), without putting any out of order, as Wi-Fi and busy routes do. The same on every run. Leave it at 0 |
-| `SOVEMU_SESSION_HEALTH_SECS` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
-| `SOVEMU_SESSION_FAILURES` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
-| `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |
-| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added, top rated) |
-| `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
+| `SovEmu__Http__Listen` | `0.0.0.0:8080` | Web client and API address |
+| `SovEmu__Streaming__Udp__Ports` | `50000-50009` | One UDP port per concurrent session; publish the range |
+| `SovEmu__Streaming__Udp__Bind` | `0.0.0.0` | Address the session ports bind to |
+| `SovEmu__Streaming__Udp__Dscp` | `34` | The DSCP value every game's packets are marked with (0 to 63), asking the network to send them ahead of ordinary traffic. A Wi-Fi access point maps it to one of its queues: `34` (AF41, interactive video, as WebRTC marks a picture) goes to the video queue; `46` to the voice queue; `0` leaves packets unmarked. Routers and switches on the way may honour it, ignore it or clear it |
+| `SovEmu__Streaming__AdvertiseAddress` | detected (`127.0.0.1` in compose) | The address browsers send media to |
+| `SovEmu__Streaming__IceServers__<n>__Urls`, `__Username`, `__Credential` | none | STUN/TURN for browsers, one server per index; `__Urls` takes one URL or several, comma-separated |
+| `SovEmu__Streaming__Video__Kbps` | `5000` | Video bitrate a stream starts at. It then adapts throughout the stream: up while the connection has headroom and down on congestion (the send-bandwidth estimate, when the stream is sending more than it leaves: an estimate the stream is already under cuts nothing, since a quiet picture makes the estimator read low on a link with room to spare. A fall is checked against the client's own report, sent once a second. Trouble it has just shown (packets lost, a keyframe asked for, or for two samples running frames arriving short or a long round trip) is believed at once. On a link that has shown no trouble yet, a client reporting a clean link overrules the estimator: it starts again from where it was and the bitrate stays, since over Wi-Fi the estimator also falls when packets merely arrive unevenly. A client that sends no stats, or a link that has shown trouble before, gets one such pass in five seconds, and a second fall is believed. A fall that is believed leaves a ceiling at 85% of what was being sent, which the bitrate does not climb past; the ceiling is tried 5% higher after 30 seconds without a fall (a try that stands doubles the next step, to 20%; one that fails goes back to the ceiling that stood and waits twice as long, to 5 minutes). One fall cuts to no less than half the ceiling), and down while the client's decoder falls behind (the stats every client sends once a second: frames decoded, frames dropped, decode time), back up as it recovers. The player is told of a change of a quarter or more, at most every 15 seconds, by a notice at the top of the screen, worded and drawn as Sovereign's ("Slow connection. Playing at a lower quality."). `video_kbps_target`, `estimate_kbps` and `client_limit_kbps` in the `session health` log line show it |
+| `SovEmu__Streaming__Video__MinKbps` | `300` | The lowest video bitrate a stream adapts down to |
+| `SovEmu__Streaming__Video__MaxKbps` | `12000` | The highest video bitrate a stream adapts up to (never below `SovEmu__Streaming__Video__Kbps`). Set it to `SovEmu__Streaming__Video__Kbps` for a stream that only adapts down |
+| `SovEmu__Streaming__Video__Codec` | `auto` | `auto`, `vp8` or `h264`. `auto` chooses for each client as it connects: every codec this server encodes and the client decodes is priced in milliseconds a frame, and the cheapest is sent. Encoding is priced by the startup encoder test (the admin's Streaming page shows it); decoding by what that device's decoder measured the last time it played with the codec, and until it has, by what the device declares (a hardware decoder with a low-latency mode is taken as fast). Close prices go to the codec encoded on the GPU. A client that sends no capabilities gets VP8. Naming a codec sends it to every client. The `video codec chosen` log line, and each session on the admin's Sessions page, show the prices |
+| `SovEmu__Streaming__Video__Encoder` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
+| `SovEmu__Streaming__Audio__Kbps` | `128` | Opus bitrate |
+| `SovEmu__Sessions__IdleTimeoutSeconds` | `300` | Seconds a session survives with no client |
+| `SovEmu__Sessions__StartTimeoutSeconds` | `120` | Seconds a game may take to load (disc images on a slow share) |
+| `SovEmu__Sessions__StopTimeoutSeconds` | `15` | Seconds a game may take to write its saves and exit before it is killed |
+| `SovEmu__Sessions__Rewind__Seconds` | `60` | Rewind history (0: rewind off). A session turns rewind off by itself where a save state is too large or too slow to take every other frame (PS2) |
+| `SovEmu__Sessions__Rewind__MaxMegabytes` | `64` | Memory cap for one session's rewind history |
+| `SovEmu__Sessions__FastForward` | `4` | Fast-forward speed |
+| `SovEmu__Streaming__Video__KeyframeInterval` | `600` | Frames between video keyframes |
+| `SovEmu__Streaming__Video__DropoutKeyframeMilliseconds` | `700` | A client that has been silent this many milliseconds and is then heard again was cut off (a Wi-Fi dropout). It is sent a keyframe at once, and the bandwidth estimate starts again from what it was before, so the picture returns as the link does; left to itself a client waits a second or more before asking for a keyframe, and the estimate stays collapsed for many seconds. `dropouts` in the `session health` line counts them. 0 leaves it to the client |
+| `SovEmu__Streaming__Debug__VideoDropPercent` | `0` | Testing only: every game throws away this share (percent) of its outgoing video packets, retransmissions included, as a lossy link would, to see how a stream recovers. Audio and the connection's own packets always go, and the same packets are lost on every run. The worker logs how many it dropped when the session ends. Leave it at 0 |
+| `SovEmu__Streaming__Debug__VideoDelayMilliseconds` | `0` | Testing only: every game holds each outgoing video packet this many milliseconds before sending it, as a distant client's link would, so a retransmission arrives late. Audio and the connection's own packets go at once. Leave it at 0 |
+| `SovEmu__Streaming__Debug__VideoDropBurstMilliseconds` | `0` | Testing only: every game's link is cut both ways for this many milliseconds once every 10 seconds, as a Wi-Fi dropout does: nothing is sent and nothing the client sends is heard. Leave it at 0 |
+| `SovEmu__Streaming__Debug__VideoLimitKbps` | `0` | Testing only: every game's link carries at most this much video (kbit/s), as a slow internet connection does: packets leave one after another at that rate, video that comes faster waits up to 300 ms, and what would wait longer is thrown away. Audio and the connection's own packets are not limited. 0 is no limit; leave it there |
+| `SovEmu__Streaming__Debug__VideoJitterMilliseconds` | `0` | Testing only: every game holds each outgoing video packet a different time, from nothing up to this many milliseconds (on top of `SovEmu__Streaming__Debug__VideoDelayMilliseconds`), without putting any out of order, as Wi-Fi and busy routes do. The same on every run. Leave it at 0 |
+| `SovEmu__Sessions__HealthSeconds` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
+| `SovEmu__Sessions__FailuresKept` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
+| `SovEmu__Home__FeaturedCount` | `8` | Games in the home screen's hero (0 hides it) |
+| `SovEmu__Home__RowLength` | `20` | Games in each home screen row (recently played, recently added, top rated) |
+| `SovEmu__Rendering__Gpu` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
-| `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |
-| `SOVEMU_TRUSTED_PROXIES` | none | Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, comma-separated (`10.0.0.0/8,172.16.0.0/12`) |
-| `SOVEMU_MAINTENANCE_INTERVAL_MINUTES` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
-| `SOVEMU_BACKUP_DIR` | `<data>/backups` | Where backups are kept: one zip file each, holding the database, the signing keys (`server.json`) and every save. It holds password hashes and keys: keep it as safe as the data folder |
-| `SOVEMU_BACKUP_INTERVAL_HOURS` | `0` | A backup every this many hours (0: none on a schedule; the admin's Backups page still makes one) |
-| `SOVEMU_BACKUP_KEEP` | `7` | Backups kept, the newest (0: every one) |
-| `SOVEMU_RESTORE_FROM` | none | A backup to restore at startup, before the database opens. What it replaces is moved into `<data>/before-restore-<time>/`, never deleted, and each backup is restored once however often the server restarts with this set |
-| `SOVEMU_JOB_HISTORY_DAYS` | `30` | Days of background-job history kept (every scan, sync, library check, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
-| `SOVEMU_LOG_BUFFER_LINES` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
-| `SOVEMU_ACTIVITY_HISTORY_DAYS` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |
-| `SOVEMU_CLIENT_EVENT_DAYS` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |
-| `SOVEMU_RESOURCE_SAMPLE_SECONDS` | `5` | Seconds between readings of the container's CPU and memory (its cgroup: the server and every game session), for the admin Resources page and the OpenTelemetry gauges (0: not read) |
-| `SOVEMU_RESOURCE_HISTORY_DAYS` | `30` | Days of CPU and memory history kept, a row per minute (0: kept for ever) |
-| `SOVEMU_ASSET_KEY` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret: `_FILE` works. Changing it invalidates URLs already handed out |
-| `SOVEMU_ASSET_URL_HOURS` | `24` | How long a signed file URL is valid (rounded to the hour, so URLs stay cacheable) |
-| `TZ` | `UTC` | The time zone of log timestamps, an IANA name (`America/Chicago`); workers follow it. The standard variable, not a `SOVEMU_` one, so container tools and cluster injectors (k8tz) that set it just work. The chart's `timezone` sets it |
-| `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
-| `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
-| `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
-| `SOVEMU_DECORATIONS_DIRS` | none | More decoration folders (Batocera layout), comma-separated, before `data/artwork/decorations` and the built-in one |
-| `SOVEMU_BACKGROUND` | unset (the admin's choice on the Appearance page, else `random`) | The background behind every screen, in every client: `dither`, `lattice`, `screens`, a file's name from the background folders, `random` (a different one each visit) or `none`. Set, it locks the Appearance page |
-| `SOVEMU_BACKGROUNDS_DIRS` | none | More background folders, comma-separated, before `data/artwork/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/artwork/systems/<system id>.webp` |
-| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_ARTWORK_BUILTIN` | set in the image | The built web client; the worker binary; the built-in artwork (`/opt/sovemu/artwork`, laid out as `data/artwork`) |
+| `SovEmu__Http__SecureCookies` | off | Set when served over HTTPS |
+| `SovEmu__Network__TrustedProxyNetwork__<n>` | none | Reverse proxies whose `X-Forwarded-For` is believed: an address or range per index (`__0=10.0.0.0/8`) |
+| `SovEmu__Jobs__MaintenanceIntervalMinutes` | `60` | Database upkeep period: expired sign-ins and old job history deleted, statistics refreshed, the write-ahead log checkpointed (0: never) |
+| `SovEmu__Backups__Directory` | `<data>/backups` | Where backups are kept: one zip file each, holding the database, the signing keys (`server.json`) and every save. It holds password hashes and keys: keep it as safe as the data folder |
+| `SovEmu__Backups__IntervalHours` | `0` | A backup every this many hours (0: none on a schedule; the admin's Backups page still makes one) |
+| `SovEmu__Backups__Keep` | `7` | Backups kept, the newest (0: every one) |
+| `SovEmu__Backups__RestoreFrom` | none | A backup to restore at startup, before the database opens. What it replaces is moved into `<data>/before-restore-<time>/`, never deleted, and each backup is restored once however often the server restarts with this set |
+| `SovEmu__Jobs__RetentionDays` | `30` | Days of background-job history kept (every scan, sync, library check, lookup and upkeep run, on the admin Jobs page; 0: kept for ever) |
+| `SovEmu__Logging__BufferLines` | `2000` | Lines of the server's log (its own and its game sessions') kept in memory for the admin Logs page; 0 keeps none and turns that view off. Lines go to stderr regardless |
+| `SovEmu__ActivityLog__RetentionDays` | `90` | Days of the activity log kept (sign-ins and refusals, games started and ended, admin changes, on the admin Activity page; 0: kept for ever) |
+| `SovEmu__ClientErrors__RetentionDays` | `30` | Days of client errors kept (what the apps reported, on the admin Client errors page; 0: kept for ever) |
+| `SovEmu__SystemResources__SampleSeconds` | `5` | Seconds between readings of the container's CPU and memory (its cgroup: the server and every game session), for the admin Resources page and the OpenTelemetry gauges (0: not read) |
+| `SovEmu__SystemResources__RetentionDays` | `30` | Days of CPU and memory history kept, a row per minute (0: kept for ever) |
+| `SovEmu__Assets__SecretKey` | generated, in `data/server.json` | The key signing the file URLs the API hands out (artwork, videos, screenshots, decorations). A secret. Changing it invalidates URLs already handed out |
+| `SovEmu__Assets__UrlHours` | `24` | How long a signed file URL is valid (rounded to the hour, so URLs stay cacheable) |
+| `TZ` | `UTC` | The time zone of log timestamps, an IANA name (`America/Chicago`); workers follow it. The standard variable, not a `SovEmu__` one, so container tools and cluster injectors (k8tz) that set it just work. The chart's `timezone` sets it |
+| `SovEmu__Logging__Format` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
+| `SovEmu__Telemetry__Otlp__Endpoint` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
+| `SovEmu__Decorations__Set` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
+| `SovEmu__Decorations__Directories__<n>` | none | More decoration folders (Batocera layout), one per index, before `data/artwork/decorations` and the built-in one |
+| `SovEmu__Appearance__Background` | unset (the admin's choice on the Appearance page, else `random`) | The background behind every screen, in every client: `dither`, `lattice`, `screens`, a file's name from the background folders, `random` (a different one each visit) or `none`. Set, it locks the Appearance page |
+| `SovEmu__Appearance__BackgroundDirectories__<n>` | none | More background folders, one per index, before `data/artwork/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/artwork/systems/<system id>.webp` |
+| `SovEmu__Paths__Web`, `SovEmu__Paths__Worker`, `SovEmu__Paths__BuiltInArtwork` | set in the image | The built web client; the worker binary; the built-in artwork (`/opt/sovemu/artwork`, laid out as `data/artwork`) |
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |
 | `SOVEMU_NAS_HOST`, `SOVEMU_NAS_PATH`, `SOVEMU_NAS_USER`, `SOVEMU_NAS_PASSWORD` | | The SMB share to mount read-only |
@@ -515,22 +520,21 @@ Game workers start with an empty environment, apart from `PATH`, `HOME`, `TMPDIR
 
 ### Lists and maps
 
-Accounts and per-system settings don't fit in one variable each. They use the `__` hierarchy
-Sovereign uses for its own settings:
+Accounts and per-system settings go one level deeper in the same hierarchy:
 
 ```bash
-SOVEMU_USERS__0__USERNAME=kid
-SOVEMU_USERS__0__PASSWORD_FILE=/run/secrets/kid     # or __PASSWORD
-SOVEMU_USERS__1__USERNAME=dad
-SOVEMU_USERS__1__PASSWORD=...
-SOVEMU_USERS__1__ROLE=admin                         # viewer (the default) or admin
-SOVEMU_USERS_PRUNE=true                             # nobody else keeps an account
+SovEmu__Users__0__Username=kid
+SovEmu__Users__0__Password=...
+SovEmu__Users__1__Username=dad
+SovEmu__Users__1__Password=...
+SovEmu__Users__1__Role=admin                         # viewer (the default) or admin
+SovEmu__Users__Prune=true                             # nobody else keeps an account
 
-SOVEMU_SYSTEMS__psx__OPTIONS__pcsx_rearmed_cd_readahead=512   # libretro core option
-SOVEMU_SYSTEMS__nes__CORE=nestopia                  # use this core (if installed)
-SOVEMU_SYSTEMS__gamegear__ENABLED=false             # hide a system
-SOVEMU_SYSTEMS__gba__DECORATION=none                # no frame around GBA games
-SOVEMU_SYSTEMS__snes__RUN_AHEAD=2                   # hide two frames of input lag (default 1)
+SovEmu__Systems__psx__Options__pcsx_rearmed_cd_readahead=512   # libretro core option
+SovEmu__Systems__nes__Core=nestopia                  # use this core (if installed)
+SovEmu__Systems__gamegear__Enabled=false             # hide a system
+SovEmu__Systems__gba__Decoration=none                # no frame around GBA games
+SovEmu__Systems__snes__RunAhead=2                   # hide two frames of input lag (default 1)
 ```
 
 Declared accounts are created at startup and kept in step: a changed password signs that user
@@ -542,10 +546,10 @@ the server at startup with the variable's name.
 The Helm chart that deploys SovEmu is kept with the cluster's other charts, outside this
 repository, and turns its values into these variables. What any deployment needs from SovEmu:
 
-- every setting as an environment variable; a secret also as `<VAR>_FILE`;
-- the library mounted read-only (`/sov-library`, or `SOVEMU_ROMS_DIR`), and a persistent
+- every setting as an environment variable, secrets included (from a Secret);
+- the library mounted read-only (`/sov-library`, or `SovEmu__Paths__Library`), and a persistent
   `/sov-data`;
-- the media ports (`SOVEMU_UDP_PORTS`, UDP) reachable at `SOVEMU_ADVERTISE_IP`: a UDP
+- the media ports (`SovEmu__Streaming__Udp__Ports`, UDP) reachable at `SovEmu__Streaming__AdvertiseAddress`: a UDP
   `LoadBalancer` Service (MetalLB at home), or host networking;
 - for GPU rendering and encoding, the render node (`/dev/dri`), or NVIDIA's container runtime.
 
@@ -561,18 +565,18 @@ CI publishes the image to `ghcr.io/sovereign-media/sovemu` (a private package) o
 ### Health and sign-in
 
 `GET /health` answers `ok` while the database is reachable. Sign-in locks a username out after
-`SOVEMU_LOGIN_MAX_FAILURES` failed attempts, and a client address after
-`SOVEMU_LOGIN_MAX_FAILURES_PER_IP` (across usernames), for `SOVEMU_LOGIN_LOCKOUT_MINUTES`.
+`SovEmu__Authentication__Lockout__MaxFailures` failed attempts, and a client address after
+`SovEmu__Authentication__Lockout__MaxFailuresPerAddress` (across usernames), for `SovEmu__Authentication__Lockout__Minutes`.
 Behind a reverse proxy every request comes from the proxy, so list it in
-`SOVEMU_TRUSTED_PROXIES`: its `X-Forwarded-For` then names the client (the last address in it
+`SovEmu__Network__TrustedProxyNetwork`: its `X-Forwarded-For` then names the client (the last address in it
 that is not a listed proxy, so a client cannot choose its own). Anyone else's
 `X-Forwarded-For` is ignored. Responses are compressed (Brotli or gzip) for clients that accept
 it, except images and videos.
 
 **Playing away from home:** sessions need UDP from the browser to the session ports. Expose
-8080 through an HTTPS reverse proxy (and set `SOVEMU_SECURE_COOKIES=1`). Then forward
-50000-50009/udp and set `SOVEMU_ADVERTISE_IP` to your public address, or run a TURN server
-(coturn) and list it in `SOVEMU_ICE_SERVERS`.
+8080 through an HTTPS reverse proxy (and set `SovEmu__Http__SecureCookies=1`). Then forward
+50000-50009/udp and set `SovEmu__Streaming__AdvertiseAddress` to your public address, or run a TURN server
+(coturn) and list it in `SovEmu__Streaming__IceServers`.
 
 ## Building from source
 

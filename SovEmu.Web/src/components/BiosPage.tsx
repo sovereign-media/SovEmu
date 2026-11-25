@@ -45,9 +45,9 @@ function Bios() {
           </Button>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">
-          BIOS files go anywhere in the server's BIOS folder (<code>SOVEMU_BIOS_DIR</code>, <code>bios/</code> in the
-          data folder by default), in any layout: a known dump is found by its MD5 under any name, anything else by its
-          name in any letter case. A folder per system, named like its folder of games (<code>bios/psx/</code>,{" "}
+          BIOS files go anywhere in the server's BIOS folder (<code>SovEmu__Paths__Bios</code>, <code>bios/</code> in
+          the data folder by default), in any layout: a known dump is found by its MD5 under any name, anything else by
+          its name in any letter case. A folder per system, named like its folder of games (<code>bios/psx/</code>,{" "}
           <code>bios/ps2/</code>, <code>bios/dreamcast/</code>), keeps them tidy. Only systems with games are listed;
           those not listed need no BIOS.
         </p>

@@ -26,7 +26,7 @@ pub(super) struct Account {
 
 #[async_graphql::ComplexObject]
 impl Account {
-    /// The environment declares it (`SOVEMU_ADMIN_USERNAME`, `SOVEMU_USERS__<n>__…`) and sets
+    /// The environment declares it (`SovEmu__Authentication__AdminUsername`, `SovEmu__Users__<n>__…`) and sets
     /// it again at every start: its role and password are changed there, and it is not removed
     /// here.
     async fn declared(&self, ctx: &Context<'_>) -> bool {
@@ -125,7 +125,7 @@ pub(super) struct UserDetails {
 #[derive(SimpleObject)]
 pub(super) struct BootstrapConfig {
     /// Whether anything can sign in at this address. False when it is not one of
-    /// `SOVEMU_PUBLIC_URL`'s; then the rest is null, and `address` says what to add.
+    /// `SovEmu__Http__PublicUrl`'s; then the rest is null, and `address` says what to add.
     pub(super) sign_in_available: bool,
     /// The address the request reached, as `Host` named it.
     pub(super) address: String,
@@ -144,7 +144,7 @@ pub(super) struct BootstrapConfig {
     /// Where a person approves that code, in a signed-in browser.
     pub(super) verification_uri: Option<String>,
     /// The apps' password fallback: a form post of `client_id`, `username`, `password` and
-    /// `scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
+    /// `scope`, answered like the token endpoint. Null when `SovEmu__Authentication__PasswordSignIn` is off.
     pub(super) password_endpoint: Option<String>,
 }
 
@@ -158,7 +158,7 @@ pub(super) struct Viewer {
 
 #[derive(SimpleObject)]
 pub(super) struct ClientConfig {
-    /// `RTCIceServer` objects (STUN/TURN) for WebRTC, from `SOVEMU_ICE_SERVERS`.
+    /// `RTCIceServer` objects (STUN/TURN) for WebRTC, from `SovEmu__Streaming__IceServers`.
     pub(super) ice_servers: Json<serde_json::Value>,
 }
 

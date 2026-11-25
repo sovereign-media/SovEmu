@@ -111,7 +111,7 @@ export function sourceBadge(source: SettingSource): { text: string; title: strin
     case "ADMIN":
       return { text: "Changed", title: "Changed here; reset to go back to the default" };
     case "ENVIRONMENT":
-      return { text: "Environment", title: "Set by a SOVEMU_SYSTEMS__… variable on the server, which always wins" };
+      return { text: "Environment", title: "Set by a SovEmu__Systems__… variable on the server, which always wins" };
     default:
       return null;
   }

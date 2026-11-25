@@ -1,6 +1,6 @@
 // Telemetry: whether the server exports OpenTelemetry traces and metrics (pushed to a collector,
 // never served), where to, and how each signal's last export went. Read-only: it is turned on
-// with SOVEMU_OTEL_ENDPOINT.
+// with SovEmu__Telemetry__Otlp__Endpoint.
 
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, CircleDashed, CircleOff } from "lucide-react";
@@ -70,12 +70,13 @@ function Telemetry() {
                 ) : (
                   <p className="mt-1 text-sm text-slate-400">
                     To send traces and metrics to an OpenTelemetry collector over OTLP/HTTP, set{" "}
-                    <EnvLine>SOVEMU_OTEL_ENDPOINT=http://otel-collector:4318</EnvLine> and restart. The server never
-                    serves its metrics itself.
+                    <EnvLine>SovEmu__Telemetry__Otlp__Endpoint=http://otel-collector:4318</EnvLine> and restart. The
+                    server never serves its metrics itself.
                   </p>
                 )}
                 <p className="mt-3 text-xs text-muted">
-                  Logs go to the server's standard error as <code>{t.logFormat}</code> (<code>SOVEMU_LOG_FORMAT</code>
+                  Logs go to the server's standard error as <code>{t.logFormat}</code> (
+                  <code>SovEmu__Logging__Format</code>
                   ).
                 </p>
               </div>

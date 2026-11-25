@@ -12,7 +12,7 @@ pub(super) enum SettingSource {
     Sovemu,
     /// Changed by an admin.
     Admin,
-    /// Set by `SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`, which always wins (locked).
+    /// Set by `SovEmu__Systems__<id>__Options__<name>`, which always wins (locked).
     Environment,
 }
 
@@ -43,7 +43,7 @@ pub(super) struct RunAheadSetting {
     /// The most a system may run ahead.
     pub(super) max: i32,
     /// `SOVEMU` when nothing sets it (1 frame on the systems that support it); `ENVIRONMENT` is
-    /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD`, which always wins (locked).
+    /// `SovEmu__Systems__<id>__RunAhead`, which always wins (locked).
     pub(super) source: SettingSource,
     /// Whether the system can run ahead at all (the 2D systems).
     pub(super) supported: bool,
@@ -67,7 +67,7 @@ pub(super) struct EmulatorSettings {
     pub(super) categories: Vec<SettingCategory>,
     /// The emulator lists its settings only with a game loaded, and none has run yet.
     pub(super) needs_game: bool,
-    /// The admin's changes as `SOVEMU_SYSTEMS__…` lines, to move into configuration.
+    /// The admin's changes as `SovEmu__Systems__…` lines, to move into configuration.
     pub(super) environment: Vec<String>,
     pub(super) run_ahead: RunAheadSetting,
 }
@@ -167,7 +167,7 @@ impl SettingsMutation {
 
     /// Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
     /// `frames` back to SovEmu's default (1 frame on the systems that support it). Applies to the next game started. Refused while
-    /// `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` sets it.
+    /// `SovEmu__Systems__<id>__RunAhead` sets it.
     async fn set_run_ahead(
         &self,
         ctx: &Context<'_>,

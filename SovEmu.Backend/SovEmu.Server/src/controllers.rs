@@ -2,7 +2,7 @@
 //! in docs/CONTROLLERS.md; this module only stores mappings and checks their shape.
 //!
 //! A user's mapping for a model is, in order: their own (saved from any client), else the
-//! default from the environment (`SOVEMU_CONTROLLERS__<n>__ID` / `__NAME` / `__BINDINGS`), else
+//! default from the environment (`SovEmu__Controllers__<n>__Id` / `__NAME` / `__BINDINGS`), else
 //! an admin's default (saved from the admin page), else the clients' built-in defaults (no
 //! mapping at all). The environment wins over the admin page, which shows those models locked
 //! and offers its own defaults as environment lines.
@@ -82,7 +82,7 @@ pub enum MappingSource {
     User,
     /// An admin's default, from the admin page.
     Admin,
-    /// A default from `SOVEMU_CONTROLLERS__<n>__…`, which an admin cannot change (locked).
+    /// A default from `SovEmu__Controllers__<n>__…`, which an admin cannot change (locked).
     Environment,
 }
 
@@ -311,14 +311,14 @@ pub(crate) async fn environment_lines(state: &AppState) -> ApiResult<Vec<String>
         if configured.iter().any(|c| c.controller == m.controller && c.system == system) {
             continue;
         }
-        lines.push(format!("SOVEMU_CONTROLLERS__{n}__ID={}", m.controller));
+        lines.push(format!("SovEmu__Controllers__{n}__Id={}", m.controller));
         if !system.is_empty() {
-            lines.push(format!("SOVEMU_CONTROLLERS__{n}__SYSTEM={system}"));
+            lines.push(format!("SovEmu__Controllers__{n}__System={system}"));
         }
         if !m.name.is_empty() {
-            lines.push(format!("SOVEMU_CONTROLLERS__{n}__NAME={}", m.name));
+            lines.push(format!("SovEmu__Controllers__{n}__Name={}", m.name));
         }
-        lines.push(format!("SOVEMU_CONTROLLERS__{n}__BINDINGS={}", bindings_line(&m.bindings)));
+        lines.push(format!("SovEmu__Controllers__{n}__Bindings={}", bindings_line(&m.bindings)));
         n += 1;
     }
     Ok(lines)
@@ -339,7 +339,7 @@ pub(crate) async fn save_default(
     if state.config.controllers.iter().any(|c| c.controller == controller && c.system == system) {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
-            format!("{controller}'s default is set in the environment (SOVEMU_CONTROLLERS)"),
+            format!("{controller}'s default is set in the environment (SovEmu__Controllers)"),
         ));
     }
     let json = serde_json::to_string(&bindings).map_err(ApiError::internal)?;

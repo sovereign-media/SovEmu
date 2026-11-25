@@ -1,7 +1,7 @@
 // Logs: the server's recent log, its own lines and its game sessions', newest at the bottom,
 // read again every 2 s while following (Pause holds the view). Filtered by level, by one game
 // session (a session's id from its line, or the Sessions page), and by text. Only a view: the
-// lines go to stderr as ever, and SOVEMU_LOG_BUFFER_LINES=0 keeps none.
+// lines go to stderr as ever, and SovEmu__Logging__BufferLines=0 keeps none.
 
 import { useQuery } from "@tanstack/react-query";
 import { Pause, Play, ScrollText } from "lucide-react";
@@ -70,8 +70,8 @@ function Logs() {
       </div>
       {page && !page.enabled && (
         <p className="mt-4 text-sm text-slate-400">
-          The server keeps no log for this view: <code>SOVEMU_LOG_BUFFER_LINES</code> is 0. Its lines still go to its
-          standard error.
+          The server keeps no log for this view: <code>SovEmu__Logging__BufferLines</code> is 0. Its lines still go to
+          its standard error.
         </p>
       )}
       {page?.enabled &&

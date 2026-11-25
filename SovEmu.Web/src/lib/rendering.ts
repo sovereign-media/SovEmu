@@ -44,7 +44,7 @@ export function deviceState(d: GpuDevice): { tone: Tone; label: string; detail: 
 
 /** When the probe ran, as a local date and time. */
 export function probedText(probedAt: number | null): string {
-  if (probedAt == null) return "Not probed: SOVEMU_GPU is off.";
+  if (probedAt == null) return "Not probed: SovEmu__Rendering__Gpu is off.";
   const when = new Date(probedAt * 1000).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   return `Probed at startup, ${when}. A GPU added since needs a restart.`;
 }

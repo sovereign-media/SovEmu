@@ -108,7 +108,7 @@ ARG SOVEMU_BUILT=""
 # released image needs only the admin's ScreenScraper account. BuildKit secrets, never build
 # arguments: they reach this one compile as variables and stay out of the image's history and
 # layers. CI passes them (docker-bake.hcl); without them (a local build, a fork) none are built
-# in, and SOVEMU_SCREENSCRAPER_DEVID/_DEVPASSWORD can still be set at run time.
+# in, and SovEmu__Metadata__ScreenScraper__DevId/_DEVPASSWORD can still be set at run time.
 RUN --mount=type=secret,id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID \
     --mount=type=secret,id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD \
     --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
@@ -217,13 +217,13 @@ COPY --from=web /src/SovEmu.Web/dist/ /opt/sovemu/web/
 # `timezone`, or a cluster's injector such as k8tz).
 ENV TZ=UTC \
     PATH=/opt/sovemu/bin:$PATH \
-    SOVEMU_CORES_DIR=/opt/sovemu/cores \
-    SOVEMU_WEB_DIR=/opt/sovemu/web \
-    SOVEMU_ARTWORK_BUILTIN=/opt/sovemu/artwork \
-    SOVEMU_WORKER=/opt/sovemu/bin/sovemu-worker \
-    SOVEMU_DATA_DIR=/sov-data \
-    SOVEMU_ROMS_DIR=/sov-library \
-    SOVEMU_UDP_PORTS=50000-50009 \
+    SovEmu__Paths__Cores=/opt/sovemu/cores \
+    SovEmu__Paths__Web=/opt/sovemu/web \
+    SovEmu__Paths__BuiltInArtwork=/opt/sovemu/artwork \
+    SovEmu__Paths__Worker=/opt/sovemu/bin/sovemu-worker \
+    SovEmu__Paths__Data=/sov-data \
+    SovEmu__Paths__Library=/sov-library \
+    SovEmu__Streaming__Udp__Ports=50000-50009 \
     # What the NVIDIA container toolkit injects when a GPU is requested: OpenGL/EGL and Vulkan
     # (graphics) and NVENC (video), not only the default compute and utility. Ignored elsewhere.
     NVIDIA_DRIVER_CAPABILITIES=graphics,video,utility
@@ -232,7 +232,7 @@ ENV TZ=UTC \
 RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
 # The built-in artwork: backgrounds, system photos, the `sovemu` decorations (drawn by the
 # server's own code) and the ESRB's rating icons. The admin's own go at the same paths in
-# /sov-data/artwork (and SOVEMU_DECORATIONS_DIRS, SOVEMU_BACKGROUNDS_DIRS).
+# /sov-data/artwork (and SovEmu__Decorations__Directories, SovEmu__Appearance__BackgroundDirectories).
 RUN sovemu-server --write-artwork /opt/sovemu/artwork
 
 USER sovemu

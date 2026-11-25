@@ -1,6 +1,6 @@
 // BIOS, for admins: the BIOS check with each file's good dumps' MD5s (copyable) and each
 // system's folder in full on the server, in the same sortable, searchable table as `/bios/`.
-// Read-only: files are added on the server (`SOVEMU_BIOS_DIR`). `?id=psx` starts the search on
+// Read-only: files are added on the server (`SovEmu__Paths__Bios`). `?id=psx` starts the search on
 // one system. Everyone else has `/bios/`.
 
 import { useQuery } from "@tanstack/react-query";
@@ -38,7 +38,7 @@ function Bios() {
         <p className="mt-3 text-sm">
           BIOS folder: {dir.data ? <EnvLine>{dir.data}</EnvLine> : "…"}{" "}
           <span className="text-xs text-muted">
-            (<code>SOVEMU_BIOS_DIR</code>; <code>bios/</code> in the data folder by default)
+            (<code>SovEmu__Paths__Bios</code>; <code>bios/</code> in the data folder by default)
           </span>
         </p>
       </section>

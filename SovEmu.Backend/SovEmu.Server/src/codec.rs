@@ -1,6 +1,6 @@
 //! Which video codec a client's session is sent, decided when it offers (sovereign-media/SovEmu#184).
 //!
-//! `SOVEMU_VIDEO_CODEC` names a codec for everyone, or leaves it to `auto`: then each codec this
+//! `SovEmu__Streaming__Video__Codec` names a codec for everyone, or leaves it to `auto`: then each codec this
 //! server can encode and the client can decode is priced, in milliseconds a frame, and the
 //! cheapest is sent.
 //!
@@ -41,9 +41,9 @@ const ENCODED: [VideoCodec; 2] = [VideoCodec::H264, VideoCodec::Vp8];
 /// What the decision reads.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Inputs<'a> {
-    /// `SOVEMU_VIDEO_CODEC`: `auto`, `vp8` or `h264`.
+    /// `SovEmu__Streaming__Video__Codec`: `auto`, `vp8` or `h264`.
     pub(crate) setting: &'a str,
-    /// `SOVEMU_VIDEO_ENCODER`: `auto`, `vaapi`, `nvenc` or `software`.
+    /// `SovEmu__Streaming__Video__Encoder`: `auto`, `vaapi`, `nvenc` or `software`.
     pub(crate) encoder: &'a str,
     pub(crate) test: &'a EncoderTest,
     /// What the client sent with its offer, if it sent a document.
@@ -115,7 +115,7 @@ fn offered(sdp: &str, codec: VideoCodec) -> bool {
 }
 
 /// The encoder a session would get for `codec`, if one works: VP8 is libvpx's; H.264 follows
-/// `SOVEMU_VIDEO_ENCODER` as the worker does (the GPU's, falling back to x264).
+/// `SovEmu__Streaming__Video__Encoder` as the worker does (the GPU's, falling back to x264).
 fn session_encoder<'a>(
     test: &'a EncoderTest,
     codec: VideoCodec,
@@ -165,7 +165,10 @@ fn declared_decode_ms(decoder: &VideoDecoder, size: (u32, u32)) -> f64 {
 pub(crate) fn choose(i: &Inputs<'_>) -> Choice {
     let setting = i.setting.trim();
     if setting != "auto" && !setting.is_empty() {
-        return Choice { codec: None, reason: format!("SOVEMU_VIDEO_CODEC={setting}") };
+        return Choice {
+            codec: None,
+            reason: format!("SovEmu__Streaming__Video__Codec={setting}"),
+        };
     }
     let vp8 = |reason: &str| Choice { codec: Some(VideoCodec::Vp8), reason: reason.to_owned() };
     let Some(capabilities) = i.capabilities else {
@@ -331,7 +334,7 @@ mod tests {
         for setting in ["vp8", "h264"] {
             let choice = choose_for(setting, &intel_server(), Some(&tv), &[]);
             assert_eq!(choice.codec, None, "the worker's own --video-codec is that setting");
-            assert_eq!(choice.reason, format!("SOVEMU_VIDEO_CODEC={setting}"));
+            assert_eq!(choice.reason, format!("SovEmu__Streaming__Video__Codec={setting}"));
         }
     }
 
@@ -417,7 +420,7 @@ mod tests {
         let choice = choose_for("auto", &vp8_server, Some(&phone), &[]);
         assert_eq!(choice.codec, Some(VideoCodec::Vp8));
         assert!(!choice.reason.contains("h264"), "{}", choice.reason);
-        // SOVEMU_VIDEO_ENCODER=software prices H.264 as x264 even where the GPU works.
+        // SovEmu__Streaming__Video__Encoder=software prices H.264 as x264 even where the GPU works.
         let measured: Vec<(String, f64)> = Vec::new();
         let choice = choose(&Inputs {
             setting: "auto",

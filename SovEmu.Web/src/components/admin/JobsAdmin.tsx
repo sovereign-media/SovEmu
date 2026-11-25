@@ -1,6 +1,6 @@
 // Background jobs: what the server does on its own (scans, mirror syncs, game information,
 // database upkeep), when each runs next, how each last went, and a button to run one now. The
-// schedules are settings (`SOVEMU_*_INTERVAL_MINUTES`); the button is a shortcut.
+// schedules are settings (`SovEmu__…IntervalMinutes`); the button is a shortcut.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, Clock, LoaderCircle, Play } from "lucide-react";
@@ -37,9 +37,10 @@ function Jobs() {
         title="Background jobs"
         description={
           <>
-            What the server does on its own. Intervals are set on the server (<code>SOVEMU_SCAN_INTERVAL_MINUTES</code>,{" "}
-            <code>SOVEMU_MIRROR_INTERVAL_MINUTES</code>, <code>SOVEMU_MAINTENANCE_INTERVAL_MINUTES</code>,{" "}
-            <code>SOVEMU_BACKUP_INTERVAL_HOURS</code>); 0 turns a job's schedule off.
+            What the server does on its own. Intervals are set on the server (
+            <code>SovEmu__Library__ScanIntervalMinutes</code>, <code>SovEmu__Library__Mirror__IntervalMinutes</code>,{" "}
+            <code>SovEmu__Jobs__MaintenanceIntervalMinutes</code>, <code>SovEmu__Backups__IntervalHours</code>); 0 turns
+            a job's schedule off.
           </>
         }
       >

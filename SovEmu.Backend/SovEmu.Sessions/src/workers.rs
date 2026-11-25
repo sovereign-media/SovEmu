@@ -54,8 +54,8 @@ pub struct WorkerConfig {
     pub video_min_kbps: u32,
     pub video_max_kbps: u32,
     pub audio_kbps: u32,
-    /// `--video-codec` and `--video-encoder` for workers (`SOVEMU_VIDEO_CODEC`,
-    /// `SOVEMU_VIDEO_ENCODER`).
+    /// `--video-codec` and `--video-encoder` for workers (`SovEmu__Streaming__Video__Codec`,
+    /// `SovEmu__Streaming__Video__Encoder`).
     pub video_codec: String,
     pub video_encoder: String,
     /// How long a worker may take to load its core and game. Generous by default: a disc image
@@ -68,24 +68,24 @@ pub struct WorkerConfig {
     pub fast_forward: u32,
     pub keyframe_interval: u32,
     /// Testing only: the share (percent) of video packets workers throw away
-    /// (`SOVEMU_DEBUG_DROP_VIDEO_PERCENT`); 0 for none.
+    /// (`SovEmu__Streaming__Debug__VideoDropPercent`); 0 for none.
     pub drop_video_percent: f64,
     /// Testing only: milliseconds workers hold each video packet
-    /// (`SOVEMU_DEBUG_DELAY_VIDEO_MS`); 0 for none.
+    /// (`SovEmu__Streaming__Debug__VideoDelayMilliseconds`); 0 for none.
     pub delay_video_ms: u32,
     /// Testing only: milliseconds of every 10 seconds in which workers drop all video packets
-    /// (`SOVEMU_DEBUG_DROP_VIDEO_BURST_MS`); 0 for none.
+    /// (`SovEmu__Streaming__Debug__VideoDropBurstMilliseconds`); 0 for none.
     pub drop_video_burst_ms: u32,
     /// Testing only: the most video a worker's link carries, kbit/s
-    /// (`SOVEMU_DEBUG_LIMIT_VIDEO_KBPS`); 0 for no limit.
+    /// (`SovEmu__Streaming__Debug__VideoLimitKbps`); 0 for no limit.
     pub limit_video_kbps: u32,
     /// Testing only: the most workers vary each video packet's delay by, milliseconds
-    /// (`SOVEMU_DEBUG_JITTER_VIDEO_MS`); 0 for none.
+    /// (`SovEmu__Streaming__Debug__VideoJitterMilliseconds`); 0 for none.
     pub jitter_video_ms: u32,
     /// Milliseconds a client is silent before its return is answered with a keyframe
-    /// (`SOVEMU_DROPOUT_KEYFRAME_MS`); 0 for never.
+    /// (`SovEmu__Streaming__Video__DropoutKeyframeMilliseconds`); 0 for never.
     pub dropout_keyframe_ms: u32,
-    /// The DSCP value workers mark the stream's packets with (`SOVEMU_UDP_DSCP`); 0 for none.
+    /// The DSCP value workers mark the stream's packets with (`SovEmu__Streaming__Udp__Dscp`); 0 for none.
     pub udp_dscp: u8,
     /// Seconds between a worker's `session health` log lines (0: none).
     pub health_interval_secs: u32,

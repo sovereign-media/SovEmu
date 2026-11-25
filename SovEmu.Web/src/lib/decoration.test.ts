@@ -23,6 +23,6 @@ describe("decorations", () => {
 
 describe("decoration settings", () => {
   it("are written as the line that sets them", () => {
-    expect(systemDecorationEnv("snes", "arcade")).toBe("SOVEMU_SYSTEMS__snes__DECORATION=arcade");
+    expect(systemDecorationEnv("snes", "arcade")).toBe("SovEmu__Systems__snes__Decoration=arcade");
   });
 });

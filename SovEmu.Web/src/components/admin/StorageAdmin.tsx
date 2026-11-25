@@ -134,7 +134,7 @@ function Storage() {
           <AdminSection title="Game cache">
             <p className="mt-2 text-sm text-slate-400">
               {r.cacheLimitBytes != null
-                ? `In cache mode, games and box art are copied from the library as they are used, up to ${formatBytes(r.cacheLimitBytes)} (SOVEMU_CACHE_GB), least recently used out. `
+                ? `In cache mode, games and box art are copied from the library as they are used, up to ${formatBytes(r.cacheLimitBytes)} (SovEmu__Library__Cache__MaxGigabytes), least recently used out. `
                 : "The library is not in cache mode, so nothing new is copied. "}
               It holds {formatBytes(cache?.bytes ?? 0)} now. Clearing it frees the space; games being played keep their
               copies, and the rest are copied again when next played.

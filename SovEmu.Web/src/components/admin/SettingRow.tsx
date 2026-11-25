@@ -9,7 +9,6 @@ import { cn } from "../ui/cn";
 const SOURCE_TONE: Record<ConfigSetting["source"], string> = {
   DEFAULT: "bg-white/5 text-slate-500",
   ENVIRONMENT: "bg-accent/20 text-accent",
-  FILE: "bg-violet-500/20 text-violet-200",
   COMMAND_LINE: "bg-sky-500/20 text-sky-200",
 };
 

@@ -1,7 +1,7 @@
 //! Game information from metadata services, fetched by a background job and kept in
 //! `game_metadata`.
 //!
-//! The sources are [`Provider`]s, asked in the order `SOVEMU_METADATA_SOURCES` gives
+//! The sources are [`Provider`]s, asked in the order `SovEmu__Metadata__Sources` gives
 //! (`fbneo,screenscraper` by default): FinalBurn Neo's own DATs name arcade and Neo Geo sets,
 //! ScreenScraper matches every other game by MD5, size and file name. An earlier source's field
 //! wins, and a game is asked about until every field a game page shows is filled
@@ -195,11 +195,11 @@ pub struct Metadata {
     pub artwork: Mutex<artwork::ArtworkStatus>,
     /// Box art and video downloads at once (within the sources' own limits).
     pub artwork_downloads: usize,
-    /// Box art is asked for at most this many pixels wide and high (`SOVEMU_ARTWORK_MAX_PX`).
+    /// Box art is asked for at most this many pixels wide and high (`SovEmu__Artwork__MaxPixels`).
     pub artwork_max_px: Option<u32>,
-    /// Box art is kept as lossy WebP at this quality (`SOVEMU_ARTWORK_WEBP_QUALITY`).
+    /// Box art is kept as lossy WebP at this quality (`SovEmu__Artwork__WebpQuality`).
     pub artwork_quality: f32,
-    /// Whether gameplay videos are downloaded (`SOVEMU_METADATA_VIDEOS`).
+    /// Whether gameplay videos are downloaded (`SovEmu__Metadata__Videos`).
     pub videos: bool,
     http: reqwest::Client,
     /// When the running job started, for its ETA.
@@ -354,7 +354,7 @@ pub(crate) struct Scope {
 
 impl Scope {
     /// The lookup that follows a scan or a schedule: games without information, and games
-    /// whose information is older than `SOVEMU_METADATA_REFRESH_DAYS` (when set).
+    /// whose information is older than `SovEmu__Metadata__RefreshDays` (when set).
     pub(crate) fn automatic(config: &crate::Config) -> Self {
         Self {
             stale_after_days: (config.metadata_refresh_days > 0)

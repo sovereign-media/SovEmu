@@ -13,14 +13,14 @@ const backups = (over: Partial<Backups>): Backups => ({
 
 describe("backups", () => {
   it("says when backups are made", () => {
-    expect(scheduleText(backups({}))).toBe("Only when you back up now: SOVEMU_BACKUP_INTERVAL_HOURS is 0.");
+    expect(scheduleText(backups({}))).toBe("Only when you back up now: SovEmu__Backups__IntervalHours is 0.");
     expect(scheduleText(backups({ intervalHours: 24 }))).toBe("Every 24 hours, keeping the newest 7.");
     expect(scheduleText(backups({ intervalHours: 1, keep: 0 }))).toBe("Every hour, keeping every one.");
   });
 
   it("names the setting that restores a backup", () => {
     expect(restoreLine(backups({ dir: "/backups/" }), "sovemu-backup-20261122-163005.zip")).toBe(
-      "SOVEMU_RESTORE_FROM=/backups/sovemu-backup-20261122-163005.zip",
+      "SovEmu__Backups__RestoreFrom=/backups/sovemu-backup-20261122-163005.zip",
     );
   });
 });

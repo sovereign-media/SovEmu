@@ -1,4 +1,4 @@
-//! The session's video encoder: H.264 or VP8, whichever the client and `SOVEMU_VIDEO_CODEC`
+//! The session's video encoder: H.264 or VP8, whichever the client and `SovEmu__Streaming__Video__Codec`
 //! agree on.
 //!
 //! H.264 is preferred: every client decodes it in hardware (a TV's or a phone's decoder is

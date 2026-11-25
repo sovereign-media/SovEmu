@@ -311,8 +311,8 @@ function Resources() {
         <p className="mt-4 flex items-start gap-2 text-sm text-slate-400">
           <Info className="mt-0.5 size-4 shrink-0" />
           <span>
-            Read every {r.sampleSeconds || "—"} s (<code>SOVEMU_RESOURCE_SAMPLE_SECONDS</code>); a minute's average and
-            peak are kept for <code>SOVEMU_RESOURCE_HISTORY_DAYS</code> days.
+            Read every {r.sampleSeconds || "—"} s (<code>SovEmu__SystemResources__SampleSeconds</code>); a minute's
+            average and peak are kept for <code>SovEmu__SystemResources__RetentionDays</code> days.
           </span>
         </p>
       </AdminSection>

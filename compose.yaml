@@ -1,4 +1,4 @@
-# Run SovEmu locally: http://localhost:8080. Set SOVEMU_ADMIN_USERNAME and SOVEMU_ADMIN_PASSWORD
+# Run SovEmu locally: http://localhost:8080. Set SovEmu__Authentication__AdminUsername and SovEmu__Authentication__AdminPassword
 # in .env to create the admin; without them the first visit asks for one.
 #
 #   scripts/fetch-free-roms.sh        # free homebrew into data/roms (or add your own ROMs there)
@@ -9,7 +9,7 @@
 # system: nes/, snes/, …), is mounted read-only at /sov-library: SovEmu never writes to it.
 #
 # Each game session streams WebRTC on its own UDP port (50000-50009). Browsers send media to
-# SOVEMU_ADVERTISE_IP, which a container cannot discover for itself: 127.0.0.1 works for a
+# SovEmu__Streaming__AdvertiseAddress, which a container cannot discover for itself: 127.0.0.1 works for a
 # browser on this machine; use the host's LAN address for other devices.
 services:
   sovemu:
@@ -28,7 +28,7 @@ services:
       - path: .env
         required: false
     environment:
-      SOVEMU_ADVERTISE_IP: ${SOVEMU_ADVERTISE_IP:-127.0.0.1}
+      SovEmu__Streaming__AdvertiseAddress: ${SovEmu__Streaming__AdvertiseAddress:-127.0.0.1}
       # Log lines in your own time (an IANA name, America/Chicago); UTC without one.
       TZ: ${TZ:-UTC}
     ports:
@@ -41,7 +41,7 @@ services:
     # it die with a bus error.
     shm_size: 1gb
     restart: unless-stopped
-    # Sessions write their saves on SIGTERM; give them SOVEMU_WORKER_STOP_TIMEOUT and more.
+    # Sessions write their saves on SIGTERM; give them SovEmu__Sessions__StopTimeoutSeconds and more.
     stop_grace_period: 30s
     # Whether the server answers /health. The slim image has no wget or curl, so bash makes the
     # request itself.

@@ -1,6 +1,6 @@
 //! BIOS files: which each system uses, where they are, and whether they are there.
 //!
-//! They live on the server under `SOVEMU_BIOS_DIR` (`<data>/bios`), in any layout: one folder
+//! They live on the server under `SovEmu__Paths__Bios` (`<data>/bios`), in any layout: one folder
 //! per system as SovEmu recommends (`bios/psx/scph5501.bin`, `bios/dreamcast/dc_boot.bin`),
 //! Batocera's (`bios/scph5501.bin`, `bios/dc/dc_boot.bin`), or a read-only share as it is. The
 //! whole folder is indexed, and each file a core reads is chosen by ([`choose`]):

@@ -8,8 +8,8 @@ pub(crate) use sovemu_identity::{Credentials, NewUser, Role, User};
 use crate::error::{ApiError, ApiResult};
 use crate::{AppState, Config};
 
-/// The accounts the environment declares (`SOVEMU_ADMIN_USERNAME` with its password, and
-/// `SOVEMU_USERS__<n>__…`): reconciled at every start, so they are changed there, not here.
+/// The accounts the environment declares (`SovEmu__Authentication__AdminUsername` with its password, and
+/// `SovEmu__Users__<n>__…`): reconciled at every start, so they are changed there, not here.
 pub(crate) fn declared_usernames(config: &Config) -> Vec<String> {
     let admin = config.admin_username.clone().filter(|_| config.admin_password.is_some());
     admin.into_iter().chain(config.users.iter().map(|u| u.username.clone())).collect()

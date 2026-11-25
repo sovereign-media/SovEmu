@@ -24,7 +24,7 @@ Do not reimplement any of that here.
 | `throttle` | Failed sign-ins per username and per client address |
 | `sessions` | The browser's sign-in at the server: an HttpOnly cookie, only its SHA-256 stored (`auth_sessions`) |
 | `store` | `SqliteStorage`, oauth-as's `Storage` over SQLite (the `oauth_*` tables), plus `revoke_subject` (sign a user out everywhere). Tested with oauth-as's conformance harness |
-| `keys` | The ES256 key ID tokens are signed with (oauth-as's `EcdsaP256Key`), derived from `SOVEMU_TOKEN_KEY` |
+| `keys` | The ES256 key ID tokens are signed with (oauth-as's `EcdsaP256Key`), derived from `SovEmu__Authentication__TokenSigningKey` |
 | `provider` | What SovEmu adds around oauth-as (below) |
 
 What `provider` adds:
@@ -41,8 +41,8 @@ What `provider` adds:
 - **`POST /oauth/password`:** the apps' password fallback. OAuth 2.1 has no password grant, so
   this route checks the password and then runs an ordinary PKCE code exchange with oauth-as on the
   app's behalf. The tokens are oauth-as's own, and they refresh and revoke like any others.
-  `SOVEMU_PASSWORD_SIGN_IN=false` turns it off.
-- **One oauth-as server per address in `SOVEMU_PUBLIC_URL`** (an issuer is fixed per server), all
+  `SovEmu__Authentication__PasswordSignIn=false` turns it off.
+- **One oauth-as server per address in `SovEmu__Http__PublicUrl`** (an issuer is fixed per server), all
   sharing one store. A request is answered by the server for its `Host`.
 
 ## How apps find it

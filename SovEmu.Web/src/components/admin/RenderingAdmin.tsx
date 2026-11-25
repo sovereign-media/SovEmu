@@ -1,5 +1,5 @@
 // Rendering: which GPU 3D systems render on, every device the startup probe tried and why each
-// was or wasn't used, and how each 3D system renders. Read-only: the choice is `SOVEMU_GPU`.
+// was or wasn't used, and how each 3D system renders. Read-only: the choice is `SovEmu__Rendering__Gpu`.
 
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, CircleOff } from "lucide-react";
@@ -52,7 +52,7 @@ function Rendering() {
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
               <dt className="text-muted">Setting</dt>
               <dd>
-                <EnvLine>SOVEMU_GPU={gpu.data.setting || "auto"}</EnvLine>
+                <EnvLine>SovEmu__Rendering__Gpu={gpu.data.setting || "auto"}</EnvLine>
                 <span className="ml-2 text-xs text-muted">
                   <code>auto</code>, <code>software</code>, <code>off</code> or a render node
                 </span>

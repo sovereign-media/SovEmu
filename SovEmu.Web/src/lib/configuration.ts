@@ -16,7 +16,6 @@ export const GROUP_LABELS: Record<ConfigGroup, string> = {
 export const SOURCE_LABELS: Record<ConfigSetting["source"], string> = {
   DEFAULT: "default",
   ENVIRONMENT: "environment",
-  FILE: "file",
   COMMAND_LINE: "command line",
 };
 

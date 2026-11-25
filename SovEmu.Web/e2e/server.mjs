@@ -47,10 +47,10 @@ const child = spawn(
     stdio: "inherit",
     env: {
       ...process.env,
-      SOVEMU_ADMIN_USERNAME: process.env.SOVEMU_E2E_USERNAME ?? "admin",
-      SOVEMU_ADMIN_PASSWORD: process.env.SOVEMU_E2E_PASSWORD ?? "e2e-password",
+      SovEmu__Authentication__AdminUsername: process.env.SOVEMU_E2E_USERNAME ?? "admin",
+      SovEmu__Authentication__AdminPassword: process.env.SOVEMU_E2E_PASSWORD ?? "e2e-password",
       // No lookups against outside services from a test run.
-      SOVEMU_METADATA_AUTO: "false",
+      SovEmu__Metadata__AutoLookup: "false",
       RUST_LOG: process.env.RUST_LOG ?? "warn",
     },
   },

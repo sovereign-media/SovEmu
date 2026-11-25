@@ -107,7 +107,7 @@ fn split_media<S: serde::Serializer>(media: &str, s: S) -> Result<S::Ok, S::Erro
     seq.end()
 }
 
-/// The installed core for a system, if any: the one `SOVEMU_SYSTEMS__<id>__CORE` names, or
+/// The installed core for a system, if any: the one `SovEmu__Systems__<id>__Core` names, or
 /// else the first of SovEmu's choices that is installed.
 pub(crate) fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
     let chosen = state.config.systems.get(system.id).and_then(|s| s.core.as_deref());
@@ -120,7 +120,7 @@ pub(crate) fn find_core(state: &AppState, system: &System) -> Option<PathBuf> {
     })
 }
 
-/// Whether a system is offered (`SOVEMU_SYSTEMS__<id>__ENABLED=false` hides it).
+/// Whether a system is offered (`SovEmu__Systems__<id>__Enabled=false` hides it).
 pub(crate) fn enabled(state: &AppState, id: &str) -> bool {
     state.config.systems.get(id).and_then(|s| s.enabled).unwrap_or(true)
 }
@@ -214,7 +214,7 @@ async fn fetch_game(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> 
     Ok(game)
 }
 
-/// One game's row. A game of a hidden system (`SOVEMU_SYSTEMS__<id>__ENABLED=false`) is not
+/// One game's row. A game of a hidden system (`SovEmu__Systems__<id>__Enabled=false`) is not
 /// found, as its system is not: by id as by list.
 async fn fetch_row(state: &AppState, user_id: i64, id: i64) -> ApiResult<Game> {
     sqlx::query_as::<_, Game>(&games_sql(ONE_GAME))
@@ -316,7 +316,7 @@ async fn launch(
                 format!(
                     "{} needs 3D rendering, which is unavailable on this server ({})",
                     system.name,
-                    state.gpu.note.as_deref().unwrap_or("SOVEMU_GPU")
+                    state.gpu.note.as_deref().unwrap_or("SovEmu__Rendering__Gpu")
                 ),
             ),
         ));

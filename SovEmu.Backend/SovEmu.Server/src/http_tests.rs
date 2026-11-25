@@ -1798,7 +1798,7 @@ async fn admins_read_and_follow_the_log() {
             enabled lines { level target message session } cursor } }";
     let mut h = Harness::new("logs", false).await;
     h.sign_up_admin().await;
-    // Off (`SOVEMU_LOG_BUFFER_LINES=0`, and in this harness): the page says so.
+    // Off (`SovEmu__Logging__BufferLines=0`, and in this harness): the page says so.
     let off = h.ok(LOGS, json!({})).await["logs"].clone();
     assert_eq!((off["enabled"].clone(), off["lines"].clone()), (json!(false), json!([])));
 
@@ -1893,8 +1893,8 @@ async fn system_overrides_hide_systems_and_choose_cores() {
     h.sign_up_admin().await;
     let mut config = (*h.state.config).clone();
     config.systems = crate::structured::systems(&[
-        ("SOVEMU_SYSTEMS__gba__ENABLED".to_owned(), "false".to_owned()),
-        ("SOVEMU_SYSTEMS__nes__CORE".to_owned(), "nestopia".to_owned()),
+        ("SovEmu__Systems__gba__Enabled".to_owned(), "false".to_owned()),
+        ("SovEmu__Systems__nes__Core".to_owned(), "nestopia".to_owned()),
     ])
     .unwrap();
     h.state.config = std::sync::Arc::new(config);
@@ -1952,7 +1952,7 @@ async fn admins_change_emulator_settings() {
     );
     assert_eq!(
         body["environment"],
-        json!(["SOVEMU_SYSTEMS__nes__OPTIONS__sovemu_test_pattern=solid"])
+        json!(["SovEmu__Systems__nes__Options__sovemu_test_pattern=solid"])
     );
     assert_eq!(h.err(change, to(json!("plaid"))).await.0, "BAD_REQUEST");
     let unknown = json!({"s": "nes", "c": [{"key": "no_such_option", "value": "x"}]});
@@ -1963,7 +1963,7 @@ async fn admins_change_emulator_settings() {
     // The environment wins and is locked.
     let mut config = (*h.state.config).clone();
     config.systems = crate::structured::systems(&[(
-        "SOVEMU_SYSTEMS__nes__OPTIONS__sovemu_test_pattern".to_owned(),
+        "SovEmu__Systems__nes__Options__sovemu_test_pattern".to_owned(),
         "solid".to_owned(),
     )])
     .unwrap();
@@ -1997,13 +1997,13 @@ async fn run_ahead_is_on_by_default_admins_change_it_and_the_environment_locks_i
     // back to the default.
     let body = h.ok(set, json!({"s": "nes", "f": 2})).await["setRunAhead"].clone();
     assert_eq!(body["runAhead"], json!({"frames": 2, "source": "ADMIN"}));
-    assert_eq!(body["environment"], json!(["SOVEMU_SYSTEMS__nes__RUN_AHEAD=2"]));
+    assert_eq!(body["environment"], json!(["SovEmu__Systems__nes__RunAhead=2"]));
     assert_eq!(h.err(set, json!({"s": "nes", "f": 5})).await.0, "BAD_REQUEST");
     assert_eq!(h.err(set, json!({"s": "nes", "f": -1})).await.0, "BAD_REQUEST");
     assert_eq!(h.err(set, json!({"s": "n64", "f": 1})).await.0, "BAD_REQUEST");
     let body = h.ok(set, json!({"s": "nes", "f": 0})).await["setRunAhead"].clone();
     assert_eq!(body["runAhead"], json!({"frames": 0, "source": "ADMIN"}));
-    assert_eq!(body["environment"], json!(["SOVEMU_SYSTEMS__nes__RUN_AHEAD=0"]));
+    assert_eq!(body["environment"], json!(["SovEmu__Systems__nes__RunAhead=0"]));
     let body = h.ok(set, json!({"s": "nes", "f": null})).await["setRunAhead"].clone();
     assert_eq!(body["runAhead"], json!({"frames": 1, "source": "SOVEMU"}));
     assert_eq!(body["environment"], json!([]));
@@ -2011,7 +2011,7 @@ async fn run_ahead_is_on_by_default_admins_change_it_and_the_environment_locks_i
     // The environment wins and is locked.
     let mut config = (*h.state.config).clone();
     config.systems = crate::structured::systems(&[(
-        "SOVEMU_SYSTEMS__nes__RUN_AHEAD".to_owned(),
+        "SovEmu__Systems__nes__RunAhead".to_owned(),
         "3".to_owned(),
     )])
     .unwrap();
@@ -2118,8 +2118,8 @@ async fn controller_defaults_come_from_the_environment_then_the_admin() {
     h.sign_up_admin().await;
     let mut config = (*h.state.config).clone();
     config.controllers = crate::structured::controllers(&[
-        ("SOVEMU_CONTROLLERS__0__ID".to_owned(), "dualsense".to_owned()),
-        ("SOVEMU_CONTROLLERS__0__BINDINGS".to_owned(), "south:A,east:B".to_owned()),
+        ("SovEmu__Controllers__0__Id".to_owned(), "dualsense".to_owned()),
+        ("SovEmu__Controllers__0__Bindings".to_owned(), "south:A,east:B".to_owned()),
     ])
     .unwrap();
     h.state.config = std::sync::Arc::new(config);
@@ -2141,9 +2141,9 @@ async fn controller_defaults_come_from_the_environment_then_the_admin() {
     assert_eq!(
         defaults["environment"],
         json!([
-            "SOVEMU_CONTROLLERS__1__ID=xbox",
-            "SOVEMU_CONTROLLERS__1__NAME=Xbox",
-            "SOVEMU_CONTROLLERS__1__BINDINGS=south:A",
+            "SovEmu__Controllers__1__Id=xbox",
+            "SovEmu__Controllers__1__Name=Xbox",
+            "SovEmu__Controllers__1__Bindings=south:A",
         ]),
         "numbered after the environment's own"
     );
@@ -2222,7 +2222,7 @@ async fn controller_mappings_are_kept_per_system_too() {
     assert_eq!(h.err(LIST, json!({"s": "atari"})).await.0, "BAD_REQUEST");
     let lines = h.ok(DEFAULTS, json!({})).await["controllerDefaults"]["environment"].clone();
     assert!(
-        lines.as_array().unwrap().contains(&json!("SOVEMU_CONTROLLERS__1__SYSTEM=megadrive")),
+        lines.as_array().unwrap().contains(&json!("SovEmu__Controllers__1__System=megadrive")),
         "{lines}"
     );
 }
@@ -2361,7 +2361,11 @@ async fn admins_see_how_the_server_is_reached() {
             {"urls": ["turn:t.example"], "hasCredential": true},
         ])
     );
-    let ice = n["settings"].as_array().unwrap().iter().find(|s| s["name"] == "SOVEMU_ICE_SERVERS");
+    let ice = n["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "SovEmu__Streaming__IceServers");
     assert!(!ice.unwrap()["value"].as_str().unwrap().contains("pa55"), "credentials masked");
 }
 
@@ -2405,7 +2409,10 @@ async fn admins_see_whether_telemetry_is_exported() {
     assert_eq!(t["traces"]["lastAt"], Value::Null, "nothing exported");
     let names: Vec<&str> =
         t["settings"].as_array().unwrap().iter().map(|s| s["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&"SOVEMU_OTEL_ENDPOINT") && names.contains(&"SOVEMU_LOG_FORMAT"));
+    assert!(
+        names.contains(&"SovEmu__Telemetry__Otlp__Endpoint")
+            && names.contains(&"SovEmu__Logging__Format")
+    );
 }
 
 #[tokio::test]
@@ -2585,7 +2592,7 @@ async fn the_environment_locks_the_background() {
     let settings = h.ok("{ appearance { chosen fromEnvironment environment } }", json!({})).await["appearance"].clone();
     assert_eq!(
         settings,
-        json!({"chosen": "screens", "fromEnvironment": true, "environment": "SOVEMU_BACKGROUND=screens"})
+        json!({"chosen": "screens", "fromEnvironment": true, "environment": "SovEmu__Appearance__Background=screens"})
     );
     assert_eq!(h.ok("{ background { id } }", json!({})).await["background"]["id"], "screens");
     assert_eq!(h.err("mutation { setBackground(id: \"dither\") }", json!({})).await.0, "CONFLICT");
@@ -3016,8 +3023,11 @@ async fn admins_see_the_streaming_settings_and_test_a_connection() {
         .iter()
         .map(|s| s["name"].as_str().unwrap())
         .collect();
-    assert!(names.contains(&"SOVEMU_VIDEO_KBPS") && names.contains(&"SOVEMU_REWIND_SECONDS"));
-    assert!(!names.contains(&"SOVEMU_HTTP"), "a network setting, on the Network page");
+    assert!(
+        names.contains(&"SovEmu__Streaming__Video__Kbps")
+            && names.contains(&"SovEmu__Sessions__Rewind__Seconds")
+    );
+    assert!(!names.contains(&"SovEmu__Http__Listen"), "a network setting, on the Network page");
 
     // The startup encoder test ran before the server took a request: every encoder a session
     // could use is listed, as it would run, working or with why not.
@@ -3083,7 +3093,7 @@ async fn a_hidden_systems_games_cannot_be_reached_by_id() {
     let gba = h.games("gba").await[0]["id"].as_i64().unwrap();
     let mut config = (*h.state.config).clone();
     config.systems = crate::structured::systems(&[(
-        "SOVEMU_SYSTEMS__gba__ENABLED".to_owned(),
+        "SovEmu__Systems__gba__Enabled".to_owned(),
         "false".to_owned(),
     )])
     .unwrap();
@@ -3771,11 +3781,11 @@ async fn admins_keep_shared_collections_that_everyone_sees_but_only_admins_chang
     h.login("admin", "password123").await.unwrap();
     let mut config = (*h.state.config).clone();
     config.collections = crate::structured::collections(&[
-        ("SOVEMU_COLLECTIONS__0__NAME".to_owned(), "Family night".to_owned()),
-        ("SOVEMU_COLLECTIONS__0__GAMES__0".to_owned(), "gba/Other.gba".to_owned()),
-        ("SOVEMU_COLLECTIONS__0__GAMES__1".to_owned(), "nes/Test Game (USA).nes".to_owned()),
-        ("SOVEMU_COLLECTIONS__0__GAMES__2".to_owned(), "nes/Not Here.nes".to_owned()),
-        ("SOVEMU_COLLECTIONS__1__NAME".to_owned(), "Racing".to_owned()),
+        ("SovEmu__Collections__0__Name".to_owned(), "Family night".to_owned()),
+        ("SovEmu__Collections__0__Games__0".to_owned(), "gba/Other.gba".to_owned()),
+        ("SovEmu__Collections__0__Games__1".to_owned(), "nes/Test Game (USA).nes".to_owned()),
+        ("SovEmu__Collections__0__Games__2".to_owned(), "nes/Not Here.nes".to_owned()),
+        ("SovEmu__Collections__1__Name".to_owned(), "Racing".to_owned()),
     ])
     .unwrap();
     h.state.config = std::sync::Arc::new(config.clone());

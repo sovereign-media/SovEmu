@@ -1,8 +1,8 @@
 // Backups: the database (accounts, settings, mappings, collections, history), the signing keys
 // and every save, one zip file each, kept in the backup folder. "Back up now" runs the Backup job
-// (its schedule is SOVEMU_BACKUP_INTERVAL_HOURS); each backup downloads through a signed URL for
+// (its schedule is SovEmu__Backups__IntervalHours); each backup downloads through a signed URL for
 // this admin only, since it holds password hashes and keys. A backup is restored only at
-// startup, from SOVEMU_RESTORE_FROM: the page says how, with the line for each backup.
+// startup, from SovEmu__Backups__RestoreFrom: the page says how, with the line for each backup.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { DatabaseBackup, Download, History, Lock, Trash2 } from "lucide-react";
@@ -116,8 +116,8 @@ function Backups() {
         )}
         <ol className="mt-4 grid list-decimal gap-2 pl-5 text-sm text-slate-300">
           <li>
-            Set <EnvLine>SOVEMU_RESTORE_FROM</EnvLine> to the backup's path, as the server sees it ("Copy restore line"
-            gives it for a backup here; a downloaded one can be put anywhere the server can read).
+            Set <EnvLine>SovEmu__Backups__RestoreFrom</EnvLine> to the backup's path, as the server sees it ("Copy
+            restore line" gives it for a backup here; a downloaded one can be put anywhere the server can read).
           </li>
           <li>
             Restart the server. Before its database opens it moves the database, the signing keys and the saves into{" "}

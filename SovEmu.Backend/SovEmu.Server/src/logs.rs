@@ -1,4 +1,4 @@
-//! The server's recent log, for the admin Logs page: the last `SOVEMU_LOG_BUFFER_LINES` lines
+//! The server's recent log, for the admin Logs page: the last `SovEmu__Logging__BufferLines` lines
 //! kept in memory (0 keeps none, and the page says the view is off). Lines still go to stderr as
 //! ever; this is only a view of them.
 //!
@@ -18,7 +18,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
 
-/// The buffer installed at startup ([`install`]), if `SOVEMU_LOG_BUFFER_LINES` keeps any.
+/// The buffer installed at startup ([`install`]), if `SovEmu__Logging__BufferLines` keeps any.
 static INSTALLED: std::sync::OnceLock<std::sync::Arc<LogBuffer>> = std::sync::OnceLock::new();
 
 /// Makes the process's buffer, before logging starts: none when `kept` is 0.

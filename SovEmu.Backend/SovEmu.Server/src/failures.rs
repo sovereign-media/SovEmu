@@ -2,7 +2,7 @@
 //! no 3D rendering, every port in use), and workers that failed to start or crashed, errored or
 //! had to be killed while playing, with the core's last log lines. For the admin's "why won't
 //! this game run" (the Sessions page). The most recent are kept in memory,
-//! `SOVEMU_SESSION_FAILURES` of them; the log has every one.
+//! `SovEmu__Sessions__FailuresKept` of them; the log has every one.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;

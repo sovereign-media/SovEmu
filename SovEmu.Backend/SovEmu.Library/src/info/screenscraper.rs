@@ -320,14 +320,14 @@ pub(crate) const MESSAGES: &[(&[&str], Kind, &str)] = &[
     (
         &["identifiants utilisateur"],
         Kind::Unauthorized,
-        "Login error: the user account was refused (SOVEMU_SCREENSCRAPER_USER, \
-         SOVEMU_SCREENSCRAPER_PASSWORD).",
+        "Login error: the user account was refused (SovEmu__Metadata__ScreenScraper__Username, \
+         SovEmu__Metadata__ScreenScraper__Password).",
     ),
     (
         &["identifiants développeur", "identifiants developpeur"],
         Kind::Unauthorized,
-        "Login error: the developer credentials were refused (SOVEMU_SCREENSCRAPER_DEVID, \
-         SOVEMU_SCREENSCRAPER_DEVPASSWORD).",
+        "Login error: the developer credentials were refused (SovEmu__Metadata__ScreenScraper__DevId, \
+         SovEmu__Metadata__ScreenScraper__DevPassword).",
     ),
     (&["erreur de login"], Kind::Unauthorized, "Login error: the credentials were refused."),
     (
@@ -639,7 +639,7 @@ impl ScreenScraper {
 
     /// The note an admin sees when ScreenScraper refuses the user account.
     const USER_REFUSED: &'static str = "ScreenScraper did not accept the user account \
-        (SOVEMU_SCREENSCRAPER_USER, SOVEMU_SCREENSCRAPER_PASSWORD): looking games up as a guest, \
+        (SovEmu__Metadata__ScreenScraper__Username, SovEmu__Metadata__ScreenScraper__Password): looking games up as a guest, \
         with a guest's limits";
 
     /// Reads the account (`ssuserInfos.php`), which spends no lookup. It needs a user account

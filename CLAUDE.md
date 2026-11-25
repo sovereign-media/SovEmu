@@ -85,7 +85,7 @@ instead (as Sovereign's server takes its SPA).
   the `sovemu_session` cookie is the browser's sign-in at the server, read only in front of
   `/oauth/authorize` and `/device`. The web client (`sovemu-web`) has no password grant; the
   apps (`sovemu-native`) use the device grant or the password fallback (`/oauth/password`,
-  `SOVEMU_PASSWORD_SIGN_IN`), and learn every sign-in URL and client id from the anonymous
+  `SovEmu__Authentication__PasswordSignIn`), and learn every sign-in URL and client id from the anonymous
   `bootstrapConfig` query (never hard-code a sign-in path in an app). Roles are `viewer` and `admin` (`users.role`), checked on every
   request.
 - **The input wire format exists twice**, in `SovEmu.Protocol/src/input.rs` and
@@ -99,15 +99,18 @@ instead (as Sovereign's server takes its SPA).
   (`controllers.rs`) stores each user's mappings per controller ID and checks them against it.
   Change the document and all three clients together.
 - **Every setting is an environment variable; nothing needs click-ops.** A new setting gets a
-  `SOVEMU_*` env var on `Config` (and a row in the README's table and a line in
-  `.env.example`). Secrets join `SECRETS` in `main.rs` (so `<VAR>_FILE` works and the startup
-  log redacts them). Anything an admin can do in the UI must also happen on its own from
+  `SovEmu__<Area>__<Name>` env var on `Config`: PascalCase levels joined by `__`, as .NET and
+  Sovereign name theirs, read in any letter case; a list takes one entry per index (`__0`,
+  `__1`), gathered by `environment_changes` in `main.rs` (and a row in the README's table and a
+  line in `.env.example`). Secrets come from the environment like any other setting (Docker or
+  Kubernetes secrets, no `_FILE` files) and join `SECRETS` in `main.rs`, so the startup log and
+  the Configuration page redact them. Anything an admin can do in the UI must also happen on its own from
   configuration (accounts, rescans, mirror syncs, metadata lookups, per-system cores and
   options); UI buttons are shortcuts, never the only way. Where the UI stores a setting
   (emulator settings, `system_settings`), the environment still wins, the UI shows it locked,
   and the page offers the stored values as environment lines. Tunables are settings, not constants.
-  Lists and maps use Sovereign's `__` hierarchy (`SOVEMU_USERS__0__USERNAME`,
-  `SOVEMU_SYSTEMS__psx__OPTIONS__<name>`, parsed in `structured.rs`). A setting that needs more
+  Lists and maps use Sovereign's `__` hierarchy (`SovEmu__Users__0__Username`,
+  `SovEmu__Systems__psx__Options__<name>`, parsed in `structured.rs`). A setting that needs more
   than a variable (a secret, a volume, a port) also needs the cluster's Helm chart, which is
   kept outside this repository, to provide it.
 - **GPU rendering is headless EGL in the worker** (`SovEmu.RetroHost/src/gl.rs`): libEGL is
@@ -115,23 +118,23 @@ instead (as Sovereign's server takes its SPA).
   are read back from a framebuffer object after `retro_run`; the context is current on the
   thread that runs the core and must be made current before any call into it. The server only
   ever learns about GPUs from `sovemu-worker gpu` (it never loads GL); a device counts only
-  if it drew a frame and read it back, and `SOVEMU_GPU` falls back to software (llvmpipe), then
+  if it drew a frame and read it back, and `SovEmu__Rendering__Gpu` falls back to software (llvmpipe), then
   to no 3D systems. A GPU with no DRM node (NVIDIA without `nvidia-drm`) is reported as
   `auto`, which workers resolve hardware-first. Vulkan cores are not supported yet.
 - **Workers get no secrets.** `Workers::spawn` (`SovEmu.Sessions`) clears the environment (`WORKER_ENV` is the
   allow-list); pass what a worker needs as arguments.
 - **Never expose operational data without a switch.** Telemetry is pushed, never served: traces
   and metrics go out over OpenTelemetry (OTLP/HTTP, `telemetry.rs`) only when
-  `SOVEMU_OTEL_ENDPOINT` is set, and there is no metrics route. New metrics are instruments in
+  `SovEmu__Telemetry__Otlp__Endpoint` is set, and there is no metrics route. New metrics are instruments in
   `telemetry.rs`; new operational routes stay off unless a setting turns them on.
 - **Log with fields, not formatted strings.** `tracing::info!(game = %title, "session started")`,
-  not `info!("session {id} started")`: `SOVEMU_LOG_FORMAT=json` turns fields into keys. Work for
+  not `info!("session {id} started")`: `SovEmu__Logging__Format=json` turns fields into keys. Work for
   a request or a session runs inside its span (`request`, `session`), so its lines carry the
   route or the session id; a worker gets its session id as `--session-id`.
 - **The server shuts down on SIGTERM as on Ctrl-C**: it stops every worker (so saves are
   written) before exiting. Kubernetes and `docker stop` send SIGTERM; never exit without it.
 - **Background work is a job** (`SovEmu.Server/src/jobs.rs`): a `Job` with its interval from a
-  `SOVEMU_*` setting, run through `Jobs`, which runs one of a job at a time, makes jobs in a lane
+  `SovEmu__*` setting, run through `Jobs`, which runs one of a job at a time, makes jobs in a lane
   (scan, mirror sync) wait for each other, records every run in `job_runs`, turns a panic into a
   failed run, and cancels everything on shutdown. Never start a bare `tokio::spawn` loop for
   scheduled or admin-started work; an admin's button calls `runJob` or the job's own mutation.
@@ -171,8 +174,8 @@ the HTML and lcov as an artifact. A new module with little coverage is a test to
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core (cdylib) that tests load with dlopen exactly like a real one. Never shipped. |
 | `SovEmu.Media` | `sovemu-media` | Encoding: RGBA→I420/NV12, H.264 (libavcodec: VA-API, NVENC or x264, picked at run time, falling back to x264) and VP8 (system libvpx), both tuned for real time, Opus (system libopus, restricted low delay), and `AudioEncoder` (resample any core rate to 48 kHz, 10 ms packets). bindgen over libvpx/libopus/libavcodec via pkg-config. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats every client implements: the binary input packet and its ack on the `input` DataChannel, and the JSON session descriptions used for signalling. |
-| `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SOVEMU_ASSET_KEY`, else generated into `data/server.json`) and `load_secret`, the same for any server secret kept there (the token key). No HTTP, no database: the server's `/media/…` middleware calls it. |
-| `SovEmu.Identity` | `sovemu-identity` | Accounts and sign-in: users with argon2 passwords and roles, the sign-in throttle, the browser's sign-in cookie, and the provider: `oauth-as` (OAuth 2.1: code flow with PKCE, device grant, rotation, revocation) stored by `SqliteStorage`, one server per `SOVEMU_PUBLIC_URL`, with OpenID Connect over it (discovery, ES256 ID tokens, JWKS, userinfo, end session), the sign-in form's target and the apps' password fallback. `Identity::user_for_request` names a bearer token's user. Its tables are the server's migrations; it knows nothing about GraphQL. |
+| `SovEmu.Assets` | `sovemu-assets` | Signed file URLs, as Sovereign's: `AssetSigner` signs a path for a user (HMAC-SHA256, `Sov-UserId`/`Sov-Expiry`/`Sov-Signature`) and checks one; `load_key` (`SovEmu__Assets__SecretKey`, else generated into `data/server.json`) and `load_secret`, the same for any server secret kept there (the token key). No HTTP, no database: the server's `/media/…` middleware calls it. |
+| `SovEmu.Identity` | `sovemu-identity` | Accounts and sign-in: users with argon2 passwords and roles, the sign-in throttle, the browser's sign-in cookie, and the provider: `oauth-as` (OAuth 2.1: code flow with PKCE, device grant, rotation, revocation) stored by `SqliteStorage`, one server per `SovEmu__Http__PublicUrl`, with OpenID Connect over it (discovery, ES256 ID tokens, JWKS, userinfo, end session), the sign-in form's target and the apps' password fallback. `Identity::user_for_request` names a bearer token's user. Its tables are the server's migrations; it knows nothing about GraphQL. |
 | `SovEmu.Library` | `sovemu-library` | The ROM library without the database: the systems table (Recalbox folder names + aliases, extension fallback), walking a library into games (parts folded together, soft patches found, artwork file names), release labels, BIOS files, the game-information providers (FBNeo, ScreenScraper; one `Provider` interface), the local cache and mirror, decorations. Reads files and asks services; never opens the database. Only what the server uses is `pub`. |
 | `SovEmu.Worker` | `sovemu-worker` | The per-session binary. `session` is one game driven by the server over JSON lines on stdin/stdout (`SovEmu.Protocol::ipc`), streaming over WebRTC (str0m, one UDP port per session); `serve` is the same loop standalone with its own HTTP (development, tests); `headless` dumps PNG frames, a WAV and a timing summary; `probe` loads cores and reports their info as JSON; `encoders` runs every video encoder on a moving picture, as a session would, and times it (the server's startup encoder test); `connection-test` answers one browser's offer on a game port with no media and echoes its data channel (the admin's connection test). |
 | `SovEmu.Sessions` | `sovemu-sessions` | Game sessions: `Workers` starts one `sovemu-worker session` per game with a UDP port from a pool and the allow-listed environment, drives it over JSON lines (`SovEmu.Protocol::ipc`), and stops it so saves are written; `starts` (loading progress), `gpu` (what `sovemu-worker gpu` reports), `encoders` (what `sovemu-worker encoders` reports: the startup encoder test, at most 10 seconds, finished before the server listens) and `connection_test` (a `sovemu-worker connection-test` on a pooled port, for the admin's Streaming page). Reports each session's end (what it played, whether it loaded, why it ended, its last lines) to an `Observer` (the server's metrics and failures list). Never links a core or a codec. |
@@ -234,8 +237,8 @@ scripts/fetch-free-roms.sh && docker compose up --build     # then open http://l
 ```
 
 The container runs `sovemu-server` on 8080; each game session's worker streams on its own UDP
-port from 50000-50009 (`SOVEMU_UDP_PORTS`). In a container the server cannot see the host's
-address, so `SOVEMU_ADVERTISE_IP` (default `127.0.0.1` in compose) must be the address browsers
+port from 50000-50009 (`SovEmu__Streaming__Udp__Ports`). In a container the server cannot see the host's
+address, so `SovEmu__Streaming__AdvertiseAddress` (default `127.0.0.1` in compose) must be the address browsers
 reach the host on. `scripts/fetch-free-roms.sh` fills `data/roms` with freely licensed homebrew
 until the NAS library is connected.
 
@@ -274,7 +277,7 @@ with them rather than by hand. First time: `npx playwright install chromium`.
   on: `pub` only for what another crate uses, `pub(crate)` inside one (a binary's modules
   included).
 - The data folder's layout is `SovEmu.Server/src/paths.rs` (`config.paths()`): a new file or
-  folder under `SOVEMU_DATA_DIR` gets a method there, never a `data_dir.join("…")` elsewhere.
+  folder under `SovEmu__Paths__Data` gets a method there, never a `data_dir.join("…")` elsewhere.
 - Rules load from `.claude/rules/`: `git-branching.md` always, `rust.md` for backend code,
   `web.md` for `SovEmu.Web`.
 - The pre-push hook (`.githooks/pre-push`; once per clone, `git config core.hooksPath .githooks`)

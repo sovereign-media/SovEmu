@@ -1,10 +1,10 @@
 //! Who a request came from. The connection's own address, unless it comes from a reverse proxy
-//! listed in `SOVEMU_TRUSTED_PROXIES`: then the proxy's `X-Forwarded-For` says who it forwarded
+//! listed in `SovEmu__Network__TrustedProxyNetwork`: then the proxy's `X-Forwarded-For` says who it forwarded
 //! for (the last address in it that is not itself a trusted proxy). A forwarded header from
 //! anyone else is ignored, since it could say anything, and the first one is logged, once, as
 //! a likely missing setting.
 //!
-//! The address throttles sign-ins per client (`SOVEMU_LOGIN_MAX_FAILURES_PER_IP`) and goes on
+//! The address throttles sign-ins per client (`SovEmu__Authentication__Lockout__MaxFailuresPerAddress`) and goes on
 //! each request's span (`client.address`).
 
 use std::net::{IpAddr, SocketAddr};
@@ -119,7 +119,7 @@ pub(crate) async fn remember(
     {
         tracing::warn!(
             peer = %peer,
-            "X-Forwarded-For from a peer not in SOVEMU_TRUSTED_PROXIES: ignored (if this is your \
+            "X-Forwarded-For from a peer not in SovEmu__Network__TrustedProxyNetwork: ignored (if this is your \
              reverse proxy, list it there, or every client counts as the proxy)"
         );
     }

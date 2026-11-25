@@ -8,7 +8,7 @@ use crate::activity::{Entry, Kind};
 /// colour, scaled to cover the screen.
 #[derive(SimpleObject)]
 pub(super) struct Background {
-    /// Its name in settings (`SOVEMU_BACKGROUND`): `lattice`, or a file's name in the folders.
+    /// Its name in settings (`SovEmu__Appearance__Background`): `lattice`, or a file's name in the folders.
     pub(super) id: String,
     /// As shown: "Lattice", "Sunset beach".
     pub(super) name: String,
@@ -34,11 +34,11 @@ impl Background {
 #[derive(SimpleObject)]
 pub(super) struct AppearanceSettings {
     /// The built-in ones, then the admin's own (from `<data>/backgrounds` and
-    /// `SOVEMU_BACKGROUNDS_DIRS`).
+    /// `SovEmu__Appearance__BackgroundDirectories`).
     pub(super) backgrounds: Vec<Background>,
     /// A background's id, `random` (a different one each visit) or `none`.
     pub(super) chosen: String,
-    /// `SOVEMU_BACKGROUND` sets it: the page cannot change it.
+    /// `SovEmu__Appearance__Background` sets it: the page cannot change it.
     pub(super) from_environment: bool,
     /// The choice as the line that sets it, to move it into the environment.
     pub(super) environment: String,
@@ -69,7 +69,7 @@ impl AppearanceQuery {
             .collect();
         Ok(AppearanceSettings {
             backgrounds,
-            environment: format!("SOVEMU_BACKGROUND={chosen}"),
+            environment: format!("SovEmu__Appearance__Background={chosen}"),
             chosen,
             from_environment,
         })
@@ -82,7 +82,7 @@ pub(super) struct AppearanceMutation;
 #[Object]
 impl AppearanceMutation {
     /// Admins: the background for everyone: a background's id, `random` or `none`. `CONFLICT`
-    /// while `SOVEMU_BACKGROUND` sets it; `NOT_FOUND` for a background that is not there.
+    /// while `SovEmu__Appearance__Background` sets it; `NOT_FOUND` for a background that is not there.
     async fn set_background(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
         let me = admin(ctx).await?;
         crate::appearance::choose(state(ctx), id.trim()).await.api()?;

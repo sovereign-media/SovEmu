@@ -7,9 +7,9 @@
 //! `assets/README.md`) are written into the built-in artwork folder ([`write_builtin`]: the
 //! image's `/opt/sovemu/artwork/backgrounds` and `systems`) and served from there, else from the
 //! copies compiled in. The admin's own sit at the same paths in `<data>/artwork` (and
-//! `SOVEMU_BACKGROUNDS_DIRS`); an image there wins over a built-in one of the same name, and the
+//! `SovEmu__Appearance__BackgroundDirectories`); an image there wins over a built-in one of the same name, and the
 //! folders are listed again after each library scan. One background is shown
-//! to everyone: `SOVEMU_BACKGROUND`, else the admin's choice, else a different one each visit.
+//! to everyone: `SovEmu__Appearance__Background`, else the admin's choice, else a different one each visit.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -286,7 +286,7 @@ fn random_index(len: usize) -> usize {
 /// sets it.
 pub(crate) async fn choose(state: &AppState, id: &str) -> ApiResult<()> {
     if state.config.background.as_deref().is_some_and(|v| !v.is_empty()) {
-        return Err(ApiError::conflict("the background is set by SOVEMU_BACKGROUND"));
+        return Err(ApiError::conflict("the background is set by SovEmu__Appearance__Background"));
     }
     if id != RANDOM && id != NONE && state.appearance().background(id).is_none() {
         return Err(ApiError::not_found("background"));

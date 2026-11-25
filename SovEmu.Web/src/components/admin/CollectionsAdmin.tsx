@@ -1,7 +1,7 @@
 // Shared collections: the collections an admin keeps for everyone, shown on every Home beside
 // each user's own. Made, renamed and deleted here; games go in from a game's panel (its
 // collections menu lists these under "Shared with everyone") and come out here. Those declared
-// in the environment (SOVEMU_COLLECTIONS__…) are locked, and every collection can be copied out
+// in the environment (SovEmu__Collections__…) are locked, and every collection can be copied out
 // as environment lines.
 
 import { useMutation, useQuery } from "@tanstack/react-query";

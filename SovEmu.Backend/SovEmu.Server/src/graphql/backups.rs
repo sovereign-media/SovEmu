@@ -1,6 +1,6 @@
 //! Backups (`backups`): the backups kept, where and how often they are made, and deleting one.
 //! One is made by the `BACKUP` job (`runJob`); one is restored only at startup, from
-//! `SOVEMU_RESTORE_FROM` (`backup.rs`).
+//! `SovEmu__Backups__RestoreFrom` (`backup.rs`).
 
 use super::*;
 use crate::activity::{Entry, Kind};
@@ -19,13 +19,13 @@ pub(super) struct BackupFile {
 /// The backups, and how they are made.
 #[derive(SimpleObject)]
 pub(super) struct Backups {
-    /// Where they are kept (`SOVEMU_BACKUP_DIR`).
+    /// Where they are kept (`SovEmu__Backups__Directory`).
     pub(super) dir: String,
-    /// A backup every this many hours (`SOVEMU_BACKUP_INTERVAL_HOURS`; 0: none on a schedule).
+    /// A backup every this many hours (`SovEmu__Backups__IntervalHours`; 0: none on a schedule).
     pub(super) interval_hours: f64,
-    /// How many are kept (`SOVEMU_BACKUP_KEEP`; 0: every one).
+    /// How many are kept (`SovEmu__Backups__Keep`; 0: every one).
     pub(super) keep: i32,
-    /// The backup restored at startup, if `SOVEMU_RESTORE_FROM` is set.
+    /// The backup restored at startup, if `SovEmu__Backups__RestoreFrom` is set.
     pub(super) restore_from: Option<String>,
     /// Newest first.
     pub(super) files: Vec<BackupFile>,

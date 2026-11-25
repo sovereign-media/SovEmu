@@ -3,10 +3,10 @@
 //! send them with `reportClientEvents`. Each becomes a `client event` line, with the session id
 //! when it happened in a game, so it sits next to that game's worker lines (`session health`,
 //! `client stats`), and a row in `client_events` for the admin Client errors page, which
-//! maintenance prunes after `SOVEMU_CLIENT_EVENT_DAYS`.
+//! maintenance prunes after `SovEmu__ClientErrors__RetentionDays`.
 //!
 //! A user may send [`PER_MINUTE`] a minute; past that they are dropped, never queued. With
-//! `SOVEMU_CLIENT_EVENTS=false` the mutation still answers, and drops them all.
+//! `SovEmu__ClientErrors__Enabled=false` the mutation still answers, and drops them all.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -170,7 +170,7 @@ fn log(user_id: i64, client: &str, event: &Accepted) {
 }
 
 /// What a signed-in user's client sent (`reportClientEvents`): logged and kept within the
-/// user's allowance, or dropped with `SOVEMU_CLIENT_EVENTS` off. How many were taken.
+/// user's allowance, or dropped with `SovEmu__ClientErrors__Enabled` off. How many were taken.
 pub(crate) async fn receive(
     state: &crate::AppState,
     user_id: i64,

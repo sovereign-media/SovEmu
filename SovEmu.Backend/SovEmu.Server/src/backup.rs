@@ -1,6 +1,6 @@
 //! Backups of what the server cannot make again, and restoring one.
 //!
-//! A backup is one zip file in the backup folder (`SOVEMU_BACKUP_DIR`, else `<data>/backups`):
+//! A backup is one zip file in the backup folder (`SovEmu__Backups__Directory`, else `<data>/backups`):
 //! - `sovemu.db`: the database (accounts, sign-ins, settings, mappings, collections, history),
 //!   copied consistently while the server runs (`VACUUM INTO`);
 //! - `server.json`: the generated signing keys, if the server keeps them;
@@ -11,12 +11,12 @@
 //! lookup, so they are left out. A backup holds secrets (password hashes, signing keys): it is
 //! handed out only to an admin, through a signed URL.
 //!
-//! A backup is made by the `Backup` job (every `SOVEMU_BACKUP_INTERVAL_HOURS`, or an admin's
+//! A backup is made by the `Backup` job (every `SovEmu__Backups__IntervalHours`, or an admin's
 //! button), written beside its final name and renamed into place, so a half-written one is never
-//! listed; the newest `SOVEMU_BACKUP_KEEP` are kept.
+//! listed; the newest `SovEmu__Backups__Keep` are kept.
 //!
 //! Restoring a live database is not safe, so a backup is restored only at startup, before the
-//! database opens (`SOVEMU_RESTORE_FROM`). What was there is moved aside into
+//! database opens (`SovEmu__Backups__RestoreFrom`). What was there is moved aside into
 //! `<data>/before-restore-<time>/`, never deleted, and the restore is remembered
 //! (`<data>/restored.json`) so that a restart with the setting still in place restores nothing.
 
@@ -62,7 +62,7 @@ pub(crate) struct BackupFile {
 #[derive(Debug)]
 pub(crate) struct Made {
     pub(crate) file: BackupFile,
-    /// Older backups deleted to keep `SOVEMU_BACKUP_KEEP`.
+    /// Older backups deleted to keep `SovEmu__Backups__Keep`.
     pub(crate) pruned: usize,
 }
 

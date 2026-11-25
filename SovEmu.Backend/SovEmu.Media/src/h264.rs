@@ -65,7 +65,7 @@ impl H264Backend {
     }
 }
 
-/// Which encoder to use (`SOVEMU_VIDEO_ENCODER`).
+/// Which encoder to use (`SovEmu__Streaming__Video__Encoder`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum H264Preference {
     /// The GPU's encoder if one opens, else x264.

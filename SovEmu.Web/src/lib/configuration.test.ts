@@ -4,7 +4,7 @@ import { codeSpans, environmentLines, filterSettings, groupSettings } from "./co
 
 const setting = (over: Partial<ConfigSetting>): ConfigSetting => ({
   group: "STREAMING",
-  name: "SOVEMU_HTTP",
+  name: "SovEmu__Http__Listen",
   value: "0.0.0.0:8080",
   effective: null,
   source: "DEFAULT",
@@ -16,17 +16,28 @@ const setting = (over: Partial<ConfigSetting>): ConfigSetting => ({
 
 describe("the configuration page", () => {
   const all = [
-    setting({ group: "ACCOUNTS", name: "SOVEMU_ADMIN_PASSWORD", value: "(set)", secret: true, source: "FILE" }),
-    setting({ group: "ACCOUNTS", name: "SOVEMU_SESSION_DAYS", value: "30", source: "ENVIRONMENT" }),
+    setting({
+      group: "ACCOUNTS",
+      name: "SovEmu__Authentication__AdminPassword",
+      value: "(set)",
+      secret: true,
+      source: "ENVIRONMENT",
+    }),
+    setting({ group: "ACCOUNTS", name: "SovEmu__Authentication__SessionDays", value: "30", source: "ENVIRONMENT" }),
     setting({ description: "Address for the web client and API." }),
-    setting({ name: "SOVEMU_UDP_PORTS", value: "6000-6009", source: "COMMAND_LINE", description: "UDP ports" }),
+    setting({
+      name: "SovEmu__Streaming__Udp__Ports",
+      value: "6000-6009",
+      source: "COMMAND_LINE",
+      description: "UDP ports",
+    }),
   ];
 
   it("finds settings by name, value or description", () => {
     expect(filterSettings(all, "").length).toBe(4);
-    expect(filterSettings(all, "udp").map((s) => s.name)).toEqual(["SOVEMU_UDP_PORTS"]);
-    expect(filterSettings(all, "web client").map((s) => s.name)).toEqual(["SOVEMU_HTTP"]);
-    expect(filterSettings(all, "6000").map((s) => s.name)).toEqual(["SOVEMU_UDP_PORTS"]);
+    expect(filterSettings(all, "udp").map((s) => s.name)).toEqual(["SovEmu__Streaming__Udp__Ports"]);
+    expect(filterSettings(all, "web client").map((s) => s.name)).toEqual(["SovEmu__Http__Listen"]);
+    expect(filterSettings(all, "6000").map((s) => s.name)).toEqual(["SovEmu__Streaming__Udp__Ports"]);
   });
 
   it("groups settings in the server's order", () => {
@@ -37,7 +48,10 @@ describe("the configuration page", () => {
   });
 
   it("copies what was given, never a secret", () => {
-    expect(environmentLines(all)).toEqual(["SOVEMU_SESSION_DAYS=30", "SOVEMU_UDP_PORTS=6000-6009"]);
+    expect(environmentLines(all)).toEqual([
+      "SovEmu__Authentication__SessionDays=30",
+      "SovEmu__Streaming__Udp__Ports=6000-6009",
+    ]);
   });
 });
 

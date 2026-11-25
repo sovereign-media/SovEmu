@@ -15,7 +15,7 @@
 //! `top`/`left`/`bottom`/`right` margins of the window the game shows through. Without one,
 //! the window is the largest centred 4:3 area.
 //!
-//! Sets come from several folders, merged by name: those in `SOVEMU_DECORATIONS_DIRS` first
+//! Sets come from several folders, merged by name: those in `SovEmu__Decorations__Directories` first
 //! (a decorations folder on the NAS, say), then `<data>/decorations`, then the built-in folder.
 //! For the same file, the first folder wins. SovEmu ships one set of its own, `sovemu`
 //! ([`write_builtin`]), drawn by this code: no third-party artwork is shipped, and there is no
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 /// The built-in set's name.
 pub const BUILTIN: &str = "sovemu";
-/// Turns decorations off (`SOVEMU_DECORATION=none`, or per system).
+/// Turns decorations off (`SovEmu__Decorations__Set=none`, or per system).
 pub const NONE: &str = "none";
 
 /// Bumped when the built-in artwork changes, so a cached copy is drawn again.

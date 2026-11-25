@@ -55,12 +55,12 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] The admin Activity page: who did what, and when (sign-ins and refusals through
       `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
       changes from their resolvers), kept in `activity` (migration 0023, pruned after
-      `SOVEMU_ACTIVITY_HISTORY_DAYS`), filtered by account and kind, paged, and exported as CSV
+      `SovEmu__ActivityLog__RetentionDays`), filtered by account and kind, paged, and exported as CSV
 - [x] The admin Statistics page: every game played is kept as it ends (`play_sessions`,
       migration 0024), and a week, month or year shows the totals, time played per day (per
       week over a year), the most played games, each account's and system's time, and the most
       favourited games, each figure one query over the window by start time
-- [x] The admin Logs page: the server's recent log kept in memory (`SOVEMU_LOG_BUFFER_LINES`, 0
+- [x] The admin Logs page: the server's recent log kept in memory (`SovEmu__Logging__BufferLines`, 0
       off) by a `tracing` layer behind the same filter as stderr, with its game sessions' worker
       lines (through `sovemu_sessions`' observer) tagged by session; filtered by level, session
       and text, followed live and paused
@@ -74,13 +74,13 @@ held 59.93 fps over 300 frames with no resyncs.
       0025), each counted per system, and a game looked up again on its own (`lookUpGame`)
 - [x] Shared collections (`/admin/collections/`): an admin's collections for everyone, on every
       Home beside each user's own (`sharedCollections`; one table, `collections.user_id` null,
-      migration 0026), filled from a game's panel; declared as `SOVEMU_COLLECTIONS__<n>__NAME`
+      migration 0026), filled from a game's panel; declared as `SovEmu__Collections__<n>__Name`
       and `__GAMES__<m>` (`<system>/<file>`), kept in step after each scan and locked, and
       offered as environment lines
 - [x] Backups (`/admin/backups/`): the database (`VACUUM INTO`), the signing keys and every save
-      in one zip, made by the `Backup` job (`SOVEMU_BACKUP_INTERVAL_HOURS`, newest
-      `SOVEMU_BACKUP_KEEP` kept, in `SOVEMU_BACKUP_DIR`) or the page's button, downloaded through
-      a signed URL for admins only; restored at startup from `SOVEMU_RESTORE_FROM`, what it
+      in one zip, made by the `Backup` job (`SovEmu__Backups__IntervalHours`, newest
+      `SovEmu__Backups__Keep` kept, in `SovEmu__Backups__Directory`) or the page's button, downloaded through
+      a signed URL for admins only; restored at startup from `SovEmu__Backups__RestoreFrom`, what it
       replaces moved into `before-restore-<time>/`, each backup restored once
 - [x] The About page lists every open-source package shipped, by licence, with its text: the
       server's crates (cargo-about, `about.toml`'s accepted licences, listed again by the image's
@@ -103,7 +103,7 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `scripts/fetch-free-roms.sh`: pinned, freely licensed homebrew for NES, SNES, GB, GBC and GBA
 - [x] Verified in Docker: Snes9x streaming *Castle Platformer* through the server to a WebRTC client
 - [x] Configuration entirely through environment variables: the admin account
-      (`SOVEMU_ADMIN_*`, kept in step on every start), `*_FILE` secrets, periodic rescans and
+      (`SOVEMU_ADMIN_*`, kept in step on every start), secrets from the environment, periodic rescans and
       mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
       effective configuration logged (redacted); compose loads `.env` whole; workers start with a
       cleared environment
@@ -113,7 +113,7 @@ held 59.93 fps over 300 frames with no resyncs.
       (3,497 games over SMB in ~20 s)
 - [x] PlayStation (PCSX-ReARMed, CHD) and arcade / Neo Geo (FBNeo) cores; `SOVEMU_SYSTEM_DIR` for BIOS
 - [x] Remote library (Cloudflare Zero Trust, ~100 ms per request, a few MB/s): a local LRU cache
-      of played games (`SOVEMU_CACHE_GB`), disc images cached only after their first
+      of played games (`SovEmu__Library__Cache__MaxGigabytes`), disc images cached only after their first
       session, PlayStation CD read-ahead raised to 256 sectors, worker
       load deadline raised to 2 minutes
 - [x] Library modes: `direct` (NAS on the LAN, the default), `cache` (remote NAS), `mirror`
@@ -147,9 +147,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Soft patches (IPS, UPS, BPS): beside a game with its name (applied by default) or in a
       folder named as it; chosen per player on the game panel, applied to a copy as the game
       loads, with the patched game's own saves
-- [x] Decorations (bezels), server side: Batocera-layout sets from `SOVEMU_DECORATIONS_DIRS`,
+- [x] Decorations (bezels), server side: Batocera-layout sets from `SovEmu__Decorations__Directories`,
       `data/decorations` and the built-in `sovemu` set (drawn by the server's code), merged;
-      chosen with `SOVEMU_DECORATION` / `SOVEMU_SYSTEMS__<id>__DECORATION`; `Game.decoration`
+      chosen with `SovEmu__Decorations__Set` / `SovEmu__Systems__<id>__Decoration`; `Game.decoration`
 - [x] Decorations drawn by the web player (framed only when the screen is wider than the picture)
 - [ ] Decorations drawn by the Android and iOS players
 
@@ -199,35 +199,35 @@ held 59.93 fps over 300 frames with no resyncs.
 
 ## Phase 6: hardening
 
-- [x] Adaptive bitrate: a stream starts at `SOVEMU_VIDEO_KBPS` and moves between
-      `SOVEMU_VIDEO_MIN_KBPS` and `SOVEMU_VIDEO_MAX_KBPS`. str0m's send-bandwidth estimate
+- [x] Adaptive bitrate: a stream starts at `SovEmu__Streaming__Video__Kbps` and moves between
+      `SovEmu__Streaming__Video__MinKbps` and `SovEmu__Streaming__Video__MaxKbps`. str0m's send-bandwidth estimate
       (TWCC/REMB) drives the target (85% of the estimate minus audio, changes over 10% only), and
       the stats every client sends once a second lower it while the client's decoder falls
       behind. Encoders that reopen to change rate (VA-API, NVENC) are raised less often
-- [x] STUN/TURN: `SOVEMU_ICE_SERVERS` is handed to browsers through `/api/config`
+- [x] STUN/TURN: `SovEmu__Streaming__IceServers` is handed to browsers through `/api/config`
 - [x] Sign-in throttling: five failures lock a username out for five minutes
 - [x] `GET /health` for probes
-- [x] Structured logs (`SOVEMU_LOG_FORMAT=json`): every API request in a `request` span (route,
+- [x] Structured logs (`SovEmu__Logging__Format=json`): every API request in a `request` span (route,
       status, GraphQL operation) and every game session in a `session` span, whose id the
       worker also logs with
-- [x] OpenTelemetry traces and metrics over OTLP/HTTP (`SOVEMU_OTEL_ENDPOINT`, off by default):
+- [x] OpenTelemetry traces and metrics over OTLP/HTTP (`SovEmu__Telemetry__Otlp__Endpoint`, off by default):
       request spans, session spans, request durations, sessions started and their length,
       sessions running, capacity, accounts and games per system. This replaced the Prometheus
       `/metrics` route
 - [x] Signed file URLs, as Sovereign's: every `/media/…` URL the API hands out carries an
-      HMAC-SHA256 signature over the user, path and an hour-rounded expiry (`SOVEMU_ASSET_KEY`,
-      else generated into `data/server.json`; `SOVEMU_ASSET_URL_HOURS`); `/media/` serves only
+      HMAC-SHA256 signature over the user, path and an hour-rounded expiry (`SovEmu__Assets__SecretKey`,
+      else generated into `data/server.json`; `SovEmu__Assets__UrlHours`); `/media/` serves only
       signed URLs, as the signed user, with no cookie
 - [x] Security headers (nosniff, frame denial, referrer and permissions policies); compose healthcheck
 - [x] Configuration reference in the README
 - [x] Configuration entirely through environment variables: the admin account
-      (`SOVEMU_ADMIN_*`, kept in step on every start), `*_FILE` secrets, periodic rescans and
+      (`SOVEMU_ADMIN_*`, kept in step on every start), secrets from the environment, periodic rescans and
       mirror syncs, metadata after every scan, stream bitrates; empty values mean unset; the
       effective configuration logged (redacted); compose loads `.env` whole; workers start with a
       cleared environment
 - [x] The whole deployment from configuration, as in Sovereign: declared accounts
-      (`SOVEMU_USERS__<n>__*`, optional pruning), per-system cores, core options and hiding
-      (`SOVEMU_SYSTEMS__<id>__*`), and every tunable that was a constant (session length, sign-in
+      (`SovEmu__Users__<n>__*`, optional pruning), per-system cores, core options and hiding
+      (`SovEmu__Systems__<id>__*`), and every tunable that was a constant (session length, sign-in
       lockout, worker start timeout, rewind, fast-forward, keyframes, cache threshold, copy
       threads, metadata regions and languages, ScreenScraper pacing)
 - [x] Helm chart (`charts/sovemu`): values become the environment; secrets or existing Secrets;
@@ -238,21 +238,21 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Sign-in: `SovEmu.Identity`, the `oauth-as` OAuth 2.1 server stored in SQLite (conformance
       harness passed) with OpenID Connect over it (discovery, JWKS, ES256 ID tokens, userinfo,
       end session). `sovemu-web`: code flow with PKCE, no password grant. `sovemu-native`: the
-      device grant, or the password fallback (`SOVEMU_PASSWORD_SIGN_IN`). Bearer tokens for the
+      device grant, or the password fallback (`SovEmu__Authentication__PasswordSignIn`). Bearer tokens for the
       API; roles `viewer` and `admin`
 - [ ] The apps show a sign-in code (the device grant; the server side is done)
 - [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts
-- [x] H.264, preferred when the client offers it (VP8 otherwise; `SOVEMU_VIDEO_CODEC`): libavcodec
-      over VA-API, NVENC or x264 (`SOVEMU_VIDEO_ENCODER`), falling back to x264 when a GPU
+- [x] H.264, preferred when the client offers it (VP8 otherwise; `SovEmu__Streaming__Video__Codec`): libavcodec
+      over VA-API, NVENC or x264 (`SovEmu__Streaming__Video__Encoder`), falling back to x264 when a GPU
       encoder does not open, fails, or holds frames back. VP8 stayed the default
-      (`SOVEMU_VIDEO_CODEC=vp8`) after a TV's hardware H.264 decoder measured six times slower
+      (`SovEmu__Streaming__Video__Codec=vp8`) after a TV's hardware H.264 decoder measured six times slower
       than its VP8 one; a client stating which codec it decodes fastest is the follow-up
 - [x] How each stream is made, shown to players and admins: the worker's pipeline (renderer,
       codec, encoder and its fallbacks with why, audio, run-ahead) goes to the client on the input
       channel (`0x82`) for its stats panel, and to the server, whose admin Sessions page lists
       every game being played with the worker's live numbers (`activeSessions`)
 - [x] Admins stop any session (`stopSession`, saves written first) and see the last sessions
-      that failed (`sessionFailures`, `SOVEMU_SESSION_FAILURES` kept in memory): starts the
+      that failed (`sessionFailures`, `SovEmu__Sessions__FailuresKept` kept in memory): starts the
       server refused, loads that failed, crashes and killed workers, with the worker's last lines
 - [x] The admin Streaming page: a connection test from the admin's browser to a game port
       (`testConnection`: a `sovemu-worker connection-test` peer with no media on a pooled port,
@@ -260,7 +260,7 @@ held 59.93 fps over 300 frames with no resyncs.
       whether it went direct, through STUN or through a TURN relay; then the stream settings
 - [x] The admin Client errors page: what the apps report (`reportClientEvents`: failed or lost
       connections, stalled pictures, screen errors, unknown controllers) is kept in
-      `client_events` (migration 0022, pruned after `SOVEMU_CLIENT_EVENT_DAYS`) and grouped by
+      `client_events` (migration 0022, pruned after `SovEmu__ClientErrors__RetentionDays`) and grouped by
       kind and by app and device, each group opening onto its events with the game they
       happened in
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
@@ -274,7 +274,7 @@ held 59.93 fps over 300 frames with no resyncs.
       context on a framebuffer object, frames read back after `retro_run`; libEGL opened at run
       time. The test core has a GL mode; the image's test stage renders it with llvmpipe
 - [x] GPU detection as Sovereign does it: `sovemu-worker gpu` draws on every EGL device and the
-      server keeps what works (`SOVEMU_GPU`: auto, software, off, a render node), logging a
+      server keeps what works (`SovEmu__Rendering__Gpu`: auto, software, off, a render node), logging a
       summary; `GET /api/gpu`; systems report `rendering`
 - [x] N64 (Mupen64Plus-Next), Dreamcast (Flycast), GameCube (Dolphin, with its `Sys` overlaid
       on the BIOS folder) and PS2 (PCSX2), built from source on Alpine
@@ -286,10 +286,10 @@ held 59.93 fps over 300 frames with no resyncs.
       `GET /api/sessions/starting/{id}`; the web player shows a loading bar
 - [x] Emulator settings in the web app: each core's options (probed by a worker), changed per
       system by admins (`system_settings`, migration 0005); the environment wins and is shown
-      locked; changes are offered as `SOVEMU_SYSTEMS__…` lines
+      locked; changes are offered as `SovEmu__Systems__…` lines
 - [x] Run-ahead (#85): per system, the picture runs 0-4 frames ahead of the game, hiding its
       own input lag (single-instance: save, run ahead, show, restore; sound from the real
-      frame). `SOVEMU_SYSTEMS__<id>__RUN_AHEAD` or the admin (`system_run_ahead`, migration
+      frame). `SovEmu__Systems__<id>__RunAhead` or the admin (`system_run_ahead`, migration
       0017); 2D systems only, on by default (1 frame), and a worker that cannot keep up runs
       fewer frames ahead
 - [x] Core options v1/v2 in RetroHost (`GET_CORE_OPTIONS_VERSION` = 2): the settings page groups

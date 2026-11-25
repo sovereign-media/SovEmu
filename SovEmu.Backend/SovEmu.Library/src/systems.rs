@@ -27,7 +27,7 @@ pub struct System {
     /// Core options SovEmu sets for it (`key`, `value`).
     #[serde(skip)]
     pub options: &'static [(&'static str, &'static str)],
-    /// A 3D system: its cores render with OpenGL, on a GPU or in software (`SOVEMU_GPU`).
+    /// A 3D system: its cores render with OpenGL, on a GPU or in software (`SovEmu__Rendering__Gpu`).
     pub needs_gpu: bool,
 }
 
@@ -50,7 +50,7 @@ impl System {
         }
     }
 
-    /// Whether its games can run ahead (`SOVEMU_SYSTEMS__<id>__RUN_AHEAD`): each frame shown
+    /// Whether its games can run ahead (`SovEmu__Systems__<id>__RunAhead`): each frame shown
     /// then costs several emulated frames and a save state, which only the systems that render
     /// in software can afford.
     pub fn run_ahead(&self) -> bool {

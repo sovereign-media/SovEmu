@@ -11,7 +11,7 @@ use crate::AppState;
 /// A system a core plays.
 pub(crate) struct CoreSystem {
     pub(crate) system: &'static System,
-    /// The core this system's games start with (SovEmu's choice, or `SOVEMU_SYSTEMS__<id>__CORE`).
+    /// The core this system's games start with (SovEmu's choice, or `SovEmu__Systems__<id>__Core`).
     pub(crate) chosen: bool,
 }
 

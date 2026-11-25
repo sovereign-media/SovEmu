@@ -48,7 +48,7 @@ pub(super) struct ContainerUsage {
 #[derive(SimpleObject)]
 pub(super) struct ServerResources {
     pub(super) host: HostFacts,
-    /// Seconds between readings (`SOVEMU_RESOURCE_SAMPLE_SECONDS`; 0: not read).
+    /// Seconds between readings (`SovEmu__SystemResources__SampleSeconds`; 0: not read).
     pub(super) sample_seconds: i32,
     /// The latest reading; null if there is none (see `usageNote`).
     pub(super) usage: Option<ContainerUsage>,
@@ -117,7 +117,7 @@ impl ResourcesQuery {
         let latest = r.latest();
         let usage_note = match latest {
             _ if r.sample_seconds == 0 => {
-                Some("Not read: SOVEMU_RESOURCE_SAMPLE_SECONDS is 0.".to_owned())
+                Some("Not read: SovEmu__SystemResources__SampleSeconds is 0.".to_owned())
             }
             None => Some("Not read yet.".to_owned()),
             Some(reading) if reading.usage.is_none() => Some(
