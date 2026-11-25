@@ -945,6 +945,11 @@ mod tests {
         let (db, dir) = db("maintain").await;
         let config = sovemu_identity::Config {
             public_urls: vec!["http://localhost:8080".into()],
+            clients: sovemu_identity::ClientIds {
+                web: "web".into(),
+                device: "device".into(),
+                mobile: "mobile".into(),
+            },
             token_secret: "test".into(),
             access_token_minutes: 60,
             session_days: 30,

@@ -174,11 +174,18 @@ test("the Devices page lists every sign-in and signs one out; a user's page list
       }),
     });
     const id = (await added.json()).data?.addUser?.id;
+    // The apps sign in with a password as the device client, whose id is per install.
+    const boot = await fetch("/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "{ bootstrapConfig { deviceClientId } }" }),
+    });
+    const device = (await boot.json()).data.bootstrapConfig.deviceClientId;
     const signedIn = await fetch("/oauth/password", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: "sovemu-native",
+        client_id: device,
         username: "devkid",
         password: "password123",
         scope: "openid profile offline_access",
@@ -222,13 +229,19 @@ test("the Logs page shows the server's own lines, filters them, and pauses", asy
   await page.goto("/admin/logs/");
   // A line to find: a refused sign-in for a name nobody has, logged as a warning with the name
   // as a field (the e2e server logs at warn and above, as RUST_LOG says).
-  await page.evaluate(() =>
-    fetch("/oauth/password", {
+  await page.evaluate(async () => {
+    const boot = await fetch("/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "{ bootstrapConfig { deviceClientId } }" }),
+    });
+    const device = (await boot.json()).data.bootstrapConfig.deviceClientId;
+    await fetch("/oauth/password", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: "sovemu-native", username: "nobody-in-the-logs", password: "x" }),
-    }),
-  );
+      body: new URLSearchParams({ client_id: device, username: "nobody-in-the-logs", password: "x" }),
+    });
+  });
   const lines = page.getByRole("list", { name: "Log lines" });
   await page.getByLabel("Text").fill("nobody-in-the-logs");
   await expect(lines.getByRole("listitem")).toHaveCount(1);

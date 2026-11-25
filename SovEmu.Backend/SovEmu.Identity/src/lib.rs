@@ -40,7 +40,7 @@ pub struct SignIn {
     pub id: String,
     /// The account; none for a sign-in whose subject is not one (none are issued so).
     pub user_id: Option<i64>,
-    /// [`WEB_CLIENT`] or [`NATIVE_CLIENT`].
+    /// One of [`ClientIds`] (the client it signed in as).
     pub client_id: String,
     pub signed_in_at: std::time::SystemTime,
     /// When it last had an access token: about when the client was last in use.
@@ -54,7 +54,32 @@ pub struct SignIn {
     /// wrote it; none until it has started a stream.
     pub capabilities: Option<String>,
 }
-pub use provider::{NATIVE_CLIENT, WEB_CLIENT};
+pub use provider::{LEGACY_DEVICE_CLIENT, LEGACY_WEB_CLIENT};
+
+/// The OAuth clients SovEmu signs in, by id. Each is per install (kept in `server.json` by the
+/// server), so nobody can call a server's endpoints as its apps without first asking it which id
+/// they use (`bootstrapConfig`), and a new one of a kind replaces the old: its registration and
+/// every sign-in under it are removed on the next start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientIds {
+    /// The web client: the code flow with PKCE, refresh tokens. Never a password.
+    pub web: String,
+    /// Devices, the TVs above all: the device grant (a code approved on another screen), the
+    /// password fallback (`/oauth/password`) and refresh tokens. An app that signs in with a
+    /// code or a password signs in as this client.
+    pub device: String,
+    /// The phone and tablet apps signing in through the system browser: the code flow with PKCE
+    /// to the apps' redirect URI, and refresh tokens. No password, no device grant.
+    pub mobile: String,
+}
+
+/// What kind of client a sign-in is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientKind {
+    Web,
+    Device,
+    Mobile,
+}
 pub use store::SqliteStorage;
 pub use throttle::{LOCKOUT_WINDOW, LoginThrottle, MAX_FAILURES, MAX_FAILURES_PER_IP};
 
@@ -82,6 +107,8 @@ pub struct Config {
     /// `https://games.example.com`): each is an issuer, and the web client's callback there is
     /// registered. A request to any other address cannot sign in.
     pub public_urls: Vec<String>,
+    /// The clients' ids.
+    pub clients: ClientIds,
     /// The secret the ID-token signing key is derived from.
     pub token_secret: String,
     /// How long an access token lasts.
@@ -113,9 +140,13 @@ pub struct SignInConfig {
     /// The issuer for this address.
     pub issuer: String,
     /// The web client's id (the code flow with PKCE).
-    pub web_client_id: &'static str,
-    /// The apps' id (the device grant, the password fallback).
-    pub native_client_id: &'static str,
+    pub web_client_id: String,
+    /// The devices' id (the device grant, the password fallback).
+    pub device_client_id: String,
+    /// The phone and tablet apps' id when they sign in through the system browser.
+    pub mobile_client_id: String,
+    /// Where the mobile client's sign-in comes back to: the apps' redirect URI.
+    pub mobile_redirect_uri: String,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub revocation_endpoint: String,
@@ -161,7 +192,8 @@ impl Identity {
             refresh_retry: config.refresh_retry,
         };
         let store = SqliteStorage::new(db.clone());
-        let provider = provider::Provider::new(&config.public_urls, store, lifetimes).await?;
+        let provider =
+            provider::Provider::new(&config.public_urls, &config.clients, store, lifetimes).await?;
         let inner = Inner {
             key: keys::TokenKey::from_secret(&config.token_secret),
             throttle: LoginThrottle::new(config.max_failures, config.lockout),
@@ -192,8 +224,10 @@ impl Identity {
         let endpoint = |e: &Option<String>| e.clone().expect("every endpoint is configured");
         Some(SignInConfig {
             issuer: url.clone(),
-            web_client_id: WEB_CLIENT,
-            native_client_id: NATIVE_CLIENT,
+            web_client_id: self.inner.config.clients.web.clone(),
+            device_client_id: self.inner.config.clients.device.clone(),
+            mobile_client_id: self.inner.config.clients.mobile.clone(),
+            mobile_redirect_uri: provider::MOBILE_REDIRECT.to_owned(),
             authorization_endpoint: endpoint(&config.authorization_endpoint),
             token_endpoint: endpoint(&config.token_endpoint),
             revocation_endpoint: endpoint(&config.revocation_endpoint),
@@ -443,6 +477,18 @@ impl Identity {
         }
         tracing::info!(by = %admin.username, sign_in = %id, "ended a sign-in");
         Ok(())
+    }
+
+    /// What kind of client `client_id` is; none for an id that is not one of this server's.
+    pub fn client_kind(&self, client_id: &str) -> Option<ClientKind> {
+        let ids = &self.inner.config.clients;
+        [
+            (&ids.web, ClientKind::Web),
+            (&ids.device, ClientKind::Device),
+            (&ids.mobile, ClientKind::Mobile),
+        ]
+        .into_iter()
+        .find_map(|(id, kind)| (id == client_id).then_some(kind))
     }
 
     fn store(&self) -> &store::SqliteStorage {

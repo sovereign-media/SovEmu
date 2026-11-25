@@ -55,9 +55,13 @@ cookie's. Never hand out or serve an unsigned file URL.
 - The API is signed in only by `Authorization: Bearer` access tokens, never a cookie. The
   `sovemu_session` cookie is the browser's sign-in at the server, read only in front of
   `/oauth/authorize` and `/device`.
-- `sovemu-web` has no password grant; the apps (`sovemu-native`) use the device grant or the
-  password fallback (`/oauth/password`, `SovEmu__Authentication__PasswordSignIn`), and learn every
-  sign-in URL and client id from the anonymous `bootstrapConfig` query.
+- **Three clients**, as Sovereign's, each id per install (`data/server.json`, never a setting):
+  **web** (the code flow with PKCE, never a password), **device** (TVs and any app signing in
+  with the device grant or the password fallback, `/oauth/password`,
+  `SovEmu__Authentication__PasswordSignIn`) and **mobile** (phones through the system browser, to
+  `media.sovereign.sovemu:/oauth2redirect`). Clients learn every id and sign-in URL from the
+  anonymous `bootstrapConfig` query and hard-code none. A replaced id's registration is removed
+  with its sign-ins on start; an install from before keeps `sovemu-web` and `sovemu-native`.
 - Roles are `viewer` and `admin` (`users.role`), checked on every request.
 
 ## Database

@@ -1626,6 +1626,15 @@ export const AppearanceQuery = graphql(`
   }
 `);
 
+/** The web client's OAuth client id at this address, asked signed out (it is per install). */
+export const WebClientQuery = graphql(`
+  query WebClient {
+    bootstrapConfig {
+      webClientId
+    }
+  }
+`);
+
 export const SetBackgroundMutation = graphql(`
   mutation SetBackground($id: String!) {
     setBackground(id: $id)

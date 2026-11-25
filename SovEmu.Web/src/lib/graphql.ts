@@ -111,6 +111,15 @@ export async function request<TData, TVariables>(
   return response.data as TData;
 }
 
+/** Sends an operation with no token at all, for what is asked before signing in (the client id
+ *  to sign in as). Never renews or sends the browser to sign in. */
+export async function anonymous<TData>(query: Document<TData, Record<string, never>>): Promise<TData> {
+  const response = await send<TData>(body(query as Document), null);
+  const error = firstError(response.errors);
+  if (error) throw error;
+  return response.data as TData;
+}
+
 /**
  * Sends a mutation only if signed in already, without renewing the token or going to sign in,
  * and ignores the answer: for reports that must never get in the player's way.

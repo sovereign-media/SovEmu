@@ -96,6 +96,15 @@ impl SqliteStorage {
         Self { pool }
     }
 
+    /// Every client registration, read back as oauth-as wrote it.
+    pub(crate) async fn clients(&self) -> Result<Vec<Client>, StorageError> {
+        let rows: Vec<String> = sqlx::query_scalar("SELECT record FROM oauth_clients")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db("clients"))?;
+        rows.iter().map(|json| decode(json, None)).collect()
+    }
+
     /// Every sign-in still live, or one user's (`subject`): a refresh family with an active
     /// token, its client, when its grant was made, when it last had an access token, and when it
     /// lapses. Read back into oauth-as's own records (the credential, left out of the stored

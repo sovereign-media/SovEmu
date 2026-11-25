@@ -6,7 +6,8 @@
 //! ```text
 //! <data>/
 //!   sovemu.db             the database (SQLite, WAL)
-//!   server.json           the asset and token signing keys, if not set (sovemu_assets)
+//!   server.json           the asset and token signing keys, if not set, and the OAuth clients'
+//!                         ids (sovemu_assets)
 //!   artwork/              every image (see sovemu_library::layout):
 //!     backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
 //!     systems/              system photos of your own, `<system id>.webp`

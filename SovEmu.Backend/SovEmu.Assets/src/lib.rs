@@ -182,20 +182,52 @@ pub fn load_secret(
     if let Some(key) = configured.map(str::trim).filter(|k| !k.is_empty()) {
         return Ok(key.to_owned());
     }
+    keep(data_dir, field, name, || generate_key().map_err(|e| KeyError::NoRandomness(name, e)))
+}
+
+/// Whether `<data_dir>/server.json` exists: whether this server has run here before (it writes
+/// the file on its first start).
+pub fn server_file_exists(data_dir: &Path) -> bool {
+    data_dir.join("server.json").exists()
+}
+
+/// A per-install identifier, such as an OAuth client id: the one kept under `field` in
+/// `<data_dir>/server.json`, else `first` (what an install that ran before the id was kept
+/// already used), else a new random one (32 hex digits), kept there from then on. Not a secret,
+/// but per install so nobody can predict it. `name` is what it is called in logs and errors.
+pub fn load_id(
+    data_dir: &Path,
+    field: &str,
+    name: &'static str,
+    first: Option<&str>,
+) -> Result<String, KeyError> {
+    keep(data_dir, field, name, || match first {
+        Some(id) => Ok(id.to_owned()),
+        None => generate_id().map_err(|e| KeyError::NoRandomness(name, e)),
+    })
+}
+
+/// The value kept under `field` in `<data_dir>/server.json`, else `make`'s, written there.
+fn keep(
+    data_dir: &Path,
+    field: &str,
+    name: &'static str,
+    make: impl FnOnce() -> Result<String, KeyError>,
+) -> Result<String, KeyError> {
     let file = data_dir.join("server.json");
     let mut doc: serde_json::Map<String, serde_json::Value> = match std::fs::read(&file) {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
         Err(_) => serde_json::Map::new(),
     };
-    if let Some(key) = doc.get(field).and_then(|v| v.as_str()).filter(|k| !k.is_empty()) {
-        return Ok(key.to_owned());
+    if let Some(value) = doc.get(field).and_then(|v| v.as_str()).filter(|v| !v.is_empty()) {
+        return Ok(value.to_owned());
     }
-    let key = generate_key().map_err(|e| KeyError::NoRandomness(name, e))?;
-    doc.insert(field.into(), serde_json::Value::String(key.clone()));
+    let value = make()?;
+    doc.insert(field.into(), serde_json::Value::String(value.clone()));
     let bytes = serde_json::to_vec_pretty(&doc).expect("a JSON map serializes");
     write_private(&file, &bytes).map_err(|e| KeyError::Keep(name, file.clone(), e))?;
-    tracing::info!(file = %file.display(), key = name, "generated a key");
-    Ok(key)
+    tracing::info!(file = %file.display(), value = name, "kept a new value");
+    Ok(value)
 }
 
 /// 64 random alphanumeric characters.
@@ -205,6 +237,13 @@ fn generate_key() -> Result<String, String> {
     getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     // 256 is a multiple of 62 to within 4/256: the bias is far below anything usable.
     Ok(bytes.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect())
+}
+
+/// 128 random bits as 32 lower-case hex digits.
+fn generate_id() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Writes a file only its owner can read (the key is a secret), via a temporary file.
@@ -327,6 +366,27 @@ mod tests {
             assert_eq!(mode & 0o777, 0o600, "owner-only");
         }
         assert_eq!(load_key(Some("configured"), &dir).unwrap(), b"configured", "the setting wins");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_id_is_made_once_per_install_and_kept() {
+        let dir = std::env::temp_dir().join(format!("sovemu-assets-id-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!server_file_exists(&dir), "a first start");
+        let id = load_id(&dir, "deviceClientId", "device client id", None).unwrap();
+        assert!(server_file_exists(&dir));
+        assert_eq!(id.len(), 32);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        // Kept: what it was first made is what every later start reads, `first` or not.
+        assert_eq!(load_id(&dir, "deviceClientId", "device client id", Some("x")).unwrap(), id);
+        let other = load_id(&dir, "mobileClientId", "mobile client id", None).unwrap();
+        assert_ne!(other, id, "each id its own");
+        // An install from before ids were kept keeps the one it used.
+        let legacy = load_id(&dir, "webClientId", "web client id", Some("sovemu-web")).unwrap();
+        assert_eq!(legacy, "sovemu-web");
+        assert_eq!(load_id(&dir, "webClientId", "web client id", None).unwrap(), "sovemu-web");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

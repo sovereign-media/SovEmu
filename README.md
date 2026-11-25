@@ -202,16 +202,26 @@ Android and iOS clients all use it. The schema, with every type and field docume
 - **Sign-in** is OAuth 2.1 with OpenID Connect over it (`SovEmu.Identity`, on the
   [`oauth-as`](https://crates.io/crates/oauth-as) crate). Discovery is at
   `/.well-known/openid-configuration`, and every API request carries `Authorization: Bearer
-  <access token>`. Two clients are built in, both public:
-  - `sovemu-web`, the web client: the authorization code flow with PKCE (S256, required) and
-    refresh tokens. It has no password grant; the password goes only to the server's own sign-in
-    page (`/login/`, which posts to `/oauth/signin`).
-  - `sovemu-native`, the Android and iOS apps:
+  <access token>`. Three clients are built in, all public, as in Sovereign. Their ids are made
+  once per install and kept in `data/server.json` (`webClientId`, `deviceClientId`,
+  `mobileClientId`); an install from before keeps `sovemu-web` and `sovemu-native`, so nobody is
+  signed out. Replacing an id there removes the old registration, and every sign-in under it, on
+  the next start. Apps learn the ids from `bootstrapConfig`; there is no setting for them.
+  - The **web** client: the authorization code flow with PKCE (S256, required) and refresh
+    tokens. It has no password grant; the password goes only to the server's own sign-in page
+    (`/login/`, which posts to `/oauth/signin`).
+  - The **device** client, for TVs and any app signing in with a code or a password:
     - the device grant (`/oauth/device_authorization`): the TV shows a code, approved at
       `/device` in a signed-in browser;
     - or the password fallback, `POST /oauth/password` (`client_id`, `username`, `password`,
       `scope`), which answers like the token endpoint. `SovEmu__Authentication__PasswordSignIn=false` turns it
       off.
+  - The **mobile** client, for the phone and tablet apps signing in through the system browser:
+    the authorization code flow with PKCE back to the apps' own scheme
+    (`media.sovereign.sovemu:/oauth2redirect`). No password and no device grant.
+
+  Token lifetimes are the server's, the same for every client
+  (`SovEmu__Authentication__AccessTokenMinutes` and the session days).
 
   An app's first question is the anonymous `bootstrapConfig` query, as Sovereign's apps ask
   theirs. It names the issuer, the client ids and every endpoint URL for the address the app
