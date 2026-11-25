@@ -228,11 +228,12 @@ Android and iOS clients all use it. The schema, with every type and field docume
 
 ## A library on a NAS
 
-`compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a
-Batocera-style layout: `roms/<system>/`. Only the ROMs are read: artwork folders beside them
-(`images/`, `videos/`) are skipped, and every game's artwork comes from ScreenScraper.
-BIOS files can stay on the share: point `SOVEMU_BIOS_DIR` at its `bios/` folder (any layout,
-read-only is fine), or copy them into `data/bios/`. Put the share, credentials and mode in `.env`, which git ignores (see
+`compose.nas.yaml` mounts an SMB share **read-only**. The share should hold a Batocera-style
+folder (`SOVEMU_NAS_PATH`) with `roms/<system>/` and `bios/`: only those two are mounted, `roms/`
+at `/sov-library` (the system folders at its root) and `bios/` at `/sov-bios`, used as it is (any
+layout), so nothing else of the share is visible in the container. Only the ROMs are read:
+artwork folders beside them (`images/`, `videos/`) are skipped, and every game's artwork comes
+from ScreenScraper. Put the share, credentials and mode in `.env`, which git ignores (see
 `.env.example`), then:
 
 ```bash
@@ -499,7 +500,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
 | `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
 | `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
-| `SOVEMU_DECORATIONS_DIRS` | `/nas/decorations` with `compose.nas.yaml` | More decoration folders (Batocera layout), comma-separated, before `data/artwork/decorations` and the built-in one |
+| `SOVEMU_DECORATIONS_DIRS` | none | More decoration folders (Batocera layout), comma-separated, before `data/artwork/decorations` and the built-in one |
 | `SOVEMU_BACKGROUND` | unset (the admin's choice on the Appearance page, else `random`) | The background behind every screen, in every client: `dither`, `lattice`, `screens`, a file's name from the background folders, `random` (a different one each visit) or `none`. Set, it locks the Appearance page |
 | `SOVEMU_BACKGROUNDS_DIRS` | none | More background folders, comma-separated, before `data/artwork/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/artwork/systems/<system id>.webp` |
 | `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_ARTWORK_BUILTIN` | set in the image | The built web client; the worker binary; the built-in artwork (`/opt/sovemu/artwork`, laid out as `data/artwork`) |
