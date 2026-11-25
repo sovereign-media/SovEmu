@@ -21,7 +21,14 @@ describe("attention", () => {
       ],
       "DUPLICATE",
     );
-    expect(totals).toEqual({ NO_INFORMATION: 0, NO_BOX_ART: 1, DUPLICATE: 5, MISSING_PARTS: 0, UNRECOGNISED: 0 });
+    expect(totals).toEqual({
+      NO_INFORMATION: 0,
+      AWAITING_LOOKUP: 0,
+      NO_BOX_ART: 1,
+      DUPLICATE: 5,
+      MISSING_PARTS: 0,
+      UNRECOGNISED: 0,
+    });
     expect(systems).toEqual([
       { system: "gba", count: 2 },
       { system: "nes", count: 3 },
@@ -43,6 +50,7 @@ describe("attention", () => {
 
   it("offers a lookup only where one can help, and reads the kind from the URL", () => {
     expect(canLookUp("NO_BOX_ART")).toBe(true);
+    expect(canLookUp("AWAITING_LOOKUP")).toBe(true);
     expect(canLookUp("DUPLICATE")).toBe(false);
     expect(kindFrom("MISSING_PARTS")).toBe("MISSING_PARTS");
     expect(kindFrom("nonsense")).toBe("NO_INFORMATION");
