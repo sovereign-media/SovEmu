@@ -27,8 +27,8 @@ them changes all four together: a PR in each repository it touches.
   checks every document against it.
 - **Android**: `./gradlew :core:syncSchema` copies it to `core/src/main/graphql/schema.graphqls`;
   Apollo checks every operation.
-- **iOS**: the documents in `SovEmuKit/API.swift` are hand-written: check them against the schema
-  by hand.
+- **iOS**: `scripts/sync-schema.sh` copies it to `SovEmuKit/GraphQL/schema.graphqls` and runs
+  Apollo iOS codegen, which checks every operation in `GraphQL/operations.graphql`.
 
 ## The input wire format
 
