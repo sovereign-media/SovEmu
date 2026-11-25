@@ -1356,6 +1356,31 @@ async fn stops_a_service_that_is_out_of_quota() {
 }
 
 #[tokio::test]
+async fn games_a_stopped_service_skipped_are_asked_again() {
+    // One game at a time: the first runs the quota out, the second is not asked at all.
+    let (base, _) = mock_services(true).await;
+    let mut args = metadata_args(&base);
+    args.extend(["--screenscraper-threads".into(), "1".into()]);
+    let mut h = Harness::new_with("metadata-skipped", false, args).await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({"s": null})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(
+        (status["total"].clone(), status["failed"].clone()),
+        (json!(2), json!(2)),
+        "{status}"
+    );
+    // Neither is stored as looked up: the next job asks both again.
+    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_metadata")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0);
+    h.ok(FETCH, json!({"s": null})).await;
+    assert_eq!(wait_for_job(&mut h).await["total"], 2);
+}
+
+#[tokio::test]
 async fn mirror_mode_copies_the_library_and_plays_from_it() {
     let mut h =
         Harness::new_with("mirror", false, vec!["--library-mode".into(), "mirror".into()]).await;
@@ -3715,16 +3740,20 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
     );
 
     let game = duplicates[0]["gameId"].as_i64().unwrap();
-    // The scan started a lookup in the background; another is refused while it runs (on a
-    // loaded machine it can still be running here), so wait for it to finish.
-    for _ in 0..200 {
-        if !h.state.jobs.is_running(crate::jobs::Job::Metadata) {
+    // The scan started a lookup in the background, and another is refused (CONFLICT) while it
+    // runs. On a loaded machine it may not even have started yet, so ask until it is let in
+    // rather than guessing how long it takes.
+    let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let (_, errors) = h.gql(look_up, json!({"id": game})).await;
+        if errors.is_null() {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        let busy = errors[0]["extensions"]["code"] == "CONFLICT";
+        assert!(busy && std::time::Instant::now() < deadline, "{look_up}: {errors}");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
-    h.ok(look_up, json!({"id": game})).await;
     let (code, _) = h.err(look_up, json!({"id": 99_999})).await;
     assert_eq!(code, "NOT_FOUND");
 }
