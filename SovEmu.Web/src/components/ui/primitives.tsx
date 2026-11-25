@@ -211,6 +211,84 @@ export function Select({
   );
 }
 
+// --- Multi-select ---------------------------------------------------------------------------
+
+/** Pick any number of `options`: a dropdown of checkboxes (Radix's dropdown menu), which stays
+ *  open while they are ticked. The trigger says what is picked: "Any", the one value, or how many.
+ *  An option's `count` (games with it, say) shows beside it. */
+export function MultiSelect<T extends string>({
+  label,
+  options,
+  selected,
+  onChange,
+  className,
+}: {
+  label: string;
+  options: { value: T; label: string; count?: number }[];
+  selected: T[];
+  onChange: (selected: T[]) => void;
+  className?: string;
+}) {
+  const named = (v: T) => options.find((o) => o.value === v)?.label ?? v;
+  const summary =
+    selected.length === 0 ? "Any" : selected.length === 1 ? named(selected[0]) : `${selected.length} selected`;
+  const toggle = (v: T, on: boolean) => onChange(on ? [...selected, v] : selected.filter((x) => x !== v));
+  return (
+    <MenuPrimitive.Root modal={false}>
+      <MenuPrimitive.Trigger
+        aria-label={`${label}: ${summary}`}
+        className={cn(
+          "inline-flex h-9 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md border bg-black/30 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          selected.length ? "border-accent text-white" : "border-edge text-slate-300",
+          className,
+        )}
+      >
+        <span className="truncate">{summary}</span>
+        <ChevronDown className="size-4 shrink-0 text-slate-400" />
+      </MenuPrimitive.Trigger>
+      <MenuPrimitive.Portal>
+        <MenuPrimitive.Content
+          align="start"
+          sideOffset={4}
+          aria-label={label}
+          className="z-50 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] min-w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto rounded-lg border border-edge bg-panel p-1 shadow-2xl"
+        >
+          {options.map((o) => (
+            <MenuPrimitive.CheckboxItem
+              key={o.value}
+              checked={selected.includes(o.value)}
+              onCheckedChange={(on) => toggle(o.value, on)}
+              // Ticking one keeps the menu open, to tick more.
+              onSelect={(e) => e.preventDefault()}
+              className="relative flex cursor-pointer items-center gap-3 rounded py-1.5 pr-2 pl-7 text-sm text-slate-200 outline-none select-none data-[highlighted]:bg-white/10"
+            >
+              <MenuPrimitive.ItemIndicator className="absolute left-2">
+                <Check className="size-3.5" />
+              </MenuPrimitive.ItemIndicator>
+              <span className="truncate">{o.label}</span>
+              {o.count !== undefined && <span className="ml-auto text-xs text-slate-500 tabular-nums">{o.count}</span>}
+            </MenuPrimitive.CheckboxItem>
+          ))}
+          {selected.length > 0 && (
+            <>
+              <MenuPrimitive.Separator className="my-1 h-px bg-white/10" />
+              <MenuPrimitive.Item
+                onSelect={(e) => {
+                  e.preventDefault();
+                  onChange([]);
+                }}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-slate-400 outline-none select-none data-[highlighted]:bg-white/10 data-[highlighted]:text-white"
+              >
+                <X className="size-3.5" /> Clear
+              </MenuPrimitive.Item>
+            </>
+          )}
+        </MenuPrimitive.Content>
+      </MenuPrimitive.Portal>
+    </MenuPrimitive.Root>
+  );
+}
+
 // --- Progress -------------------------------------------------------------------------------
 
 /** `value` is 0 to 100; `color` overrides the accent (a system's colour). */

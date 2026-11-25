@@ -310,7 +310,9 @@ function Games() {
 
   if (!system) return null;
   const filterCount = activeFilters(filters) + (query.trim() ? 1 : 0);
-  const showJump = sort === "title" && shown.length > 12 && stops.length > 1;
+  // Shown once the list is long enough to need it; only usable in title order.
+  const showJump = shown.length > 12 && stops.length > 1;
+  const canJump = sort === "title";
 
   return (
     <>
@@ -356,7 +358,7 @@ function Games() {
               >
                 <SlidersHorizontal /> {filterCount > 0 ? `Filters (${filterCount})` : "Filters"}
               </button>
-              {showJump && <JumpButton onClick={openJump} />}
+              {showJump && <JumpButton onClick={openJump} disabled={!canJump} />}
             </TabStrip>
           </div>
         </div>
