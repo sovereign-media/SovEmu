@@ -27,8 +27,8 @@ env:
 # The SMALL_RUNNER, MEDIUM_RUNNER and LARGE_RUNNER variables name other runners when set; the
 # organisation's own (`sovereign-linux-*`, on the cluster, sovereign-media/sovereign#1547) are
 # for its private repositories only, never a public one, whose pull requests run code from
-# anyone. Each job that builds or caches starts with sovereign-media/actions/setup-runner: it
-# installs only what a runner is missing (zstd among it, so caches are the same on any runner).
+# anyone. A public repository cannot use the organisation's private actions either, so every
+# step here is a public action or a plain command.
 
 jobs:
   # Which parts of the repository this push or pull request touched; each job below runs only
@@ -83,13 +83,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # SovEmu.Media links the system libvpx, libopus and libavcodec through pkg-config. The C
-      # toolchain and libclang (bindgen) are on GitHub's runners but not on the self-hosted image.
-      - name: Set up the runner
-        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
-        with:
-          gh: 'false'
-          apt: build-essential clang libclang-dev libvpx-dev libopus-dev libavcodec-dev libavutil-dev pkg-config
+      # SovEmu.Media links the system libvpx, libopus and libavcodec through pkg-config, and
+      # bindgen needs libclang.
+      - name: System libraries
+        working-directory: .
+        run: |
+          sudo apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            build-essential clang libclang-dev libvpx-dev libopus-dev libavcodec-dev libavutil-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -116,11 +117,6 @@ jobs:
         working-directory: SovEmu.Web
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up the runner
-        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
-        with:
-          gh: 'false'
 
       - uses: actions/setup-node@v7
         with:
@@ -167,11 +163,6 @@ jobs:
           df -h /
 
       - uses: actions/checkout@v7
-
-      - name: Set up the runner
-        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
-        with:
-          gh: 'false'
 
       - uses: docker/setup-buildx-action@v4
         id: buildx
@@ -293,11 +284,6 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
 
       - uses: actions/checkout@v7
-
-      - name: Set up the runner
-        uses: sovereign-media/actions/setup-runner@7c1e75a8ac4ac92c10507edd13f535a8569b5fe1 # v1.0.0
-        with:
-          gh: 'false'
 
       - uses: docker/setup-buildx-action@v4
         id: buildx
