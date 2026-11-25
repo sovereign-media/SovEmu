@@ -11,7 +11,10 @@ Where the code is laid out is [web.md](web.md).
 
 ## Components
 
-- Functional components and hooks only.
+- Functional components and hooks only. The one class is `ErrorBoundary`
+  (`src/components/ErrorBoundary.tsx`), because an error boundary cannot be a function; every
+  screen is wrapped in it (`router.tsx`), keyed by its URL, and it reports what it catches as
+  `SCREEN_ERROR`.
 - Extract any component whose visibility is toggled into a named component.
 - Extract involved state or event logic into a custom hook (`use*.ts` beside its component, as
   `useGameInUrl.ts`), or into a plain class or function in `src/lib/` when it needs no React.
