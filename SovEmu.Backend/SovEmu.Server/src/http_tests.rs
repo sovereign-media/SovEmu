@@ -4045,3 +4045,54 @@ fn a_new_install_gets_client_ids_of_its_own_and_an_upgrade_keeps_its_own() {
     assert_eq!(kept.mobile.len(), 32);
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[tokio::test]
+async fn a_phone_signed_in_here_signs_a_tv_in_with_its_code() {
+    let mut h = Harness::new("sign-in-a-tv", false).await;
+    h.sign_up_admin().await;
+    const APPROVE: &str = "mutation($c: String!) { approveDeviceCode(userCode: $c) }";
+
+    // The TV asks for a code, as the device client.
+    let (_, grant, _) = h
+        .form(
+            "/oauth/device_authorization",
+            &[("client_id", "sovemu-native"), ("scope", "openid profile offline_access")],
+        )
+        .await;
+    let device_code = grant["device_code"].as_str().unwrap().to_owned();
+    let user_code = grant["user_code"].as_str().unwrap().to_owned();
+
+    // A code no TV is waiting with is said so, and nothing is approved.
+    let (code, message) = h.err(APPROVE, json!({"c": "BCDF-GHJK"})).await;
+    assert_eq!(code, "NOT_FOUND");
+    assert!(message.starts_with("No TV is waiting with that code"), "{message}");
+
+    // The phone types the code as it likes: lower case, no dash.
+    let typed = user_code.replace('-', "").to_lowercase();
+    assert_eq!(h.ok(APPROVE, json!({"c": typed})).await["approveDeviceCode"], true);
+    // Used once: a second approval finds no TV waiting.
+    assert_eq!(h.err(APPROVE, json!({"c": user_code})).await.0, "NOT_FOUND");
+
+    // The TV's next poll signs it in, as the phone's user.
+    let (status, body) = h
+        .token(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ("client_id", "sovemu-native"),
+            ("device_code", &device_code),
+        ])
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    h.token = Some(body["access_token"].as_str().unwrap().to_owned());
+    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"]["username"], "admin");
+
+    // Guessing codes stops soon.
+    let mut last = String::new();
+    for _ in 0..8 {
+        last = h.err(APPROVE, json!({"c": "WXYZ-WXYZ"})).await.0;
+    }
+    assert_eq!(last, "TOO_MANY_REQUESTS");
+
+    // Signed out, there is nobody to sign the TV in as.
+    h.token = None;
+    assert_eq!(h.err(APPROVE, json!({"c": user_code})).await.0, "UNAUTHENTICATED");
+}

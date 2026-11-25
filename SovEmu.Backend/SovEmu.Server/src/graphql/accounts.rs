@@ -337,6 +337,21 @@ impl AccountsMutation {
         Ok(user.into())
     }
 
+    /// Signs a TV in as you: the code its *Sign in with your phone* screen shows, typed on a
+    /// phone or tablet already signed in here (*Sign in a TV*). The same approval the server's
+    /// `/device` page gives in a browser. `NOT_FOUND` when no TV is waiting with that code;
+    /// `TOO_MANY_REQUESTS` after several wrong ones.
+    async fn approve_device_code(&self, ctx: &Context<'_>, user_code: String) -> Result<bool> {
+        let me = user(ctx).await?;
+        let headers = &ctx.data_unchecked::<Auth>().headers;
+        state(ctx)
+            .identity
+            .approve_device(headers, &me, &user_code)
+            .await
+            .map_err(|e| gql(e.into()))?;
+        Ok(true)
+    }
+
     /// Admins: adds an account (a viewer unless `role` says otherwise).
     async fn add_user(&self, ctx: &Context<'_>, input: NewUserInput) -> Result<Account> {
         let me = admin(ctx).await?;
