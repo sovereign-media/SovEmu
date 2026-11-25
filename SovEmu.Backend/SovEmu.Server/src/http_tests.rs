@@ -736,10 +736,21 @@ async fn mock_services(
             "/api2/ssuserInfos.php",
             get(|Query(q): Query<HashMap<String, String>>| async move {
                 assert_eq!(q["devid"], "dev");
+                // As the real one: no user account, or a wrong one, is refused here.
+                if q.get("ssid").is_none_or(|u| u == "refused") {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        "Erreur de login : Vérifier les identifiants utilisateurs !".to_owned(),
+                    );
+                }
                 // An account that may have two requests open, 600 a minute.
-                "<Data><ssuser><id>someone</id><niveau>1</niveau><maxthreads>2</maxthreads>\
-                 <maxrequestspermin>600</maxrequestspermin><requeststoday>1</requeststoday>\
-                 </ssuser></Data>"
+                (
+                    StatusCode::OK,
+                    "<Data><ssuser><id>someone</id><niveau>1</niveau><maxthreads>2</maxthreads>\
+                     <maxrequestspermin>600</maxrequestspermin><requeststoday>1</requeststoday>\
+                     </ssuser></Data>"
+                        .to_owned(),
+                )
             }),
         )
         .route(
@@ -755,6 +766,12 @@ async fn mock_services(
                     assert_eq!(q["devid"], "dev");
                     assert_eq!(q["devpassword"], "pw");
                     assert_eq!(q["output"], "xml");
+                    if q.get("ssid").is_some_and(|u| u == "refused") {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            "Erreur de login : Vérifier les identifiants utilisateurs !".to_owned(),
+                        );
+                    }
                     match q["systemeid"].as_str() {
                         "3" => {
                             if let Some(id) = q.get("gameid") {
@@ -813,8 +830,9 @@ async fn mock_services(
     (base, calls)
 }
 
-fn metadata_args(base: &str) -> Vec<String> {
-    [
+/// ScreenScraper with developer credentials and a user account (`user`: none for a guest).
+fn metadata_args_as(base: &str, user: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = [
         "--screenscraper-devid",
         "dev",
         "--screenscraper-devpassword",
@@ -826,7 +844,17 @@ fn metadata_args(base: &str) -> Vec<String> {
     ]
     .iter()
     .map(|s| s.to_string())
-    .collect()
+    .collect();
+    if let Some(user) = user {
+        args.extend(
+            ["--screenscraper-user", user, "--screenscraper-password", "pw"].map(String::from),
+        );
+    }
+    args
+}
+
+fn metadata_args(base: &str) -> Vec<String> {
+    metadata_args_as(base, Some("someone"))
 }
 
 async fn wait_for_job(h: &mut Harness) -> Value {
@@ -981,6 +1009,42 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     h.ok(FETCH, json!({})).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
+}
+
+#[tokio::test]
+async fn a_guest_looks_games_up_without_a_user_account() {
+    // Only developer credentials, as a fresh install has: ssuserInfos.php would refuse (it needs
+    // a user account), so it is not asked, and the lookups run as a guest.
+    let (base, calls) = mock_services(false).await;
+    let mut h = Harness::new_with("metadata-guest", false, metadata_args_as(&base, None)).await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(
+        (status["found"].clone(), status["notes"].clone()),
+        (json!(2), json!([])),
+        "{status}"
+    );
+    assert!(calls.lock().unwrap().iter().all(|q| !q.contains_key("ssid")), "as a guest");
+    // The guest's limits come with the answers.
+    assert_eq!(status["providers"][1]["account"]["level"], 1, "{status}");
+}
+
+#[tokio::test]
+async fn a_refused_user_account_falls_back_to_a_guest() {
+    let (base, calls) = mock_services(false).await;
+    let mut h =
+        Harness::new_with("metadata-refused", false, metadata_args_as(&base, Some("refused")))
+            .await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({})).await;
+    let status = wait_for_job(&mut h).await;
+    assert_eq!(status["found"], 2, "still looked up, as a guest: {status}");
+    assert!(
+        status["notes"].as_array().unwrap().iter().any(|n| n.as_str().unwrap().contains("guest")),
+        "{status}"
+    );
+    assert!(calls.lock().unwrap().iter().all(|q| !q.contains_key("ssid")), "the account dropped");
 }
 
 #[tokio::test]

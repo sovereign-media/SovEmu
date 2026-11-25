@@ -1438,6 +1438,11 @@ mod tests {
             &base,
             "--screenscraper-threads",
             "2",
+            // ssuserInfos.php is only asked with a user account.
+            "--screenscraper-user",
+            "u",
+            "--screenscraper-password",
+            "p",
         ]);
         let (providers, _) = metadata_providers(&config, &paths).unwrap();
         let ss = providers.iter().find(|p| p.id() == "screenscraper").unwrap();
