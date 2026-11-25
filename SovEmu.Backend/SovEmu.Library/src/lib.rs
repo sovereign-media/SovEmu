@@ -14,6 +14,7 @@ pub mod cores;
 pub mod decorations;
 pub mod info;
 pub mod labels;
+pub mod layout;
 pub mod mirror;
 pub mod scan;
 pub mod systems;

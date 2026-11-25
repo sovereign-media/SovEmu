@@ -201,22 +201,28 @@ RUN apt-get update \
         libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 sovemu \
-    && useradd -u 1000 -g sovemu -d /data -M -s /usr/sbin/nologin sovemu \
-    && mkdir -p /data/roms /data/bios /data/saves \
-    && chown -R sovemu:sovemu /data
+    && useradd -u 1000 -g sovemu -d /sov-data -M -s /usr/sbin/nologin sovemu \
+    && mkdir -p /sov-data /sov-library \
+    && chown sovemu:sovemu /sov-data
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
-COPY --from=build /out/sovemu-worker /out/sovemu-server /usr/local/bin/
+COPY --from=build /out/sovemu-worker /out/sovemu-server /opt/sovemu/bin/
 COPY --from=web /src/SovEmu.Web/dist/ /opt/sovemu/web/
 
+# The runtime (everything the image ships, read-only) is /opt/sovemu: bin/, cores/, web/ and
+# artwork/. The data (everything SovEmu writes) is one volume, /sov-data, whose artwork/ has the
+# same layout as /opt/sovemu/artwork: a file there replaces the built-in one at the same path. The
+# library is its own read-only mount, /sov-library.
 # UTC unless the container is given its own (`-e TZ=Europe/London`, compose's TZ, the chart's
 # `timezone`, or a cluster's injector such as k8tz).
 ENV TZ=UTC \
+    PATH=/opt/sovemu/bin:$PATH \
     SOVEMU_CORES_DIR=/opt/sovemu/cores \
     SOVEMU_WEB_DIR=/opt/sovemu/web \
-    SOVEMU_DECORATIONS_BUILTIN=/opt/sovemu/decorations \
-    SOVEMU_WORKER=/usr/local/bin/sovemu-worker \
-    SOVEMU_DATA_DIR=/data \
+    SOVEMU_ARTWORK_BUILTIN=/opt/sovemu/artwork \
+    SOVEMU_WORKER=/opt/sovemu/bin/sovemu-worker \
+    SOVEMU_DATA_DIR=/sov-data \
+    SOVEMU_ROMS_DIR=/sov-library \
     SOVEMU_UDP_PORTS=50000-50009 \
     # What the NVIDIA container toolkit injects when a GPU is requested: OpenGL/EGL and Vulkan
     # (graphics) and NVENC (video), not only the default compute and utility. Ignored elsewhere.
@@ -224,13 +230,14 @@ ENV TZ=UTC \
 
 # Every shipped core must load with the libraries installed above.
 RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
-# The built-in decoration set (`sovemu`), drawn by the server's own code: SovEmu ships no
-# third-party artwork. Other sets go in /data/decorations or SOVEMU_DECORATIONS_DIRS.
-RUN sovemu-server --write-decorations /opt/sovemu/decorations
+# The built-in artwork: backgrounds, system photos, the `sovemu` decorations (drawn by the
+# server's own code) and the ESRB's rating icons. The admin's own go at the same paths in
+# /sov-data/artwork (and SOVEMU_DECORATIONS_DIRS, SOVEMU_BACKGROUNDS_DIRS).
+RUN sovemu-server --write-artwork /opt/sovemu/artwork
 
 USER sovemu
-WORKDIR /data
-VOLUME ["/data"]
+WORKDIR /sov-data
+VOLUME ["/sov-data"]
 # 8080: the web client and API. 50000-50009/udp: one port per concurrent game session.
 EXPOSE 8080/tcp 50000-50009/udp
 ENTRYPOINT ["/usr/bin/tini", "--"]

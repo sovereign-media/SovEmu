@@ -100,7 +100,7 @@ impl Harness {
         }
         // No built-in decorations: drawing them takes seconds in a debug build. A test that
         // wants decorations gives its own set.
-        args.extend(["--decorations-builtin".into(), dir.join("no-builtin").display().to_string()]);
+        args.extend(["--artwork-builtin".into(), dir.join("no-builtin").display().to_string()]);
         args.extend(extra);
         let state = build_state(Config::parse_from(args)).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
@@ -265,7 +265,7 @@ impl Harness {
                 .fetch_one(&self.state.db)
                 .await
                 .unwrap();
-        let name = format!("{id}-box.webp");
+        let name = format!("{id}/box.webp");
         sqlx::query(
             "INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)
              ON CONFLICT(game_id) DO UPDATE SET box_art = excluded.box_art",
@@ -1037,22 +1037,20 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     let badge = "{ system(id: \"nes\") { games { esrbBadgeUrl } } }";
     let url = |data: Value| data["system"]["games"][0]["esrbBadgeUrl"].clone();
     assert_eq!(url(h.ok(badge, json!({})).await), Value::Null);
-    let builtin = h.dir.join("no-builtin/sovemu/ratings/esrb");
+    let builtin = h.dir.join("no-builtin/ratings/esrb");
     std::fs::create_dir_all(&builtin).unwrap();
     std::fs::write(builtin.join("t.png"), b"\x89PNG built in").unwrap();
     h.state.reload_decorations();
     let signed = url(h.ok(badge, json!({})).await).as_str().unwrap().to_owned();
-    assert!(
-        signed.starts_with("/media/decorations/sovemu/ratings/esrb/t.png?Sov-UserId="),
-        "{signed}"
-    );
+    assert!(signed.starts_with("/media/ratings/esrb/t.png?Sov-UserId="), "{signed}");
     assert_eq!(h.fetch(&signed).await.2, b"\x89PNG built in");
-    let own = h.dir.join("decorations/sovemu/ratings/esrb");
+    // The same path in the data folder's artwork replaces it.
+    let own = h.dir.join("artwork/ratings/esrb");
     std::fs::create_dir_all(&own).unwrap();
     std::fs::write(own.join("t.png"), b"\x89PNG mine").unwrap();
     h.state.reload_decorations();
     assert_eq!(h.fetch(&signed).await.2, b"\x89PNG mine", "an admin's icon replaces it");
-    let unsigned = "/media/decorations/sovemu/ratings/esrb/t.png";
+    let unsigned = "/media/ratings/esrb/t.png";
     assert_ne!(h.fetch(unsigned).await.0, StatusCode::OK, "signed URLs only");
 
     // Home's top rated row: only games with a rating (the GBA game has none).
@@ -1066,7 +1064,7 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(gba[0]["media"], json!(["IMAGE", "THUMB", "MARQUEE", "VIDEO"]));
     let gba_id = gba[0]["id"].as_i64().unwrap();
     for picture in ["box", "shot", "marquee"] {
-        let kept = std::fs::read(h.dir.join(format!("metadata/media/{gba_id}-{picture}.webp")));
+        let kept = std::fs::read(h.dir.join(format!("artwork/games/{gba_id}/{picture}.webp")));
         assert_eq!(&kept.unwrap()[8..12], b"WEBP", "{picture} is kept as WebP");
     }
     let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
@@ -1217,9 +1215,39 @@ async fn startup_removes_the_launchbox_dump() {
     let old_art = paths.removed_cache_artwork().join("nes/images/A-thumb.png");
     std::fs::create_dir_all(old_art.parent().unwrap()).unwrap();
     std::fs::write(&old_art, b"png").unwrap();
+    // An install from before `artwork/`: the admin's decorations and backgrounds at the top of
+    // the data folder (one background already moved), and game art named by game id.
+    let old_frame = paths.root().join("decorations/arcade/default.png");
+    std::fs::create_dir_all(old_frame.parent().unwrap()).unwrap();
+    std::fs::write(&old_frame, b"frame").unwrap();
+    std::fs::create_dir_all(paths.root().join("backgrounds")).unwrap();
+    std::fs::write(paths.root().join("backgrounds/beach.png"), b"old beach").unwrap();
+    std::fs::write(paths.root().join("backgrounds/hills.png"), b"hills").unwrap();
+    std::fs::create_dir_all(paths.artwork().backgrounds()).unwrap();
+    std::fs::write(paths.artwork().backgrounds().join("beach.png"), b"new beach").unwrap();
+    let media = paths.moved_game_art();
+    std::fs::create_dir_all(&media).unwrap();
+    for name in ["12-box.webp", "12-video.mp4", "7-shot.webp", "7-box.webp.part", "notes.txt"] {
+        std::fs::write(media.join(name), name).unwrap();
+    }
+    for old in paths.removed_caches() {
+        std::fs::create_dir_all(&old).unwrap();
+    }
     crate::metadata::tidy(&paths).await;
     assert!(!paths.removed_launchbox().exists());
     assert!(!paths.removed_cache_artwork().exists(), "nor the library's cached artwork");
+    assert!(paths.removed_caches().iter().all(|p| !p.exists()), "nor the moved caches");
+    let art = paths.artwork();
+    assert_eq!(std::fs::read(art.decorations().join("arcade/default.png")).unwrap(), b"frame");
+    assert!(!paths.root().join("decorations").exists(), "moved whole");
+    let read = |p: std::path::PathBuf| std::fs::read(p).unwrap();
+    assert_eq!(read(art.backgrounds().join("beach.png")), b"new beach", "what is there stays");
+    assert_eq!(read(art.backgrounds().join("hills.png")), b"hills");
+    assert_eq!(read(paths.game_artwork().join("12/box.webp")), b"12-box.webp");
+    assert_eq!(read(paths.game_artwork().join("12/video.mp4")), b"12-video.mp4");
+    assert_eq!(read(paths.game_artwork().join("7/shot.webp")), b"7-shot.webp");
+    assert!(!media.join("7-box.webp.part").exists(), "half-written downloads go");
+    assert!(media.join("notes.txt").exists(), "anything else stays");
 }
 
 #[tokio::test]
@@ -1227,7 +1255,7 @@ async fn reconciling_deletes_what_removed_games_left_and_fetches_missing_files_a
     let mut h = Harness::new("reconcile", false).await;
     h.sign_up_admin().await;
     let paths = h.state.config.paths();
-    let media = paths.artwork();
+    let media = paths.game_artwork();
     // A game about to leave the library, with information, artwork and a copy at a width.
     let rom = h.dir.join("roms/nes/Gone (USA).nes");
     std::fs::write(&rom, [0u8; 16]).unwrap();
@@ -1246,19 +1274,20 @@ async fn reconciling_deletes_what_removed_games_left_and_fetches_missing_files_a
         "UPDATE game_metadata SET screenshot = ?, screenshot_url = 'https://x.invalid/ss.png',
            screenshot_attempts = 3 WHERE game_id = ?",
     )
-    .bind(format!("{nes}-shot.webp"))
+    .bind(format!("{nes}/shot.webp"))
     .bind(nes)
     .execute(&h.state.db)
     .await
     .unwrap();
     sqlx::query("INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)")
         .bind(gone)
-        .bind(format!("{gone}-box.webp"))
+        .bind(format!("{gone}/box.webp"))
         .execute(&h.state.db)
         .await
         .unwrap();
-    for name in [format!("{gone}-box.webp"), format!("{gone}-video.mp4"), "notes.txt".into()] {
-        std::fs::write(media.join(name), b"x").unwrap();
+    std::fs::create_dir_all(media.join(gone.to_string())).unwrap();
+    for name in ["box.webp", "video.mp4", "notes.txt"] {
+        std::fs::write(media.join(format!("{gone}/{name}")), b"x").unwrap();
     }
     let widths = paths.artwork_widths().join("games");
     for id in [gone, nes] {
@@ -1274,12 +1303,12 @@ async fn reconciling_deletes_what_removed_games_left_and_fetches_missing_files_a
         crate::metadata::reconcile::Report { rows: 0, files: 2, copies: 1, missing: 1, unknown: 1 },
         "the scan's delete took the row; the GBA game has no information"
     );
-    assert!(!media.join(format!("{gone}-box.webp")).exists(), "a removed game's art goes");
-    assert!(!media.join(format!("{gone}-video.mp4")).exists(), "and its video");
+    assert!(!media.join(format!("{gone}/box.webp")).exists(), "a removed game's art goes");
+    assert!(!media.join(format!("{gone}/video.mp4")).exists(), "and its video");
     assert!(!widths.join(gone.to_string()).exists(), "and its copies");
     assert!(kept.exists(), "a kept game's art stays");
     assert!(widths.join(format!("{nes}/thumb/w160.webp")).exists(), "and its copies");
-    assert!(media.join("notes.txt").exists(), "nothing else is touched");
+    assert!(media.join(format!("{gone}/notes.txt")).exists(), "nothing else is touched");
     let (shot, attempts): (Option<String>, i64) = sqlx::query_as(
         "SELECT screenshot, screenshot_attempts FROM game_metadata WHERE game_id = ?",
     )
@@ -1498,7 +1527,7 @@ async fn the_admin_comes_from_the_environment() {
             "sovemu-server",
             "--data-dir",
             &h.dir.display().to_string(),
-            "--decorations-builtin",
+            "--artwork-builtin",
             &no_builtin,
             "--public-url",
             "http://sovemu.test",
@@ -1812,7 +1841,7 @@ async fn declared_users_are_reconciled_and_pruned() {
             "sovemu-server",
             "--data-dir",
             &dir,
-            "--decorations-builtin",
+            "--artwork-builtin",
             &no_builtin,
             "--public-url",
             "http://sovemu.test",
@@ -2511,8 +2540,9 @@ async fn backgrounds_and_system_photos_are_served_and_the_admin_chooses() {
     assert_eq!(h.err("mutation { setBackground(id: \"nope\") }", json!({})).await.0, "NOT_FOUND");
 
     // The admin's own, found by the next scan; `none` shows none.
-    std::fs::create_dir_all(h.dir.join("backgrounds")).unwrap();
-    std::fs::write(h.dir.join("backgrounds/sunset-beach.png"), b"\x89PNG not really").unwrap();
+    std::fs::create_dir_all(h.dir.join("artwork/backgrounds")).unwrap();
+    std::fs::write(h.dir.join("artwork/backgrounds/sunset-beach.png"), b"\x89PNG not really")
+        .unwrap();
     h.ok("mutation { scanLibrary { found } }", json!({})).await;
     h.ok("mutation { setBackground(id: \"sunset-beach\") }", json!({})).await;
     let shown = h.ok(bg, json!({})).await["background"].clone();
@@ -2531,8 +2561,8 @@ async fn backgrounds_and_system_photos_are_served_and_the_admin_chooses() {
     let systems = h.ok("{ systems { id photoUrl } }", json!({})).await["systems"].clone();
     let nes = photo(&systems, "nes").expect("nes has a built-in photo");
     assert_eq!(h.get_raw(&nes).await.0, StatusCode::OK);
-    std::fs::create_dir_all(h.dir.join("systems")).unwrap();
-    std::fs::write(h.dir.join("systems/nes.jpg"), b"my nes").unwrap();
+    std::fs::create_dir_all(h.dir.join("artwork/systems")).unwrap();
+    std::fs::write(h.dir.join("artwork/systems/nes.jpg"), b"my nes").unwrap();
     h.ok("mutation { scanLibrary { found } }", json!({})).await;
     let (_, body, headers) = h.get_raw(&nes).await;
     assert_eq!(
@@ -2641,8 +2671,8 @@ async fn decorations_come_from_the_chosen_set_and_are_served() {
     let mut h =
         Harness::new_with("decorations", false, vec!["--decoration".into(), "arcade".into()]).await;
     h.sign_up_admin().await;
-    // A set in <data>/decorations, Batocera's layout: one for the system, one for the game.
-    let set = h.dir.join("decorations/arcade");
+    // A set in <data>/artwork/decorations, Batocera's layout: one for the system, one for the game.
+    let set = h.dir.join("artwork/decorations/arcade");
     let info =
         r#"{"width":1920,"height":1080,"top":0,"left":300,"bottom":0,"right":300,"opacity":1}"#;
     // A PNG header is all the server reads of an image without a .info: 1280 x 960.

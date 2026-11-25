@@ -7,7 +7,7 @@ and its neighbours). Commons lists them as public domain (simple text logos); th
 trademarks of the Entertainment Software Association, shown here only to say what a game is
 rated.
 
-`render.mjs` (`npm run esrb-badges`) renders them to the PNGs the server ships in its built-in
-decoration set (`SovEmu.Backend/SovEmu.Library/assets/ratings/esrb/`), served to every client
-from `<decorations>/sovemu/ratings/esrb/<rating>.png`. An admin replaces one by putting an image
-at that path in `<data>/decorations/sovemu/` or a `SOVEMU_DECORATIONS_DIRS` folder.
+`render.mjs` (`npm run esrb-badges`) renders them to the PNGs the server ships
+(`SovEmu.Backend/SovEmu.Library/assets/ratings/esrb/`), written into its built-in artwork at
+`artwork/ratings/esrb/<rating>.png` (`/opt/sovemu/artwork` in the image) and served to every
+client. An admin replaces one by putting an image at the same path in `<data>/artwork/`.

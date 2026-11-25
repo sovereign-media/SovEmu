@@ -54,7 +54,7 @@ mod telemetry;
 mod user_details;
 
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -101,16 +101,17 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_WEB_DIR")]
     pub web_dir: Option<PathBuf>,
 
-    /// Decoration (bezel) folders in Batocera's layout, besides `<data>/decorations` and the
-    /// built-in one: a `decorations` folder on the NAS, say. Comma-separated; for the same file
-    /// the first folder wins, and the built-in set comes last.
+    /// Decoration (bezel) folders in Batocera's layout, besides `<data>/artwork/decorations` and
+    /// the built-in one: a `decorations` folder on the NAS, say. Comma-separated; for the same
+    /// file the first folder wins, and the built-in set comes last.
     #[arg(long, env = "SOVEMU_DECORATIONS_DIRS", value_delimiter = ',')]
     pub decorations_dirs: Vec<PathBuf>,
 
-    /// The built-in decorations (the image sets `/opt/sovemu/decorations`). Unset: they are
-    /// drawn into `<data>/cache/decorations` at startup.
-    #[arg(long, env = "SOVEMU_DECORATIONS_BUILTIN")]
-    pub decorations_builtin: Option<PathBuf>,
+    /// The built-in artwork, laid out as `<data>/artwork` (the image sets
+    /// `/opt/sovemu/artwork`): backgrounds, system photos, the `sovemu` decorations and the
+    /// ESRB icons. Unset: written into `<data>/cache/builtin-artwork` at startup.
+    #[arg(long, env = "SOVEMU_ARTWORK_BUILTIN")]
+    pub artwork_builtin: Option<PathBuf>,
 
     /// The decoration set games are framed with: `sovemu` (built in), a set from the
     /// decoration folders, or `none`. Per system: `SOVEMU_SYSTEMS__<id>__DECORATION`.
@@ -123,15 +124,16 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_BACKGROUND")]
     pub background: Option<String>,
 
-    /// Background folders besides `<data>/backgrounds`: images (WebP, PNG, JPEG) named as they
+    /// Background folders besides `<data>/artwork/backgrounds`: images (WebP, PNG, JPEG) named as they
     /// are offered (`sunset-beach.png` is "Sunset beach"). Comma-separated; for the same name the
     /// first folder wins, and any wins over a built-in one.
     #[arg(long, env = "SOVEMU_BACKGROUNDS_DIRS", value_delimiter = ',')]
     pub backgrounds_dirs: Vec<PathBuf>,
 
-    /// Draws the built-in decorations into this folder and exits (the image's build runs it).
+    /// Writes the built-in artwork into this folder and exits (the image's build runs it, into
+    /// `/opt/sovemu/artwork`).
     #[arg(long, hide = true)]
-    pub write_decorations: Option<PathBuf>,
+    pub write_artwork: Option<PathBuf>,
 
     /// The worker binary. Default: `sovemu-worker` next to this binary.
     #[arg(long, env = "SOVEMU_WORKER")]
@@ -636,27 +638,36 @@ impl Config {
         paths::DataPaths::new(&self.data_dir)
     }
 
-    /// The decoration folders, first wins: the configured ones, `<data>/decorations`, then the
-    /// built-in one.
-    /// The background folders, first wins: the configured ones, then `<data>/backgrounds`.
+    /// The background folders, first wins: the configured ones, then
+    /// `<data>/artwork/backgrounds` (the built-in ones come after, `appearance`).
     pub fn background_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = self.backgrounds_dirs.clone();
-        dirs.push(self.paths().backgrounds());
+        dirs.push(self.paths().artwork().backgrounds());
         dirs
     }
 
+    /// The decoration folders, first wins: the configured ones, `<data>/artwork/decorations`,
+    /// then the built-in one.
     pub fn decoration_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = self.decorations_dirs.clone();
-        dirs.push(self.paths().decorations());
-        dirs.push(self.builtin_decorations());
+        dirs.push(self.paths().artwork().decorations());
+        dirs.push(self.builtin_artwork().decorations());
         dirs
     }
 
-    pub fn builtin_decorations(&self) -> PathBuf {
-        self.decorations_builtin
-            .clone()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| self.paths().builtin_decorations())
+    /// The built-in artwork folder (`SOVEMU_ARTWORK_BUILTIN`, else written into the cache).
+    pub fn builtin_artwork(&self) -> sovemu_library::layout::ArtworkDir {
+        sovemu_library::layout::ArtworkDir::new(
+            self.artwork_builtin
+                .clone()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| self.paths().builtin_artwork()),
+        )
+    }
+
+    /// The artwork folders, first wins: the data folder's, then the built-in one.
+    pub fn artwork_dirs(&self) -> [sovemu_library::layout::ArtworkDir; 2] {
+        [self.paths().artwork(), self.builtin_artwork()]
     }
 
     /// Where BIOS files live: `<bios_dir>/<system>/`.
@@ -823,7 +834,8 @@ impl AppState {
     pub(crate) fn reload_appearance(&self) {
         let fresh = Arc::new(appearance::Appearance::load(
             &self.config.background_dirs(),
-            &self.config.paths().system_photos(),
+            &self.config.builtin_artwork(),
+            &self.config.paths().artwork().systems(),
         ));
         *self.appearance.write().unwrap_or_else(|e| e.into_inner()) = fresh;
     }
@@ -858,6 +870,7 @@ pub fn router(state: AppState) -> Router {
                 .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
                 .route("/media/backgrounds/{id}", get(appearance::background_file))
                 .route("/media/systems/{id}", get(appearance::photo_file))
+                .route("/media/ratings/esrb/{file}", get(api::esrb_file))
                 .route("/media/backups/{name}", get(admin::backup_file))
                 .route_layer(middleware::from_fn_with_state(
                     state.clone(),
@@ -1000,7 +1013,28 @@ fn metadata_providers(
 
 /// Settings earlier versions had, for sources that are gone: set, they are ignored with a
 /// warning rather than refusing to start.
+/// Where the image kept its data before `/sov-data`.
+const LEGACY_DATA_DIR: &str = "/data";
+
+/// `legacy`'s database, when the data folder is another folder that has none: a volume still
+/// mounted where the image used to keep its data. Started like that, the server would begin
+/// empty: every account, save and setting would seem gone.
+fn moved_data_dir(paths: &paths::DataPaths, legacy: &Path) -> Option<PathBuf> {
+    let old = legacy.join("sovemu.db");
+    (paths.root() != legacy && !paths.database().exists() && old.is_file()).then_some(old)
+}
+
+/// Writes the built-in artwork into `dir`, laid out as `<data>/artwork`: the backgrounds and
+/// system photos, the `sovemu` decorations, and the ESRB icons.
+fn write_builtin_artwork(dir: &sovemu_library::layout::ArtworkDir) -> std::io::Result<()> {
+    appearance::write_builtin(dir)?;
+    decorations::write_builtin(&dir.decorations())?;
+    sovemu_library::layout::write_esrb(dir)
+}
+
 const REMOVED_SETTINGS: &[&str] = &[
+    // Now SOVEMU_ARTWORK_BUILTIN, whose folder holds the decorations in `decorations/`.
+    "SOVEMU_DECORATIONS_BUILTIN",
     "SOVEMU_LAUNCHBOX",
     "SOVEMU_LAUNCHBOX_URL",
     "SOVEMU_LAUNCHBOX_IMAGES_URL",
@@ -1017,6 +1051,16 @@ fn removed_settings(vars: &[(String, String)]) -> Vec<&'static str> {
 
 pub async fn build_state(mut config: Config) -> Result<AppState> {
     let paths = config.paths();
+    if let Some(old) = moved_data_dir(&paths, Path::new(LEGACY_DATA_DIR)) {
+        anyhow::bail!(
+            "the data folder is {} (SOVEMU_DATA_DIR), which has no database, but {} has one: \
+             the image now keeps data in /sov-data. Mount the data volume there (or set \
+             SOVEMU_DATA_DIR={}), so it does not start empty",
+            paths.root().display(),
+            old.display(),
+            LEGACY_DATA_DIR
+        );
+    }
     let library = config.roms.clone().unwrap_or_else(|| paths.roms());
     // `SOVEMU_MIRROR_SYSTEMS=` (empty) means all systems, not a system called "".
     config.mirror_systems.retain(|s| !s.trim().is_empty());
@@ -1137,16 +1181,17 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         config.artwork_webp_quality,
         config.metadata_videos,
     );
-    // The built-in set: drawn here unless the image already holds it (it does, once per version).
-    if config.decorations_builtin.is_none()
-        && let Err(e) = decorations::write_builtin(&config.builtin_decorations())
+    // The built-in artwork: written here unless the image already holds it.
+    if config.artwork_builtin.is_none()
+        && let Err(e) = write_builtin_artwork(&config.builtin_artwork())
     {
-        tracing::warn!(error = %e, "drawing the built-in decorations");
+        tracing::warn!(error = %e, "writing the built-in artwork");
     }
     let decorations = Arc::new(decorations::Decorations::load(&config.decoration_dirs()));
     let appearance = Arc::new(appearance::Appearance::load(
         &config.background_dirs(),
-        &config.paths().system_photos(),
+        &config.builtin_artwork(),
+        &config.paths().artwork().systems(),
     ));
     let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
     let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
@@ -1286,9 +1331,10 @@ const JOBS_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(
 fn main() -> Result<()> {
     unset_empty_settings();
     let config = Config::parse_with_sources(std::env::args_os());
-    if let Some(dir) = &config.write_decorations {
-        decorations::write_builtin(dir).with_context(|| format!("writing {}", dir.display()))?;
-        println!("decorations: {}", dir.join(decorations::BUILTIN).display());
+    if let Some(dir) = &config.write_artwork {
+        let art = sovemu_library::layout::ArtworkDir::new(dir);
+        write_builtin_artwork(&art).with_context(|| format!("writing {}", dir.display()))?;
+        println!("built-in artwork: {}", dir.display());
         return Ok(());
     }
     let buffer = logs::install(config.log_buffer_lines);
@@ -1350,6 +1396,23 @@ async fn run(mut config: Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_volume_left_at_the_old_data_folder_is_noticed() {
+        let root = std::env::temp_dir().join(format!("sovemu-moved-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (old, new) = (root.join("data"), root.join("sov-data"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        let paths = paths::DataPaths::new(&new);
+        assert_eq!(moved_data_dir(&paths, &old), None, "nothing at the old place");
+        std::fs::write(old.join("sovemu.db"), b"db").unwrap();
+        assert_eq!(moved_data_dir(&paths, &old), Some(old.join("sovemu.db")), "start empty? no");
+        std::fs::write(new.join("sovemu.db"), b"db").unwrap();
+        assert_eq!(moved_data_dir(&paths, &old), None, "the new place has its own");
+        assert_eq!(moved_data_dir(&paths::DataPaths::new(&old), &old), None, "still at /data");
+        std::fs::remove_dir_all(root).ok();
+    }
 
     #[test]
     fn ice_server_config() {

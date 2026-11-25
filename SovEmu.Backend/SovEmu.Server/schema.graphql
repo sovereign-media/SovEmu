@@ -1320,9 +1320,9 @@ type Game {
 	"""
 	esrb: EsrbRating
 	"""
-	The ESRB rating's icon (PNG), if the game has a rating and the decoration folders an icon
-	for it: the built-in set's `ratings/esrb/<rating>.png`, or an admin's own at that path in
-	an earlier decorations folder. A URL signed for this user.
+	The ESRB rating's icon (PNG), if the game has a rating and there is an icon for it:
+	`artwork/ratings/esrb/<rating>.png`, the admin's own in the data folder, else the
+	built-in one. A URL signed for this user.
 	"""
 	esrbBadgeUrl: String
 	"""
@@ -3085,8 +3085,9 @@ enum Stick {
 
 type StorageArea {
 	"""
-	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `metadata`,
-	`decorations`, `builtin_decorations`, `roms`, `bios` or `other`.
+	`database`, `saves`, `cache`, `discs`, `mirror`, `artwork` (downloaded game art),
+	`your_artwork` (the rest of `artwork/`: backgrounds, photos, decorations, icons),
+	`artwork_widths`, `metadata`, `builtin_artwork`, `roms`, `bios`, `backups` or `other`.
 	"""
 	id: String!
 	path: String!

@@ -139,7 +139,8 @@ rejects credentials, runs out of quota or is closed is skipped for the rest of t
 credentials (ScreenScraper's are stripped, and added again when downloading). When the lookup
 ends, a second background job (`metadata/artwork.rs`) downloads them, `SOVEMU_ARTWORK_DOWNLOADS`
 at a time, giving up on a URL after three failures. Its queue is the table, so a restart resumes
-it. The files live in `data/metadata/media`, pictures as lossy WebP, and are a game's only
+it. The files live in `data/artwork/games/<game id>/` (`box.webp`, `shot.webp`, `marquee.webp`,
+`video.mp4`), pictures as lossy WebP, and are a game's only
 artwork: the scan reads ROMs alone, never the artwork folders a Batocera library keeps beside them
 (`images/`, `videos/`; migration `0031` dropped what it had found there). The API's artwork
 kinds map onto them: `thumb` is the box art, `image` the screenshot, `marquee` the logo. After
@@ -167,7 +168,7 @@ A copy counts as current when its size matches the original's and its modificati
 
 ### Saves
 
-Saves belong to a user and live under `/data/saves/<user id>/<system>/`.
+Saves belong to a user and live under `/sov-data/saves/<user id>/<system>/`.
 - **Battery saves** are `<game>.srm`. The worker restores one into the core's
   `RETRO_MEMORY_SAVE_RAM` at load, writes it back whenever it changes (checked every 10 s), and
   writes it again on exit. The names and format match RetroArch's.
@@ -280,8 +281,11 @@ exited workers are reaped.
   toolkit injects graphics (and video, for NVENC later), not only compute.
 - **Every shipped core is probed at image build time** (`sovemu-worker probe`), which writes
   `/opt/sovemu/cores/manifest.json`. The server will read it to map file extensions to cores.
-- The image runs as uid 1000 and keeps everything mutable under the `/data` volume: `roms/`,
-  `bios/` (one folder per system), `saves/`, and later the SQLite database.
+- The image runs as uid 1000. What it ships is in `/opt/sovemu` (`bin/`, `cores/`, `web/`,
+  `artwork/`), read-only; everything it writes is in the `/sov-data` volume (the database,
+  `saves/`, `bios/`, `artwork/`, `cache/`), whose `artwork/` mirrors `/opt/sovemu/artwork`: a file
+  there replaces the built-in one at the same path. The library is a read-only mount,
+  `/sov-library`.
 - The runtime image carries `libvpx`, `libopus` and FFmpeg's `libavcodec` (with x264) for
   encoding, and libva with Intel's (`intel-media-va-driver`, from Debian main: low-power encoding
   only, which is what SovEmu uses) and Mesa's VA-API drivers, from Debian.

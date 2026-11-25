@@ -3,10 +3,12 @@
 //! `/media/systems/…`), so the web, Android and iOS show the same, and the admin's choice reaches
 //! them all.
 //!
-//! The built-in images are compiled in (`assets/`: SovEmu's own backgrounds, public-domain photos,
-//! see `assets/README.md`). The admin's own sit in folders (`<data>/backgrounds`,
-//! `SOVEMU_BACKGROUNDS_DIRS`, `<data>/systems`); an image there wins over a built-in one of the
-//! same name, and the folders are listed again after each library scan. One background is shown
+//! The built-in images (`assets/`: SovEmu's own backgrounds, public-domain photos, see
+//! `assets/README.md`) are written into the built-in artwork folder ([`write_builtin`]: the
+//! image's `/opt/sovemu/artwork/backgrounds` and `systems`) and served from there, else from the
+//! copies compiled in. The admin's own sit at the same paths in `<data>/artwork` (and
+//! `SOVEMU_BACKGROUNDS_DIRS`); an image there wins over a built-in one of the same name, and the
+//! folders are listed again after each library scan. One background is shown
 //! to everyone: `SOVEMU_BACKGROUND`, else the admin's choice, else a different one each visit.
 
 use std::borrow::Cow;
@@ -14,6 +16,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use sqlx::SqlitePool;
+
+use sovemu_library::layout::ArtworkDir;
 
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
@@ -71,7 +75,10 @@ const EXTENSIONS: &[&str] = &["webp", "png", "jpg", "jpeg"];
 /// Where an image comes from.
 #[derive(Debug, Clone)]
 pub(crate) enum Source {
+    /// A built-in image as compiled in (the built-in folder does not hold it).
     Builtin(&'static [u8]),
+    /// A built-in image's file in the built-in artwork folder.
+    BuiltinFile(PathBuf),
     File(PathBuf),
 }
 
@@ -86,14 +93,14 @@ pub(crate) struct Image {
 
 impl Image {
     pub(crate) fn builtin(&self) -> bool {
-        matches!(self.source, Source::Builtin(_))
+        matches!(self.source, Source::Builtin(_) | Source::BuiltinFile(_))
     }
 
     /// Its content type, from its extension (the built-in ones are WebP).
     pub(crate) fn content_type(&self) -> &'static str {
         match &self.source {
             Source::Builtin(_) => "image/webp",
-            Source::File(path) => match extension(path).as_deref() {
+            Source::File(path) | Source::BuiltinFile(path) => match extension(path).as_deref() {
                 Some("png") => "image/png",
                 Some("jpg" | "jpeg") => "image/jpeg",
                 _ => "image/webp",
@@ -105,7 +112,9 @@ impl Image {
     pub(crate) async fn bytes(&self) -> std::io::Result<Cow<'static, [u8]>> {
         match &self.source {
             Source::Builtin(bytes) => Ok(Cow::Borrowed(bytes)),
-            Source::File(path) => tokio::fs::read(path).await.map(Cow::Owned),
+            Source::File(path) | Source::BuiltinFile(path) => {
+                tokio::fs::read(path).await.map(Cow::Owned)
+            }
         }
     }
 }
@@ -155,14 +164,24 @@ pub(crate) struct Appearance {
 }
 
 impl Appearance {
-    /// Lists the folders: `background_dirs` (first wins), and `photo_dir` (`<system id>.webp`).
-    pub(crate) fn load(background_dirs: &[PathBuf], photo_dir: &Path) -> Self {
+    /// Lists the folders: `background_dirs` (first wins), the built-in ones in `builtin`, and
+    /// `photo_dir` (`<system id>.webp`).
+    pub(crate) fn load(
+        background_dirs: &[PathBuf],
+        builtin: &ArtworkDir,
+        photo_dir: &Path,
+    ) -> Self {
+        // A built-in image from its file in the built-in folder, else as compiled in.
+        let source = |dir: PathBuf, id: &str, bytes: &'static [u8]| {
+            let file = dir.join(format!("{id}.webp"));
+            if file.is_file() { Source::BuiltinFile(file) } else { Source::Builtin(bytes) }
+        };
         let mut backgrounds: Vec<Image> = BUILTIN_BACKGROUNDS
             .iter()
             .map(|(id, name, bytes)| Image {
                 id: (*id).to_owned(),
                 name: (*name).to_owned(),
-                source: Source::Builtin(bytes),
+                source: source(builtin.backgrounds(), id, bytes),
             })
             .collect();
         let mut taken: Vec<String> = Vec::new();
@@ -186,7 +205,7 @@ impl Appearance {
                 let image = Image {
                     id: (*id).to_owned(),
                     name: (*id).to_owned(),
-                    source: Source::Builtin(bytes),
+                    source: source(builtin.systems(), id, bytes),
                 };
                 ((*id).to_owned(), image)
             })
@@ -204,6 +223,20 @@ impl Appearance {
     pub(crate) fn photo(&self, system: &str) -> Option<&Image> {
         self.photos.get(system)
     }
+}
+
+/// Writes the built-in backgrounds and system photos into `dir`'s `backgrounds/` and
+/// `systems/`, as `<id>.webp`.
+pub(crate) fn write_builtin(dir: &ArtworkDir) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir.backgrounds())?;
+    for (id, _, bytes) in BUILTIN_BACKGROUNDS {
+        std::fs::write(dir.backgrounds().join(format!("{id}.webp")), bytes)?;
+    }
+    std::fs::create_dir_all(dir.systems())?;
+    for (id, bytes) in BUILTIN_PHOTOS {
+        std::fs::write(dir.systems().join(format!("{id}.webp")), bytes)?;
+    }
+    Ok(())
 }
 
 /// The background setting: the environment's, else the admin's, else [`RANDOM`]; and whether
@@ -338,7 +371,8 @@ mod tests {
         std::fs::write(photos.join("nes.png"), b"my nes").unwrap();
         std::fs::write(photos.join("vectrex.webp"), b"a system with no built-in photo").unwrap();
 
-        let a = Appearance::load(&[first.clone(), second.clone()], &photos);
+        let none = ArtworkDir::new("/nonexistent");
+        let a = Appearance::load(&[first.clone(), second.clone()], &none, &photos);
         let ids: Vec<&str> = a.backgrounds.iter().map(|b| b.id.as_str()).collect();
         assert_eq!(ids, ["dither", "lattice", "screens", "sunset-beach"]);
         let lattice = a.background("lattice").unwrap();
@@ -367,9 +401,27 @@ mod tests {
 
     #[tokio::test]
     async fn built_in_images_are_served_from_the_binary() {
-        let a = Appearance::load(&[], Path::new("/nonexistent"));
+        let none = ArtworkDir::new("/nonexistent");
+        let a = Appearance::load(&[], &none, Path::new("/nonexistent"));
         let bytes = a.background("dither").unwrap().bytes().await.unwrap();
         assert_eq!(&bytes[..4], b"RIFF", "WebP");
         assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[tokio::test]
+    async fn built_in_images_are_served_from_the_built_in_folder_when_it_has_them() {
+        let dir = std::env::temp_dir().join(format!("sovemu-builtin-art-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let builtin = ArtworkDir::new(&dir);
+        write_builtin(&builtin).unwrap();
+        assert!(builtin.backgrounds().join("lattice.webp").is_file());
+        assert!(builtin.systems().join("snes.webp").is_file());
+        let a = Appearance::load(&[], &builtin, Path::new("/nonexistent"));
+        let lattice = a.background("lattice").unwrap();
+        assert!(lattice.builtin(), "still built in");
+        assert!(matches!(&lattice.source, Source::BuiltinFile(p) if p.starts_with(&dir)));
+        assert!(matches!(&a.photo("snes").unwrap().source, Source::BuiltinFile(_)));
+        assert_eq!(&lattice.bytes().await.unwrap()[8..12], b"WEBP");
+        std::fs::remove_dir_all(dir).ok();
     }
 }

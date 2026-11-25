@@ -30,12 +30,42 @@ scripts/fetch-free-roms.sh            # free homebrew into data/roms, or add you
 docker compose up --build             # then open http://localhost:8080
 ```
 
-The first visit creates the admin account. `./data` is mounted at `/data`: the database,
-`data/roms/` (one folder per system: `nes/`, `snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`,
-`mastersystem/`, `gamegear/`, `segacd/`, `pcengine/`, `atari2600/`, `psx/`, `n64/`, `dreamcast/`,
-`gamecube/`, `ps2/`, …; the full list is under [Supported systems](#supported-systems)), `data/bios/`
-for BIOS files (see [BIOS files](#bios-files)) and `data/saves/`. Browsers on other machines need `SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus
-UDP 50000-50009 reachable.
+The first visit creates the admin account. `./data` is mounted at `/sov-data` (the database,
+`data/bios/` for BIOS files, see [BIOS files](#bios-files), `data/saves/` and `data/artwork/`),
+and `./data/roms` read-only at `/sov-library`, the library: one folder per system (`nes/`,
+`snes/`, `gb/`, `gbc/`, `gba/`, `megadrive/`, `mastersystem/`, `gamegear/`, `segacd/`,
+`pcengine/`, `atari2600/`, `psx/`, `n64/`, `dreamcast/`, `gamecube/`, `ps2/`, …; the full list is
+under [Supported systems](#supported-systems)). Browsers on other machines need
+`SOVEMU_ADVERTISE_IP` set to this host's LAN address (it defaults to `127.0.0.1`), plus UDP
+50000-50009 reachable.
+
+### Folders
+
+What the image ships and what SovEmu writes are kept apart. `/opt/sovemu` is the runtime,
+read-only and replaced by every upgrade; `/sov-data` is one volume holding everything SovEmu
+writes, kept across upgrades; the library is its own read-only mount. The two `artwork/` folders
+have the same layout: a file in `/sov-data/artwork` replaces the built-in one at the same path
+(copy a path from `/opt/sovemu/artwork`, put your own file there).
+
+```text
+/opt/sovemu/  (image, read-only)                /sov-data/  (volume, writable)
+├── artwork/                                    ├── artwork/
+│   ├── backgrounds/  dither, lattice, screens  │   ├── backgrounds/        your own, or replacements
+│   ├── systems/      <system>.webp photos      │   ├── systems/            <system>.webp replaces a photo
+│   ├── decorations/  sovemu/ frames            │   ├── decorations/        your sets (Batocera layout)
+│   └── ratings/esrb/ ec|e|e10|t|m|ao|rp.png    │   ├── ratings/esrb/       <rating>.png replaces an icon
+│                                               │   └── games/<game id>/    box, shot, marquee .webp; video.mp4
+├── bin/          sovemu-server, sovemu-worker  ├── sovemu.db, server.json
+├── cores/        cores, manifest.json, system/ ├── saves/<user>/<system>/
+└── web/          the web client                ├── bios/                   any layout
+                                                ├── metadata/fbneo/
+                                                ├── backups/, library/ (mirror mode)
+                                                └── cache/                  safe to delete
+/sov-library/  (read-only)  the ROMs, never written
+```
+
+An image that finds no database in `/sov-data` but one in `/data` (where data lived before)
+refuses to start, so a volume still mounted at the old place never looks like an empty server.
 
 ## BIOS files
 
@@ -253,16 +283,17 @@ decorations/<set>/default.png         + default.info  everything else
 Each `.info` gives the image's size and the margins of its transparent window
 (`{"width":1920,"height":1080,"top":0,"left":240,"bottom":0,"right":240}`); without one, the window
 is the largest centred 4:3 area. Sets are read from `SOVEMU_DECORATIONS_DIRS`, then
-`data/decorations`, then the built-in folder. A set found in several of them is merged, with
+`data/artwork/decorations`, then the built-in folder (`/opt/sovemu/artwork/decorations`). A set found in several of them is merged, with
 the earlier folder winning for the same file. Folders are listed again with every library scan.
 
 SovEmu's own set, `sovemu`, is a frame per system in its colour, shaped to its screen (4:3, or
-10:9 and 3:2 for handhelds), drawn by the server's own code. It also holds the ESRB's rating
-icons that a game's panel shows, `sovemu/ratings/esrb/<rating>.png` (`ec`, `e`, `e10`, `t`, `m`,
-`ao`, `rp`: the 2013 set from Wikimedia Commons). To use your own, put a PNG at that path in
-`data/decorations/sovemu/` (or a `SOVEMU_DECORATIONS_DIRS` folder): the earlier folder wins.
-SovEmu ships no other third-party artwork and has no downloader: packs such as the Bezel
-Project carry no license, so add them yourself.
+10:9 and 3:2 for handhelds), drawn by the server's own code. SovEmu ships no third-party
+decorations and has no downloader: packs such as the Bezel Project carry no license, so add them
+yourself.
+
+The ESRB's rating icons that a game's panel shows are built-in artwork too:
+`artwork/ratings/esrb/<rating>.png` (`ec`, `e`, `e10`, `t`, `m`, `ao`, `rp`; the 2013 set from
+Wikimedia Commons). Put your own PNG at that path in `data/artwork/` to replace one.
 Choose the set with `SOVEMU_DECORATION`, per system with `SOVEMU_SYSTEMS__<id>__DECORATION`,
 and `none` turns frames off.
 
@@ -281,7 +312,7 @@ scan; videos are ScreenScraper's normalised ones where it has them (smaller, one
 `SOVEMU_METADATA_VIDEOS=false` skips them. Pictures are kept as lossy WebP
 (`SOVEMU_ARTWORK_WEBP_QUALITY`), and every client asks for artwork at the width it shows it: the
 server makes a WebP copy at that width the first time and
-keeps it in `data/cache/artwork-widths`, so a grid of covers moves a few kilobytes a card rather
+keeps it in `data/cache/artwork`, so a grid of covers moves a few kilobytes a card rather
 than the original files. Clearing the cache clears the copies; they are made again as needed. A system's game cards take the shape of its boxes
 (SNES and N64 landscape, CD systems square, cartridge systems portrait), so box art fills them;
 a box of another shape (a Super Famicom's) is fitted inside its card. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
@@ -326,7 +357,7 @@ only the fields it was asked for, and never clears one a source no longer knows.
 After every scan, before its lookup, a **library check** (the `reconcile` job, on the Jobs page)
 keeps what was downloaded in step with the library: a game whose ROM is gone loses its
 information, its downloaded artwork and video, and its resized copies; a downloaded file that has
-gone missing from `data/metadata/media` is downloaded again. An admin can run it from the Jobs
+gone missing from `data/artwork/games/` is downloaded again. An admin can run it from the Jobs
 page, and then it also looks up games without information even when `SOVEMU_METADATA_AUTO` is off.
 
 ## Supported systems
@@ -388,8 +419,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_LOGIN_MAX_FAILURES_PER_IP` | `20` | Failed sign-ins from one address, across usernames, before it is locked out (0: never) |
 | `SOVEMU_LOGIN_LOCKOUT_MINUTES` | `5` | How long the lockout lasts |
 | **Library** | | |
-| `SOVEMU_DATA_DIR` | `data` (`/data`) | Database, saves, cache, mirror |
-| `SOVEMU_ROMS_DIR` | `<data>/roms` | The library, one folder per system |
+| `SOVEMU_DATA_DIR` | `data` (`/sov-data`) | Everything SovEmu writes: database, saves, artwork, cache, mirror (see [Folders](#folders)) |
+| `SOVEMU_ROMS_DIR` | `<data>/roms` (`/sov-library`) | The library, one folder per system, read-only |
 | `SOVEMU_BIOS_DIR` | `<data>/bios` | BIOS files, in any layout; a read-only share is fine (see [BIOS files](#bios-files)) |
 | `SOVEMU_LIBRARY_MODE` | `direct` | `direct`, `cache` or `mirror` (see above) |
 | `SOVEMU_CACHE_GB` | `20` | `cache` mode: GiB kept locally |
@@ -468,10 +499,10 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_LOG_FORMAT` | `text` | Log lines on stderr: `text`, or `json` (one object per line, with the request's or session's fields) for a log collector; workers follow it |
 | `SOVEMU_OTEL_ENDPOINT` | unset | An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces and metrics are exported there. Off when unset. The standard `OTEL_*` variables apply on top (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_METRIC_EXPORT_INTERVAL`) |
 | `SOVEMU_DECORATION` | `sovemu` | The decoration (bezel) set games are framed with: `sovemu` (built in), a set from the decoration folders, or `none` |
-| `SOVEMU_DECORATIONS_DIRS` | `/nas/decorations` with `compose.nas.yaml` | More decoration folders (Batocera layout), comma-separated, before `data/decorations` and the built-in one |
+| `SOVEMU_DECORATIONS_DIRS` | `/nas/decorations` with `compose.nas.yaml` | More decoration folders (Batocera layout), comma-separated, before `data/artwork/decorations` and the built-in one |
 | `SOVEMU_BACKGROUND` | unset (the admin's choice on the Appearance page, else `random`) | The background behind every screen, in every client: `dither`, `lattice`, `screens`, a file's name from the background folders, `random` (a different one each visit) or `none`. Set, it locks the Appearance page |
-| `SOVEMU_BACKGROUNDS_DIRS` | none | More background folders, comma-separated, before `data/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/systems/<system id>.webp` |
-| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_DECORATIONS_BUILTIN` | set in the image | The built web client; the worker binary; the built-in decorations |
+| `SOVEMU_BACKGROUNDS_DIRS` | none | More background folders, comma-separated, before `data/artwork/backgrounds`: WebP, PNG or JPEG images, offered by file name (`sunset-beach.png` is "Sunset beach"); one named like a built-in one replaces it. System photos of your own go in `data/artwork/systems/<system id>.webp` |
+| `SOVEMU_WEB_DIR`, `SOVEMU_WORKER`, `SOVEMU_ARTWORK_BUILTIN` | set in the image | The built web client; the worker binary; the built-in artwork (`/opt/sovemu/artwork`, laid out as `data/artwork`) |
 | `RUST_LOG` | `info` | Log filter |
 | **compose.nas.yaml only** | | |
 | `SOVEMU_NAS_HOST`, `SOVEMU_NAS_PATH`, `SOVEMU_NAS_USER`, `SOVEMU_NAS_PASSWORD` | | The SMB share to mount read-only |
@@ -511,7 +542,8 @@ The Helm chart that deploys SovEmu is kept with the cluster's other charts, outs
 repository, and turns its values into these variables. What any deployment needs from SovEmu:
 
 - every setting as an environment variable; a secret also as `<VAR>_FILE`;
-- the library mounted read-only, and a persistent `/data`;
+- the library mounted read-only (`/sov-library`, or `SOVEMU_ROMS_DIR`), and a persistent
+  `/sov-data`;
 - the media ports (`SOVEMU_UDP_PORTS`, UDP) reachable at `SOVEMU_ADVERTISE_IP`: a UDP
   `LoadBalancer` Service (MetalLB at home), or host networking;
 - for GPU rendering and encoding, the render node (`/dev/dri`), or NVIDIA's container runtime.
