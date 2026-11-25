@@ -6,6 +6,7 @@
 // reloading the page (no new HTML, scripts, token or controller setup between screens).
 import { createRootRoute, createRoute, createRouter, Outlet, useRouterState } from "@tanstack/react-router";
 import { type ComponentType, lazy, Suspense, useLayoutEffect, useRef } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { pathOf, screenKey, setNavigator } from "./lib/go";
 import { followLinks } from "./lib/links";
 import { SCREEN_PATHS, type ScreenPath } from "./lib/screens";
@@ -24,9 +25,11 @@ function screen(path: string, title: string, Screen: ComponentType, own: readonl
       document.title = `${title} · SovEmu`;
     }, []);
     return (
-      <Suspense fallback={null}>
-        <Screen key={key.current} />
-      </Suspense>
+      <ErrorBoundary key={key.current} screen={title}>
+        <Suspense fallback={null}>
+          <Screen key={key.current} />
+        </Suspense>
+      </ErrorBoundary>
     );
   };
 }
