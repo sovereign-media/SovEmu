@@ -491,7 +491,7 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_CACHE_LARGE_GAME_MB", default_value_t = 64)]
     pub cache_large_game_mb: u64,
 
-    /// Files copied at once by the mirror sync and the artwork cache.
+    /// Files copied at once by the mirror sync.
     #[arg(long, env = "SOVEMU_COPY_THREADS", default_value_t = 4)]
     pub copy_threads: usize,
 
@@ -1137,7 +1137,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         config.artwork_webp_quality,
         config.metadata_videos,
     );
-    let copy_threads = config.copy_threads;
     // The built-in set: drawn here unless the image already holds it (it does, once per version).
     if config.decorations_builtin.is_none()
         && let Err(e) = decorations::write_builtin(&config.builtin_decorations())
@@ -1191,7 +1190,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         db,
         config: Arc::new(config),
         workers,
-        cache: cache::Cache::new(cache_dir, cache_bytes, copy_threads),
+        cache: cache::Cache::new(cache_dir, cache_bytes),
         metadata,
         mirror: Arc::default(),
         gpu: Arc::new(gpu),

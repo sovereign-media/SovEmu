@@ -59,11 +59,11 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanR
     for f in &found {
         sqlx::query(
             "INSERT INTO games
-               (system, path, title, tags, size, modified, media, parts, missing_parts)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (system, path, title, tags, size, modified, parts, missing_parts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(path) DO UPDATE SET system = excluded.system, title = excluded.title,
                tags = excluded.tags, size = excluded.size, modified = excluded.modified,
-               media = excluded.media, parts = excluded.parts,
+               parts = excluded.parts,
                missing_parts = excluded.missing_parts",
         )
         .bind(f.system)
@@ -72,7 +72,6 @@ pub(crate) async fn scan(pool: &SqlitePool, root: &Path) -> anyhow::Result<ScanR
         .bind(&f.tags)
         .bind(f.size)
         .bind(f.modified)
-        .bind(&f.media)
         .bind(f.parts.map(PartKind::as_str))
         .bind(f.missing_parts.iter().map(u32::to_string).collect::<Vec<_>>().join(","))
         .execute(&mut *tx)

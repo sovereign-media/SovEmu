@@ -65,6 +65,7 @@ impl Harness {
         let _ = std::fs::remove_dir_all(&dir);
         for (path, bytes) in [
             ("roms/nes/Test Game (USA).nes", 64),
+            // Artwork beside the ROMs, as Batocera keeps it: never read.
             ("roms/nes/images/Test Game (USA)-thumb.png", 2048),
             ("roms/gba/Other.gba", 32),
         ] {
@@ -256,6 +257,29 @@ impl Harness {
     }
 
     /// A file URL signed for `user_id`, as the API would hand it out.
+    /// Gives the NES test game downloaded box art with these bytes, as a lookup and the
+    /// download job would (artwork comes only from metadata services); returns its file.
+    async fn give_box_art(&self, bytes: &[u8]) -> PathBuf {
+        let id: i64 = sqlx::query_scalar("SELECT id FROM games WHERE system = 'nes'")
+            .fetch_one(&self.state.db)
+            .await
+            .unwrap();
+        let name = format!("{id}-box.webp");
+        sqlx::query(
+            "INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)
+             ON CONFLICT(game_id) DO UPDATE SET box_art = excluded.box_art",
+        )
+        .bind(id)
+        .bind(&name)
+        .execute(&self.state.db)
+        .await
+        .unwrap();
+        let file = self.state.metadata.media_dir.join(name);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, bytes).unwrap();
+        file
+    }
+
     fn signed(&self, user_id: i64, path: &str) -> String {
         self.state.assets.sign(user_id, path)
     }
@@ -436,6 +460,7 @@ async fn throttles_each_address_across_usernames_behind_a_trusted_proxy() {
 async fn compresses_api_responses() {
     let mut h = Harness::new("compression", false).await;
     h.sign_up_admin().await;
+    h.give_box_art(&[0u8; 2048]).await;
     let body = json!({"query": "{ __schema { types { name } } }"});
     let request = Request::builder()
         .method("POST")
@@ -485,6 +510,10 @@ async fn browses_the_library() {
         "a system with no games is not listed"
     );
 
+    let games = h.games("nes").await;
+    assert_eq!(games[0]["media"], json!([]), "the artwork beside the ROM is not read");
+    assert_eq!(games[0]["mediaUrl"], Value::Null);
+    h.give_box_art(&[0u8; 2048]).await;
     let games = h.games("nes").await;
     assert_eq!(games[0]["title"], "Test Game");
     assert_eq!(games[0]["tags"], json!(["USA"]));
@@ -712,8 +741,8 @@ async fn mock_services(
     let base = format!("http://{}", listener.local_addr().unwrap());
     let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = calls.clone();
-    let box_url =
-        format!("{base}/api2/mediaJeu.php?devid=dev&amp;devpassword=pw&amp;media=box-2D(wor)");
+    let image = format!("{base}/api2/mediaJeu.php?devid=dev&amp;devpassword=pw&amp;media=");
+    let box_url = format!("{image}box-2D(wor)");
     let video_url = format!(
         "{base}/api2/mediaVideoJeu.php?devid=dev&amp;devpassword=pw&amp;media=video-normalized"
     );
@@ -727,10 +756,15 @@ async fn mock_services(
     <joueurs>2</joueurs>
     <synopsis><synopsis langue="en">From ScreenScraper</synopsis></synopsis>
     <medias><media type="box-2D" region="wor" format="png">{box_url}</media>
+      <media type="ss" region="wor" format="png">{image}ss(wor)</media>
+      <media type="wheel" region="wor" format="png">{image}wheel(wor)</media>
       <media type="video-normalized" format="mp4">{video_url}</media></medias>
   </jeu>
 </Data>"#
     );
+    // The library's sample game, its pictures served by this ScreenScraper.
+    let nes = include_str!("../../SovEmu.Library/tests/fixtures/screenscraper.xml")
+        .replace("https://example.invalid/", &image);
     let app = axum::Router::new()
         .route(
             "/api2/ssuserInfos.php",
@@ -756,7 +790,7 @@ async fn mock_services(
         .route(
             "/api2/jeuInfos.php",
             get(move |Query(q): Query<HashMap<String, String>>| {
-                let gba = gba.clone();
+                let (gba, nes) = (gba.clone(), nes.clone());
                 let seen = seen.clone();
                 async move {
                     seen.lock().unwrap().push(q.clone());
@@ -783,13 +817,7 @@ async fn mock_services(
                                 // MD5 of the fixture's 64 zero bytes.
                                 assert_eq!(q["md5"], "3b5d3c7d207e37dceeedd301e35e2e58");
                             }
-                            (
-                                StatusCode::OK,
-                                include_str!(
-                                    "../../SovEmu.Library/tests/fixtures/screenscraper.xml"
-                                )
-                                .to_owned(),
-                            )
+                            (StatusCode::OK, nes)
                         }
                         "12" => (StatusCode::OK, gba),
                         _ => (
@@ -943,11 +971,12 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
         (json!(2), json!(0)),
         "{status}"
     );
-    // Box art and a video in the background, only for the GBA game (the NES one has a local
-    // thumb), downloaded with the credentials the stored URLs were stripped of.
+    // Box art, a screenshot and a logo for each game, and the GBA game's video, in the
+    // background, downloaded with the credentials the stored URLs were stripped of. The NES
+    // game's own artwork beside the ROM is not read.
     assert_eq!(
         status["artwork"],
-        json!({"running": false, "total": 2, "done": 2, "downloaded": 2, "failed": 0, "videos": 1})
+        json!({"running": false, "total": 7, "done": 7, "downloaded": 7, "failed": 0, "videos": 1})
     );
     let stored: String =
         sqlx::query_scalar("SELECT box_art_url FROM game_metadata WHERE box_art_url IS NOT NULL")
@@ -993,15 +1022,16 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(nes[0]["releaseDate"], "1987-05-01");
     assert_eq!(nes[0]["rating"], 0.8);
 
-    // The GBA game's box art stands in for the missing thumb.
     let gba = h.games("gba").await;
     assert_eq!(gba[0]["description"], "From ScreenScraper");
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
-    assert_eq!(gba[0]["media"], json!(["THUMB", "VIDEO"]));
+    assert_eq!(gba[0]["media"], json!(["IMAGE", "THUMB", "MARQUEE", "VIDEO"]));
     let gba_id = gba[0]["id"].as_i64().unwrap();
-    let kept = std::fs::read(h.dir.join(format!("metadata/media/{gba_id}-box.webp"))).unwrap();
-    assert_eq!(&kept[8..12], b"WEBP", "box art is kept as WebP");
+    for picture in ["box", "shot", "marquee"] {
+        let kept = std::fs::read(h.dir.join(format!("metadata/media/{gba_id}-{picture}.webp")));
+        assert_eq!(&kept.unwrap()[8..12], b"WEBP", "{picture} is kept as WebP");
+    }
     let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
     assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK);
 
@@ -1098,8 +1128,7 @@ fn webp_width(bytes: &[u8]) -> u32 {
 async fn artwork_at_a_width_is_a_kept_webp_copy() {
     let mut h = Harness::new("artwork-width", false).await;
     h.sign_up_admin().await;
-    let thumb = h.dir.join("roms/nes/images/Test Game (USA)-thumb.png");
-    std::fs::write(&thumb, include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).unwrap();
+    let thumb = h.give_box_art(include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).await;
     let q = "query { system(id: \"nes\") { games { id \
              small: mediaUrl(kind: THUMB, width: 150) wide: mediaUrl(kind: THUMB, width: 2000) \
              original: mediaUrl(kind: THUMB) } } }";
@@ -1200,13 +1229,10 @@ async fn mirror_mode_copies_the_library_and_plays_from_it() {
     assert_eq!((status["mode"].clone(), status["games"].clone()), (json!("MIRROR"), json!(0)));
 
     crate::admin::sync_then_scan(h.state.clone()).await.unwrap();
-    assert!(
-        h.dir.join("library/nes/images/Test Game (USA)-thumb.png").is_file(),
-        "artwork is mirrored too"
-    );
+    assert!(!h.dir.join("library/nes/images").exists(), "artwork folders are not mirrored");
     let status = h.ok(LIBRARY, json!({})).await["libraryStatus"].clone();
     assert_eq!(status["games"], 2);
-    assert_eq!(status["mirror"], json!({"running": false, "filesDone": 3}));
+    assert_eq!(status["mirror"], json!({"running": false, "filesDone": 2}));
     assert_eq!(h.ok("mutation { syncLibrary }", json!({})).await["syncLibrary"], true);
 }
 
@@ -3517,8 +3543,12 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
         (skipped[0]["path"].as_str(), skipped[0]["gameId"].is_null()),
         (Some("nes/notes.abc"), true)
     );
+    // The artwork beside the ROM does not count: only what was downloaded.
     let no_art = items(h.ok(of, json!({"kind": "NO_BOX_ART", "system": "nes"})).await);
-    assert!(no_art.is_empty(), "the NES game has box art beside it: {no_art:?}");
+    assert_eq!(no_art[0]["path"], "nes/Test Game (USA).nes");
+    h.give_box_art(&[0u8; 16]).await;
+    let no_art = items(h.ok(of, json!({"kind": "NO_BOX_ART", "system": "nes"})).await);
+    assert!(no_art.is_empty(), "the NES game has box art now: {no_art:?}");
 
     let counts = h.ok("{ attentionCounts { kind system count } }", json!({})).await;
     assert!(

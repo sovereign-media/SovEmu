@@ -25,6 +25,8 @@
       <media type="ss" region="wor" format="png">https://example.invalid/ss.png</media>
       <media type="box-2D" region="jp" format="png">https://example.invalid/box jp.png</media>
       <media type="box-2D" region="us" format="png">https://example.invalid/box us.png</media>
+      <media type="wheel" region="us" format="png">https://example.invalid/wheel us.png</media>
+      <media type="wheel-hd" region="jp" format="png">https://example.invalid/wheel-hd jp.png</media>
     </medias>
   </jeu>
 </Data>

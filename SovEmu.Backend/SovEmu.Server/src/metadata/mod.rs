@@ -150,6 +150,8 @@ pub(crate) enum Field {
     Players,
     Rating,
     BoxArt,
+    Screenshot,
+    Marquee,
     Video,
 }
 
@@ -166,6 +168,8 @@ impl Field {
             Field::Players => "players",
             Field::Rating => "rating",
             Field::BoxArt => "box_art",
+            Field::Screenshot => "screenshot",
+            Field::Marquee => "marquee",
             Field::Video => "video",
         }
     }
@@ -311,7 +315,8 @@ struct Pending {
 /// then while one it was not asked is now configured.
 fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -> bool {
     match status {
-        None => true,
+        // Found before ScreenScraper was asked for screenshots and logos (migration 0031).
+        None | Some("refresh") => true,
         Some("not_found") => {
             let tried: Vec<&str> = tried.unwrap_or("").split(',').collect();
             available.iter().any(|s| !tried.contains(s))
@@ -362,6 +367,10 @@ pub(crate) struct Row {
     pub(crate) rating: Option<f64>,
     pub(crate) box_art_url: Option<String>,
     pub(crate) box_art_source: Option<String>,
+    pub(crate) screenshot_url: Option<String>,
+    pub(crate) screenshot_source: Option<String>,
+    pub(crate) marquee_url: Option<String>,
+    pub(crate) marquee_source: Option<String>,
     pub(crate) video_url: Option<String>,
     pub(crate) video_source: Option<String>,
     /// JSON: field key → provider id.
@@ -408,6 +417,8 @@ impl Lookup {
             (Field::Players, before.players.is_some(), i.players.is_some()),
             (Field::Rating, before.rating.is_some(), i.rating.is_some()),
             (Field::BoxArt, before.box_art_url.is_some(), i.box_art_url.is_some()),
+            (Field::Screenshot, before.screenshot_url.is_some(), i.screenshot_url.is_some()),
+            (Field::Marquee, before.marquee_url.is_some(), i.marquee_url.is_some()),
             (Field::Video, before.video_url.is_some(), i.video_url.is_some()),
         ] {
             if filled(was, now) {
@@ -447,8 +458,13 @@ pub(crate) fn merge_row(old: &Row, new: &Lookup, fields: &[Field]) -> Row {
     take!(Field::Players, players, i.players);
     take!(Field::Rating, rating, i.rating);
     take!(Field::BoxArt, box_art_url, i.box_art_url);
+    take!(Field::Screenshot, screenshot_url, i.screenshot_url);
+    take!(Field::Marquee, marquee_url, i.marquee_url);
     take!(Field::Video, video_url, i.video_url);
     row.box_art_source = row.box_art_url.as_ref().and_then(|_| sources.get("box_art").cloned());
+    row.screenshot_source =
+        row.screenshot_url.as_ref().and_then(|_| sources.get("screenshot").cloned());
+    row.marquee_source = row.marquee_url.as_ref().and_then(|_| sources.get("marquee").cloned());
     row.video_source = row.video_url.as_ref().and_then(|_| sources.get("video").cloned());
     row.field_sources = serde_json::to_string(&sources).unwrap_or_else(|_| "{}".into());
     let mut ids = old.ids();
@@ -610,8 +626,8 @@ async fn look_up(
     let meta = &state.metadata;
     let old: Row = sqlx::query_as(
         "SELECT title, description, release_date, developer, publisher, genre, players,
-           rating, box_art_url, box_art_source, video_url, video_source, field_sources,
-           provider_ids, tried
+           rating, box_art_url, box_art_source, screenshot_url, screenshot_source, marquee_url,
+           marquee_source, video_url, video_source, field_sources, provider_ids, tried
          FROM game_metadata WHERE game_id = ?",
     )
     .bind(game.id)
@@ -759,7 +775,7 @@ async fn look_up(
     });
 }
 
-/// Writes `row` for `game_id`. A new box art URL is downloaded afresh: the old file is dropped
+/// Writes `row` for `game_id`. A new picture or video URL is downloaded afresh: the old file is dropped
 /// and its attempts start again at 0.
 async fn store(
     state: &AppState,
@@ -776,8 +792,10 @@ async fn store(
     sqlx::query(
         "INSERT INTO game_metadata (game_id, status, sources, title, description, release_date,
            developer, publisher, genre, players, rating, box_art_url, box_art_source, tried,
-           field_sources, provider_ids, video_url, video_source, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           field_sources, provider_ids, video_url, video_source, screenshot_url,
+           screenshot_source, marquee_url, marquee_source, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           datetime('now'))
          ON CONFLICT(game_id) DO UPDATE SET status = excluded.status, sources = excluded.sources,
            title = excluded.title, description = excluded.description,
            release_date = excluded.release_date, developer = excluded.developer,
@@ -793,6 +811,17 @@ async fn store(
            video_attempts = CASE WHEN excluded.video_url IS game_metadata.video_url
              THEN game_metadata.video_attempts ELSE 0 END,
            video_url = excluded.video_url, video_source = excluded.video_source,
+           screenshot = CASE WHEN excluded.screenshot_url IS game_metadata.screenshot_url
+             THEN game_metadata.screenshot ELSE NULL END,
+           screenshot_attempts = CASE WHEN excluded.screenshot_url IS game_metadata.screenshot_url
+             THEN game_metadata.screenshot_attempts ELSE 0 END,
+           screenshot_url = excluded.screenshot_url,
+           screenshot_source = excluded.screenshot_source,
+           marquee = CASE WHEN excluded.marquee_url IS game_metadata.marquee_url
+             THEN game_metadata.marquee ELSE NULL END,
+           marquee_attempts = CASE WHEN excluded.marquee_url IS game_metadata.marquee_url
+             THEN game_metadata.marquee_attempts ELSE 0 END,
+           marquee_url = excluded.marquee_url, marquee_source = excluded.marquee_source,
            tried = excluded.tried, field_sources = excluded.field_sources,
            provider_ids = excluded.provider_ids, fetched_at = excluded.fetched_at",
     )
@@ -814,27 +843,37 @@ async fn store(
     .bind(&row.provider_ids)
     .bind(&row.video_url)
     .bind(&row.video_source)
+    .bind(&row.screenshot_url)
+    .bind(&row.screenshot_source)
+    .bind(&row.marquee_url)
+    .bind(&row.marquee_source)
     .execute(&state.db)
     .await?;
     Ok(())
 }
 
-/// Removes what earlier versions left: LaunchBox's database dump (no longer a source), and
-/// downloaded box art no game refers to (all of it after the lookup data was cleared, in
-/// migration 0030). Box art is only ever `<game id>-box.<png|jpg|webp>` in the media folder;
-/// nothing else there, and nothing in the library, is touched.
+/// Removes what earlier versions left: LaunchBox's database dump (no longer a source), the
+/// play cache's copies of the library's own artwork (no longer read), and downloaded pictures
+/// and videos no game refers to (all of them after the lookup data was cleared, in migration
+/// 0030). Those are only ever `<game id>-<box|shot|marquee>.<png|jpg|webp>` and
+/// `<game id>-video.mp4` in the media folder; nothing else there, and nothing in the library,
+/// is touched.
 pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool) {
-    let old = paths.removed_launchbox();
-    if old.exists() {
-        match tokio::fs::remove_dir_all(&old).await {
-            Ok(()) => tracing::info!(path = %old.display(), "removed the LaunchBox database dump"),
-            Err(e) => {
-                tracing::warn!(path = %old.display(), error = %e, "cannot remove the LaunchBox dump")
+    for (old, what) in [
+        (paths.removed_launchbox(), "the LaunchBox database dump"),
+        (paths.removed_cache_artwork(), "cached copies of the library's artwork"),
+    ] {
+        if old.exists() {
+            match tokio::fs::remove_dir_all(&old).await {
+                Ok(()) => tracing::info!(path = %old.display(), what, "removed"),
+                Err(e) => tracing::warn!(path = %old.display(), what, error = %e, "cannot remove"),
             }
         }
     }
     let Ok(kept) = sqlx::query_scalar::<_, String>(
         "SELECT box_art FROM game_metadata WHERE box_art IS NOT NULL
+         UNION ALL SELECT screenshot FROM game_metadata WHERE screenshot IS NOT NULL
+         UNION ALL SELECT marquee FROM game_metadata WHERE marquee IS NOT NULL
          UNION ALL SELECT video FROM game_metadata WHERE video IS NOT NULL",
     )
     .fetch_all(db)
@@ -846,7 +885,7 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
     let mut removed = 0u64;
     while let Ok(Some(entry)) = dir.next_entry().await {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if (is_box_art_file(&name) || is_video_file(&name))
+        if (is_picture_file(&name) || is_video_file(&name))
             && !kept.contains(&name)
             && tokio::fs::remove_file(entry.path()).await.is_ok()
         {
@@ -854,7 +893,7 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths, db: &sqlx::SqlitePool)
         }
     }
     if removed > 0 {
-        tracing::info!(files = removed, "removed box art and videos no game refers to");
+        tracing::info!(files = removed, "removed pictures and videos no game refers to");
     }
 }
 
@@ -864,16 +903,42 @@ fn is_video_file(name: &str) -> bool {
         .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Whether `name` is a downloaded box art file (`<game id>-box.<ext>`).
-fn is_box_art_file(name: &str) -> bool {
-    let Some((id, ext)) = name.split_once("-box.") else { return false };
+/// Whether `name` is a downloaded picture (`<game id>-<box|shot|marquee>.<ext>`).
+fn is_picture_file(name: &str) -> bool {
+    let Some((stem, ext)) = name.rsplit_once('.') else { return false };
+    let Some((id, kind)) = stem.split_once('-') else { return false };
     !id.is_empty()
         && id.bytes().all(|b| b.is_ascii_digit())
+        && Picture::ALL.iter().any(|p| p.suffix() == kind)
         && ["png", "jpg", "webp"].contains(&ext)
 }
 
-/// Box art larger than this is not an image anyone meant to send: refused rather than kept.
-const MAX_BOX_ART_BYTES: usize = 32 << 20;
+/// A picture a lookup finds a URL for, downloaded afterwards ([`artwork`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Picture {
+    /// Front box art, served as `thumb`.
+    BoxArt,
+    /// A screenshot, served as `image`.
+    Screenshot,
+    /// The game's logo, served as `marquee`.
+    Marquee,
+}
+
+impl Picture {
+    pub(crate) const ALL: [Picture; 3] = [Picture::BoxArt, Picture::Screenshot, Picture::Marquee];
+
+    /// Its file's name ends in this: `<game id>-<suffix>.webp`.
+    pub(crate) fn suffix(self) -> &'static str {
+        match self {
+            Picture::BoxArt => "box",
+            Picture::Screenshot => "shot",
+            Picture::Marquee => "marquee",
+        }
+    }
+}
+
+/// A picture larger than this is not an image anyone meant to send: refused rather than kept.
+const MAX_PICTURE_BYTES: usize = 32 << 20;
 
 /// The image format of `bytes`, from its first bytes (PNG, JPEG or WebP); none for anything
 /// else (an HTML error page sent with a 200, say).
@@ -925,23 +990,29 @@ async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Option<Stri
     Some(name)
 }
 
-/// Downloads box art into the media directory as lossy WebP, capped at `artwork_max_px` (the
-/// service may already have scaled it), and returns its file name (`<game id>-box.webp`). Only a
-/// picture, of a sane size, written whole; a copy kept under another format goes.
-async fn download_box_art(meta: &Metadata, game_id: i64, url: &str) -> Option<String> {
+/// Downloads a picture into the media directory as lossy WebP, capped at `artwork_max_px` (the
+/// service may already have scaled it), and returns its file name (`<game id>-box.webp` for box
+/// art). Only a picture, of a sane size, written whole; a copy kept under another format goes.
+async fn download_picture(
+    meta: &Metadata,
+    game_id: i64,
+    picture: Picture,
+    url: &str,
+) -> Option<String> {
     let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
-    if response.content_length().is_some_and(|n| n > MAX_BOX_ART_BYTES as u64) {
+    if response.content_length().is_some_and(|n| n > MAX_PICTURE_BYTES as u64) {
         return None;
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.ok()? {
-        if bytes.len() + chunk.len() > MAX_BOX_ART_BYTES {
+        if bytes.len() + chunk.len() > MAX_PICTURE_BYTES {
             return None;
         }
         bytes.extend_from_slice(&chunk);
     }
     image_extension(&bytes)?;
-    let name = format!("{game_id}-box.webp");
+    let suffix = picture.suffix();
+    let name = format!("{game_id}-{suffix}.webp");
     let path = meta.media_dir.join(&name);
     let (max, quality) = (meta.artwork_max_px, meta.artwork_quality);
     let written = tokio::task::spawn_blocking(move || {
@@ -951,11 +1022,12 @@ async fn download_box_art(meta: &Metadata, game_id: i64, url: &str) -> Option<St
     .await
     .ok()?;
     if let Err(e) = written {
-        tracing::debug!(game_id, error = %e, "box art not kept");
+        tracing::debug!(game_id, picture = suffix, error = %e, "picture not kept");
         return None;
     }
     for other in ["png", "jpg"] {
-        let _ = tokio::fs::remove_file(meta.media_dir.join(format!("{game_id}-box.{other}"))).await;
+        let old = meta.media_dir.join(format!("{game_id}-{suffix}.{other}"));
+        let _ = tokio::fs::remove_file(old).await;
     }
     Some(name)
 }
@@ -1057,13 +1129,17 @@ mod tests {
     }
 
     #[test]
-    fn box_art_files_are_told_by_name() {
-        assert!(is_box_art_file("12-box.png"));
-        assert!(is_box_art_file("3-box.webp"));
-        assert!(!is_box_art_file("12-box.png.part"));
-        assert!(!is_box_art_file("thumbs"));
-        assert!(!is_box_art_file("x-box.png"));
-        assert!(!is_box_art_file("-box.jpg"));
+    fn picture_files_are_told_by_name() {
+        assert!(is_picture_file("12-box.png"));
+        assert!(is_picture_file("3-box.webp"));
+        assert!(!is_picture_file("12-box.png.part"));
+        assert!(!is_picture_file("thumbs"));
+        assert!(!is_picture_file("x-box.png"));
+        assert!(!is_picture_file("-box.jpg"));
+        assert!(is_picture_file("12-shot.webp"));
+        assert!(is_picture_file("12-marquee.webp"));
+        assert!(!is_picture_file("12-video.mp4"));
+        assert!(!is_picture_file("12-other.webp"));
     }
 
     #[test]
@@ -1071,6 +1147,7 @@ mod tests {
         let all = ["fbneo", "screenscraper"];
         assert!(needs_lookup(None, None, &["fbneo"]), "never looked up");
         assert!(!needs_lookup(Some("found"), Some("fbneo"), &all), "found stays found");
+        assert!(needs_lookup(Some("refresh"), Some("screenscraper"), &all), "migration 0031");
         assert!(!needs_lookup(Some("not_found"), Some("fbneo"), &["fbneo"]), "nothing new");
         assert!(needs_lookup(Some("not_found"), Some("fbneo"), &all), "credentials added");
         assert!(needs_lookup(Some("not_found"), Some(""), &["fbneo"]), "before this was kept");

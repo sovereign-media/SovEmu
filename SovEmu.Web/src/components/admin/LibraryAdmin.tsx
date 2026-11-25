@@ -128,8 +128,12 @@ function Library() {
             <Button onClick={() => fetchMetadata(false)} disabled={metadata.running}>
               <CloudDownload /> Fetch missing
             </Button>
-            <Button variant="outline" onClick={() => fetchMetadata(true, ["BOX_ART"])} disabled={metadata.running}>
-              <ImageDown /> Refresh box art
+            <Button
+              variant="outline"
+              onClick={() => fetchMetadata(true, ["BOX_ART", "SCREENSHOT", "MARQUEE"])}
+              disabled={metadata.running}
+            >
+              <ImageDown /> Refresh artwork
             </Button>
             <Button variant="outline" onClick={() => setConfirm(true)} disabled={metadata.running}>
               <RefreshCw /> Refresh all

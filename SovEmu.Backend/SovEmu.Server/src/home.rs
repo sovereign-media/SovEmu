@@ -57,8 +57,8 @@ pub(crate) const RECENT: Row =
 /// daily: a multiplicative hash of the id, offset by the day (bound). It reads every game with
 /// artwork, by design: it is the only way to shuffle them.
 pub(crate) const FEATURED: Row = Row {
-    filter: "g.media != '' OR m.box_art IS NOT NULL",
-    order: "(m.description IS NOT NULL AND g.media LIKE '%image%') DESC,
+    filter: "m.box_art IS NOT NULL OR m.screenshot IS NOT NULL",
+    order: "(m.description IS NOT NULL AND m.screenshot IS NOT NULL) DESC,
          m.description IS NOT NULL DESC,
          ((g.id + ?) * 2654435761) % 4294967291",
 };
@@ -103,7 +103,7 @@ pub(crate) async fn query(
     }
     let mut games = q.bind(limit).fetch_all(&state.db).await?;
     crate::api::annotate(state, user_id, &mut games).await?;
-    Ok(games.into_iter().map(Game::with_box_art).collect())
+    Ok(games)
 }
 
 pub(crate) async fn home(state: &AppState, user: &User) -> ApiResult<Home> {

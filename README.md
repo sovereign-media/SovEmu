@@ -197,7 +197,8 @@ Android and iOS clients all use it. The schema, with every type and field docume
 ## A library on a NAS
 
 `compose.nas.yaml` mounts an SMB share **read-only** as the library. The share should hold a
-Batocera-style layout: `roms/<system>/` with `images/` and `videos/` artwork beside the ROMs.
+Batocera-style layout: `roms/<system>/`. Only the ROMs are read: artwork folders beside them
+(`images/`, `videos/`) are skipped, and every game's artwork comes from ScreenScraper.
 BIOS files stay local, in `data/bios/` (copy a Batocera `bios/` folder's files into the
 per-system folders). Put the share, credentials and mode in `.env`, which git ignores (see
 `.env.example`), then:
@@ -210,13 +211,11 @@ Choose how the server uses the share with `SOVEMU_LIBRARY_MODE`:
 
 | Mode | When | What happens |
 |---|---|---|
-| `direct` (default) | The NAS is on the same network | Games and artwork are read straight from the share |
-| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games and seen artwork are kept in `data/cache/games` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. Opening a system prefetches its box art. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
-| `mirror` | You want a full local copy | A background sync copies the library and its artwork into `data/library`, copying only what changed and removing what was deleted. Games are played from the copy. `SOVEMU_MIRROR_SYSTEMS=nes,snes` limits it. Start a sync from the Library page. |
+| `direct` (default) | The NAS is on the same network | Games are read straight from the share |
+| `cache` | The NAS is remote (VPN, a Cloudflare tunnel) | Played games are kept in `data/cache/games` (`SOVEMU_CACHE_GB`, least recently used out). Small games are copied on first play; disc images are copied after their first session. A 32 MB GBA game: 7.9 s cold, 0.3 s warm over a tunnel. |
+| `mirror` | You want a full local copy | A background sync copies the library's games into `data/library` (not its artwork folders), copying only what changed and removing what was deleted. Games are played from the copy. `SOVEMU_MIRROR_SYSTEMS=nes,snes` limits it. Start a sync from the Library page. |
 
-The scanner picks up box art, composite images, marquees and video snaps
-(`images/<rom>-thumb.png`, `-image.png`, `-marquee.png`, `videos/<rom>-video.mp4`). The game list
-shows them. Scans run in the background, in parallel.
+Scans run in the background, in parallel.
 
 ### Soft patches
 
@@ -265,13 +264,14 @@ and `none` turns frames off.
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
 publishers, genres, player counts, ratings, box art and gameplay videos. The information is
-stored as each game is looked up. Box art and videos follow in the background, only for games
-with no thumb or video of their own, `SOVEMU_ARTWORK_DOWNLOADS` at a time. Box art is asked for
-at the size the largest screen shows it (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
+stored as each game is looked up. Its artwork follows in the background,
+`SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
+else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for
+at the size the largest screen shows them (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
 scan; videos are ScreenScraper's normalised ones where it has them (smaller, one encoding), and
-`SOVEMU_METADATA_VIDEOS=false` skips them. Box art is kept as lossy WebP
+`SOVEMU_METADATA_VIDEOS=false` skips them. Pictures are kept as lossy WebP
 (`SOVEMU_ARTWORK_WEBP_QUALITY`), and every client asks for artwork at the width it shows it: the
-server makes a WebP copy at that width the first time (from the library's own artwork too) and
+server makes a WebP copy at that width the first time and
 keeps it in `data/cache/artwork-widths`, so a grid of covers moves a few kilobytes a card rather
 than the original files. Clearing the cache clears the copies; they are made again as needed. A system's game cards take the shape of its boxes
 (SNES and N64 landscape, CD systems square, cartridge systems portrait), so box art fills them;
@@ -383,7 +383,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_MIRROR_INTERVAL_MINUTES` | `360` | `mirror` mode: sync period (0: startup only) |
 | `SOVEMU_CORES_DIR` | `cores` (`/opt/sovemu/cores`) | libretro cores |
 | `SOVEMU_CACHE_LARGE_GAME_MB` | `64` | `cache` mode: larger games are cached after their session, not before |
-| `SOVEMU_COPY_THREADS` | `4` | Files copied at once (mirror sync, artwork cache) |
+| `SOVEMU_COPY_THREADS` | `4` | Files copied at once by the mirror sync |
 | `SOVEMU_SYSTEMS__<id>__CORE`, `__ENABLED`, `__DECORATION`, `__RUN_AHEAD`, `__OPTIONS__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), core options (see below) |
 | `SOVEMU_COLLECTIONS__<n>__NAME`, `__GAMES__<m>` | none | A shared collection everyone sees, its games as `<system id>/<file name>` (`nes/Super Stand-in (USA).nes`), in order. Kept in step after each scan; locked on the admin page, which offers the collections made there in this form. A collection no longer declared is deleted |
 | `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |

@@ -140,7 +140,7 @@ pub(crate) async fn games(
     // A hidden system's games are not offered, in a collection as anywhere.
     games.retain(|g| crate::api::enabled(state, &g.system));
     crate::api::annotate(state, user.id, &mut games).await?;
-    Ok(games.into_iter().map(Game::with_box_art).collect())
+    Ok(games)
 }
 
 /// The ids of the owner's collections that hold `game_id`.
