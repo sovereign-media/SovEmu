@@ -19,6 +19,17 @@ export const ESRB: Record<EsrbRating, EsrbInfo> = {
   RATING_PENDING: { code: "RP", name: "Rating Pending" },
 };
 
+/** The ratings from the youngest audience to the oldest; pending last. */
+export const ESRB_ORDER: EsrbRating[] = [
+  "EARLY_CHILDHOOD",
+  "EVERYONE",
+  "EVERYONE_10_PLUS",
+  "TEEN",
+  "MATURE",
+  "ADULTS_ONLY",
+  "RATING_PENDING",
+];
+
 /** What a badge says to a screen reader and in its tooltip: "ESRB: Teen (T)". */
 export const esrbLabel = (rating: EsrbRating): string => `ESRB: ${ESRB[rating].name} (${ESRB[rating].code})`;
 

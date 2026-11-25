@@ -5,14 +5,24 @@ import { BookA, ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { stripWindow } from "../../lib/games";
 import { cn } from "../ui/cn";
+import { Tooltip } from "../ui/primitives";
 import { CHIP } from "./TabStrip";
 
-export function JumpButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} aria-haspopup="dialog" className={CHIP}>
+/** Opens the jump strip. Letters only mean something in title order: with another sort the button
+ *  stays where it is, disabled, and says why (`aria-disabled`, so its tooltip still shows). */
+export function JumpButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  const button = (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      aria-haspopup="dialog"
+      aria-disabled={disabled || undefined}
+      className={cn(CHIP, disabled && "cursor-default opacity-40 hover:bg-transparent hover:text-slate-400")}
+    >
       <BookA /> Jump
     </button>
   );
+  return disabled ? <Tooltip content="Sort by title to jump to a letter">{button}</Tooltip> : button;
 }
 
 // The outermost neighbours drop out on a phone, where seven discs do not fit.

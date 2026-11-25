@@ -1,25 +1,48 @@
 // A system's game list: searching, filtering, sorting and the A–Z jump, kept here so the page
 // only draws what these return.
-import type { Game } from "./api";
+import type { EsrbRating, Game } from "./api";
+import { ESRB_ORDER } from "./esrb";
 
-export type GameSort = "title" | "recent" | "year" | "plays";
+export type GameSort = "title" | "recent" | "year" | "plays" | "rating" | "age";
 
 export const SORTS: { value: GameSort; label: string }[] = [
   { value: "title", label: "Title" },
   { value: "recent", label: "Recently played" },
   { value: "year", label: "Release year" },
   { value: "plays", label: "Most played" },
+  { value: "rating", label: "Highest rated" },
+  { value: "age", label: "Age rating" },
 ];
 
+/** What the list is narrowed to. A list filter keeps games with any of its values; filters
+ *  combine (a game must pass every one). */
 export interface GameFilters {
   played?: "played" | "unplayed";
   /** Only this user's favourites. */
   favourites?: boolean;
-  /** Only games for at least two players. */
-  multiplayer?: boolean;
+  /** Only games for at least this many players. */
+  minPlayers?: number;
+  /** Only games rated at least this many stars out of 5. */
+  minStars?: number;
   /** Only games in any of these genres ("Platform", "Shooter" …). */
   genres?: string[];
+  /** Only games with any of these ESRB ratings. */
+  esrb?: EsrbRating[];
+  /** Only games with any of these ways to play ("Single player", "Co-op" …). */
+  modes?: string[];
+  /** Only games in any of these series ("Castlevania" …). */
+  series?: string[];
+  /** Only games with any of these themes ("Horror" …). */
+  themes?: string[];
 }
+
+/** The list filters, each with what it reads from a game, as the drawer offers them. */
+export const LIST_FILTERS = [
+  { key: "genres", label: "Genre", values: (g: Game) => genresOf(g) },
+  { key: "modes", label: "Play modes", values: (g: Game) => g.modes },
+  { key: "series", label: "Series", values: (g: Game) => g.series },
+  { key: "themes", label: "Themes", values: (g: Game) => g.themes },
+] as const satisfies readonly { key: keyof GameFilters; label: string; values: (g: Game) => string[] }[];
 
 /** A game's genres: the metadata lists them comma-separated ("Platform, Action"). */
 export const genresOf = (g: Pick<Game, "genre">) =>
@@ -41,24 +64,33 @@ const fold = (s: string) =>
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
 
-/** Games matching every word of `query` (in the title, file name, genre, maker or tags) and
- *  every filter. */
+/** Games matching every word of `query` (in the title, file name, genre, maker, tags, series or
+ *  themes) and every filter. */
 export function filterGames(games: Game[], query: string, filters: GameFilters): Game[] {
   const words = fold(query).split(/\s+/).filter(Boolean);
   return games.filter((g) => {
     if (filters.played === "played" && !g.playCount) return false;
     if (filters.played === "unplayed" && g.playCount) return false;
     if (filters.favourites && !g.favourite) return false;
-    if (filters.multiplayer && (maxPlayers(g.players) ?? 1) < 2) return false;
-    if (filters.genres?.length) {
-      const genres = genresOf(g);
-      if (!filters.genres.some((x) => genres.includes(x))) return false;
+    if (filters.minPlayers && (maxPlayers(g.players) ?? 1) < filters.minPlayers) return false;
+    if (filters.minStars && (g.rating === null || g.rating * 5 < filters.minStars - 0.001)) return false;
+    if (filters.esrb?.length && !(g.esrb && filters.esrb.includes(g.esrb))) return false;
+    for (const { key, values } of LIST_FILTERS) {
+      const wanted = filters[key];
+      if (wanted?.length && !values(g).some((v) => wanted.includes(v))) return false;
     }
     if (!words.length) return true;
-    const text = fold([g.title, g.fileTitle, g.genre, g.developer, g.publisher, ...g.tags].filter(Boolean).join(" "));
+    const text = fold(
+      [g.title, g.fileTitle, g.genre, g.developer, g.publisher, ...g.tags, ...g.series, ...g.themes]
+        .filter(Boolean)
+        .join(" "),
+    );
     return words.every((w) => text.includes(w));
   });
 }
+
+/** Where a game's ESRB rating falls from the youngest audience to the oldest; unrated last. */
+const ageRank = (g: Game) => (g.esrb ? ESRB_ORDER.indexOf(g.esrb) : ESRB_ORDER.length);
 
 /** Sorted by `sort`; ties (and the title sort itself) go by title. */
 export function sortGames(games: Game[], sort: GameSort): Game[] {
@@ -71,6 +103,9 @@ export function sortGames(games: Game[], sort: GameSort): Game[] {
     recent: (a, b) => played(b) - played(a),
     year: (a, b) => (year(a) || 9999) - (year(b) || 9999),
     plays: (a, b) => (b.playCount ?? 0) - (a.playCount ?? 0),
+    // Unrated games last, whatever the order.
+    rating: (a, b) => (b.rating ?? -1) - (a.rating ?? -1),
+    age: (a, b) => ageRank(a) - ageRank(b),
   };
   return [...games].sort((a, b) => key[sort](a, b) || byTitle(a, b));
 }
@@ -94,22 +129,37 @@ export function jumpTo(games: Game[], letter: string): number {
   return at >= 0 ? at : games.length - 1;
 }
 
-/** Every genre in the list with how many games are in it, most common first, for the filters.
- *  Empty until game information has been fetched. */
-export function genreCounts(games: Game[]): { genre: string; count: number }[] {
+/** Every value `values` gives the games, with how many games have it, most common first, for a
+ *  filter's choices. Empty until game information has been fetched. */
+export function valueCounts(games: Game[], values: (g: Game) => readonly string[]): { value: string; count: number }[] {
   const counts = new Map<string, number>();
-  for (const g of games) for (const x of genresOf(g)) counts.set(x, (counts.get(x) ?? 0) + 1);
+  for (const g of games) for (const x of new Set(values(g))) counts.set(x, (counts.get(x) ?? 0) + 1);
   return [...counts]
-    .map(([genre, count]) => ({ genre, count }))
-    .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
+
+/** The ESRB ratings the games have, youngest audience first, with how many have each. */
+export function esrbCounts(games: Game[]): { value: EsrbRating; count: number }[] {
+  const counts = new Map<EsrbRating, number>();
+  for (const g of games) if (g.esrb) counts.set(g.esrb, (counts.get(g.esrb) ?? 0) + 1);
+  return ESRB_ORDER.filter((r) => counts.has(r)).map((value) => ({ value, count: counts.get(value) ?? 0 }));
+}
+
+/** Whether any game has a rating, so the minimum-rating filter can do something. */
+export const knowsRatings = (games: Game[]) => games.some((g) => g.rating !== null);
 
 /** Whether any game says how many players it takes, so the players filter can do something. */
 export const knowsPlayers = (games: Game[]) => games.some((g) => maxPlayers(g.players) !== null);
 
 /** How many filters are on, for the filter button's badge. */
 export const activeFilters = (f: GameFilters) =>
-  (f.played ? 1 : 0) + (f.favourites ? 1 : 0) + (f.multiplayer ? 1 : 0) + (f.genres?.length ?? 0);
+  (f.played ? 1 : 0) +
+  (f.favourites ? 1 : 0) +
+  (f.minPlayers ? 1 : 0) +
+  (f.minStars ? 1 : 0) +
+  (f.esrb?.length ?? 0) +
+  LIST_FILTERS.reduce((n, { key }) => n + (f[key]?.length ?? 0), 0);
 
 // --- The grid ---------------------------------------------------------------------------------
 
