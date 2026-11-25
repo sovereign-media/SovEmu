@@ -216,12 +216,16 @@ VA-API drivers (H.264 encoding), `tini`, libglvnd and Mesa (GL, EGL; no Vulkan d
 `libxi6` and `libusb-1.0-0` (the release's Dolphin links them), sets
 `NVIDIA_DRIVER_CAPABILITIES=graphics,video,utility` for NVIDIA's toolkit, has the web client in
 `/opt/sovemu/web`, runs as uid 1000,
-keeps data in `/data`, exposes 8080/tcp (web + API) and 50000/udp (all WebRTC media), and runs
+keeps its binaries in `/opt/sovemu/bin`, keeps every byte it writes in the `/sov-data` volume
+(nothing else in the container is written), reads the library from `/sov-library` (read-only),
+exposes 8080/tcp (web + API) and 50000/udp (all WebRTC media), and runs
 `sovemu-worker probe` over every core at build time (writing `/opt/sovemu/cores/manifest.json`),
-draws the built-in decoration set into `/opt/sovemu/decorations` (`sovemu-server
---write-decorations`; never ship third-party bezel art),
-so a core that cannot load fails the build. `compose.yaml` builds it, mounts `./data` and runs
-`serve`.
+writes the built-in artwork into `/opt/sovemu/artwork` (`sovemu-server --write-artwork`: the
+backgrounds, system photos, the `sovemu` decorations and the ESRB icons; never ship third-party
+bezel art), laid out exactly as `/sov-data/artwork`, where a file at the same path replaces the
+built-in one (`sovemu_library::layout`; a new kind of image gets a folder in both),
+so a core that cannot load fails the build. `compose.yaml` builds it, mounts `./data` at
+`/sov-data` and `./data/roms` read-only at `/sov-library`, and runs `serve`.
 
 ```bash
 docker build --platform linux/amd64 -f SovEmu.Backend/Dockerfile --target test .   # tests

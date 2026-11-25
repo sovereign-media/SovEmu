@@ -1,8 +1,7 @@
 // Renders the ESRB's rating icons (the SVGs beside this file, from Wikimedia Commons: see
-// README.md) to the PNGs the server ships in its built-in decoration set
-// (`SovEmu.Library/assets/ratings/esrb/`, written to `<decorations>/sovemu/ratings/esrb/` with the
-// rest of the set; an admin replaces one by putting their own at that path in another decorations
-// folder). 240 pixels wide, as tall as each icon's own shape (2:3), transparent where the icon is.
+// README.md) to the PNGs the server ships (`SovEmu.Library/assets/ratings/esrb/`, written into its
+// built-in artwork at `artwork/ratings/esrb/`; an admin replaces one by putting their own at that
+// path in `<data>/artwork/`). 240 pixels wide, as tall as each icon's own shape (2:3), transparent where the icon is.
 //
 //   npm run esrb-badges                 → SovEmu.Library/assets/ratings/esrb/<rating>.png
 //   npm run esrb-badges -- <folder>     → <folder>/<rating>.png

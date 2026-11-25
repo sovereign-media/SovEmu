@@ -4,14 +4,15 @@
 //!
 //! - a game no longer in the library loses its information (the scan deletes its row, and the
 //!   row's `ON DELETE CASCADE` takes the information; any left over goes here), its downloaded
-//!   pictures and video, and its copies at each width (`cache/artwork-widths/games/<id>`);
+//!   pictures and video (its folder, `artwork/games/<id>/`), and its copies at each width
+//!   (`cache/artwork/games/<id>/`);
 //! - a downloaded file that has gone (deleted by hand, a volume restored without it) is forgotten,
 //!   so the download job fetches it again;
 //! - games with no information yet are counted; the lookup that follows asks for them, and ends
 //!   by downloading what is missing.
 //!
-//! Only SovEmu's own files are deleted: `<game id>-<box|shot|marquee>.<png|jpg|webp>` and
-//! `<game id>-video.mp4` in `metadata/media`, and numbered folders under the width copies.
+//! Only SovEmu's own files are deleted: numbered game folders, and in them
+//! `<box|shot|marquee>.<png|jpg|webp>` and `video.mp4`.
 //! A file no row names but whose game still exists may be a download being recorded, so it is
 //! only deleted while no downloads run.
 
@@ -121,18 +122,32 @@ pub(crate) async fn reconcile(state: &AppState) -> anyhow::Result<Report> {
         sqlx::query_scalar("SELECT id FROM games").fetch_all(db).await?.into_iter().collect();
     let kept: HashSet<String> = named.into_iter().map(|(_, _, name)| name).collect();
     let downloading = state.metadata.artwork_status().running;
-    if let Ok(mut entries) = tokio::fs::read_dir(&media).await {
-        while let Some(entry) = entries.next_entry().await? {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !(super::is_picture_file(&name) || super::is_video_file(&name))
-                || kept.contains(&name)
-            {
+    // A folder per game: a removed game's goes whole, a kept game's loses what no row names.
+    if let Ok(mut folders) = tokio::fs::read_dir(&media).await {
+        while let Some(folder) = folders.next_entry().await? {
+            let Ok(id) = folder.file_name().to_string_lossy().parse::<i64>() else { continue };
+            if !folder.file_type().await?.is_dir() {
                 continue;
             }
-            let removed_game = game_id(&name).is_some_and(|id| !games.contains(&id));
-            if (removed_game || !downloading) && tokio::fs::remove_file(entry.path()).await.is_ok()
-            {
-                report.files += 1;
+            let Ok(mut files) = tokio::fs::read_dir(folder.path()).await else { continue };
+            let removed_game = !games.contains(&id);
+            let mut left = 0;
+            while let Some(file) = files.next_entry().await? {
+                let name = file.file_name().to_string_lossy().into_owned();
+                if !super::is_game_file(&name) || kept.contains(&format!("{id}/{name}")) {
+                    left += 1;
+                    continue;
+                }
+                if (removed_game || !downloading)
+                    && tokio::fs::remove_file(file.path()).await.is_ok()
+                {
+                    report.files += 1;
+                } else {
+                    left += 1;
+                }
+            }
+            if left == 0 {
+                let _ = tokio::fs::remove_dir(folder.path()).await;
             }
         }
     }
@@ -158,21 +173,9 @@ pub(crate) async fn reconcile(state: &AppState) -> anyhow::Result<Report> {
     Ok(report)
 }
 
-/// The game a downloaded file belongs to, from its name (`<game id>-…`).
-fn game_id(name: &str) -> Option<i64> {
-    name.split_once('-')?.0.parse().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_file_names_its_game() {
-        assert_eq!(game_id("12-box.webp"), Some(12));
-        assert_eq!(game_id("7-video.mp4"), Some(7));
-        assert_eq!(game_id("x-box.webp"), None);
-    }
 
     #[test]
     fn every_file_column_has_its_statement() {

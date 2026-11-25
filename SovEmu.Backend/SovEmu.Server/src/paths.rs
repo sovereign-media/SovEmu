@@ -1,32 +1,39 @@
-//! The data folder's layout (`SOVEMU_DATA_DIR`, `/data` in the image), in one place:
+//! The data folder's layout (`SOVEMU_DATA_DIR`, `/sov-data` in the image), in one place. It holds
+//! everything SovEmu writes and nothing it ships: the image's own files are in `/opt/sovemu`,
+//! whose `artwork/` has the same layout as the one here, so a file here replaces the built-in one
+//! at the same path (`sovemu_library::layout`).
 //!
 //! ```text
 //! <data>/
 //!   sovemu.db             the database (SQLite, WAL)
 //!   server.json           the asset and token signing keys, if not set (sovemu_assets)
-//!   roms/                 the library, unless SOVEMU_ROMS_DIR points elsewhere
-//!   library/              mode `mirror`: the local copy of the library
-//!   bios/<system>/        BIOS files, unless SOVEMU_BIOS_DIR points elsewhere
+//!   artwork/              every image (see sovemu_library::layout):
+//!     backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
+//!     systems/              system photos of your own, `<system id>.webp`
+//!     decorations/          decoration sets of your own (Batocera's layout)
+//!     ratings/esrb/         ESRB icons of your own, `<rating>.png`
+//!     games/<game id>/      downloaded box art, screenshot, logo and video
 //!   saves/<user>/<system>/<game>.srm            battery saves
 //!   saves/<user>/<system>/states/<game>/        save states and their screenshots
+//!   bios/                 BIOS files in any layout, unless SOVEMU_BIOS_DIR points elsewhere
+//!   metadata/fbneo/       FBNeo's DATs, by commit
 //!   backups/              backups, unless SOVEMU_BACKUP_DIR points elsewhere
 //!   restored.json         the backup last restored (SOVEMU_RESTORE_FROM), so it is restored once
 //!   before-restore-<time>/  what a restore replaced, kept
-//!   cache/games/          mode `cache`: games copied from the library as they are played
-//!   cache/discs/          generated .m3u playlists for multi-disc games
-//!   cache/artwork-widths/ artwork copies at the widths clients asked for (WebP)
-//!   cache/decorations/    the built-in decoration set, unless the image holds it
-//!   decorations/          decoration sets of your own (Batocera's layout)
-//!   backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
-//!   systems/              system photos of your own, `<system id>.webp`
-//!   metadata/             game information:
-//!   metadata/fbneo/       FBNeo's DATs, by commit
-//!   metadata/media/       downloaded box art, screenshots, logos and videos
+//!   library/              mode `mirror`: the local copy of the library
+//!   roms/                 the library when SOVEMU_ROMS_DIR is not set (development)
+//!   cache/                made again as needed:
+//!     games/                mode `cache`: games copied from the library as they are played
+//!     discs/                generated .m3u playlists for multi-disc games
+//!     artwork/games/<id>/   artwork copies at the widths clients asked for (WebP)
+//!     builtin-artwork/      the built-in artwork, when the image does not hold it (development)
 //! ```
 //!
 //! A new file or folder in the data directory gets its method here.
 
 use std::path::{Path, PathBuf};
+
+use sovemu_library::layout::ArtworkDir;
 
 /// The data folder, and where each thing lives in it.
 #[derive(Debug, Clone)]
@@ -100,27 +107,43 @@ impl DataPaths {
         self.cache().join("discs")
     }
 
-    /// The built-in decoration set when the image does not hold it.
-    pub fn builtin_decorations(&self) -> PathBuf {
-        self.cache().join("decorations")
+    /// The built-in artwork when the image does not hold it (`SOVEMU_ARTWORK_BUILTIN` unset):
+    /// written here at startup, as the image writes `/opt/sovemu/artwork` at build.
+    pub fn builtin_artwork(&self) -> PathBuf {
+        self.cache().join("builtin-artwork")
     }
 
-    /// Decoration sets of the admin's own.
-    pub fn decorations(&self) -> PathBuf {
-        self.root.join("decorations")
+    /// Every image of the admin's own, and the game art SovEmu downloads.
+    pub fn artwork(&self) -> ArtworkDir {
+        ArtworkDir::new(self.root.join("artwork"))
     }
 
-    /// Backgrounds of the admin's own (`appearance`).
-    pub fn backgrounds(&self) -> PathBuf {
-        self.root.join("backgrounds")
+    /// Folders from before images had one of their own, and where each moved to: moved at
+    /// startup (`metadata::tidy`). The downloaded game art (`metadata/media`) is moved file by
+    /// file, renamed into a folder per game.
+    pub fn moved_artwork(&self) -> [(PathBuf, PathBuf); 3] {
+        let art = self.artwork();
+        [
+            (self.root.join("decorations"), art.decorations()),
+            (self.root.join("backgrounds"), art.backgrounds()),
+            (self.root.join("systems"), art.systems()),
+        ]
     }
 
-    /// System photos of the admin's own, `<system id>.webp` (`appearance`).
-    pub fn system_photos(&self) -> PathBuf {
-        self.root.join("systems")
+    /// Where downloaded game art was kept, `<game id>-<box|shot|marquee|video>.<ext>`, before
+    /// `artwork/games/<game id>/`: moved at startup.
+    pub fn moved_game_art(&self) -> PathBuf {
+        self.metadata().join("media")
     }
 
-    /// Game information: the services' downloads and box art.
+    /// Caches from before the layout changed, deleted at startup: the built-in decorations
+    /// (now in [`Self::builtin_artwork`]) and the artwork copies (now in
+    /// [`Self::artwork_widths`]).
+    pub fn removed_caches(&self) -> [PathBuf; 2] {
+        [self.cache().join("decorations"), self.cache().join("artwork-widths")]
+    }
+
+    /// Game information: the services' downloads.
     pub fn metadata(&self) -> PathBuf {
         self.root.join("metadata")
     }
@@ -136,15 +159,15 @@ impl DataPaths {
         self.metadata().join("fbneo")
     }
 
-    /// Box art downloaded by the game-information lookup.
-    pub fn artwork(&self) -> PathBuf {
-        self.metadata().join("media")
+    /// Game art downloaded by the game-information lookup, a folder per game.
+    pub fn game_artwork(&self) -> PathBuf {
+        self.artwork().games()
     }
 
     /// Artwork copies at the widths clients asked for (lossy WebP), made from the originals on
-    /// first request and kept; cleared with the cache.
+    /// first request and kept, as `games/<id>/<kind>/w<width>.webp`; cleared with the cache.
     pub fn artwork_widths(&self) -> PathBuf {
-        self.cache().join("artwork-widths")
+        self.cache().join("artwork")
     }
 
     /// Backups, when `SOVEMU_BACKUP_DIR` is not set (`backup`).
@@ -166,6 +189,10 @@ mod tests {
     fn the_layout_is_as_documented() {
         let p = DataPaths::new("/data");
         assert_eq!(p.database(), Path::new("/data/sovemu.db"));
+        assert_eq!(p.game_artwork(), Path::new("/data/artwork/games"));
+        assert_eq!(p.artwork().esrb(), Path::new("/data/artwork/ratings/esrb"));
+        assert_eq!(p.artwork().decorations(), Path::new("/data/artwork/decorations"));
+        assert_eq!(p.artwork_widths(), Path::new("/data/cache/artwork"));
         assert_eq!(p.saves(3, "snes"), Path::new("/data/saves/3/snes"));
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
         assert_eq!(p.removed_launchbox(), Path::new("/data/metadata/launchbox"));
@@ -178,7 +205,7 @@ mod tests {
     fn the_game_cache_holds_nothing_else() {
         // The cache evicts every file under its folder: nothing else may live there.
         let p = DataPaths::new("/data");
-        for other in [p.disc_playlists(), p.builtin_decorations(), p.database(), p.metadata()] {
+        for other in [p.disc_playlists(), p.builtin_artwork(), p.database(), p.metadata()] {
             assert!(
                 !other.starts_with(p.cache_games()),
                 "{} is in the game cache",

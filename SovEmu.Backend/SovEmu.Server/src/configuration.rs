@@ -219,7 +219,7 @@ fn group(env: &str) -> Option<Group> {
         | "SOVEMU_DECORATIONS_DIRS"
         | "SOVEMU_WEB_DIR"
         | "SOVEMU_WORKER"
-        | "SOVEMU_DECORATIONS_BUILTIN" => Operations,
+        | "SOVEMU_ARTWORK_BUILTIN" => Operations,
         _ => return None,
     })
 }
@@ -260,7 +260,7 @@ fn effective(config: &Config, env: &str) -> Option<String> {
         "SOVEMU_ROMS_DIR" => config.roms_dir.display().to_string(),
         "SOVEMU_BIOS_DIR" => config.bios_dir().display().to_string(),
         "SOVEMU_PUBLIC_URL" => config.public_urls().join(","),
-        "SOVEMU_DECORATIONS_BUILTIN" => config.builtin_decorations().display().to_string(),
+        "SOVEMU_ARTWORK_BUILTIN" => config.builtin_artwork().root().display().to_string(),
         "SOVEMU_CACHE_GB" if config.library_mode == LibraryMode::Cache => {
             config.cache_gb.unwrap_or(20).to_string()
         }

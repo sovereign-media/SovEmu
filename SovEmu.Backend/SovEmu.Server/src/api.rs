@@ -58,7 +58,7 @@ pub(crate) struct Game {
     pub(crate) modes: Option<String>,
     pub(crate) series: Option<String>,
     pub(crate) themes: Option<String>,
-    /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
+    /// Downloaded box art (a file under `<data>/artwork/games`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
     /// A downloaded screenshot (the same folder), served as `image`.
@@ -796,8 +796,25 @@ pub(crate) async fn decoration_file(
     Ok(response)
 }
 
+/// An ESRB rating's icon (`/media/ratings/esrb/<rating>.png`, the signed URL `Game.esrbBadgeUrl`
+/// hands out): the data folder's, else the built-in one.
+pub(crate) async fn esrb_file(
+    State(state): State<AppState>,
+    SignedUser(_user): SignedUser,
+    Path(file): Path<String>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    let rating = sovemu_library::info::Esrb::ALL
+        .into_iter()
+        .find(|r| file == format!("{}.png", r.file_stem()))
+        .ok_or_else(|| ApiError::not_found("rating"))?;
+    let path = sovemu_library::layout::esrb_file(&state.config.artwork_dirs(), rating)
+        .ok_or_else(|| ApiError::not_found("rating"))?;
+    serve_media(path, request).await
+}
+
 /// The file of a game's artwork or video (`image`, `thumb`, `marquee`, `video`) for a signed
-/// user: what a metadata service supplied, downloaded under `<data>/metadata/media`.
+/// user: what a metadata service supplied, downloaded under `<data>/artwork/games`.
 async fn media_file(
     state: &AppState,
     user_id: i64,
@@ -852,7 +869,7 @@ fn copy_slots() -> &'static tokio::sync::Semaphore {
 
 /// A game's artwork at a width (`/media/games/{id}/{kind}/w{width}`): a lossy WebP copy at most
 /// that wide, made from the original the first time it is asked for and kept
-/// (`<data>/cache/artwork-widths`), made again once the original is newer. Only widths on the
+/// (`<data>/cache/artwork`), made again once the original is newer. Only widths on the
 /// grid are made (`sovemu_library::artwork::on_grid`); the width is in the signed path, so only
 /// widths the API handed out reach here. A picture that cannot be read is served as it is.
 pub(crate) async fn game_media_width(

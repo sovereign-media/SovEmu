@@ -1,6 +1,5 @@
 // The ESRB's age ratings, as the game panel names them. Their icons come from the server
-// (`Game.esrbBadgeUrl`: the built-in decoration set's `ratings/esrb/`, which an admin may
-// replace).
+// (`Game.esrbBadgeUrl`: `artwork/ratings/esrb/`, built in, which an admin may replace).
 import type { EsrbRating } from "./api";
 
 export interface EsrbInfo {

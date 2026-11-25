@@ -64,11 +64,11 @@ fn areas(state: &AppState) -> Vec<(&'static str, PathBuf)> {
         ("cache", paths.cache_games()),
         ("discs", paths.disc_playlists()),
         ("mirror", paths.mirror()),
-        ("artwork", paths.artwork()),
+        ("artwork", paths.game_artwork()),
+        ("your_artwork", paths.artwork().root().to_owned()),
         ("artwork_widths", paths.artwork_widths()),
         ("metadata", paths.metadata()),
-        ("decorations", paths.decorations()),
-        ("builtin_decorations", config.builtin_decorations()),
+        ("builtin_artwork", config.builtin_artwork().root().to_owned()),
         ("roms", config.roms_dir.clone()),
         ("bios", config.bios_dir()),
         ("backups", config.backup_dir()),
@@ -278,11 +278,13 @@ mod tests {
         let areas = vec![
             ("database", PathBuf::from("/data/sovemu.db")),
             ("metadata", PathBuf::from("/data/metadata")),
-            ("artwork", PathBuf::from("/data/metadata/media")),
+            ("your_artwork", PathBuf::from("/data/artwork")),
+            ("artwork", PathBuf::from("/data/artwork/games")),
             ("saves", PathBuf::from("/data/saves")),
         ];
         let of = |p: &str| area_of(Path::new(p), &areas);
-        assert_eq!(of("/data/metadata/media/nes/x.png"), Some("artwork"));
+        assert_eq!(of("/data/artwork/games/12/box.webp"), Some("artwork"));
+        assert_eq!(of("/data/artwork/backgrounds/beach.png"), Some("your_artwork"));
         assert_eq!(of("/data/sovemu.db-wal"), Some("database"));
         assert_eq!(of("/data/sovemu.db"), Some("database"));
         assert_eq!(of("/data/saves/3/snes/game.srm"), Some("saves"));

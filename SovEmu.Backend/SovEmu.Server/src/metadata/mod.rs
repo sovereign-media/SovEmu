@@ -231,7 +231,7 @@ impl Metadata {
                 ..JobStatus::default()
             }),
             setup_notes,
-            media_dir: paths.artwork(),
+            media_dir: paths.game_artwork(),
             artwork: Mutex::new(artwork::ArtworkStatus::default()),
             artwork_downloads,
             artwork_max_px: (artwork_max_px > 0).then_some(artwork_max_px),
@@ -881,14 +881,20 @@ async fn store(
     Ok(())
 }
 
-/// Removes what earlier versions left: LaunchBox's database dump (no longer a source) and the
-/// play cache's copies of the library's own artwork (no longer read). Downloaded files no game
-/// refers to are [`reconcile`]'s, after the startup scan.
+/// Puts in order what earlier versions left: removes LaunchBox's database dump (no longer a
+/// source), the play cache's copies of the library's own artwork (no longer read), and the caches
+/// the layout moved; moves the admin's images into `artwork/` and the downloaded game art into a
+/// folder per game (`metadata/media/12-box.webp` → `artwork/games/12/box.webp`, as migration
+/// 0033 renamed them in the table). Downloaded files no game refers to are [`reconcile`]'s,
+/// after the startup scan.
 pub(crate) async fn tidy(paths: &crate::paths::DataPaths) {
-    for (old, what) in [
+    let removed = [
         (paths.removed_launchbox(), "the LaunchBox database dump"),
         (paths.removed_cache_artwork(), "cached copies of the library's artwork"),
-    ] {
+    ]
+    .into_iter()
+    .chain(paths.removed_caches().map(|p| (p, "a cache the data layout moved")));
+    for (old, what) in removed {
         if old.exists() {
             match tokio::fs::remove_dir_all(&old).await {
                 Ok(()) => tracing::info!(path = %old.display(), what, "removed"),
@@ -896,22 +902,87 @@ pub(crate) async fn tidy(paths: &crate::paths::DataPaths) {
             }
         }
     }
+    for (old, new) in paths.moved_artwork() {
+        match move_folder(&old, &new).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(from = %old.display(), to = %new.display(), files = n, "moved"),
+            Err(e) => {
+                tracing::warn!(from = %old.display(), error = %e, "cannot move into artwork/")
+            }
+        }
+    }
+    match move_game_art(&paths.moved_game_art(), &paths.game_artwork()).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(files = n, "moved downloaded game art into a folder per game"),
+        Err(e) => tracing::warn!(error = %e, "cannot move the downloaded game art"),
+    }
 }
 
-/// Whether `name` is a downloaded video (`<game id>-video.mp4`).
-fn is_video_file(name: &str) -> bool {
-    name.strip_suffix("-video.mp4")
-        .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+/// Moves `old`'s entries into `new` (a whole folder when `new` does not exist yet), keeping what
+/// `new` already has, and removes `old` once empty. How many entries moved.
+async fn move_folder(old: &Path, new: &Path) -> std::io::Result<usize> {
+    if !old.is_dir() {
+        return Ok(0);
+    }
+    if let Some(parent) = new.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    if !new.exists() {
+        tokio::fs::rename(old, new).await?;
+        return Ok(1);
+    }
+    let mut moved = 0;
+    let mut entries = tokio::fs::read_dir(old).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let to = new.join(entry.file_name());
+        if !to.exists() {
+            tokio::fs::rename(entry.path(), to).await?;
+            moved += 1;
+        }
+    }
+    let _ = tokio::fs::remove_dir(old).await;
+    Ok(moved)
 }
 
-/// Whether `name` is a downloaded picture (`<game id>-<box|shot|marquee>.<ext>`).
-fn is_picture_file(name: &str) -> bool {
-    let Some((stem, ext)) = name.rsplit_once('.') else { return false };
-    let Some((id, kind)) = stem.split_once('-') else { return false };
-    !id.is_empty()
-        && id.bytes().all(|b| b.is_ascii_digit())
-        && Picture::ALL.iter().any(|p| p.suffix() == kind)
-        && ["png", "jpg", "webp"].contains(&ext)
+/// Moves downloads named `<game id>-<name>` in `old` to `<new>/<game id>/<name>`; half-written
+/// ones (`.part`) go. Removes `old` once empty. How many moved.
+async fn move_game_art(old: &Path, new: &Path) -> std::io::Result<usize> {
+    let Ok(mut entries) = tokio::fs::read_dir(old).await else { return Ok(0) };
+    let mut moved = 0;
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".part") {
+            let _ = tokio::fs::remove_file(entry.path()).await;
+            continue;
+        }
+        let Some((id, file)) = flat_game_file(&name) else { continue };
+        let folder = new.join(id.to_string());
+        tokio::fs::create_dir_all(&folder).await?;
+        if !folder.join(file).exists() {
+            tokio::fs::rename(entry.path(), folder.join(file)).await?;
+            moved += 1;
+        }
+    }
+    let _ = tokio::fs::remove_dir(old).await;
+    Ok(moved)
+}
+
+/// Whether `name` is one of SovEmu's downloads in a game's folder: `video.mp4`, or a picture,
+/// `<box|shot|marquee>.<webp|png|jpg>`. Nothing else in the folder is ever touched.
+pub(crate) fn is_game_file(name: &str) -> bool {
+    if name == "video.mp4" {
+        return true;
+    }
+    let Some((kind, ext)) = name.rsplit_once('.') else { return false };
+    Picture::ALL.iter().any(|p| p.suffix() == kind) && ["png", "jpg", "webp"].contains(&ext)
+}
+
+/// A download's name from before game art had a folder per game, `<game id>-<name>`, as the game
+/// and its name in that folder (`12-box.webp` → `(12, "box.webp")`).
+pub(crate) fn flat_game_file(name: &str) -> Option<(i64, &str)> {
+    let (id, rest) = name.split_once('-')?;
+    let id = id.parse().ok().filter(|_| id.bytes().all(|b| b.is_ascii_digit()))?;
+    is_game_file(rest).then_some((id, rest))
 }
 
 /// A picture a lookup finds a URL for, downloaded afterwards ([`artwork`]).
@@ -928,7 +999,7 @@ pub(crate) enum Picture {
 impl Picture {
     pub(crate) const ALL: [Picture; 3] = [Picture::BoxArt, Picture::Screenshot, Picture::Marquee];
 
-    /// Its file's name ends in this: `<game id>-<suffix>.webp`.
+    /// Its file's name in the game's folder: `<suffix>.webp`.
     pub(crate) fn suffix(self) -> &'static str {
         match self {
             Picture::BoxArt => "box",
@@ -963,8 +1034,8 @@ async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Option<Stri
     if response.content_length().is_some_and(|n| n > MAX_VIDEO_BYTES) {
         return None;
     }
-    let name = format!("{game_id}-video.mp4");
-    tokio::fs::create_dir_all(&meta.media_dir).await.ok()?;
+    let name = format!("{game_id}/video.mp4");
+    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await.ok()?;
     let temp = meta.media_dir.join(format!("{name}.part"));
     let written = async {
         let mut file = tokio::fs::File::create(&temp).await.ok()?;
@@ -1013,8 +1084,9 @@ async fn download_picture(
     }
     image_extension(&bytes)?;
     let suffix = picture.suffix();
-    let name = format!("{game_id}-{suffix}.webp");
+    let name = format!("{game_id}/{suffix}.webp");
     let path = meta.media_dir.join(&name);
+    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await.ok()?;
     let (max, quality) = (meta.artwork_max_px, meta.artwork_quality);
     let written = tokio::task::spawn_blocking(move || {
         let webp = sovemu_library::artwork::to_webp(&bytes, max, max, quality)?;
@@ -1027,7 +1099,7 @@ async fn download_picture(
         return None;
     }
     for other in ["png", "jpg"] {
-        let old = meta.media_dir.join(format!("{game_id}-{suffix}.{other}"));
+        let old = meta.media_dir.join(format!("{game_id}/{suffix}.{other}"));
         let _ = tokio::fs::remove_file(old).await;
     }
     Some(name)
@@ -1122,25 +1194,19 @@ mod tests {
     }
 
     #[test]
-    fn video_files_are_told_by_name() {
-        assert!(is_video_file("12-video.mp4"));
-        assert!(!is_video_file("12-video.mp4.part"));
-        assert!(!is_video_file("-video.mp4"));
-        assert!(!is_video_file("x-video.mp4"));
-    }
-
-    #[test]
-    fn picture_files_are_told_by_name() {
-        assert!(is_picture_file("12-box.png"));
-        assert!(is_picture_file("3-box.webp"));
-        assert!(!is_picture_file("12-box.png.part"));
-        assert!(!is_picture_file("thumbs"));
-        assert!(!is_picture_file("x-box.png"));
-        assert!(!is_picture_file("-box.jpg"));
-        assert!(is_picture_file("12-shot.webp"));
-        assert!(is_picture_file("12-marquee.webp"));
-        assert!(!is_picture_file("12-video.mp4"));
-        assert!(!is_picture_file("12-other.webp"));
+    fn game_files_are_told_by_name() {
+        for name in ["box.webp", "box.png", "shot.webp", "marquee.webp", "video.mp4"] {
+            assert!(is_game_file(name), "{name}");
+        }
+        for name in ["box.webp.part", "video.mp4.part", "other.webp", "notes.txt", "box"] {
+            assert!(!is_game_file(name), "{name}");
+        }
+        assert_eq!(flat_game_file("12-box.webp"), Some((12, "box.webp")));
+        assert_eq!(flat_game_file("3-video.mp4"), Some((3, "video.mp4")));
+        assert_eq!(flat_game_file("12-box.png.part"), None);
+        assert_eq!(flat_game_file("x-box.png"), None);
+        assert_eq!(flat_game_file("-box.jpg"), None);
+        assert_eq!(flat_game_file("+1-box.jpg"), None);
     }
 
     #[test]

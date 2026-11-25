@@ -7,11 +7,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 
-/** The Teen icon as the server wrote it into its built-in decoration set (`server.mjs`'s data
+/** The Teen icon as the server wrote it into its built-in artwork (`server.mjs`'s data
  *  folder): the test's game has no rating in the database, so the server gives it no icon URL,
  *  and the test serves the server's own file at a URL of its own. */
-const TEEN_ICON = join("test-results/e2e-data/cache/decorations/sovemu/ratings/esrb/t.png");
-const ICON_URL = "/media/decorations/sovemu/ratings/esrb/t.png?e2e";
+const TEEN_ICON = join("test-results/e2e-data/cache/builtin-artwork/ratings/esrb/t.png");
+const ICON_URL = "/media/ratings/esrb/t.png?e2e";
 
 const RATED = {
   rating: 0.8,
