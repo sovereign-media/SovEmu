@@ -21,6 +21,8 @@ pub(crate) struct Home {
     pub(crate) added: Vec<Game>,
     /// This player's favourites, by title.
     pub(crate) favourites: Vec<Game>,
+    /// The library's best rated games (ScreenScraper's players' ratings).
+    pub(crate) top_rated: Vec<Game>,
 }
 
 /// `AND g.system NOT IN (…)` for the systems the configuration hides, and the ids to bind.
@@ -61,6 +63,11 @@ pub(crate) const FEATURED: Row = Row {
     order: "(m.description IS NOT NULL AND m.screenshot IS NOT NULL) DESC,
          m.description IS NOT NULL DESC,
          ((g.id + ?) * 2654435761) % 4294967291",
+};
+/// The best rated games, then by title (read through the `game_metadata_rating` index).
+pub(crate) const TOP_RATED: Row = Row {
+    filter: "m.rating IS NOT NULL",
+    order: "m.rating DESC, COALESCE(m.title, g.title) COLLATE NOCASE",
 };
 /// The library's newest games (read through the `games_added` index).
 pub(crate) const ADDED: Row = Row { filter: "1", order: "g.added_at DESC, g.id DESC" };
@@ -122,5 +129,7 @@ pub(crate) async fn home(state: &AppState, user: &User) -> ApiResult<Home> {
     let added = query(state, user.id, ADDED.filter, &[], ADDED.order, row, None).await?;
     let favourites =
         query(state, user.id, FAVOURITES.filter, &[user.id], FAVOURITES.order, row, None).await?;
-    Ok(Home { featured, recent, added, favourites })
+    let top_rated =
+        query(state, user.id, TOP_RATED.filter, &[], TOP_RATED.order, row, None).await?;
+    Ok(Home { featured, recent, added, favourites, top_rated })
 }

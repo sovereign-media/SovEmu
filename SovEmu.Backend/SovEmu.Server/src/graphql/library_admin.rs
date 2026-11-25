@@ -273,6 +273,13 @@ pub(super) enum MetadataField {
     Genre,
     Players,
     Rating,
+    /// The ESRB's age rating.
+    Esrb,
+    /// Ways to play.
+    Modes,
+    /// Series and families.
+    Series,
+    Themes,
     BoxArt,
     /// A screenshot, shown behind the game.
     Screenshot,
@@ -293,6 +300,10 @@ impl From<MetadataField> for crate::metadata::Field {
             MetadataField::Genre => F::Genre,
             MetadataField::Players => F::Players,
             MetadataField::Rating => F::Rating,
+            MetadataField::Esrb => F::Esrb,
+            MetadataField::Modes => F::Modes,
+            MetadataField::Series => F::Series,
+            MetadataField::Themes => F::Themes,
             MetadataField::BoxArt => F::BoxArt,
             MetadataField::Screenshot => F::Screenshot,
             MetadataField::Marquee => F::Marquee,

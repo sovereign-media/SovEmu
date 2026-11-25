@@ -18,8 +18,11 @@
 //! Sets come from several folders, merged by name: those in `SOVEMU_DECORATIONS_DIRS` first
 //! (a decorations folder on the NAS, say), then `<data>/decorations`, then the built-in folder.
 //! For the same file, the first folder wins. SovEmu ships one set of its own, `sovemu`
-//! ([`write_builtin`]), drawn by this code: no third-party artwork is shipped, and there is no
-//! downloader.
+//! ([`write_builtin`]): frames drawn by this code, and the ESRB's rating icons
+//! (`ratings/esrb/<rating>.png`, [`Decorations::esrb_badge`]), which the clients show on a game's
+//! panel. An admin replaces any of them by putting a file at the same path in an earlier folder
+//! (`<data>/decorations/sovemu/ratings/esrb/t.png`). No other third-party artwork is shipped, and
+//! there is no downloader.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
@@ -33,7 +36,23 @@ pub const BUILTIN: &str = "sovemu";
 pub const NONE: &str = "none";
 
 /// Bumped when the built-in artwork changes, so a cached copy is drawn again.
-const BUILTIN_VERSION: &str = "2";
+const BUILTIN_VERSION: &str = "3";
+
+/// The ESRB's rating icons (the 2013 set from Wikimedia Commons, where they are public domain as
+/// simple text logos; trademarks of the ESA), rendered to PNG by the web client's
+/// `npm run esrb-badges`, by [`Esrb::file_stem`](crate::info::Esrb::file_stem).
+const ESRB_BADGES: [(&str, &[u8]); 7] = [
+    ("ec", include_bytes!("../assets/ratings/esrb/ec.png")),
+    ("e", include_bytes!("../assets/ratings/esrb/e.png")),
+    ("e10", include_bytes!("../assets/ratings/esrb/e10.png")),
+    ("t", include_bytes!("../assets/ratings/esrb/t.png")),
+    ("m", include_bytes!("../assets/ratings/esrb/m.png")),
+    ("ao", include_bytes!("../assets/ratings/esrb/ao.png")),
+    ("rp", include_bytes!("../assets/ratings/esrb/rp.png")),
+];
+
+/// Where a set keeps the ESRB's rating icons.
+const ESRB_DIR: &str = "ratings/esrb";
 
 /// Where a decoration's window is, in its image's pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -150,6 +169,18 @@ impl Decorations {
         })
     }
 
+    /// The URL (under `/media/decorations/`) of an ESRB rating's icon: the built-in set's
+    /// `ratings/esrb/<rating>.png`, from whichever folder has it first. None if no folder does.
+    pub fn esrb_badge(&self, rating: crate::info::Esrb) -> Option<String> {
+        let path = format!("{ESRB_DIR}/{}.png", rating.file_stem());
+        self.file(BUILTIN, &path)?;
+        Some(format!(
+            "/media/decorations/{}/{}",
+            escape(BUILTIN),
+            path.split('/').map(escape).collect::<Vec<_>>().join("/")
+        ))
+    }
+
     /// A file of a set, by its path within it.
     pub fn file(&self, set: &str, path: &str) -> Option<&Path> {
         self.sets.get(set)?.get(path).map(PathBuf::as_path)
@@ -251,6 +282,11 @@ pub fn write_builtin(dir: &Path) -> std::io::Result<()> {
         write_frame(&set.join("systems").join(system.id), system.color, aspect(system.id))?;
     }
     write_frame(&set.join("default"), "#4169e1", (4, 3))?;
+    let ratings = set.join(ESRB_DIR);
+    std::fs::create_dir_all(&ratings)?;
+    for (stem, png) in ESRB_BADGES {
+        std::fs::write(ratings.join(format!("{stem}.png")), png)?;
+    }
     std::fs::write(marker, BUILTIN_VERSION)
 }
 
@@ -346,6 +382,32 @@ mod tests {
     fn touch(path: PathBuf, bytes: &[u8]) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn the_esrb_icons_are_built_in_and_an_earlier_folder_replaces_them() {
+        use crate::info::Esrb;
+        for rating in Esrb::ALL {
+            let (_, png) =
+                ESRB_BADGES.iter().find(|(stem, _)| *stem == rating.file_stem()).unwrap();
+            assert_eq!(&png[1..4], b"PNG", "{rating:?}'s icon is a PNG");
+        }
+        let (builtin, own) = (dir("esrb-builtin"), dir("esrb-own"));
+        // The icons as write_builtin writes them (without drawing every frame).
+        for (stem, png) in ESRB_BADGES {
+            touch(builtin.join(format!("sovemu/{ESRB_DIR}/{stem}.png")), png);
+        }
+        touch(own.join("sovemu/ratings/esrb/t.png"), b"\x89PNG mine");
+        let sets = Decorations::load(&[own.clone(), builtin.clone()]);
+        assert_eq!(
+            sets.esrb_badge(Esrb::Everyone10Plus).as_deref(),
+            Some("/media/decorations/sovemu/ratings/esrb/e10.png")
+        );
+        let teen = sets.file(BUILTIN, "ratings/esrb/t.png").unwrap();
+        assert!(teen.starts_with(&own), "the admin's own icon wins: {teen:?}");
+        assert_eq!(Decorations::load(std::slice::from_ref(&own)).esrb_badge(Esrb::Mature), None);
+        std::fs::remove_dir_all(&builtin).ok();
+        std::fs::remove_dir_all(&own).ok();
     }
 
     #[test]

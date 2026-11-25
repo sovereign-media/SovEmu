@@ -1022,6 +1022,42 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(nes[0]["developer"], "Konami");
     assert_eq!(nes[0]["releaseDate"], "1987-05-01");
     assert_eq!(nes[0]["rating"], 0.8);
+    let details = h
+        .ok("{ system(id: \"nes\") { games { esrb genres modes series themes } } }", json!({}))
+        .await["system"]["games"][0]
+        .clone();
+    assert_eq!(
+        details,
+        json!({"esrb": "TEEN", "genres": ["Platform", "Action"],
+               "modes": ["Single player", "Multiplayer (alternating)"],
+               "series": ["Castlevania"], "themes": ["Horror", "Fantastique"]})
+    );
+    // The rating's icon comes from the decoration folders: none without the built-in set (as
+    // these tests run), the built-in one once it is there, and an admin's own over it.
+    let badge = "{ system(id: \"nes\") { games { esrbBadgeUrl } } }";
+    let url = |data: Value| data["system"]["games"][0]["esrbBadgeUrl"].clone();
+    assert_eq!(url(h.ok(badge, json!({})).await), Value::Null);
+    let builtin = h.dir.join("no-builtin/sovemu/ratings/esrb");
+    std::fs::create_dir_all(&builtin).unwrap();
+    std::fs::write(builtin.join("t.png"), b"\x89PNG built in").unwrap();
+    h.state.reload_decorations();
+    let signed = url(h.ok(badge, json!({})).await).as_str().unwrap().to_owned();
+    assert!(
+        signed.starts_with("/media/decorations/sovemu/ratings/esrb/t.png?Sov-UserId="),
+        "{signed}"
+    );
+    assert_eq!(h.fetch(&signed).await.2, b"\x89PNG built in");
+    let own = h.dir.join("decorations/sovemu/ratings/esrb");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("t.png"), b"\x89PNG mine").unwrap();
+    h.state.reload_decorations();
+    assert_eq!(h.fetch(&signed).await.2, b"\x89PNG mine", "an admin's icon replaces it");
+    let unsigned = "/media/decorations/sovemu/ratings/esrb/t.png";
+    assert_ne!(h.fetch(unsigned).await.0, StatusCode::OK, "signed URLs only");
+
+    // Home's top rated row: only games with a rating (the GBA game has none).
+    let top = h.ok("{ home { topRated { title rating } } }", json!({})).await;
+    assert_eq!(top["home"]["topRated"], json!([{"title": "Castlevania", "rating": 0.8}]));
 
     let gba = h.games("gba").await;
     assert_eq!(gba[0]["description"], "From ScreenScraper");

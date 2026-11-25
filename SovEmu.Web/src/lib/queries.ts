@@ -27,6 +27,12 @@ export const GameFields = graphql(`
     genre
     players
     rating
+    esrb
+    # The rating's icon, from the server's decoration folders (an admin may replace it).
+    esrbBadgeUrl
+    modes
+    series
+    themes
     favourite
     release
     patch
@@ -326,6 +332,9 @@ export const HomeQuery = graphql(
         ...GameFields
       }
       favourites {
+        ...GameFields
+      }
+      topRated {
         ...GameFields
       }
     }

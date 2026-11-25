@@ -52,6 +52,12 @@ pub(crate) struct Game {
     pub(crate) players: Option<String>,
     /// 0 to 1.
     pub(crate) rating: Option<f64>,
+    /// The ESRB's age rating, as `sovemu_library::info::Esrb::code` writes it.
+    pub(crate) esrb: Option<String>,
+    /// Ways to play, series and themes: comma-separated names.
+    pub(crate) modes: Option<String>,
+    pub(crate) series: Option<String>,
+    pub(crate) themes: Option<String>,
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
@@ -156,6 +162,7 @@ pub(crate) const GAME_COLUMNS: &str =
        || CASE WHEN m.video IS NOT NULL THEN 'video' ELSE '' END, ',') AS media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
+     m.esrb, m.modes, m.series, m.themes,
      m.box_art, m.screenshot, m.marquee, m.video AS box_video, g.release, g.parts,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
