@@ -1,7 +1,7 @@
-// The ESRB's age ratings, as the game panel shows them: SovEmu's own badge for each (the
-// rating's code over its ages; not the ESRB's icons) and its name. The badges are WebP images
-// shipped with the client (`src/assets/esrb/`), generated from the SVGs in
-// `scripts/esrb-badges/` by `npm run esrb-badges`; the apps ship the same files.
+// The ESRB's age ratings, as the game panel shows them: the ESRB's own icon for each and its
+// name. The icons are WebP images shipped with the client (`src/assets/esrb/`), rendered from
+// the 2013 set's SVGs (Wikimedia Commons, `scripts/esrb-badges/`) by `npm run esrb-badges`; the
+// apps ship the same files.
 import ao from "../assets/esrb/esrb_ao.webp";
 import e from "../assets/esrb/esrb_e.webp";
 import e10 from "../assets/esrb/esrb_e10.webp";

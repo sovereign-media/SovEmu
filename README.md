@@ -265,9 +265,9 @@ and `none` turns frames off.
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
 publishers, genres, player counts, ratings, ESRB age ratings, play modes, series, themes, box
 art and gameplay videos. The information is stored as each game is looked up. A game's panel
-shows its ESRB rating as a badge: SovEmu's own design, not the ESRB's icons, as WebP images each
-client ships (generated from the SVGs in `SovEmu.Web/scripts/esrb-badges/` with
-`npm run esrb-badges`, so they cache as app assets rather than per-user signed URLs) and its rating as stars, and Home has a **Top rated** row of the library's best rated
+shows its ESRB rating as the ESRB's own icon: WebP images each client ships, rendered from the
+2013 set's SVGs (Wikimedia Commons, `SovEmu.Web/scripts/esrb-badges/`) with
+`npm run esrb-badges`, so they cache as app assets rather than per-user signed URLs and its rating as stars, and Home has a **Top rated** row of the library's best rated
 games (ScreenScraper's players' ratings). Its artwork follows in the background,
 `SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
 else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for

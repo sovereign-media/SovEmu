@@ -1,14 +1,13 @@
-// Renders the ESRB age-rating badges (the SVGs beside this file: SovEmu's own design, the
-// rating's code over its ages, not the ESRB's icons) to WebP images that ship with each client:
-// this web client (src/assets/esrb/), and copies for the Android and iOS apps. 240×360 pixels
-// (6× the 40×60 design, 2:3 as the ESRB's own icons), transparent outside the rounded frame.
+// Renders the ESRB's rating icons (the SVGs beside this file, from Wikimedia Commons: see
+// README.md) to WebP images that ship with each client: this web client (src/assets/esrb/), and
+// copies for the Android and iOS apps. 240 pixels wide, as tall as each icon's own shape (2:3),
+// transparent where the icon is.
 //
 //   npm run esrb-badges                 → src/assets/esrb/esrb_<rating>.webp
 //   npm run esrb-badges -- <folder>     → <folder>/esrb_<rating>.webp
 //
 // Chromium (Playwright's, already here for the end-to-end tests) draws each SVG on a canvas and
-// encodes it, so no image tools are needed. Run it again after changing an SVG, and copy the
-// results into the apps.
+// encodes it, so no image tools are needed. Copy the results into the apps after a change.
 
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -17,7 +16,7 @@ import { chromium } from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(process.argv[2] ?? join(here, "../../src/assets/esrb"));
-const [width, height] = [240, 360];
+const width = 240;
 /** Lossy WebP at this quality: flat shapes and type, so small and sharp. */
 const quality = 0.92;
 
@@ -28,6 +27,8 @@ for (const file of readdirSync(here)
   .filter((f) => f.endsWith(".svg"))
   .sort()) {
   const svg = readFileSync(join(here, file), "utf8");
+  const [, , w, h] = (svg.match(/viewBox="([^"]+)"/)?.[1] ?? "0 0 2 3").split(/[\s,]+/).map(Number);
+  const height = Math.round((width * h) / w);
   const url = await page.evaluate(
     async ({ svg, width, height, quality }) => {
       const image = new Image(width, height);
