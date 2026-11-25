@@ -4,6 +4,10 @@ Self-hosted console emulation streamed over WebRTC. A Rust server runs
 [libretro](https://www.libretro.com/) cores and streams video, audio and input to web, Android
 and iOS clients.
 
+SovEmu ships no games and no BIOS files. Point it at a library of your own: dumps of games you
+own, and BIOS files from consoles you own. `scripts/fetch-free-roms.sh` fetches a few freely
+licensed homebrew games to try it with.
+
 > **Status:** Phase 3. Sign in, pick a system and a game, play in the browser over WebRTC, save
 > and continue later. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -638,3 +642,7 @@ SovEmu is free software under the [GNU Affero General Public License v3.0 or lat
 service, you must offer its users the source of your version. The admin About page links the
 source (`buildInfo.source`). The emulator cores it ships, the game-information services and the
 open-source packages it is built from keep their own licences, listed on the About page.
+
+Some of those cores (Snes9x, Genesis Plus GX, FinalBurn Neo, and PicoDrive under the old MAME
+licence) forbid commercial use. The image that bundles them may be shared and run for free, but
+not sold or used in a paid service; the About page marks each such core.
