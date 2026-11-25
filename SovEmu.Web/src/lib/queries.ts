@@ -13,8 +13,12 @@ export const GameFields = graphql(`
     size
     lastPlayedAt
     playCount
-    image: mediaUrl(kind: IMAGE)
-    thumb: mediaUrl(kind: THUMB)
+    # Artwork at the widths it is shown at (device pixels, for 2x screens): a lossy WebP copy
+    # of each, made once by the server. Backdrops, the box over one, cards.
+    image: mediaUrl(kind: IMAGE, width: 1600)
+    imageSmall: mediaUrl(kind: IMAGE, width: 480)
+    cover: mediaUrl(kind: THUMB, width: 800)
+    thumb: mediaUrl(kind: THUMB, width: 400)
     video: mediaUrl(kind: VIDEO)
     description
     releaseDate
@@ -45,6 +49,7 @@ export const SystemFields = graphql(`
     needsGpu
     rendering
     biosMissing
+    boxAspect
   }
 `);
 
@@ -119,6 +124,55 @@ export const MetadataFields = graphql(`
       done
       downloaded
       failed
+      videos
+    }
+    working {
+      gameId
+      title
+      system
+      provider
+      step
+    }
+    startedAt
+    finishedAt
+    etaSeconds
+    systems {
+      system
+      total
+      done
+    }
+    providers {
+      id
+      name
+      asked
+      found
+      notFound
+      errors
+      quota {
+        requestsToday
+        maxRequestsPerDay
+        missesToday
+        maxMissesPerDay
+      }
+      threads
+      account {
+        user
+        level
+        contribution
+        maxThreads
+        maxRequestsPerMinute
+        maxRequestsPerDay
+        maxMissesPerDay
+        maxDownloadKbps
+      }
+    }
+    recent {
+      gameId
+      title
+      system
+      outcome
+      sources
+      detail
     }
   }
 `);
@@ -934,8 +988,8 @@ export const ResourceHistoryQuery = graphql(`
 
 export const FetchMetadataMutation = graphql(
   `
-  mutation FetchMetadata($system: ID, $force: Boolean!) {
-    fetchMetadata(system: $system, force: $force) {
+  mutation FetchMetadata($system: ID, $force: Boolean!, $fields: [MetadataField!]!) {
+    fetchMetadata(system: $system, force: $force, fields: $fields) {
       ...MetadataFields
     }
   }

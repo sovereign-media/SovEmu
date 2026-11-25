@@ -32,6 +32,24 @@ pub struct System {
 }
 
 impl System {
+    /// The shape of its games' boxes, width over height, as most of a library has them (the US
+    /// and European releases): the system's game cards take it, so box art fills them. Other
+    /// regions' boxes (a Super Famicom's, portrait) are fitted inside.
+    pub fn box_aspect(&self) -> f64 {
+        match self.id {
+            // Landscape boxes.
+            "snes" | "n64" | "virtualboy" => 1.4,
+            // CD jewel cases, square.
+            "psx" | "segacd" | "pcenginecd" | "dreamcast" => 1.0,
+            // Handhelds' small boxes, nearly square.
+            "gb" | "gbc" | "gba" | "ngp" | "ngpc" | "wswan" | "wswanc" => 0.9,
+            // DVD cases.
+            "ps2" | "gamecube" => 0.7,
+            // Cartridge boxes and clamshells, portrait; arcade flyers too.
+            _ => 0.72,
+        }
+    }
+
     /// Whether its games can run ahead (`SOVEMU_SYSTEMS__<id>__RUN_AHEAD`): each frame shown
     /// then costs several emulated frames and a save state, which only the systems that render
     /// in software can afford.
@@ -575,6 +593,16 @@ pub(crate) fn parse_title(stem: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_system_has_a_box_shape() {
+        for s in SYSTEMS {
+            let a = s.box_aspect();
+            assert!((0.5..=1.6).contains(&a), "{}: {a}", s.id);
+        }
+        assert!(by_id("snes").unwrap().box_aspect() > 1.0, "SNES boxes are landscape");
+        assert!(by_id("nes").unwrap().box_aspect() < 1.0, "NES boxes are portrait");
+    }
 
     #[test]
     fn folders_and_aliases() {

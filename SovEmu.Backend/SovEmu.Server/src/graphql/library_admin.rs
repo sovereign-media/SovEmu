@@ -149,12 +149,150 @@ pub(super) struct MetadataStatus {
     pub(super) found: i64,
     pub(super) not_found: i64,
     pub(super) failed: i64,
-    /// The configured sources.
+    /// The configured sources, in the order they are asked.
     pub(super) sources: Vec<String>,
-    /// Why a source stopped early (bad credentials, quota), if one did.
+    /// Why a source stopped early (bad credentials, quota) or is not used, if one did.
     pub(super) notes: Vec<String>,
     /// The box art downloads that follow a lookup, in the background.
     pub(super) artwork: ArtworkStatus,
+    /// The games being looked up now: several at once when a source's account allows it.
+    pub(super) working: Vec<MetadataCurrent>,
+    /// When the current (or last) lookup started and finished, Unix seconds.
+    pub(super) started_at: Option<f64>,
+    pub(super) finished_at: Option<f64>,
+    /// Seconds left, from the time per game so far.
+    pub(super) eta_seconds: Option<f64>,
+    /// Each system's share of the lookup.
+    pub(super) systems: Vec<MetadataSystemProgress>,
+    /// What each source answered.
+    pub(super) providers: Vec<MetadataProviderProgress>,
+    /// The last games looked up, most recent first.
+    pub(super) recent: Vec<MetadataRecent>,
+}
+
+/// What a source is doing for the game being looked up.
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub(super) enum MetadataStep {
+    /// Hashing the game's file, for a source that matches by hash.
+    Hashing,
+    Asking,
+    /// Pacing between requests, or backing off a busy service.
+    Waiting,
+}
+
+/// The game a lookup is on.
+#[derive(SimpleObject)]
+pub(super) struct MetadataCurrent {
+    pub(super) game_id: i64,
+    pub(super) title: String,
+    pub(super) system: String,
+    /// The source being asked, if one is.
+    pub(super) provider: Option<String>,
+    pub(super) step: MetadataStep,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct MetadataSystemProgress {
+    pub(super) system: String,
+    pub(super) total: i64,
+    pub(super) done: i64,
+}
+
+/// A service's own count of today's requests.
+#[derive(SimpleObject)]
+pub(super) struct MetadataQuota {
+    pub(super) requests_today: f64,
+    pub(super) max_requests_per_day: Option<f64>,
+    /// Lookups today that found nothing, which the service caps on its own.
+    pub(super) misses_today: f64,
+    pub(super) max_misses_per_day: Option<f64>,
+}
+
+#[derive(SimpleObject)]
+pub(super) struct MetadataProviderProgress {
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) asked: i64,
+    pub(super) found: i64,
+    pub(super) not_found: i64,
+    pub(super) errors: i64,
+    pub(super) quota: Option<MetadataQuota>,
+    /// The account the source uses, as the service last described it.
+    pub(super) account: Option<MetadataAccount>,
+    /// Lookups the source takes at once, from its account's limits (and
+    /// `SOVEMU_SCREENSCRAPER_THREADS`).
+    pub(super) threads: i32,
+}
+
+/// A source's account: its level and the limits that come with it.
+#[derive(SimpleObject)]
+pub(super) struct MetadataAccount {
+    pub(super) user: Option<String>,
+    /// The service's own level number.
+    pub(super) level: Option<i32>,
+    /// ScreenScraper: 2 adds a thread, 3 or more add five.
+    pub(super) contribution: Option<i32>,
+    pub(super) max_threads: Option<i32>,
+    pub(super) max_requests_per_minute: Option<i32>,
+    pub(super) max_requests_per_day: Option<f64>,
+    pub(super) max_misses_per_day: Option<f64>,
+    /// KB/s.
+    pub(super) max_download_kbps: Option<i32>,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub(super) enum MetadataOutcome {
+    Found,
+    NotFound,
+    /// Not stored: asked again by the next lookup.
+    Failed,
+}
+
+/// A game a lookup has just looked up.
+#[derive(SimpleObject)]
+pub(super) struct MetadataRecent {
+    pub(super) game_id: i64,
+    /// Its title after the lookup.
+    pub(super) title: String,
+    pub(super) system: String,
+    pub(super) outcome: MetadataOutcome,
+    /// The sources that found something.
+    pub(super) sources: Vec<String>,
+    /// Why it failed, if it did.
+    pub(super) detail: Option<String>,
+}
+
+/// A field of game information, to refresh only some.
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub(super) enum MetadataField {
+    Title,
+    Description,
+    ReleaseDate,
+    Developer,
+    Publisher,
+    Genre,
+    Players,
+    Rating,
+    BoxArt,
+    Video,
+}
+
+impl From<MetadataField> for crate::metadata::Field {
+    fn from(f: MetadataField) -> Self {
+        use crate::metadata::Field as F;
+        match f {
+            MetadataField::Title => F::Title,
+            MetadataField::Description => F::Description,
+            MetadataField::ReleaseDate => F::ReleaseDate,
+            MetadataField::Developer => F::Developer,
+            MetadataField::Publisher => F::Publisher,
+            MetadataField::Genre => F::Genre,
+            MetadataField::Players => F::Players,
+            MetadataField::Rating => F::Rating,
+            MetadataField::BoxArt => F::BoxArt,
+            MetadataField::Video => F::Video,
+        }
+    }
 }
 
 /// Box art being downloaded after a lookup, for the games that have no local thumb.
@@ -166,10 +304,14 @@ pub(super) struct ArtworkStatus {
     pub(super) done: i64,
     pub(super) downloaded: i64,
     pub(super) failed: i64,
+    /// Of `downloaded`, the gameplay videos.
+    pub(super) videos: i64,
 }
 
 impl From<crate::metadata::JobStatus> for MetadataStatus {
     fn from(j: crate::metadata::JobStatus) -> Self {
+        use crate::metadata::Outcome;
+        use sovemu_library::info::Step;
         Self {
             running: j.running,
             total: j.total as i64,
@@ -185,7 +327,80 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
                 done: j.artwork.done as i64,
                 downloaded: j.artwork.downloaded as i64,
                 failed: j.artwork.failed as i64,
+                videos: j.artwork.videos as i64,
             },
+            working: j
+                .working
+                .into_iter()
+                .map(|c| MetadataCurrent {
+                    game_id: c.game_id,
+                    title: c.title,
+                    system: c.system,
+                    provider: c.provider.map(str::to_owned),
+                    step: match c.step {
+                        Step::Hashing => MetadataStep::Hashing,
+                        Step::Asking => MetadataStep::Asking,
+                        Step::Waiting => MetadataStep::Waiting,
+                    },
+                })
+                .collect(),
+            started_at: j.started_at,
+            finished_at: j.finished_at,
+            eta_seconds: j.eta_seconds,
+            systems: j
+                .systems
+                .into_iter()
+                .map(|s| MetadataSystemProgress {
+                    system: s.system,
+                    total: s.total as i64,
+                    done: s.done as i64,
+                })
+                .collect(),
+            providers: j
+                .providers
+                .into_iter()
+                .map(|p| MetadataProviderProgress {
+                    id: p.id.to_owned(),
+                    name: p.name.to_owned(),
+                    asked: p.asked as i64,
+                    found: p.found as i64,
+                    not_found: p.not_found as i64,
+                    errors: p.errors as i64,
+                    quota: p.quota.map(|q| MetadataQuota {
+                        requests_today: q.requests_today as f64,
+                        max_requests_per_day: q.max_requests_per_day.map(|n| n as f64),
+                        misses_today: q.misses_today as f64,
+                        max_misses_per_day: q.max_misses_per_day.map(|n| n as f64),
+                    }),
+                    account: p.account.map(|a| MetadataAccount {
+                        user: a.user,
+                        level: a.level.map(|n| n as i32),
+                        contribution: a.contribution.map(|n| n as i32),
+                        max_threads: a.max_threads.map(|n| n as i32),
+                        max_requests_per_minute: a.max_requests_per_minute.map(|n| n as i32),
+                        max_requests_per_day: a.max_requests_per_day.map(|n| n as f64),
+                        max_misses_per_day: a.max_misses_per_day.map(|n| n as f64),
+                        max_download_kbps: a.max_download_kbps.map(|n| n as i32),
+                    }),
+                    threads: p.threads as i32,
+                })
+                .collect(),
+            recent: j
+                .recent
+                .into_iter()
+                .map(|r| MetadataRecent {
+                    game_id: r.game_id,
+                    title: r.title,
+                    system: r.system,
+                    outcome: match r.outcome {
+                        Outcome::Found => MetadataOutcome::Found,
+                        Outcome::NotFound => MetadataOutcome::NotFound,
+                        Outcome::Failed => MetadataOutcome::Failed,
+                    },
+                    sources: r.sources.into_iter().map(str::to_owned).collect(),
+                    detail: r.detail,
+                })
+                .collect(),
         }
     }
 }
@@ -278,22 +493,49 @@ impl LibraryAdminMutation {
     }
 
     /// Admins: starts looking up game information in the background: games without it, or
-    /// with `force` every game; one system, or all.
+    /// with `force` every game, or with `staleAfterDays` the games last looked up longer ago;
+    /// one system, or all. `fields` refreshes only those fields (the rest are kept) and
+    /// `sources` asks only those sources (ids, as `metadataStatus.sources` lists them). What a
+    /// game has is never cleared by a source that finds nothing.
     async fn fetch_metadata(
         &self,
         ctx: &Context<'_>,
         system: Option<ID>,
         #[graphql(default)] force: bool,
+        #[graphql(default)] fields: Vec<MetadataField>,
+        #[graphql(default)] sources: Vec<String>,
+        stale_after_days: Option<i32>,
     ) -> Result<MetadataStatus> {
         let me = admin(ctx).await?;
         let on =
             system.as_ref().map_or_else(|| "every system".to_owned(), |s| s.as_str().to_owned());
-        let scope =
-            crate::metadata::Scope { system: system.map(|s| s.to_string()), game: None, force };
+        let stale_after_days = match stale_after_days {
+            Some(d) if d < 1 => {
+                return Err(ApiError::bad_request("staleAfterDays must be 1 or more")).api();
+            }
+            d => d.map(|d| d as u32),
+        };
+        let scope = crate::metadata::Scope {
+            system: system.map(|s| s.to_string()),
+            game: None,
+            force,
+            fields: fields.iter().map(|f| (*f).into()).collect(),
+            providers: sources,
+            stale_after_days,
+        };
         let status = crate::admin::metadata_fetch(state(ctx), scope).api()?;
-        let entry = Entry::new(Kind::JobRun)
-            .about(crate::jobs::Job::Metadata.label())
-            .detail(format!("{on}{}", if force { ", every game again" } else { "" }));
+        let mut detail = on;
+        if force {
+            detail.push_str(", every game again");
+        }
+        if let Some(d) = stale_after_days {
+            detail.push_str(&format!(", older than {d} days"));
+        }
+        if !fields.is_empty() {
+            detail.push_str(&format!(", {} fields", fields.len()));
+        }
+        let entry =
+            Entry::new(Kind::JobRun).about(crate::jobs::Job::Metadata.label()).detail(detail);
         record(ctx, &me, entry);
         Ok(status.into())
     }

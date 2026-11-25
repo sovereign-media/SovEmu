@@ -13,6 +13,7 @@ import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
 import { biosHref } from "../lib/bios";
+import { artFit, DEFAULT_ASPECT } from "../lib/boxArt";
 import { q } from "../lib/data";
 import {
   activeFilters,
@@ -60,6 +61,9 @@ function GameCard({
 }) {
   const art = game.thumb ?? game.image;
   const players = maxPlayers(game.players);
+  // The card takes the shape of the system's boxes; art of another shape is shown whole.
+  const aspect = system.boxAspect || DEFAULT_ASPECT;
+  const [fit, setFit] = useState<"cover" | "contain">("cover");
   return (
     <button
       type="button"
@@ -71,7 +75,7 @@ function GameCard({
     >
       <div
         className={cn(
-          "relative grid aspect-[3/4] place-items-center overflow-hidden rounded-xl border border-white/10 shadow-lg transition-all duration-150",
+          "relative grid place-items-center overflow-hidden rounded-xl border border-white/10 shadow-lg transition-all duration-150",
           focused
             ? "scale-105 ring-4 ring-white/80"
             : open
@@ -79,11 +83,20 @@ function GameCard({
               : "group-hover:scale-[1.03] group-focus-visible:ring-2 group-focus-visible:ring-white/60",
         )}
         style={{
+          aspectRatio: aspect,
           background: `linear-gradient(145deg, ${system.color}, color-mix(in srgb, ${system.color} 30%, black))`,
         }}
       >
         <span className="px-3 text-center text-sm font-bold text-white/80">{game.title}</span>
-        {art && <img src={art} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
+        {art && (
+          <img
+            src={art}
+            alt=""
+            loading="lazy"
+            onLoad={(e) => setFit(artFit(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight, aspect))}
+            className={cn("absolute inset-0 size-full", fit === "cover" ? "object-cover" : "object-contain")}
+          />
+        )}
         {game.discs > 1 && (
           <span
             className="absolute top-2 left-2 flex h-6 items-center gap-1 rounded-full bg-black/70 px-2 text-xs font-semibold text-white tabular-nums"

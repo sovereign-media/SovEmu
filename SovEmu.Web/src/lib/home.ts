@@ -58,18 +58,19 @@ export function nextScroll(left: number, width: number, total: number, dir: -1 |
   return Math.min(max, Math.max(0, left + dir * width * SCROLL_STEP));
 }
 
-/** The hero's backdrop: a screenshot-style image if there is one, else the box art. */
-export function heroArt(g: Pick<Game, "image" | "thumb">): string | null {
-  return g.image ?? g.thumb ?? null;
+/** The hero's backdrop: a screenshot-style image if there is one, else the box art (large). */
+export function heroArt(g: Pick<Game, "image" | "cover" | "thumb">): string | null {
+  return g.image ?? g.cover ?? g.thumb ?? null;
 }
 
-/** A card's picture: where the player left off (the auto save's screenshot), else artwork. */
+/** A card's picture: where the player left off (the auto save's screenshot), else artwork at a
+ *  card's size. */
 export function cardArt(
-  g: Pick<Game, "image" | "thumb"> & { autoSave?: RecentGame["autoSave"] },
+  g: Pick<Game, "imageSmall" | "thumb"> & { autoSave?: RecentGame["autoSave"] },
 ): { url: string; kind: "screenshot" | "art" } | null {
   const shot = g.autoSave?.screenshotUrl;
   if (shot) return { url: shot, kind: "screenshot" };
-  const art = heroArt(g);
+  const art = g.imageSmall ?? g.thumb ?? null;
   return art ? { url: art, kind: "art" } : null;
 }
 

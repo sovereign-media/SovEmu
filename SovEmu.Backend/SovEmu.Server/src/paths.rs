@@ -14,12 +14,12 @@
 //!   before-restore-<time>/  what a restore replaced, kept
 //!   cache/games/          mode `cache`: games and art copied from the library as they are used
 //!   cache/discs/          generated .m3u playlists for multi-disc games
+//!   cache/artwork-widths/ artwork copies at the widths clients asked for (WebP)
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
 //!   backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
 //!   systems/              system photos of your own, `<system id>.webp`
 //!   metadata/             game information:
-//!   metadata/launchbox/   LaunchBox's database dump
 //!   metadata/fbneo/       FBNeo's DATs, by commit
 //!   metadata/media/       downloaded box art
 //! ```
@@ -119,8 +119,9 @@ impl DataPaths {
         self.root.join("metadata")
     }
 
-    /// LaunchBox's database dump.
-    pub fn launchbox(&self) -> PathBuf {
+    /// Where LaunchBox's database dump was kept before LaunchBox stopped being a source; deleted
+    /// at startup if it is still there.
+    pub fn removed_launchbox(&self) -> PathBuf {
         self.metadata().join("launchbox")
     }
 
@@ -132,6 +133,12 @@ impl DataPaths {
     /// Box art downloaded by the game-information lookup.
     pub fn artwork(&self) -> PathBuf {
         self.metadata().join("media")
+    }
+
+    /// Artwork copies at the widths clients asked for (lossy WebP), made from the originals on
+    /// first request and kept; cleared with the cache.
+    pub fn artwork_widths(&self) -> PathBuf {
+        self.cache().join("artwork-widths")
     }
 
     /// Backups, when `SOVEMU_BACKUP_DIR` is not set (`backup`).
@@ -155,7 +162,7 @@ mod tests {
         assert_eq!(p.database(), Path::new("/data/sovemu.db"));
         assert_eq!(p.saves(3, "snes"), Path::new("/data/saves/3/snes"));
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
-        assert_eq!(p.launchbox(), Path::new("/data/metadata/launchbox"));
+        assert_eq!(p.removed_launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
         assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
     }

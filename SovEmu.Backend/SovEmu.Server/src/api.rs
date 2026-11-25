@@ -55,6 +55,9 @@ pub(crate) struct Game {
     /// Downloaded box art (a file under `<data>/metadata/media`), served as `thumb`.
     #[serde(skip)]
     pub(crate) box_art: Option<String>,
+    /// A downloaded gameplay video (a file under `<data>/metadata/media`), served as `video`.
+    #[serde(skip)]
+    pub(crate) box_video: Option<String>,
     /// How many discs (1 for most games).
     pub(crate) discs: i64,
     /// One of this user's favourites (filled in by `collections::mark_favourites`).
@@ -72,12 +75,15 @@ pub(crate) struct Game {
 impl Game {
     /// Downloaded box art stands in for a missing local `thumb`.
     pub(crate) fn with_box_art(mut self) -> Self {
-        if self.box_art.is_some() && !self.media.split(',').any(|k| k == "thumb") {
-            self.media = if self.media.is_empty() {
-                "thumb".into()
-            } else {
-                format!("{},thumb", self.media)
-            };
+        for (kind, file) in [("thumb", self.box_art.is_some()), ("video", self.box_video.is_some())]
+        {
+            if file && !self.media.split(',').any(|k| k == kind) {
+                self.media = if self.media.is_empty() {
+                    kind.into()
+                } else {
+                    format!("{},{kind}", self.media)
+                };
+            }
         }
         self
     }
@@ -144,7 +150,7 @@ pub(crate) const GAME_COLUMNS: &str =
      g.size, h.last_played_at, h.play_count, g.media,
      CASE WHEN m.title IS NOT NULL AND m.title != g.title THEN g.title END AS file_title,
      m.description, m.release_date, m.developer, m.publisher, m.genre, m.players, m.rating,
-     m.box_art, g.release, g.parts,
+     m.box_art, m.video AS box_video, g.release, g.parts,
      MAX(1, (SELECT COUNT(*) FROM game_discs d WHERE d.game_id = g.id)) AS discs";
 
 /// What a list of games carries for this user beyond its rows: which are favourites, and the
@@ -779,25 +785,23 @@ pub(crate) async fn decoration_file(
     Ok(response)
 }
 
-/// A game's artwork or video (`image`, `thumb`, `marquee`, `video`), served with range support
-/// so browsers can stream the video.
-pub(crate) async fn game_media(
-    State(state): State<AppState>,
-    SignedUser(user_id): SignedUser,
-    Path((id, kind)): Path<(i64, String)>,
-    request: axum::extract::Request,
-) -> ApiResult<axum::response::Response> {
-    use axum::response::IntoResponse;
-    use tower::ServiceExt;
-    if !sovemu_library::scan::MEDIA_KINDS.contains(&kind.as_str()) {
+/// The file of a game's artwork or video (`image`, `thumb`, `marquee`, `video`) for a signed
+/// user: the library's own, else what a metadata service supplied.
+async fn media_file(
+    state: &AppState,
+    user_id: i64,
+    id: i64,
+    kind: &str,
+) -> ApiResult<std::path::PathBuf> {
+    if !sovemu_library::scan::MEDIA_KINDS.contains(&kind) {
         return Err(ApiError::not_found("media"));
     }
     // The row alone: an image needs no favourites or patch (one query per thumbnail, not three).
-    let game = fetch_row(&state, user_id, id).await?;
+    let game = fetch_row(state, user_id, id).await?;
     // Probing the library's files (a network share, perhaps) blocks: off the async threads.
     let found = {
         let state = state.clone();
-        let (game, kind) = (game.clone(), kind.clone());
+        let (game, kind) = (game.clone(), kind.to_owned());
         tokio::task::spawn_blocking(move || {
             media_relative(&state, &game, &kind).map(|relative| {
                 let original = state.config.roms_dir.join(&relative);
@@ -807,25 +811,96 @@ pub(crate) async fn game_media(
         .await
         .map_err(ApiError::internal)?
     };
-    let file = match found {
-        Some(file) => file,
-        // No local artwork: box art a metadata service supplied stands in for the thumb.
-        None => match (kind.as_str(), &game.box_art) {
-            ("thumb", Some(name)) => state.metadata.media_dir.join(name),
-            _ => return Err(ApiError::not_found("media")),
+    match found {
+        Some(file) => Ok(file),
+        // No local artwork: box art and a video a metadata service supplied stand in.
+        None => match (kind, &game.box_art, &game.box_video) {
+            ("thumb", Some(name), _) | ("video", _, Some(name)) => {
+                Ok(state.metadata.media_dir.join(name))
+            }
+            _ => Err(ApiError::not_found("media")),
         },
-    };
+    }
+}
+
+/// Serves `file`, with range support (so browsers can stream a video), kept a day by browsers:
+/// artwork changes only on a rescrape.
+async fn serve_media(
+    file: std::path::PathBuf,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    use tower::ServiceExt;
     let mut response = tower_http::services::ServeFile::new(file)
         .oneshot(request)
         .await
         .map_err(ApiError::internal)?
         .into_response();
-    // Artwork changes only on a rescrape; let browsers keep it a day.
     response.headers_mut().insert(
         axum::http::header::CACHE_CONTROL,
         axum::http::HeaderValue::from_static("private, max-age=86400"),
     );
     Ok(response)
+}
+
+/// A game's artwork or video (`image`, `thumb`, `marquee`, `video`) as it is.
+pub(crate) async fn game_media(
+    State(state): State<AppState>,
+    SignedUser(user_id): SignedUser,
+    Path((id, kind)): Path<(i64, String)>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    let file = media_file(&state, user_id, id, &kind).await?;
+    serve_media(file, request).await
+}
+
+/// Copies being made at once: resizing is CPU work, so no more than the machine has cores.
+fn copy_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SLOTS.get_or_init(|| {
+        tokio::sync::Semaphore::new(std::thread::available_parallelism().map_or(2, |n| n.get()))
+    })
+}
+
+/// A game's artwork at a width (`/media/games/{id}/{kind}/w{width}`): a lossy WebP copy at most
+/// that wide, made from the original the first time it is asked for and kept
+/// (`<data>/cache/artwork-widths`), made again once the original is newer. Only widths on the
+/// grid are made (`sovemu_library::artwork::on_grid`); the width is in the signed path, so only
+/// widths the API handed out reach here. A picture that cannot be read is served as it is.
+pub(crate) async fn game_media_width(
+    State(state): State<AppState>,
+    SignedUser(user_id): SignedUser,
+    Path((id, kind, width)): Path<(i64, String, String)>,
+    request: axum::extract::Request,
+) -> ApiResult<axum::response::Response> {
+    let width: u32 = width
+        .strip_prefix('w')
+        .and_then(|w| w.parse().ok())
+        .filter(|w| sovemu_library::artwork::on_grid(*w))
+        .ok_or_else(|| ApiError::not_found("media"))?;
+    if kind == "video" {
+        return Err(ApiError::not_found("media"));
+    }
+    let original = media_file(&state, user_id, id, &kind).await?;
+    let copy =
+        state.config.paths().artwork_widths().join(format!("games/{id}/{kind}/w{width}.webp"));
+    let made = {
+        let _slot = copy_slots().acquire().await.map_err(ApiError::internal)?;
+        let (src, dst) = (original.clone(), copy.clone());
+        let quality = state.config.artwork_webp_quality as f32;
+        tokio::task::spawn_blocking(move || {
+            sovemu_library::artwork::webp_copy(&src, &dst, width, quality)
+        })
+        .await
+        .map_err(ApiError::internal)?
+    };
+    match made {
+        Ok(()) => serve_media(copy, request).await,
+        Err(e) => {
+            tracing::warn!(game_id = id, kind = %kind, width, error = %e, "cannot make an artwork copy");
+            serve_media(original, request).await
+        }
+    }
 }
 
 /// Where a game's artwork of `kind` is, relative to the library root, if it exists.

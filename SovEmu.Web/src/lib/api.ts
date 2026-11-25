@@ -204,6 +204,7 @@ export type ControllerMappingList = Awaited<ReturnType<typeof api.controllerMapp
 export type ControllerDefaults = ControllerDefaultsQuery["controllerDefaults"];
 export type ControllerMappingInfo = ControllerDefaults["mappings"][number];
 export type MetadataStatus = AdminStatusQuery["metadataStatus"];
+export type MetadataField = Enum<"MetadataField">;
 export type JobState = JobsQueryResult["jobs"][number];
 export type JobName = JobState["name"];
 export type ServerResources = ServerResourcesResult["serverResources"];
@@ -354,8 +355,9 @@ export const api = {
   /** Admin: the host, and the container's latest CPU and memory use. */
   serverResources: async () => (await request(ServerResourcesQuery)).serverResources,
   resourceHistory: async (range: ResourceRange) => (await request(ResourceHistoryQuery, { range })).resourceHistory,
-  fetchMetadata: async (system?: string, force = false) =>
-    (await request(FetchMetadataMutation, { system: system ?? null, force })).fetchMetadata,
+  /** Admin: looks up game information; `fields` refreshes only those (the rest are kept). */
+  fetchMetadata: async (system?: string, force = false, fields: MetadataField[] = []) =>
+    (await request(FetchMetadataMutation, { system: system ?? null, force, fields })).fetchMetadata,
   /** `startId` lets `startProgress` follow the start while this waits for it. */
   startSession: async (gameId: number, startId?: string) =>
     (await request(StartSessionMutation, { gameId, startId: startId ?? null })).startSession,

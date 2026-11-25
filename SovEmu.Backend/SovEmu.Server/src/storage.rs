@@ -65,7 +65,7 @@ fn areas(state: &AppState) -> Vec<(&'static str, PathBuf)> {
         ("discs", paths.disc_playlists()),
         ("mirror", paths.mirror()),
         ("artwork", paths.artwork()),
-        ("launchbox", paths.launchbox()),
+        ("artwork_widths", paths.artwork_widths()),
         ("metadata", paths.metadata()),
         ("decorations", paths.decorations()),
         ("builtin_decorations", config.builtin_decorations()),
@@ -241,15 +241,32 @@ pub(crate) async fn clear_cache(state: &AppState) -> ApiResult<u64> {
         keep.extend(path);
     }
     let cache = state.cache.clone();
+    let widths = state.config.paths().artwork_widths();
     let freed = tokio::task::spawn_blocking(move || {
         let keep: Vec<(&str, &str)> = keep.iter().map(|p| ("roms", p.as_str())).collect();
-        cache.clear(&keep)
+        // The artwork copies go too: they are made again as clients ask for them.
+        let copies = folder_bytes(&widths);
+        let _ = std::fs::remove_dir_all(&widths);
+        cache.clear(&keep) + copies
     })
     .await
     .map_err(|e| ApiError::internal(format!("clearing the cache: {e}")))?;
     *state.storage.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
     tracing::info!(bytes = freed, "cache cleared");
     Ok(freed)
+}
+
+/// The bytes of every file under `dir`.
+fn folder_bytes(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    entries
+        .flatten()
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_dir() => folder_bytes(&e.path()),
+            Ok(_) => e.metadata().map_or(0, |m| m.len()),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 #[cfg(test)]
@@ -266,7 +283,6 @@ mod tests {
         ];
         let of = |p: &str| area_of(Path::new(p), &areas);
         assert_eq!(of("/data/metadata/media/nes/x.png"), Some("artwork"));
-        assert_eq!(of("/data/metadata/launchbox/Metadata.xml"), Some("metadata"));
         assert_eq!(of("/data/sovemu.db-wal"), Some("database"));
         assert_eq!(of("/data/sovemu.db"), Some("database"));
         assert_eq!(of("/data/saves/3/snes/game.srm"), Some("saves"));

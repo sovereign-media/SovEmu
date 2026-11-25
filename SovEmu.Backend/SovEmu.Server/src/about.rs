@@ -59,23 +59,6 @@ pub(crate) const SERVICES: &[Service] = &[
                 and others.",
     },
     Service {
-        name: "TheGamesDB",
-        provides: "Game information and artwork, with your own API key",
-        url: "https://thegamesdb.net",
-        licence: None,
-        licence_url: None,
-        terms: "States no licence or terms for its API.",
-    },
-    Service {
-        name: "LaunchBox Games Database",
-        provides: "Game information and box art, from its downloadable database",
-        url: "https://gamesdb.launchbox-app.com",
-        licence: None,
-        licence_url: None,
-        terms: "States no licence or terms; its developer has invited other software to use \
-                the downloadable database.",
-    },
-    Service {
         name: "FinalBurn Neo",
         provides: "Arcade game names and years, from its DAT files at a pinned commit",
         url: "https://neo-source.com",

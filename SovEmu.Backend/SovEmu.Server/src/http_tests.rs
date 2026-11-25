@@ -4,9 +4,10 @@
 //! The session test starts a real `sovemu-worker session`, with `SovEmu.TestCore` installed as
 //! the "NES core" and an empty file as the ROM (the test core accepts any content).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -99,10 +100,6 @@ impl Harness {
         // No built-in decorations: drawing them takes seconds in a debug build. A test that
         // wants decorations gives its own set.
         args.extend(["--decorations-builtin".into(), dir.join("no-builtin").display().to_string()]);
-        // Never the real LaunchBox server: a test that wants it points it at a mock.
-        if !extra.iter().any(|a| a.starts_with("--launchbox")) {
-            args.extend(["--launchbox".into(), "false".into()]);
-        }
         args.extend(extra);
         let state = build_state(Config::parse_from(args)).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
@@ -138,6 +135,19 @@ impl Harness {
             serde_json::from_slice(&bytes).unwrap_or(Value::Null)
         };
         (status, value)
+    }
+
+    /// GETs `uri` (a signed file URL); returns the status, the content type and the bytes.
+    async fn fetch(&self, uri: &str) -> (StatusCode, String, Vec<u8>) {
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let response = router(self.state.clone()).oneshot(request).await.unwrap();
+        let status = response.status();
+        let kind = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.to_str().unwrap().to_owned())
+            .unwrap_or_default();
+        (status, kind, response.into_body().collect().await.unwrap().to_bytes().to_vec())
     }
 
     /// Runs a GraphQL operation; returns `data` and `errors` (null when there are none).
@@ -261,17 +271,6 @@ impl Drop for Harness {
     }
 }
 
-/// The LaunchBox dump as its server zips it.
-fn zip_bytes(xml: &str) -> Vec<u8> {
-    use std::io::Write;
-    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-    zip.start_file("Metadata.xml", options).unwrap();
-    zip.write_all(xml.as_bytes()).unwrap();
-    zip.finish().unwrap().into_inner()
-}
-
 /// A pair of UDP ports no other harness in this run uses.
 /// Two free UDP ports in a row, for this test's worker pool. Under nextest every test is its
 /// own process, all at once, so a range worked out from the process id could be another test's
@@ -299,7 +298,11 @@ const START: &str =
 const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
 const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
-                        artwork { running total done downloaded failed } } }";
+                        artwork { running total done downloaded failed videos } \
+                        working { title } finishedAt systems { system total done } \
+                        providers { id asked found notFound errors quota { requestsToday } \
+                        threads account { level maxThreads maxRequestsPerMinute } } \
+                        recent { title outcome sources } } }";
 const LIBRARY: &str = "{ libraryStatus { mode games cacheBytes mirror { running filesDone } } }";
 
 fn system<'a>(systems: &'a Value, id: &str) -> &'a Value {
@@ -695,72 +698,119 @@ async fn runs_a_game_session_in_a_worker() {
     assert_eq!(h.err(stop, json!({"id": sid})).await.0, "NOT_FOUND");
 }
 
-/// A stand-in for ScreenScraper and TheGamesDB on a local port. ScreenScraper answers for the
-/// NES game (checking the exact query a real client must send) and not for the GBA one;
-/// TheGamesDB answers for the GBA one, with box art. `quota` makes ScreenScraper refuse.
-/// `/lb/Metadata.zip` is a LaunchBox dump that knows the NES game.
-async fn mock_services(quota: bool) -> String {
+/// A stand-in for ScreenScraper on a local port. It answers for the NES game (checking the
+/// exact query a real client must send: by file and MD5 the first time, by game id once known)
+/// and for the GBA one, whose box art it serves only with credentials. `quota` makes it refuse.
+/// Returns its address and every query it was sent.
+async fn mock_services(
+    quota: bool,
+) -> (String, Arc<std::sync::Mutex<Vec<HashMap<String, String>>>>) {
     use axum::extract::Query;
     use axum::routing::get;
-    use std::collections::HashMap;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let img_base = format!("{base}/img/");
+    let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = calls.clone();
+    let box_url =
+        format!("{base}/api2/mediaJeu.php?devid=dev&amp;devpassword=pw&amp;media=box-2D(wor)");
+    let video_url = format!(
+        "{base}/api2/mediaVideoJeu.php?devid=dev&amp;devpassword=pw&amp;media=video-normalized"
+    );
+    let gba = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Data>
+  <ssuser><id>someone</id><requeststoday>3</requeststoday><maxrequestsperday>20000</maxrequestsperday></ssuser>
+  <jeu id="77">
+    <noms><nom region="wor">Other Game</nom></noms>
+    <developpeur>Dev Co</developpeur>
+    <joueurs>2</joueurs>
+    <synopsis><synopsis langue="en">From ScreenScraper</synopsis></synopsis>
+    <medias><media type="box-2D" region="wor" format="png">{box_url}</media>
+      <media type="video-normalized" format="mp4">{video_url}</media></medias>
+  </jeu>
+</Data>"#
+    );
     let app = axum::Router::new()
         .route(
-            "/api2/jeuInfos.php",
-            get(move |Query(q): Query<HashMap<String, String>>| async move {
-                if quota {
-                    return (StatusCode::from_u16(430).unwrap(), "Quota exceeded".to_owned());
-                }
-                assert_eq!(q["devid"], "dev");
-                assert_eq!(q["devpassword"], "pw");
-                assert_eq!(q["output"], "xml");
-                match q["systemeid"].as_str() {
-                    "3" => {
-                        assert_eq!(q["romnom"], "Test Game (USA).nes");
-                        assert_eq!(q["romtaille"], "64");
-                        // MD5 of the fixture's 64 zero bytes.
-                        assert_eq!(q["md5"], "3b5d3c7d207e37dceeedd301e35e2e58");
-                        (StatusCode::OK, include_str!("../../SovEmu.Library/tests/fixtures/screenscraper.xml").to_owned())
-                    }
-                    _ => (StatusCode::NOT_FOUND, "Erreur : Rom/Iso/Dossier non trouvée !".to_owned()),
-                }
-            }),
-        )
-        .route(
-            "/v1/Games/ByGameName",
+            "/api2/ssuserInfos.php",
             get(|Query(q): Query<HashMap<String, String>>| async move {
-                assert_eq!(q["apikey"], "key");
-                let games = if q["name"] == "Other" && q["filter[platform]"] == "5" {
-                    json!([{"id": 5, "game_title": "Other", "overview": "From TGDB", "developers": [1], "players": 2}])
-                } else {
-                    json!([])
-                };
-                axum::Json(json!({"data": {"games": games}}))
+                assert_eq!(q["devid"], "dev");
+                // An account that may have two requests open, 600 a minute.
+                "<Data><ssuser><id>someone</id><niveau>1</niveau><maxthreads>2</maxthreads>\
+                 <maxrequestspermin>600</maxrequestspermin><requeststoday>1</requeststoday>\
+                 </ssuser></Data>"
             }),
         )
-        .route("/v1/Developers", get(|| async { axum::Json(json!({"data": {"developers": {"1": {"id": 1, "name": "Dev Co"}}}})) }))
-        .route("/v1/Publishers", get(|| async { axum::Json(json!({"data": {"publishers": {}}})) }))
-        .route("/v1/Genres", get(|| async { axum::Json(json!({"data": {"genres": {}}})) }))
         .route(
-            "/v1/Games/Images",
-            get(move || {
-                let img_base = img_base.clone();
+            "/api2/jeuInfos.php",
+            get(move |Query(q): Query<HashMap<String, String>>| {
+                let gba = gba.clone();
+                let seen = seen.clone();
                 async move {
-                    axum::Json(json!({"data": {"base_url": {"large": img_base},
-                        "images": {"5": [{"type": "boxart", "side": "front", "filename": "box.png"}]}}}))
+                    seen.lock().unwrap().push(q.clone());
+                    if quota {
+                        return (StatusCode::from_u16(430).unwrap(), "Quota exceeded".to_owned());
+                    }
+                    assert_eq!(q["devid"], "dev");
+                    assert_eq!(q["devpassword"], "pw");
+                    assert_eq!(q["output"], "xml");
+                    match q["systemeid"].as_str() {
+                        "3" => {
+                            if let Some(id) = q.get("gameid") {
+                                assert_eq!(id, "1234", "the id the first lookup found");
+                                assert!(!q.contains_key("md5"), "no hashing once the id is known");
+                            } else {
+                                assert_eq!(q["romnom"], "Test Game (USA).nes");
+                                assert_eq!(q["romtaille"], "64");
+                                // MD5 of the fixture's 64 zero bytes.
+                                assert_eq!(q["md5"], "3b5d3c7d207e37dceeedd301e35e2e58");
+                            }
+                            (
+                                StatusCode::OK,
+                                include_str!(
+                                    "../../SovEmu.Library/tests/fixtures/screenscraper.xml"
+                                )
+                                .to_owned(),
+                            )
+                        }
+                        "12" => (StatusCode::OK, gba),
+                        _ => (
+                            StatusCode::NOT_FOUND,
+                            "Erreur : Rom/Iso/Dossier non trouvée !".to_owned(),
+                        ),
+                    }
                 }
             }),
         )
         .route(
-            "/lb/Metadata.zip",
-            get(|| async { zip_bytes(LAUNCHBOX_DUMP) }),
+            "/api2/mediaJeu.php",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                if q.get("devid").map(String::as_str) != Some("dev") {
+                    return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], vec![]);
+                }
+                // Asked for at the size it is shown, not as a full scan.
+                assert_eq!((q["maxwidth"].as_str(), q["maxheight"].as_str()), ("1000", "1000"));
+                (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "image/png")],
+                    include_bytes!("../../SovEmu.Library/tests/fixtures/box.png").to_vec(),
+                )
+            }),
         )
-        .route("/img/box.png", get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }));
+        .route(
+            "/api2/mediaVideoJeu.php",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                if q.get("devid").map(String::as_str) != Some("dev") {
+                    return (StatusCode::FORBIDDEN, [(header::CONTENT_TYPE, "text/plain")], vec![]);
+                }
+                assert!(!q.contains_key("maxwidth"), "videos are not scaled");
+                let mp4 = [&[0u8, 0, 0, 24][..], b"ftypisom", &[0u8; 16]].concat();
+                (StatusCode::OK, [(header::CONTENT_TYPE, "video/mp4")], mp4)
+            }),
+        );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    base
+    (base, calls)
 }
 
 fn metadata_args(base: &str) -> Vec<String> {
@@ -771,10 +821,8 @@ fn metadata_args(base: &str) -> Vec<String> {
         "pw",
         "--screenscraper-url",
         &format!("{base}/api2"),
-        "--thegamesdb-key",
-        "key",
-        "--thegamesdb-url",
-        &format!("{base}/v1"),
+        "--screenscraper-delay-ms",
+        "0",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -798,10 +846,30 @@ async fn wait_for_job(h: &mut Harness) -> Value {
 
 const FETCH: &str = "mutation($s: ID) { fetchMetadata(system: $s) { running } }";
 
+/// Sends `mutation` and waits for the job it starts to finish (not for one that finished
+/// before it).
+async fn fetch_and_wait(h: &mut Harness, mutation: &str) -> Value {
+    let before = h.ok(METADATA, json!({})).await["metadataStatus"]["finishedAt"].clone();
+    h.ok(mutation, json!({})).await;
+    for _ in 0..200 {
+        let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
+        // A job that has just started has no finish time yet: wait for a new one.
+        if status["running"] == false
+            && status["finishedAt"].is_f64()
+            && status["finishedAt"] != before
+            && status["artwork"]["running"] == false
+        {
+            return status;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the metadata job did not finish");
+}
+
 #[tokio::test]
 async fn asks_again_about_games_not_found_once_a_service_is_added() {
-    // Both games were looked up before any service was configured: FBNeo alone, nothing found.
-    let base = mock_services(false).await;
+    // Both games were looked up before ScreenScraper was configured: FBNeo alone, nothing found.
+    let (base, _) = mock_services(false).await;
     let mut h = Harness::new_with("metadata-retry", false, metadata_args(&base)).await;
     h.sign_up_admin().await;
     sqlx::query(
@@ -811,7 +879,7 @@ async fn asks_again_about_games_not_found_once_a_service_is_added() {
     .await
     .unwrap();
 
-    // The services are configured now, so an ordinary (not forced) job asks them.
+    // ScreenScraper is configured now, so an ordinary (not forced) job asks it.
     h.ok(FETCH, json!({})).await;
     let status = wait_for_job(&mut h).await;
     assert_eq!(
@@ -822,24 +890,23 @@ async fn asks_again_about_games_not_found_once_a_service_is_added() {
     assert_eq!(h.games("nes").await[0]["title"], "Castlevania");
 
     // Once every configured service has been asked, a game is not asked again.
-    sqlx::query(
-        "UPDATE game_metadata SET status = 'not_found', tried = 'fbneo,screenscraper,thegamesdb'",
-    )
-    .execute(&h.state.db)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE game_metadata SET status = 'not_found', tried = 'fbneo,screenscraper'")
+        .execute(&h.state.db)
+        .await
+        .unwrap();
     h.ok(FETCH, json!({})).await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
 }
 
 #[tokio::test]
-async fn fetches_metadata_from_both_services() {
-    let base = mock_services(false).await;
+async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
+    let (base, _) = mock_services(false).await;
     let mut h = Harness::new_with("metadata", false, metadata_args(&base)).await;
     h.sign_up_admin().await;
     let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
-    assert_eq!(status["sources"], json!(["fbneo", "screenscraper", "thegamesdb"]));
+    assert_eq!(status["sources"], json!(["fbneo", "screenscraper"]));
+    assert_eq!(status["notes"], json!([]));
 
     h.ok(FETCH, json!({})).await;
     let status = wait_for_job(&mut h).await;
@@ -848,10 +915,46 @@ async fn fetches_metadata_from_both_services() {
         (json!(2), json!(0)),
         "{status}"
     );
-    // Box art in the background, only for the GBA game (the NES one has a local thumb).
+    // Box art and a video in the background, only for the GBA game (the NES one has a local
+    // thumb), downloaded with the credentials the stored URLs were stripped of.
     assert_eq!(
         status["artwork"],
-        json!({"running": false, "total": 1, "done": 1, "downloaded": 1, "failed": 0})
+        json!({"running": false, "total": 2, "done": 2, "downloaded": 2, "failed": 0, "videos": 1})
+    );
+    let stored: String =
+        sqlx::query_scalar("SELECT box_art_url FROM game_metadata WHERE box_art_url IS NOT NULL")
+            .fetch_one(&h.state.db)
+            .await
+            .unwrap();
+    assert!(!stored.contains("devpassword"), "{stored}");
+
+    // The progress: per system, per provider (with the quota ScreenScraper last reported), and
+    // the games just looked up, most recent first.
+    assert_eq!(status["working"], json!([]));
+    assert!(status["finishedAt"].as_f64().is_some());
+    assert_eq!(
+        status["systems"],
+        json!([{"system": "gba", "total": 1, "done": 1}, {"system": "nes", "total": 1, "done": 1}])
+    );
+    assert_eq!(
+        status["providers"],
+        json!([
+            {"id": "fbneo", "asked": 2, "found": 0, "notFound": 2, "errors": 0, "quota": null,
+             "threads": 1, "account": null},
+            {"id": "screenscraper", "asked": 2, "found": 2, "notFound": 0, "errors": 0,
+             "quota": {"requestsToday": 3.0}, "threads": 2,
+             "account": {"level": 1, "maxThreads": 2, "maxRequestsPerMinute": 600}},
+        ])
+    );
+    // Looked up two at a time (the account allows two), so in either order.
+    let mut recent = status["recent"].as_array().unwrap().clone();
+    recent.sort_by_key(|r| r["title"].as_str().unwrap().to_owned());
+    assert_eq!(
+        recent,
+        [
+            json!({"title": "Castlevania", "outcome": "FOUND", "sources": ["screenscraper"]}),
+            json!({"title": "Other Game", "outcome": "FOUND", "sources": ["screenscraper"]}),
+        ]
     );
 
     // ScreenScraper named the NES game and described it; the file's own title is kept too.
@@ -862,12 +965,15 @@ async fn fetches_metadata_from_both_services() {
     assert_eq!(nes[0]["releaseDate"], "1987-05-01");
     assert_eq!(nes[0]["rating"], 0.8);
 
-    // TheGamesDB filled in the GBA game, and its box art stands in for the missing thumb.
+    // The GBA game's box art stands in for the missing thumb.
     let gba = h.games("gba").await;
-    assert_eq!(gba[0]["description"], "From TGDB");
+    assert_eq!(gba[0]["description"], "From ScreenScraper");
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
-    assert_eq!(gba[0]["media"], json!(["THUMB"]));
+    assert_eq!(gba[0]["media"], json!(["THUMB", "VIDEO"]));
+    let gba_id = gba[0]["id"].as_i64().unwrap();
+    let kept = std::fs::read(h.dir.join(format!("metadata/media/{gba_id}-box.webp"))).unwrap();
+    assert_eq!(&kept[8..12], b"WEBP", "box art is kept as WebP");
     let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
     assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK);
 
@@ -877,66 +983,143 @@ async fn fetches_metadata_from_both_services() {
     assert_eq!(h.ok(METADATA, json!({})).await["metadataStatus"]["total"], 0);
 }
 
-const LAUNCHBOX_DUMP: &str = r#"<?xml version="1.0" standalone="yes"?>
-<LaunchBox>
-  <Game>
-    <Name>Test Game</Name>
-    <ReleaseDate>1990-01-01T00:00:00+00:00</ReleaseDate>
-    <Overview>From LaunchBox</Overview>
-    <DatabaseID>1</DatabaseID>
-    <CommunityRating>4</CommunityRating>
-    <Platform>Nintendo Entertainment System</Platform>
-  </Game>
-  <GameImage><DatabaseID>1</DatabaseID><FileName>box.png</FileName><Type>Box - Front</Type></GameImage>
-</LaunchBox>"#;
+#[tokio::test]
+async fn a_partial_refresh_asks_by_game_id_and_keeps_other_fields() {
+    let (base, calls) = mock_services(false).await;
+    let mut h = Harness::new_with("metadata-partial", false, metadata_args(&base)).await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({"s": "nes"})).await;
+    wait_for_job(&mut h).await;
+    let sources: String = sqlx::query_scalar("SELECT field_sources FROM game_metadata")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert!(sources.contains(r#""description":"screenscraper""#), "{sources}");
+
+    sqlx::query("UPDATE game_metadata SET title = 'Kept', description = 'Edited'")
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    let refresh = "mutation { fetchMetadata(system: \"nes\", force: true, fields: [DESCRIPTION], \
+                   sources: [\"screenscraper\"]) { running } }";
+    fetch_and_wait(&mut h, refresh).await;
+    let nes = h.games("nes").await;
+    assert_eq!(nes[0]["title"], "Kept", "a field not asked for is kept");
+    assert_eq!(nes[0]["description"], "Simon Belmont sets out to defeat Dracula.");
+    let last = calls.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(last["gameid"], "1234", "asked by the id the first lookup found");
+
+    let bad = "mutation { fetchMetadata(sources: [\"launchbox\"]) { running } }";
+    assert_eq!(h.err(bad, json!({})).await.0, "BAD_REQUEST");
+}
 
 #[tokio::test]
-async fn launchbox_answers_before_screenscraper() {
-    // ScreenScraper is out of quota: asking it at all would leave a note.
-    let base = mock_services(true).await;
-    let mut args = metadata_args(&base);
-    args.extend(
-        [
-            "--launchbox",
-            "true",
-            "--launchbox-url",
-            &format!("{base}/lb/Metadata.zip"),
-            "--launchbox-images-url",
-            &format!("{base}/img"),
-        ]
-        .map(String::from),
-    );
-    let mut h = Harness::new_with("metadata-launchbox", false, args).await;
+async fn without_credentials_screenscraper_is_skipped_with_a_note() {
+    let mut h = Harness::new("metadata-none", false).await;
     h.sign_up_admin().await;
     let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
-    assert_eq!(status["sources"], json!(["fbneo", "launchbox", "screenscraper", "thegamesdb"]));
+    assert_eq!(status["sources"], json!(["fbneo"]));
+    assert!(status["notes"][0].as_str().unwrap().contains("no developer credentials"), "{status}");
+}
 
-    h.ok(FETCH, json!({"s": "nes"})).await;
-    let status = wait_for_job(&mut h).await;
-    assert_eq!(status["found"], 1, "{status}");
-    assert_eq!(status["notes"], json!([]), "ScreenScraper was not asked: {status}");
-    assert!(h.dir.join("metadata/launchbox/Metadata.zip").is_file(), "the dump is kept");
-    let nes = h.games("nes").await;
-    assert_eq!(nes[0]["description"], "From LaunchBox");
-    assert_eq!(nes[0]["releaseDate"], "1990-01-01");
-    assert_eq!(nes[0]["rating"], 0.8);
-    assert_eq!(nes[0]["media"], json!(["THUMB"]), "the scraped thumb, kept over the box art");
-    let id = nes[0]["id"].as_i64().unwrap();
-    assert!(
-        !h.dir.join(format!("metadata/media/{id}-box.png")).exists(),
-        "no box art downloaded for a game with a local thumb"
-    );
+/// The width of a lossy (VP8) WebP, from its frame header.
+fn webp_width(bytes: &[u8]) -> u32 {
+    assert_eq!((&bytes[..4], &bytes[8..12]), (&b"RIFF"[..], &b"WEBP"[..]), "a WebP");
+    // The first chunk is VP8 (opaque) or VP8X (with alpha); a VP8 frame's width is at 26.
+    assert_eq!(&bytes[12..16], b"VP8 ", "lossy");
+    u32::from(u16::from_le_bytes([bytes[26], bytes[27]]) & 0x3fff)
+}
+
+#[tokio::test]
+async fn artwork_at_a_width_is_a_kept_webp_copy() {
+    let mut h = Harness::new("artwork-width", false).await;
+    h.sign_up_admin().await;
+    let thumb = h.dir.join("roms/nes/images/Test Game (USA)-thumb.png");
+    std::fs::write(&thumb, include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).unwrap();
+    let q = "query { system(id: \"nes\") { games { id \
+             small: mediaUrl(kind: THUMB, width: 150) wide: mediaUrl(kind: THUMB, width: 2000) \
+             original: mediaUrl(kind: THUMB) } } }";
+    let game = h.ok(q, json!({})).await["system"]["games"][0].clone();
+    let id = game["id"].as_i64().unwrap();
+    let small = game["small"].as_str().unwrap();
+    assert!(small.starts_with(&format!("/media/games/{id}/thumb/w160?")), "on the grid: {small}");
+    assert!(!game["original"].as_str().unwrap().contains("/w"), "no width: the original");
+
+    // A lossy WebP copy at the width, kept and served again without being made again.
+    let (status, kind, bytes) = h.fetch(small).await;
+    assert_eq!((status, kind.as_str()), (StatusCode::OK, "image/webp"));
+    assert_eq!(webp_width(&bytes), 160);
+    let copy = h.state.config.paths().artwork_widths().join(format!("games/{id}/thumb/w160.webp"));
+    let made = std::fs::metadata(&copy).unwrap().modified().unwrap();
+    assert_eq!(h.fetch(small).await.2, bytes);
+    assert_eq!(std::fs::metadata(&copy).unwrap().modified().unwrap(), made, "kept");
+
+    // Never enlarged: wider than the 300 px original is the original's width.
+    let (_, _, wide) = h.fetch(game["wide"].as_str().unwrap()).await;
+    assert_eq!(webp_width(&wide), 300);
+
+    // A width off the grid is refused, even signed; unsigned is refused as any file is.
+    let off = h.signed(1, &format!("/media/games/{id}/thumb/w150"));
+    assert_eq!(h.fetch(&off).await.0, StatusCode::NOT_FOUND);
+    assert_ne!(h.fetch(&format!("/media/games/{id}/thumb/w160")).await.0, StatusCode::OK);
+    let video = h.signed(1, &format!("/media/games/{id}/video/w160"));
+    assert_eq!(h.fetch(&video).await.0, StatusCode::NOT_FOUND, "videos have no widths");
+
+    // A picture that cannot be read is served as it is.
+    std::fs::write(&thumb, b"not a picture").unwrap();
+    let other = h.signed(1, &format!("/media/games/{id}/thumb/w320"));
+    let (status, _, body) = h.fetch(&other).await;
+    assert_eq!((status, body.as_slice()), (StatusCode::OK, &b"not a picture"[..]));
+
+    // Clearing the cache clears the copies; they are made again when asked for.
+    crate::storage::clear_cache(&h.state).await.unwrap();
+    assert!(!copy.exists());
+    std::fs::write(&thumb, include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).unwrap();
+    assert_eq!(webp_width(&h.fetch(small).await.2), 160);
+}
+
+#[tokio::test]
+async fn startup_removes_the_launchbox_dump_and_orphaned_box_art() {
+    let mut h = Harness::new("metadata-tidy", false).await;
+    h.sign_up_admin().await;
+    let paths = h.state.config.paths();
+    let media = paths.artwork();
+    std::fs::create_dir_all(paths.removed_launchbox()).unwrap();
+    std::fs::write(paths.removed_launchbox().join("Metadata.zip"), b"zip").unwrap();
+    std::fs::create_dir_all(&media).unwrap();
+    let id: i64 = sqlx::query_scalar("SELECT id FROM games ORDER BY id LIMIT 1")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO game_metadata (game_id, status, box_art) VALUES (?, 'found', ?)")
+        .bind(id)
+        .bind(format!("{id}-box.png"))
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    for name in
+        [format!("{id}-box.png"), "999-box.jpg".into(), "999-video.mp4".into(), "notes.txt".into()]
+    {
+        std::fs::write(media.join(name), b"x").unwrap();
+    }
+    crate::metadata::tidy(&paths, &h.state.db).await;
+    assert!(!paths.removed_launchbox().exists());
+    assert!(media.join(format!("{id}-box.png")).exists(), "box art a game refers to stays");
+    assert!(!media.join("999-box.jpg").exists(), "orphaned box art goes");
+    assert!(!media.join("999-video.mp4").exists(), "and orphaned videos");
+    assert!(media.join("notes.txt").exists(), "nothing else is touched");
 }
 
 #[tokio::test]
 async fn stops_a_service_that_is_out_of_quota() {
-    let base = mock_services(true).await;
+    let (base, _) = mock_services(true).await;
     let mut h = Harness::new_with("metadata-quota", false, metadata_args(&base)).await;
     h.sign_up_admin().await;
     h.ok(FETCH, json!({"s": "nes"})).await;
     let status = wait_for_job(&mut h).await;
     assert_eq!(status["total"], 1, "only the system asked for");
     assert!(status["notes"][0].as_str().unwrap().contains("quota"), "{status}");
+    assert_eq!(status["recent"][0]["outcome"], "FAILED");
     // A failed lookup is not stored, so the next job retries it.
     assert_eq!(h.games("nes").await[0]["description"], Value::Null);
     h.ok(FETCH, json!({"s": "nes"})).await;
@@ -3283,6 +3466,14 @@ async fn admins_see_the_games_needing_attention_and_look_one_up_again() {
     );
 
     let game = duplicates[0]["gameId"].as_i64().unwrap();
+    // The scan started a lookup in the background; another is refused while it runs (on a
+    // loaded machine it can still be running here), so wait for it to finish.
+    for _ in 0..200 {
+        if !h.state.jobs.is_running(crate::jobs::Job::Metadata) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
     let look_up = "mutation ($id: Int!) { lookUpGame(gameId: $id) { total } }";
     h.ok(look_up, json!({"id": game})).await;
     let (code, _) = h.err(look_up, json!({"id": 99_999})).await;

@@ -137,7 +137,11 @@ impl AttentionMutation {
         let me = admin(ctx).await?;
         let state = state(ctx);
         crate::api::require_game(state, game_id).await.api()?;
-        let scope = crate::metadata::Scope { system: None, game: Some(game_id), force: true };
+        let scope = crate::metadata::Scope {
+            game: Some(game_id),
+            force: true,
+            ..crate::metadata::Scope::default()
+        };
         let status = crate::admin::metadata_fetch(state, scope).api()?;
         let title: Option<String> = sqlx::query_scalar("SELECT title FROM games WHERE id = ?")
             .bind(game_id)
