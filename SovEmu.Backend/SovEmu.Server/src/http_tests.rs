@@ -137,6 +137,19 @@ impl Harness {
         (status, value)
     }
 
+    /// GETs `uri` (a signed file URL); returns the status, the content type and the bytes.
+    async fn fetch(&self, uri: &str) -> (StatusCode, String, Vec<u8>) {
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let response = router(self.state.clone()).oneshot(request).await.unwrap();
+        let status = response.status();
+        let kind = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.to_str().unwrap().to_owned())
+            .unwrap_or_default();
+        (status, kind, response.into_body().collect().await.unwrap().to_bytes().to_vec())
+    }
+
     /// Runs a GraphQL operation; returns `data` and `errors` (null when there are none).
     async fn gql(&mut self, query: &str, variables: Value) -> (Value, Value) {
         let body = json!({"query": query, "variables": variables});
@@ -781,7 +794,7 @@ async fn mock_services(
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, "image/png")],
-                    vec![0x89u8, b'P', b'N', b'G'],
+                    include_bytes!("../../SovEmu.Library/tests/fixtures/box.png").to_vec(),
                 )
             }),
         )
@@ -955,6 +968,9 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(gba[0]["developer"], "Dev Co");
     assert_eq!(gba[0]["players"], "2");
     assert_eq!(gba[0]["media"], json!(["THUMB", "VIDEO"]));
+    let gba_id = gba[0]["id"].as_i64().unwrap();
+    let kept = std::fs::read(h.dir.join(format!("metadata/media/{gba_id}-box.webp"))).unwrap();
+    assert_eq!(&kept[8..12], b"WEBP", "box art is kept as WebP");
     let url = gba[0]["mediaUrl"].as_str().unwrap().to_owned();
     assert_eq!(h.call("GET", &url, None).await.0, StatusCode::OK);
 
@@ -1001,6 +1017,62 @@ async fn without_credentials_screenscraper_is_skipped_with_a_note() {
     let status = h.ok(METADATA, json!({})).await["metadataStatus"].clone();
     assert_eq!(status["sources"], json!(["fbneo"]));
     assert!(status["notes"][0].as_str().unwrap().contains("no developer credentials"), "{status}");
+}
+
+/// The width of a lossy (VP8) WebP, from its frame header.
+fn webp_width(bytes: &[u8]) -> u32 {
+    assert_eq!((&bytes[..4], &bytes[8..12]), (&b"RIFF"[..], &b"WEBP"[..]), "a WebP");
+    // The first chunk is VP8 (opaque) or VP8X (with alpha); a VP8 frame's width is at 26.
+    assert_eq!(&bytes[12..16], b"VP8 ", "lossy");
+    u32::from(u16::from_le_bytes([bytes[26], bytes[27]]) & 0x3fff)
+}
+
+#[tokio::test]
+async fn artwork_at_a_width_is_a_kept_webp_copy() {
+    let mut h = Harness::new("artwork-width", false).await;
+    h.sign_up_admin().await;
+    let thumb = h.dir.join("roms/nes/images/Test Game (USA)-thumb.png");
+    std::fs::write(&thumb, include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).unwrap();
+    let q = "query { system(id: \"nes\") { games { id \
+             small: mediaUrl(kind: THUMB, width: 150) wide: mediaUrl(kind: THUMB, width: 2000) \
+             original: mediaUrl(kind: THUMB) } } }";
+    let game = h.ok(q, json!({})).await["system"]["games"][0].clone();
+    let id = game["id"].as_i64().unwrap();
+    let small = game["small"].as_str().unwrap();
+    assert!(small.starts_with(&format!("/media/games/{id}/thumb/w160?")), "on the grid: {small}");
+    assert!(!game["original"].as_str().unwrap().contains("/w"), "no width: the original");
+
+    // A lossy WebP copy at the width, kept and served again without being made again.
+    let (status, kind, bytes) = h.fetch(small).await;
+    assert_eq!((status, kind.as_str()), (StatusCode::OK, "image/webp"));
+    assert_eq!(webp_width(&bytes), 160);
+    let copy = h.state.config.paths().artwork_widths().join(format!("games/{id}/thumb/w160.webp"));
+    let made = std::fs::metadata(&copy).unwrap().modified().unwrap();
+    assert_eq!(h.fetch(small).await.2, bytes);
+    assert_eq!(std::fs::metadata(&copy).unwrap().modified().unwrap(), made, "kept");
+
+    // Never enlarged: wider than the 300 px original is the original's width.
+    let (_, _, wide) = h.fetch(game["wide"].as_str().unwrap()).await;
+    assert_eq!(webp_width(&wide), 300);
+
+    // A width off the grid is refused, even signed; unsigned is refused as any file is.
+    let off = h.signed(1, &format!("/media/games/{id}/thumb/w150"));
+    assert_eq!(h.fetch(&off).await.0, StatusCode::NOT_FOUND);
+    assert_ne!(h.fetch(&format!("/media/games/{id}/thumb/w160")).await.0, StatusCode::OK);
+    let video = h.signed(1, &format!("/media/games/{id}/video/w160"));
+    assert_eq!(h.fetch(&video).await.0, StatusCode::NOT_FOUND, "videos have no widths");
+
+    // A picture that cannot be read is served as it is.
+    std::fs::write(&thumb, b"not a picture").unwrap();
+    let other = h.signed(1, &format!("/media/games/{id}/thumb/w320"));
+    let (status, _, body) = h.fetch(&other).await;
+    assert_eq!((status, body.as_slice()), (StatusCode::OK, &b"not a picture"[..]));
+
+    // Clearing the cache clears the copies; they are made again when asked for.
+    crate::storage::clear_cache(&h.state).await.unwrap();
+    assert!(!copy.exists());
+    std::fs::write(&thumb, include_bytes!("../../SovEmu.Library/tests/fixtures/box.png")).unwrap();
+    assert_eq!(webp_width(&h.fetch(small).await.2), 160);
 }
 
 #[tokio::test]

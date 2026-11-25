@@ -29,6 +29,8 @@ const game = (title: string, over: Partial<Game> = {}): Game => ({
   lastPlayedAt: null,
   playCount: 0,
   image: null,
+  imageSmall: null,
+  cover: null,
   thumb: null,
   video: null,
   fileTitle: null,

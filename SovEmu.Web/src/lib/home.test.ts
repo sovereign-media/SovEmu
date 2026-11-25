@@ -12,6 +12,8 @@ const game = (over: Partial<Game> = {}): Game => ({
   lastPlayedAt: null,
   playCount: 0,
   image: null,
+  imageSmall: null,
+  cover: null,
   thumb: null,
   video: null,
   fileTitle: null,
@@ -75,6 +77,7 @@ describe("home art", () => {
       "/media/games/7/image",
     );
     expect(heroArt(game({ thumb: "/media/games/7/thumb" }))).toBe("/media/games/7/thumb");
+    expect(heroArt(game({ thumb: "/t400", cover: "/t800" }))).toBe("/t800"); // the larger box art
     expect(heroArt(game())).toBeNull();
   });
 
@@ -86,6 +89,8 @@ describe("home art", () => {
     });
     expect(cardArt({ ...game({ thumb: "/t" }), autoSave: { ...autoSave, screenshotUrl: null } })?.kind).toBe("art");
     expect(cardArt(game({ thumb: "/t" }))?.kind).toBe("art");
+    // A card asks for artwork at a card's size, not the backdrop's.
+    expect(cardArt(game({ image: "/i1600", imageSmall: "/i480", thumb: "/t" }))?.url).toBe("/i480");
     expect(cardArt(game())).toBeNull();
   });
 

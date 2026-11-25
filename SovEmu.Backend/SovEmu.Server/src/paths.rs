@@ -14,6 +14,7 @@
 //!   before-restore-<time>/  what a restore replaced, kept
 //!   cache/games/          mode `cache`: games and art copied from the library as they are used
 //!   cache/discs/          generated .m3u playlists for multi-disc games
+//!   cache/artwork-widths/ artwork copies at the widths clients asked for (WebP)
 //!   cache/decorations/    the built-in decoration set, unless the image holds it
 //!   decorations/          decoration sets of your own (Batocera's layout)
 //!   backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
@@ -132,6 +133,12 @@ impl DataPaths {
     /// Box art downloaded by the game-information lookup.
     pub fn artwork(&self) -> PathBuf {
         self.metadata().join("media")
+    }
+
+    /// Artwork copies at the widths clients asked for (lossy WebP), made from the originals on
+    /// first request and kept; cleared with the cache.
+    pub fn artwork_widths(&self) -> PathBuf {
+        self.cache().join("artwork-widths")
     }
 
     /// Backups, when `SOVEMU_BACKUP_DIR` is not set (`backup`).

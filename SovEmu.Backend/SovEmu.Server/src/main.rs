@@ -523,6 +523,11 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_ARTWORK_MAX_PX", default_value_t = 1000)]
     pub artwork_max_px: u32,
 
+    /// Quality of the lossy WebP artwork is made in, box art on download and the copies made
+    /// at each client's width (1-100).
+    #[arg(long, env = "SOVEMU_ARTWORK_WEBP_QUALITY", default_value_t = 80, value_parser = clap::value_parser!(u8).range(1..=100))]
+    pub artwork_webp_quality: u8,
+
     /// Download gameplay videos for games with none of their own.
     #[arg(long, env = "SOVEMU_METADATA_VIDEOS", default_value_t = true, action = clap::ArgAction::Set)]
     pub metadata_videos: bool,
@@ -848,6 +853,7 @@ pub fn router(state: AppState) -> Router {
         .merge(
             Router::new()
                 .route("/media/games/{id}/{kind}", get(api::game_media))
+                .route("/media/games/{id}/{kind}/{width}", get(api::game_media_width))
                 .route("/media/games/{id}/saves/{slot}", get(api::state_screenshot))
                 .route("/media/decorations/{set}/{*path}", get(api::decoration_file))
                 .route("/media/backgrounds/{id}", get(appearance::background_file))
@@ -1099,6 +1105,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         setup_notes,
         config.artwork_downloads,
         config.artwork_max_px,
+        config.artwork_webp_quality,
         config.metadata_videos,
     );
     let copy_threads = config.copy_threads;

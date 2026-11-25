@@ -269,7 +269,11 @@ stored as each game is looked up. Box art and videos follow in the background, o
 with no thumb or video of their own, `SOVEMU_ARTWORK_DOWNLOADS` at a time. Box art is asked for
 at the size the largest screen shows it (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
 scan; videos are ScreenScraper's normalised ones where it has them (smaller, one encoding), and
-`SOVEMU_METADATA_VIDEOS=false` skips them. A system's game cards take the shape of its boxes
+`SOVEMU_METADATA_VIDEOS=false` skips them. Box art is kept as lossy WebP
+(`SOVEMU_ARTWORK_WEBP_QUALITY`), and every client asks for artwork at the width it shows it: the
+server makes a WebP copy at that width the first time (from the library's own artwork too) and
+keeps it in `data/cache/artwork-widths`, so a grid of covers moves a few kilobytes a card rather
+than the original files. Clearing the cache clears the copies; they are made again as needed. A system's game cards take the shape of its boxes
 (SNES and N64 landscape, CD systems square, cartridge systems portrait), so box art fills them;
 a box of another shape (a Super Famicom's) is fitted inside its card. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
 gives (`fbneo,screenscraper`):
@@ -389,7 +393,8 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests, when the account does not give its per-minute limit |
 | `SOVEMU_SCREENSCRAPER_THREADS` | `0` | At most this many ScreenScraper requests at once (`0`: as many as the account allows) |
 | `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art and videos downloaded at once, in the background after a lookup (never more than the account allows) |
-| `SOVEMU_ARTWORK_MAX_PX` | `1000` | Box art is asked for at most this many pixels wide and high (`0`: full size) |
+| `SOVEMU_ARTWORK_MAX_PX` | `1000` | Box art is asked for, and kept, at most this many pixels wide and high (`0`: full size) |
+| `SOVEMU_ARTWORK_WEBP_QUALITY` | `80` | Quality (1-100) of the lossy WebP box art is kept in and artwork copies are made in |
 | `SOVEMU_METADATA_VIDEOS` | `true` | Download gameplay videos for games with none of their own |
 | `SOVEMU_SCREENSCRAPER_URL` | ScreenScraper's | API base URL (mirrors, tests) |
 | **Streaming** | | |

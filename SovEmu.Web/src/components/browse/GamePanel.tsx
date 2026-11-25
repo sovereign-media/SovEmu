@@ -27,7 +27,7 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
     const t = setTimeout(() => setVideo(true), 900);
     return () => clearTimeout(t);
   }, [game.id]);
-  const still = game.image ?? game.thumb;
+  const still = game.image ?? game.cover ?? game.thumb;
   return (
     <div
       className="relative grid aspect-video shrink-0 place-items-center overflow-hidden text-6xl font-black text-white/80"
@@ -54,8 +54,12 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
         />
       )}
       <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-surface/80 to-transparent" />
-      {game.image && game.thumb && (
-        <img src={game.thumb} alt="" className="absolute bottom-3 left-5 h-1/2 rounded-md object-contain shadow-2xl" />
+      {game.image && (game.cover ?? game.thumb) && (
+        <img
+          src={game.cover ?? game.thumb ?? undefined}
+          alt=""
+          className="absolute bottom-3 left-5 h-1/2 rounded-md object-contain shadow-2xl"
+        />
       )}
     </div>
   );

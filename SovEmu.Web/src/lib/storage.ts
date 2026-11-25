@@ -11,6 +11,7 @@ export const AREA_LABELS: Record<string, string> = {
   discs: "Disc playlists",
   mirror: "Library mirror",
   artwork: "Box art",
+  artwork_widths: "Artwork copies",
   metadata: "Other game information",
   decorations: "Your decorations",
   builtin_decorations: "Built-in decorations",

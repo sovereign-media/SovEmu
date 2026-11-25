@@ -31,7 +31,7 @@ function LeftOff({ game, color, short }: { game: RecentGame; color: string; shor
       </div>
     );
   }
-  const still = game.image ?? game.thumb;
+  const still = game.image ?? game.cover ?? game.thumb;
   return (
     <div
       className="relative grid aspect-video shrink-0 place-items-center overflow-hidden text-6xl font-black text-white/80"
