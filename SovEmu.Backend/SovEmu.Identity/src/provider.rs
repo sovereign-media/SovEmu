@@ -49,18 +49,35 @@ use crate::accounts::Credentials;
 use crate::store::SqliteStorage;
 use crate::{ClientIp, Identity, sessions};
 
-/// The web client: the code flow with PKCE, refresh tokens. Never a password.
-pub const WEB_CLIENT: &str = "sovemu-web";
-/// The Android and iOS apps: the device grant, refresh tokens, and the password fallback.
-pub const NATIVE_CLIENT: &str = "sovemu-native";
+/// The web client's id on an install from before ids were per install: such an install keeps
+/// it, so its browsers stay signed in.
+pub const LEGACY_WEB_CLIENT: &str = "sovemu-web";
+/// The apps' id from before, kept the same way as the device client's.
+pub const LEGACY_DEVICE_CLIENT: &str = "sovemu-native";
+
+/// The clients' registered names, by kind. A registration with one of these names (or one an
+/// older server gave the same kind) that is not this server's id of that kind is a replaced one,
+/// removed with its sign-ins on start.
+const WEB_NAME: &str = "SovEmu (web)";
+const DEVICE_NAME: &str = "SovEmu (devices)";
+const MOBILE_NAME: &str = "SovEmu (phones and tablets)";
+/// What the apps' client was called when one client served them all.
+const LEGACY_DEVICE_NAME: &str = "SovEmu (Android, iOS)";
+const OUR_NAMES: [&str; 4] = [WEB_NAME, DEVICE_NAME, MOBILE_NAME, LEGACY_DEVICE_NAME];
+
+/// Where the mobile client's sign-in comes back to: the Android and iOS apps' private-use scheme
+/// (RFC 8252 section 7.1), named for their application id and bundle id, `media.sovereign.sovemu`.
+/// Any app can claim a scheme, so PKCE is what makes a code read off it useless to another.
+pub(crate) const MOBILE_REDIRECT: &str = "media.sovereign.sovemu:/oauth2redirect";
 
 /// Where the web client receives its code: a page on this server.
 const CALLBACK_PATH: &str = "/auth/callback/";
 /// The web client's sign-in page, which posts to `/oauth/signin`.
 const LOGIN_PAGE: &str = "/login/";
-/// The redirect URI the password fallback's internal code exchange uses. It is never followed
-/// (nothing redirects there): oauth-as needs a registered one for the exchange to be exact.
-const NATIVE_REDIRECT: &str = "media.sovereign.sovemu:/oauth/password";
+/// The redirect URI the password fallback's internal code exchange uses, the device client's
+/// only one. It is never followed (nothing redirects there): oauth-as needs a registered one for
+/// the exchange to be exact.
+const PASSWORD_REDIRECT: &str = "media.sovereign.sovemu:/oauth/password";
 
 const SCOPES: [&str; 3] = ["openid", "profile", "offline_access"];
 
@@ -89,6 +106,7 @@ type CsrfTokens = Arc<Mutex<HashMap<String, String>>>;
 
 pub(crate) struct Provider {
     pub(crate) issuers: Vec<Issuer>,
+    clients: crate::ClientIds,
     nonces: Mutex<HashMap<String, (String, Instant)>>,
 }
 
@@ -128,6 +146,7 @@ fn scopes() -> ScopeSet {
 impl Provider {
     pub(crate) async fn new(
         urls: &[String],
+        clients: &crate::ClientIds,
         store: SqliteStorage,
         lifetimes: Lifetimes,
     ) -> crate::Result<Self> {
@@ -190,46 +209,88 @@ impl Provider {
                 })?;
             issuers.push(Issuer { url, authority, server, service });
         }
-        let provider = Self { issuers, nonces: Mutex::default() };
+        let provider = Self { issuers, clients: clients.clone(), nonces: Mutex::default() };
         provider.register_clients().await?;
+        provider.remove_replaced_clients(lifetimes).await?;
         Ok(provider)
     }
 
-    /// The two built-in clients, written on every start so a change reaches existing installs.
+    /// The three clients, written on every start so a change reaches existing installs. All are
+    /// public: a browser, a TV and a phone keep no secret.
     async fn register_clients(&self) -> crate::Result<()> {
         let server = &self.issuers[0].server;
+        let ids = &self.clients;
         let callbacks = self.issuers.iter().map(|i| format!("{}{CALLBACK_PATH}", i.url)).collect();
+        let client = |id: &str, grant_types, redirect_uris, name: &str| Client {
+            client_id: ClientId::new(id),
+            auth: ClientAuth::Public,
+            grant_types,
+            redirect_uris,
+            allowed_scopes: scopes(),
+            default_scopes: scopes(),
+            name: Some(name.into()),
+            registration: None,
+        };
         for client in [
-            Client {
-                client_id: ClientId::new(WEB_CLIENT),
-                auth: ClientAuth::Public,
-                // No password grant: the browser's password goes only to the sign-in form.
-                grant_types: vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
-                redirect_uris: callbacks,
-                allowed_scopes: scopes(),
-                default_scopes: scopes(),
-                name: Some("SovEmu (web)".into()),
-                registration: None,
-            },
-            Client {
-                client_id: ClientId::new(NATIVE_CLIENT),
-                auth: ClientAuth::Public,
-                grant_types: vec![
-                    GrantType::DeviceCode,
-                    GrantType::RefreshToken,
-                    GrantType::AuthorizationCode,
-                ],
-                redirect_uris: vec![NATIVE_REDIRECT.into()],
-                allowed_scopes: scopes(),
-                default_scopes: scopes(),
-                name: Some("SovEmu (Android, iOS)".into()),
-                registration: None,
-            },
+            // No password grant: the browser's password goes only to the sign-in form.
+            client(
+                &ids.web,
+                vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
+                callbacks,
+                WEB_NAME,
+            ),
+            // The device grant, and the code flow only for the password fallback's own
+            // exchange (to a redirect URI nothing is ever sent to).
+            client(
+                &ids.device,
+                vec![GrantType::DeviceCode, GrantType::RefreshToken, GrantType::AuthorizationCode],
+                vec![PASSWORD_REDIRECT.into()],
+                DEVICE_NAME,
+            ),
+            // No password and no device grant: a phone signing in through the browser hands
+            // the server's own sign-in page the password, never the app.
+            client(
+                &ids.mobile,
+                vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
+                vec![MOBILE_REDIRECT.into()],
+                MOBILE_NAME,
+            ),
         ] {
             server
                 .register_client(client)
                 .await
                 .map_err(|e| crate::Error::internal(format!("registering a client: {e:?}")))?;
+        }
+        Ok(())
+    }
+
+    /// Removes every registration of SovEmu's own that is none of this server's three ids (an
+    /// id replaced in `server.json`), with every sign-in under it: they would otherwise keep
+    /// signing in as a client that no longer exists. oauth-as's own deletion, so its tokens go
+    /// with it and a barrier refuses any still in flight.
+    async fn remove_replaced_clients(&self, lifetimes: Lifetimes) -> crate::Result<()> {
+        let store = self.issuers[0].server.store();
+        let ids = &self.clients;
+        let current = [ids.web.as_str(), ids.device.as_str(), ids.mobile.as_str()];
+        let now = std::time::SystemTime::now();
+        let longest = lifetimes
+            .sign_in
+            .unwrap_or(Duration::from_secs(100 * 365 * 86_400))
+            .max(lifetimes.access);
+        let window = oauth_as::store::RevocationWindow { recorded_at: now, until: now + longest };
+        for client in store.clients().await.map_err(crate::Error::internal)? {
+            let ours = client.name.as_deref().is_some_and(|n| OUR_NAMES.contains(&n));
+            if !ours || current.contains(&client.client_id.as_str()) {
+                continue;
+            }
+            oauth_as::store::Storage::delete_client(store, &client.client_id, window)
+                .await
+                .map_err(crate::Error::internal)?;
+            tracing::warn!(
+                client = %client.client_id.as_str(),
+                name = client.name.as_deref().unwrap_or_default(),
+                "removed a replaced client and its sign-ins"
+            );
         }
         Ok(())
     }
@@ -583,11 +644,11 @@ async fn password(
             "signing in with a password is turned off here: sign in with a code instead",
         );
     }
-    if form.client_id.as_deref() != Some(NATIVE_CLIENT) {
+    if form.client_id.as_deref() != Some(inner.config.clients.device.as_str()) {
         return oauth_error(
             StatusCode::UNAUTHORIZED,
             "invalid_client",
-            "only the SovEmu apps sign in with a password",
+            "only the SovEmu apps sign in with a password, as the device client",
         );
     }
     let Some(issuer) = inner.provider.issuer(&headers) else { return wrong_address() };
@@ -643,8 +704,9 @@ async fn exchange_for(
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let mut request = AuthorizationRequest::default();
     request.response_type = Some("code".into());
-    request.client_id = Some(NATIVE_CLIENT.into());
-    request.redirect_uri = Some(NATIVE_REDIRECT.into());
+    let device = identity.inner.config.clients.device.clone();
+    request.client_id = Some(device.clone().into());
+    request.redirect_uri = Some(PASSWORD_REDIRECT.into());
     request.scope = Some(scope.to_owned().into());
     request.code_challenge = Some(challenge.into());
     request.code_challenge_method = Some("S256".into());
@@ -664,10 +726,10 @@ async fn exchange_for(
         .code;
     let tokens = server
         .token(TokenRequest::AuthorizationCode {
-            client_id: ClientId::new(NATIVE_CLIENT),
+            client_id: ClientId::new(device),
             client_secret: None,
             code,
-            redirect_uri: Some(NATIVE_REDIRECT.into()),
+            redirect_uri: Some(PASSWORD_REDIRECT.into()),
             code_verifier: Some(verifier),
         })
         .await

@@ -44,6 +44,9 @@ fn binaries() -> &'static (PathBuf, PathBuf) {
     })
 }
 
+/// What every harness's `server.json` starts with: its OAuth clients' ids.
+const TEST_CLIENT_IDS: &str = r#"{"webClientId":"sovemu-web","deviceClientId":"sovemu-native","mobileClientId":"sovemu-mobile"}"#;
+
 struct Harness {
     state: AppState,
     dir: PathBuf,
@@ -51,6 +54,8 @@ struct Harness {
     cookie: Option<String>,
     /// The access token API calls carry, from `login`.
     token: Option<String>,
+    /// What the server was started with, to start it again on the same data (`restart`).
+    args: Vec<String>,
 }
 
 impl Harness {
@@ -75,6 +80,9 @@ impl Harness {
         }
         let cores = dir.join("cores");
         std::fs::create_dir_all(&cores).unwrap();
+        // The install's client ids, named so the OAuth tests can say them (a real install's
+        // are random: `a_new_install_gets_client_ids_of_its_own`).
+        std::fs::write(dir.join("server.json"), TEST_CLIENT_IDS).unwrap();
         let mut args: Vec<String> = vec![
             "sovemu-server".into(),
             "--data-dir".into(),
@@ -102,10 +110,16 @@ impl Harness {
         // wants decorations gives its own set.
         args.extend(["--artwork-builtin".into(), dir.join("no-builtin").display().to_string()]);
         args.extend(extra);
-        let state = build_state(Config::parse_from(args)).await.unwrap();
+        let state = build_state(Config::parse_from(args.clone())).await.unwrap();
         crate::library::scan(&state.db, &state.config.roms_dir).await.unwrap();
         state.game_counts.refresh(&state.db).await.unwrap();
-        Self { state, dir, cookie: None, token: None }
+        Self { state, dir, cookie: None, token: None, args }
+    }
+
+    /// The same install started again, its data kept, with `server.json` now naming `ids`.
+    async fn restart_with_ids(&mut self, ids: &str) {
+        std::fs::write(self.dir.join("server.json"), ids).unwrap();
+        self.state = build_state(Config::parse_from(self.args.clone())).await.unwrap();
     }
 
     async fn call(&mut self, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -3458,8 +3472,9 @@ async fn a_tv_signs_in_with_a_code_approved_in_a_browser() {
 #[tokio::test]
 async fn apps_learn_where_to_sign_in_from_the_api() {
     let mut h = Harness::new("bootstrap", false).await;
-    let query = "{ bootstrapConfig { signInAvailable address issuer nativeClientId tokenEndpoint \
-                 revocationEndpoint deviceAuthorizationEndpoint verificationUri passwordEndpoint } }";
+    let query = "{ bootstrapConfig { signInAvailable address issuer webClientId deviceClientId \
+                 mobileClientId mobileRedirectUri nativeClientId tokenEndpoint revocationEndpoint \
+                 deviceAuthorizationEndpoint verificationUri passwordEndpoint } }";
     let body = json!({"query": query});
     let ask = |h: &Harness, host: &'static str| {
         let state = h.state.clone();
@@ -3484,6 +3499,11 @@ async fn apps_learn_where_to_sign_in_from_the_api() {
             "signInAvailable": true,
             "address": "sovemu.test",
             "issuer": "http://sovemu.test",
+            "webClientId": "sovemu-web",
+            "deviceClientId": "sovemu-native",
+            "mobileClientId": "sovemu-mobile",
+            "mobileRedirectUri": "media.sovereign.sovemu:/oauth2redirect",
+            // The device client's id by its old name, for apps from before.
             "nativeClientId": "sovemu-native",
             "tokenEndpoint": "http://sovemu.test/oauth/token",
             "revocationEndpoint": "http://sovemu.test/oauth/revoke",
@@ -3892,4 +3912,136 @@ async fn admins_make_download_and_delete_backups_and_only_admins_get_them() {
     h.ok(delete, json!({"n": name})).await;
     assert_eq!(h.ok(list, json!({})).await["backups"]["files"], json!([]));
     assert_eq!(h.err(delete, json!({"n": name})).await.0, "NOT_FOUND");
+}
+
+const MOBILE_REDIRECT: &str = "media.sovereign.sovemu:/oauth2redirect";
+
+#[tokio::test]
+async fn phones_sign_in_through_the_browser_as_the_mobile_client() {
+    let mut h = Harness::new("oidc-mobile", false).await;
+    h.sign_up_admin().await;
+    h.sign_out();
+    let mobile = [("client_id", "sovemu-mobile"), ("redirect_uri", MOBILE_REDIRECT)];
+
+    // The system browser, signed out: to the sign-in page, then back to the request.
+    let (_, headers, _) = h.browse("GET", &authorize_url(&mobile), None).await;
+    let (path, params) = location(&headers);
+    assert_eq!(path, "/login/");
+    let next = params["continue"].clone();
+    let form = [("username", "admin"), ("password", "password123"), ("continue", next.as_str())];
+    let (status, _, _) = h.browse("POST", "/oauth/signin", Some(&form)).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+
+    // The code comes back to the apps' own scheme, and only the app holding the verifier can
+    // redeem it.
+    let (_, headers, _) = h.browse("GET", &next, None).await;
+    let (to, params) = location(&headers);
+    assert_eq!(to, MOBILE_REDIRECT);
+    let code = params["code"].clone();
+    let redeem = |verifier| {
+        [
+            ("grant_type", "authorization_code"),
+            ("client_id", "sovemu-mobile"),
+            ("code", code.as_str()),
+            ("redirect_uri", MOBILE_REDIRECT),
+            ("code_verifier", verifier),
+        ]
+    };
+    let (status, body) = h.token(&redeem(VERIFIER)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(jwt_claims(body["id_token"].as_str().unwrap())["aud"], "sovemu-mobile");
+    assert!(body["refresh_token"].is_string(), "it stays signed in");
+    h.token = Some(body["access_token"].as_str().unwrap().to_owned());
+    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"]["username"], "admin");
+
+    // Its code goes nowhere but the apps' scheme.
+    let (status, headers, _) = h
+        .browse(
+            "GET",
+            &authorize_url(&[("client_id", "sovemu-mobile"), ("redirect_uri", CALLBACK)]),
+            None,
+        )
+        .await;
+    assert!(
+        status != StatusCode::SEE_OTHER || location(&headers).0 != CALLBACK,
+        "a mobile code must not go to the web callback"
+    );
+}
+
+#[tokio::test]
+async fn each_client_signs_in_only_its_own_way() {
+    let h = Harness::new("client-grants", false).await;
+    let device = |client| [("client_id", client), ("scope", "openid profile offline_access")];
+    // Only the device client asks for a code to show.
+    let (status, body, _) = h.form("/oauth/device_authorization", &device("sovemu-native")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for client in ["sovemu-web", "sovemu-mobile"] {
+        let (status, body, _) = h.form("/oauth/device_authorization", &device(client)).await;
+        assert_ne!(status, StatusCode::OK, "{client}: {body}");
+    }
+    // Only the device client signs in with a password: a phone's goes to the server's own
+    // sign-in page in the browser.
+    for client in ["sovemu-web", "sovemu-mobile"] {
+        let (status, body, _) = h
+            .form("/oauth/password", &[("client_id", client), ("username", "a"), ("password", "b")])
+            .await;
+        assert_eq!(
+            (status, body["error"].as_str()),
+            (StatusCode::UNAUTHORIZED, Some("invalid_client"))
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_replaced_client_is_removed_with_its_sign_ins() {
+    let mut h = Harness::new("replaced-client", false).await;
+    h.sign_up_admin().await;
+    assert!(h.ok(VIEWER, json!({})).await["viewer"]["user"].is_object());
+
+    // `server.json` names another device client: the old one is gone, with its sign-ins.
+    h.restart_with_ids(
+        r#"{"webClientId":"sovemu-web","deviceClientId":"a-new-device-id","mobileClientId":"sovemu-mobile"}"#,
+    )
+    .await;
+    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"], Value::Null, "signed out");
+    assert_eq!(h.login("admin", "password123").await, Err("invalid_client".to_owned()));
+    let (status, body, _) = h
+        .form(
+            "/oauth/password",
+            &[("client_id", "a-new-device-id"), ("username", "admin"), ("password", "password123")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "the new one signs in: {body}");
+    // The others were not touched.
+    let (status, _, _) =
+        h.form("/oauth/device_authorization", &[("client_id", "sovemu-native")]).await;
+    assert_ne!(status, StatusCode::OK);
+    // The web client still answers: the browser signed in at setup gets its code at once.
+    let (_, headers, _) = h.browse("GET", &authorize_url(&[]), None).await;
+    let (to, params) = location(&headers);
+    assert!(to == CALLBACK && params.contains_key("code"), "{to} {params:?}");
+}
+
+#[test]
+fn a_new_install_gets_client_ids_of_its_own_and_an_upgrade_keeps_its_own() {
+    let root = std::env::temp_dir().join(format!("sovemu-client-ids-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (fresh, upgrade) = (root.join("fresh"), root.join("upgrade"));
+    std::fs::create_dir_all(&fresh).unwrap();
+    std::fs::create_dir_all(&upgrade).unwrap();
+
+    let new = crate::client_ids(&fresh).unwrap();
+    for id in [&new.web, &new.device, &new.mobile] {
+        assert_eq!(id.len(), 32, "{id}");
+    }
+    assert!(new.web != new.device && new.device != new.mobile && new.web != new.mobile);
+    assert_eq!(crate::client_ids(&fresh).unwrap(), new, "kept");
+
+    // An install that ran before (its `server.json` there, with only its keys) keeps the ids its
+    // browsers and apps signed in with; the phones' client is new either way.
+    std::fs::write(upgrade.join("server.json"), r#"{"assetSigningKey":"k"}"#).unwrap();
+    let kept = crate::client_ids(&upgrade).unwrap();
+    assert_eq!((kept.web.as_str(), kept.device.as_str()), ("sovemu-web", "sovemu-native"));
+    assert_eq!(kept.mobile.len(), 32);
+    std::fs::remove_dir_all(&root).ok();
 }

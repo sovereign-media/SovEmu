@@ -55,10 +55,15 @@ OpenID Connect discovery instead.
 
 ## Clients
 
+Three public clients, as Sovereign's. Their ids are per install (`ClientIds`, which the server
+keeps in `server.json`; an install from before keeps `sovemu-web` and `sovemu-native`), and any
+other registration of SovEmu's own name is a replaced one, removed with its sign-ins on start.
+
 | Client | Grants | Used by |
 |---|---|---|
-| `sovemu-web` | authorization code (PKCE), refresh | The web client. Never a password: the browser's password goes only to the sign-in form |
-| `sovemu-native` | device code, refresh; the password fallback | Android and iOS |
+| web | authorization code (PKCE), refresh | The web client. Never a password: the browser's password goes only to the sign-in form |
+| device | device code, refresh; the password fallback | TVs, and any app signing in with a code or a password |
+| mobile | authorization code (PKCE) to `media.sovereign.sovemu:/oauth2redirect`, refresh | The phone and tablet apps, through the system browser |
 
 ```bash
 cargo test -p sovemu-identity

@@ -237,8 +237,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Graceful shutdown on SIGTERM (Kubernetes, `docker stop`): every session saves first
 - [x] Sign-in: `SovEmu.Identity`, the `oauth-as` OAuth 2.1 server stored in SQLite (conformance
       harness passed) with OpenID Connect over it (discovery, JWKS, ES256 ID tokens, userinfo,
-      end session). `sovemu-web`: code flow with PKCE, no password grant. `sovemu-native`: the
-      device grant, or the password fallback (`SovEmu__Authentication__PasswordSignIn`). Bearer tokens for the
+      end session). Three clients with per-install ids, as Sovereign's: web (code flow with
+      PKCE, no password grant), device (the device grant, or the password fallback,
+      `SovEmu__Authentication__PasswordSignIn`) and mobile (the system browser's code flow). Bearer tokens for the
       API; roles `viewer` and `admin`
 - [ ] The apps show a sign-in code (the device grant; the server side is done)
 - [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts

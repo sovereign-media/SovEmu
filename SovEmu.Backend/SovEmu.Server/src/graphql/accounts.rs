@@ -79,11 +79,17 @@ fn unix(t: std::time::SystemTime) -> f64 {
 }
 
 impl SignInNode {
-    fn new(s: sovemu_identity::SignIn, username: Option<String>) -> Self {
-        let client = match s.client_id.as_str() {
-            sovemu_identity::WEB_CLIENT => SignInClient::Web,
-            sovemu_identity::NATIVE_CLIENT => SignInClient::App,
-            _ => SignInClient::Other,
+    fn new(
+        s: sovemu_identity::SignIn,
+        username: Option<String>,
+        kind: Option<sovemu_identity::ClientKind>,
+    ) -> Self {
+        let client = match kind {
+            Some(sovemu_identity::ClientKind::Web) => SignInClient::Web,
+            Some(sovemu_identity::ClientKind::Device | sovemu_identity::ClientKind::Mobile) => {
+                SignInClient::App
+            }
+            None => SignInClient::Other,
         };
         Self {
             id: ID(s.id),
@@ -134,7 +140,17 @@ pub(super) struct BootstrapConfig {
     pub(super) issuer: Option<String>,
     /// The web client's id: the authorization code flow with PKCE.
     pub(super) web_client_id: Option<String>,
-    /// The apps' id: the device grant, and the password fallback.
+    /// The devices' id: the device grant (a code shown on the screen and approved at
+    /// `verificationUri`), and the password fallback. A TV signs in as it, and so does an app
+    /// signing in with a code or a password.
+    pub(super) device_client_id: Option<String>,
+    /// The phone and tablet apps' id for signing in through the system browser: the
+    /// authorization code flow with PKCE, back to `mobileRedirectUri`.
+    pub(super) mobile_client_id: Option<String>,
+    /// Where the mobile client's sign-in comes back to, the apps' own scheme.
+    pub(super) mobile_redirect_uri: Option<String>,
+    /// The device client's id, by its old name.
+    #[graphql(deprecation = "Use deviceClientId.")]
     pub(super) native_client_id: Option<String>,
     pub(super) authorization_endpoint: Option<String>,
     pub(super) token_endpoint: Option<String>,
@@ -207,7 +223,10 @@ impl AccountsQuery {
             address,
             issuer: config.as_ref().map(|c| c.issuer.clone()),
             web_client_id: config.as_ref().map(|c| c.web_client_id.to_owned()),
-            native_client_id: config.as_ref().map(|c| c.native_client_id.to_owned()),
+            device_client_id: config.as_ref().map(|c| c.device_client_id.clone()),
+            mobile_client_id: config.as_ref().map(|c| c.mobile_client_id.clone()),
+            mobile_redirect_uri: config.as_ref().map(|c| c.mobile_redirect_uri.clone()),
+            native_client_id: config.as_ref().map(|c| c.device_client_id.clone()),
             authorization_endpoint: config.as_ref().map(|c| c.authorization_endpoint.clone()),
             token_endpoint: config.as_ref().map(|c| c.token_endpoint.clone()),
             revocation_endpoint: config.as_ref().map(|c| c.revocation_endpoint.clone()),
@@ -248,13 +267,17 @@ impl AccountsQuery {
     /// Admins: one account, with its sign-ins, what it has played and its saves.
     async fn user(&self, ctx: &Context<'_>, id: i64) -> Result<UserDetails> {
         admin(ctx).await?;
+        let identity = &state(ctx).identity;
         let d = crate::user_details::details(state(ctx), id).await.api()?;
         let name = d.user.username.clone();
         Ok(UserDetails {
             sign_ins: d
                 .sign_ins
                 .into_iter()
-                .map(|s| SignInNode::new(s, Some(name.clone())))
+                .map(|s| {
+                    let kind = identity.client_kind(&s.client_id);
+                    SignInNode::new(s, Some(name.clone()), kind)
+                })
                 .collect(),
             user: d.user.into(),
             joined_at: d.joined_at,
@@ -276,7 +299,8 @@ impl AccountsQuery {
             .into_iter()
             .map(|s| {
                 let name = s.user_id.and_then(|id| names.get(&id).cloned());
-                SignInNode::new(s, name)
+                let kind = state.identity.client_kind(&s.client_id);
+                SignInNode::new(s, name, kind)
             })
             .collect())
     }

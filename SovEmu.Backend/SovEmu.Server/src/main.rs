@@ -1177,6 +1177,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         &config.builtin_artwork(),
         &config.paths().artwork().systems(),
     ));
+    let clients = client_ids(&config.data_dir)?;
     let asset_key = sovemu_assets::load_key(config.asset_key.as_deref(), &config.data_dir)?;
     let assets = Arc::new(sovemu_assets::AssetSigner::new(asset_key, config.asset_url_hours));
     let token_secret = sovemu_assets::load_secret(
@@ -1189,6 +1190,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         db.clone(),
         sovemu_identity::Config {
             public_urls: config.public_urls(),
+            clients,
             token_secret,
             access_token_minutes: config.access_token_minutes,
             session_days: config.session_days,
@@ -1244,6 +1246,30 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
 
 /// Brings the accounts in line with the environment: the admin and every declared user exist
 /// with their declared passwords, and with `SovEmu__Users__Prune` nobody else does.
+/// The OAuth clients' ids, per install, kept in `server.json` (never a setting: the apps learn
+/// them from `bootstrapConfig`). An install that ran before they were kept (its `server.json`
+/// already there) keeps the two ids every install used then, so nobody is signed out; a new
+/// install, and every new kind of client, gets ids of its own.
+fn client_ids(data_dir: &std::path::Path) -> Result<sovemu_identity::ClientIds> {
+    let upgrade = sovemu_assets::server_file_exists(data_dir);
+    let legacy = |id| upgrade.then_some(id);
+    Ok(sovemu_identity::ClientIds {
+        web: sovemu_assets::load_id(
+            data_dir,
+            "webClientId",
+            "web client id",
+            legacy(sovemu_identity::LEGACY_WEB_CLIENT),
+        )?,
+        device: sovemu_assets::load_id(
+            data_dir,
+            "deviceClientId",
+            "device client id",
+            legacy(sovemu_identity::LEGACY_DEVICE_CLIENT),
+        )?,
+        mobile: sovemu_assets::load_id(data_dir, "mobileClientId", "mobile client id", None)?,
+    })
+}
+
 async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) -> Result<()> {
     if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
         identity.ensure_user(user, password, auth::Role::Admin).await?;
