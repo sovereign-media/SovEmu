@@ -266,28 +266,32 @@ and `none` turns frames off.
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
 publishers, genres, player counts, ratings and box art. The information is stored as each game
 is looked up. Box art follows in the background, only for games with no thumb of their own,
-`SOVEMU_ARTWORK_DOWNLOADS` at a time. Sources, in order:
+`SOVEMU_ARTWORK_DOWNLOADS` at a time. Sources, asked in the order `SOVEMU_METADATA_SOURCES`
+gives (`fbneo,screenscraper`):
 
 1. **FinalBurn Neo's game lists**, for arcade and Neo Geo sets. No account needed:
    `mslug` becomes *Metal Slug - Super Vehicle-001* (1996, Nazca).
-2. **The [LaunchBox Games Database](https://gamesdb.launchbox-app.com)**, by name and platform,
-   with community ratings. No account needed, on by default. LaunchBox publishes the whole
-   database as one file (`Metadata.zip`, about 110 MB). The server downloads it into
-   `data/metadata/launchbox/` on the first lookup, and looks for a newer one when a lookup
-   starts and the last check is a week old (`SOVEMU_LAUNCHBOX_REFRESH_HOURS`).
-3. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
-   ES-DE scrape from. It matches by MD5, size and file name. It needs developer credentials
-   (requested on its forum); a free user account raises the daily quota.
-4. **[TheGamesDB](https://thegamesdb.net)**, by name and platform. It needs an API key (requested
-   on its forum).
+2. **[ScreenScraper](https://www.screenscraper.fr)**, the database Recalbox, Batocera, RetroBat and
+   ES-DE scrape from. It matches each file by its MD5, size and name, so it also finds hacks,
+   translations and homebrew. It needs developer credentials, requested on its forum
+   (`SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD`); a free user account raises
+   the daily quota (`SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD`). Without
+   credentials it is not asked, and the Library page says so.
 
-ScreenScraper and TheGamesDB are only asked about games the sources before them left without a
-description, release date or box art, so their quotas go on what LaunchBox doesn't know (hacks,
-translations, homebrew). Add credentials in `.env` (`SOVEMU_SCREENSCRAPER_*`,
-`SOVEMU_THEGAMESDB_KEY`). A job stops
-using a service that rejects credentials or runs out of quota, and retries those games next time.
-Games no service found are asked again once a service they were not asked is configured, so
-adding credentials later fills in the library on the next scan, without fetching everything again.
+Each game is asked about until every field a game page shows is filled; an earlier source's
+field wins. ScreenScraper's own id for each game is kept, so looking a game up again asks for
+that game instead of hashing its file. The Library page shows a lookup as it runs: the game and
+the source being asked, each system's progress, an estimate of the time left, what each source
+found, ScreenScraper's quota for today (requests, and lookups that found nothing, which it caps
+on its own), and the last games looked up.
+
+A lookup stops using a service that rejects the credentials, runs out of quota or is closed, and
+the next one carries on with the games it did not reach. Games no service found are asked again
+once a service they were not asked is configured, so adding credentials later fills in the
+library on the next scan. A lookup can also refresh only some fields, ask only some sources, or
+take the games looked up more than so many days ago (`fetchMetadata`); with
+`SOVEMU_METADATA_REFRESH_DAYS` the lookup after each scan does that on its own. A refresh replaces
+only the fields it was asked for, and never clears one a source no longer knows.
 
 ## Supported systems
 
@@ -364,17 +368,15 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS`, `__NAME` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
 | `SOVEMU_METADATA_AUTO` | `true` | Look up new games after every scan |
-| `SOVEMU_LAUNCHBOX` | `true` | Use the LaunchBox Games Database dump |
-| `SOVEMU_LAUNCHBOX_REFRESH_HOURS` | `168` | Look for a newer dump when the last check is this old (`0`: never) |
-| `SOVEMU_LAUNCHBOX_URL`, `SOVEMU_LAUNCHBOX_IMAGES_URL` | LaunchBox's | The dump and the image server for its box art |
+| `SOVEMU_METADATA_SOURCES` | `fbneo,screenscraper` | Game-information sources, in the order they are asked |
+| `SOVEMU_METADATA_REFRESH_DAYS` | `0` | Look games up again once their information is this many days old (`0`: never) |
 | `SOVEMU_SCREENSCRAPER_DEVID`, `SOVEMU_SCREENSCRAPER_DEVPASSWORD` | unset | ScreenScraper developer credentials |
 | `SOVEMU_SCREENSCRAPER_USER`, `SOVEMU_SCREENSCRAPER_PASSWORD` | unset | ScreenScraper account (raises the quota) |
-| `SOVEMU_THEGAMESDB_KEY` | unset | TheGamesDB API key |
 | `SOVEMU_METADATA_REGIONS` | `us,wor,eu,ss,uk,jp` | Region preference for titles, dates and box art |
 | `SOVEMU_METADATA_LANGUAGES` | `en,wor` | Language preference for descriptions |
 | `SOVEMU_SCREENSCRAPER_DELAY_MS` | `1200` | Pause between ScreenScraper requests |
 | `SOVEMU_ARTWORK_DOWNLOADS` | `4` | Box art downloaded at once, in the background after a lookup |
-| `SOVEMU_SCREENSCRAPER_URL`, `SOVEMU_THEGAMESDB_URL` | the services | API base URLs (mirrors, tests) |
+| `SOVEMU_SCREENSCRAPER_URL` | ScreenScraper's | API base URL (mirrors, tests) |
 | **Streaming** | | |
 | `SOVEMU_HTTP` | `0.0.0.0:8080` | Web client and API address |
 | `SOVEMU_UDP_PORTS` | `50000-50009` | One UDP port per concurrent session; publish the range |

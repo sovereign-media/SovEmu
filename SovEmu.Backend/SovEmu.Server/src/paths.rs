@@ -19,7 +19,6 @@
 //!   backgrounds/          backgrounds of your own (WebP, PNG or JPEG), by file name
 //!   systems/              system photos of your own, `<system id>.webp`
 //!   metadata/             game information:
-//!   metadata/launchbox/   LaunchBox's database dump
 //!   metadata/fbneo/       FBNeo's DATs, by commit
 //!   metadata/media/       downloaded box art
 //! ```
@@ -119,8 +118,9 @@ impl DataPaths {
         self.root.join("metadata")
     }
 
-    /// LaunchBox's database dump.
-    pub fn launchbox(&self) -> PathBuf {
+    /// Where LaunchBox's database dump was kept before LaunchBox stopped being a source; deleted
+    /// at startup if it is still there.
+    pub fn removed_launchbox(&self) -> PathBuf {
         self.metadata().join("launchbox")
     }
 
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(p.database(), Path::new("/data/sovemu.db"));
         assert_eq!(p.saves(3, "snes"), Path::new("/data/saves/3/snes"));
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
-        assert_eq!(p.launchbox(), Path::new("/data/metadata/launchbox"));
+        assert_eq!(p.removed_launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
         assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
     }

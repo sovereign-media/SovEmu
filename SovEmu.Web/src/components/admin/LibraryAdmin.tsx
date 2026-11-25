@@ -2,10 +2,23 @@
 // rescans, and fetching game information from metadata services.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CloudDownload, FolderSync, HardDrive, Info, RefreshCw, ScanSearch, TriangleAlert } from "lucide-react";
+import {
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  CloudDownload,
+  FolderSync,
+  HardDrive,
+  ImageDown,
+  Info,
+  RefreshCw,
+  ScanSearch,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useState } from "react";
-import { api, type LibraryStatus, type MetadataStatus } from "../../lib/api";
+import { api, type LibraryStatus, type MetadataField, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
+import { currentText, progressText, quotaPercent, quotaText, recentText } from "../../lib/lookup";
 import { formatBytes } from "../../lib/numbers";
 import { Button } from "../ui/button";
 import { Confirm, Progress } from "../ui/primitives";
@@ -47,8 +60,8 @@ function Library() {
   });
   const scanning = scanning_.isPending;
   const scan = () => scanning_.mutate();
-  const fetchMetadata = async (force: boolean) => {
-    await api.fetchMetadata(undefined, force);
+  const fetchMetadata = async (force: boolean, fields: MetadataField[] = []) => {
+    await api.fetchMetadata(undefined, force, fields);
     setTimeout(refresh, 300);
   };
 
@@ -59,6 +72,7 @@ function Library() {
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
   const art = metadata.artwork;
   const artPct = art.total ? (100 * art.done) / art.total : 0;
+  const current = currentText(metadata);
   return (
     <>
       <AdminSection
@@ -114,6 +128,9 @@ function Library() {
             <Button onClick={() => fetchMetadata(false)} disabled={metadata.running}>
               <CloudDownload /> Fetch missing
             </Button>
+            <Button variant="outline" onClick={() => fetchMetadata(true, ["BOX_ART"])} disabled={metadata.running}>
+              <ImageDown /> Refresh box art
+            </Button>
             <Button variant="outline" onClick={() => setConfirm(true)} disabled={metadata.running}>
               <RefreshCw /> Refresh all
             </Button>
@@ -122,21 +139,80 @@ function Library() {
       >
         <p className="mt-3 text-sm text-slate-400">
           Titles, descriptions, release dates, developers, genres, ratings and box art. Arcade and Neo Geo names come
-          from FinalBurn Neo's own lists, and most games from the LaunchBox Games Database, which needs no account (its
-          dump is downloaded by the server). ScreenScraper and TheGamesDB fill the gaps and need credentials, set on the
-          server (<code>SOVEMU_SCREENSCRAPER_*</code>, <code>SOVEMU_THEGAMESDB_KEY</code>).
+          from FinalBurn Neo's own lists; every other game is matched by its file's hash on ScreenScraper, which needs
+          developer credentials set on the server (<code>SOVEMU_SCREENSCRAPER_*</code>).
         </p>
         <p className="mt-3 text-sm">
-          Sources: <span className="font-semibold">{metadata.sources.join(", ")}</span>
+          Sources:{" "}
+          <span className="font-semibold">
+            {metadata.providers.length ? metadata.providers.map((p) => p.name).join(", ") : metadata.sources.join(", ")}
+          </span>
         </p>
         <Progress className="mt-4" value={metaPct} color="#10b981" label="Game information" />
-        <p className="mt-2 text-sm text-slate-300">
-          {metadata.running
-            ? `Looking up ${metadata.done.toLocaleString()} of ${metadata.total.toLocaleString()} games…`
-            : metadata.done
-              ? `Last run: ${metadata.found} found, ${metadata.notFound} not found, ${metadata.failed} to retry.`
-              : ""}
-        </p>
+        <p className="mt-2 text-sm text-slate-300">{progressText(metadata)}</p>
+        {current && <p className="mt-1 text-sm text-slate-400">Now: {current}</p>}
+
+        {metadata.systems.length > 1 && (
+          <div className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {metadata.systems.map((sys) => (
+              <div key={sys.system} className="text-sm">
+                <div className="flex justify-between text-slate-400">
+                  <span>{sys.system}</span>
+                  <span>
+                    {sys.done.toLocaleString()} / {sys.total.toLocaleString()}
+                  </span>
+                </div>
+                <Progress
+                  className="mt-1"
+                  value={sys.total ? (100 * sys.done) / sys.total : 0}
+                  color="#10b981"
+                  label={`${sys.system} game information`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {metadata.providers.length > 0 && (
+          <table className="mt-4 w-full text-left text-sm">
+            <thead className="text-slate-400">
+              <tr>
+                <th className="py-1 font-normal">Source</th>
+                <th className="py-1 font-normal">Asked</th>
+                <th className="py-1 font-normal">Found</th>
+                <th className="py-1 font-normal">Not found</th>
+                <th className="py-1 font-normal">Errors</th>
+                <th className="py-1 font-normal">Quota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metadata.providers.map((p) => {
+                const pct = quotaPercent(p);
+                return (
+                  <tr key={p.id} className="border-t border-white/5">
+                    <td className="py-1">{p.name}</td>
+                    <td className="py-1">{p.asked.toLocaleString()}</td>
+                    <td className="py-1">{p.found.toLocaleString()}</td>
+                    <td className="py-1">{p.notFound.toLocaleString()}</td>
+                    <td className="py-1">{p.errors.toLocaleString()}</td>
+                    <td className="py-1">
+                      {quotaText(p)}
+                      {pct !== null && (
+                        <Progress
+                          className="mt-1 max-w-48"
+                          value={pct}
+                          color={pct > 90 ? "#f59e0b" : "#0ea5e9"}
+                          label={`${p.name} quota`}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+
         {art.total > 0 && (
           <>
             <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Box art" />
@@ -156,13 +232,36 @@ function Library() {
             ))}
           </ul>
         )}
+
+        {metadata.recent.length > 0 && (
+          <>
+            <h3 className="mt-4 text-sm font-semibold">Just looked up</h3>
+            <ul className="mt-1 grid gap-1 text-sm" aria-label="Games just looked up">
+              {metadata.recent.map((r) => (
+                <li key={`${r.gameId}-${r.outcome}`} className="flex items-start gap-2">
+                  {r.outcome === "FOUND" ? (
+                    <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                  ) : r.outcome === "NOT_FOUND" ? (
+                    <CircleDashed className="mt-0.5 size-4 shrink-0 text-slate-400" />
+                  ) : (
+                    <CircleX className="mt-0.5 size-4 shrink-0 text-amber-300" />
+                  )}
+                  <span>
+                    {r.title} <span className="text-slate-400">({r.system})</span>{" "}
+                    <span className="text-slate-400">· {recentText(metadata, r)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </AdminSection>
 
       <Confirm
         open={confirm}
         onOpenChange={setConfirm}
         title="Look every game up again?"
-        description="This uses your metadata services' daily quota."
+        description="Every game is asked about again, which uses ScreenScraper's daily quota. Nothing a game has is cleared when a source no longer knows it."
         action="Refresh all"
         onAction={() => fetchMetadata(true)}
       />

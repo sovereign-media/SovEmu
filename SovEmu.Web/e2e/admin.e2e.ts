@@ -325,6 +325,18 @@ test("the Jobs page runs a job and shows how it went", async ({ page }) => {
   await expect(upkeep).toContainText("expired sign-ins deleted");
 });
 
+test("the Library page looks games up and shows each one's result", async ({ page }) => {
+  await page.goto("/admin/");
+  const section = page.getByRole("region", { name: "Game information" });
+  // The e2e server has no ScreenScraper credentials: FinalBurn Neo alone, and a note saying why.
+  await expect(section).toContainText("no developer credentials");
+  await section.getByRole("button", { name: "Fetch missing" }).click();
+  await expect(section).toContainText(/Last run: \d+ found, \d+ not found/);
+  await expect(section.getByRole("row", { name: /FinalBurn Neo/ })).toBeVisible();
+  await expect(section.getByRole("list", { name: "Games just looked up" })).toContainText("not found");
+  await page.screenshot({ path: "test-results/library-game-information.png", fullPage: true });
+});
+
 test("the Resources page shows the host, its use and its history", async ({ page }) => {
   await page.goto("/admin/resources/");
   await expect(page.getByRole("heading", { name: "Host" })).toBeVisible();

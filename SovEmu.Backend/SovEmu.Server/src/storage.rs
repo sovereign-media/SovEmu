@@ -65,7 +65,6 @@ fn areas(state: &AppState) -> Vec<(&'static str, PathBuf)> {
         ("discs", paths.disc_playlists()),
         ("mirror", paths.mirror()),
         ("artwork", paths.artwork()),
-        ("launchbox", paths.launchbox()),
         ("metadata", paths.metadata()),
         ("decorations", paths.decorations()),
         ("builtin_decorations", config.builtin_decorations()),
@@ -266,7 +265,6 @@ mod tests {
         ];
         let of = |p: &str| area_of(Path::new(p), &areas);
         assert_eq!(of("/data/metadata/media/nes/x.png"), Some("artwork"));
-        assert_eq!(of("/data/metadata/launchbox/Metadata.xml"), Some("metadata"));
         assert_eq!(of("/data/sovemu.db-wal"), Some("database"));
         assert_eq!(of("/data/sovemu.db"), Some("database"));
         assert_eq!(of("/data/saves/3/snes/game.srm"), Some("saves"));

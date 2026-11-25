@@ -55,19 +55,24 @@ fn update(meta: &Metadata, f: impl FnOnce(&mut ArtworkStatus)) {
     f(&mut meta.artwork.lock().unwrap_or_else(|e| e.into_inner()));
 }
 
-/// The box art waiting to be downloaded. ScreenScraper's needs its credentials, so it waits
-/// while ScreenScraper is not configured.
+/// The box art waiting to be downloaded. A provider's may need its credentials to download
+/// ([`Provider::box_art_url`](sovemu_library::info::Provider::box_art_url)), so it waits while
+/// the provider that found it is not configured.
 async fn wanted(state: &AppState) -> Vec<Wanted> {
     sqlx::query_as::<_, Wanted>(
         "SELECT m.game_id, m.box_art_url, m.box_art_source FROM game_metadata m
          JOIN games g ON g.id = m.game_id
          WHERE m.box_art_url IS NOT NULL AND m.box_art IS NULL AND m.box_art_attempts < ?1
            AND (',' || g.media || ',') NOT LIKE '%,thumb,%'
-           AND (?2 OR COALESCE(m.box_art_source, '') != 'screenscraper')
+           AND (m.box_art_source IS NULL
+                OR m.box_art_source IN (SELECT value FROM json_each(?2)))
          ORDER BY g.system, g.title",
     )
     .bind(MAX_ATTEMPTS)
-    .bind(state.metadata.screenscraper.is_some())
+    .bind(
+        serde_json::to_string(&state.metadata.providers.iter().map(|p| p.id()).collect::<Vec<_>>())
+            .unwrap_or_else(|_| "[]".into()),
+    )
     .fetch_all(&state.db)
     .await
     .unwrap_or_default()
@@ -111,9 +116,9 @@ pub(crate) async fn run_claimed(state: AppState) {
 /// Downloads one game's box art and records the file, or the failed attempt.
 async fn fetch(state: &AppState, item: &Wanted) -> bool {
     let meta = &state.metadata;
-    let url = match (item.box_art_source.as_deref(), &meta.screenscraper) {
-        (Some("screenscraper"), Some(ss)) => ss.authorize(&item.box_art_url),
-        _ => item.box_art_url.clone(),
+    let url = match item.box_art_source.as_deref().and_then(|id| meta.provider(id)) {
+        Some(provider) => provider.box_art_url(&item.box_art_url),
+        None => item.box_art_url.clone(),
     };
     let file = super::download_box_art(meta, item.game_id, &url).await;
     let result = match &file {

@@ -120,6 +120,43 @@ export const MetadataFields = graphql(`
       downloaded
       failed
     }
+    current {
+      gameId
+      title
+      system
+      provider
+      step
+    }
+    startedAt
+    finishedAt
+    etaSeconds
+    systems {
+      system
+      total
+      done
+    }
+    providers {
+      id
+      name
+      asked
+      found
+      notFound
+      errors
+      quota {
+        requestsToday
+        maxRequestsPerDay
+        missesToday
+        maxMissesPerDay
+      }
+    }
+    recent {
+      gameId
+      title
+      system
+      outcome
+      sources
+      detail
+    }
   }
 `);
 
@@ -934,8 +971,8 @@ export const ResourceHistoryQuery = graphql(`
 
 export const FetchMetadataMutation = graphql(
   `
-  mutation FetchMetadata($system: ID, $force: Boolean!) {
-    fetchMetadata(system: $system, force: $force) {
+  mutation FetchMetadata($system: ID, $force: Boolean!, $fields: [MetadataField!]!) {
+    fetchMetadata(system: $system, force: $force, fields: $fields) {
       ...MetadataFields
     }
   }

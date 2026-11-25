@@ -8,8 +8,18 @@
 //! Its media URLs carry the same credentials. They are stripped from the box art URL a lookup
 //! stores ([`strip_credentials`]) and added again when the box art job downloads it
 //! ([`ScreenScraper::authorize`]), so no credential is ever written to the database.
+//!
+//! Every answer carries the account's quota (`ssuser`), kept for [`Provider::quota`], and the
+//! game's own id (`jeu id`), which the server stores so a later lookup asks for that game
+//! (`gameid`) instead of matching the file again. Requests are paced (`with_delay`; free
+//! accounts get one at a time), and a busy or closed-to-guests server is backed off from.
+//! ScreenScraper reports many errors as French text with a 200, so answers are sorted by their
+//! text as well as their status ([`classify`]).
 
-use super::{GameInfo, LookupInput, MetaError, status_error};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use super::{BoxFuture, Found, GameInfo, LookupInput, MetaError, Progress, Provider, Quota, Step};
 
 pub const DEFAULT_BASE: &str = "https://api.screenscraper.fr/api2";
 
@@ -43,6 +53,11 @@ pub(crate) fn system_id(system: &str) -> Option<u32> {
         "intellivision" => 115,
         "colecovision" => 48,
         "vectrex" => 102,
+        "n64" => 14,
+        "dreamcast" => 23,
+        // Not yet checked against systemesListe.php (as ES-DE and Batocera use them).
+        "gamecube" => 13,
+        "ps2" => 58,
         _ => return None,
     })
 }
@@ -61,7 +76,16 @@ pub struct ScreenScraper {
     http: reqwest::Client,
     regions: Vec<String>,
     languages: Vec<String>,
+    /// The pause between requests.
+    delay: Duration,
+    /// When the last request finished; requests take turns on it.
+    last: tokio::sync::Mutex<Option<Instant>>,
+    quota: Mutex<Option<Quota>>,
 }
+
+/// How long to back off a busy server (HTTP 401 and 429, or its "maximum threads" text) before
+/// each retry; after the last, the service is left alone for the rest of the job.
+const BACKOFF: [Duration; 2] = [Duration::from_secs(30), Duration::from_secs(90)];
 
 /// Query parameters that hold credentials.
 const CREDENTIAL_PARAMS: &[&str] = &["devid", "devpassword", "ssid", "sspassword"];
@@ -109,6 +133,81 @@ fn pick<'a, S: AsRef<str>>(
 #[cfg(test)]
 pub fn parse(xml: &str) -> Option<GameInfo> {
     parse_with(xml, DEFAULT_REGIONS, DEFAULT_LANGUAGES)
+}
+
+/// The game's ScreenScraper id (`<jeu id="…">`).
+pub(crate) fn game_id(xml: &str) -> Option<String> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+    let jeu = doc.descendants().find(|n| n.has_tag_name("jeu"))?;
+    jeu.attribute("id").filter(|id| !id.is_empty() && *id != "0").map(str::to_owned)
+}
+
+/// The account's quota from an answer's `ssuser` block.
+pub(crate) fn quota(xml: &str) -> Option<Quota> {
+    let doc = roxmltree::Document::parse(xml).ok()?;
+    let user = doc.descendants().find(|n| n.has_tag_name("ssuser"))?;
+    let number = |tag: &str| {
+        user.children()
+            .find(|c| c.has_tag_name(tag))
+            .and_then(|c| c.text())
+            .and_then(|t| t.trim().parse::<u64>().ok())
+    };
+    let requests_today = number("requeststoday")?;
+    Some(Quota {
+        requests_today,
+        max_requests_per_day: number("maxrequestsperday").filter(|n| *n > 0),
+        misses_today: number("requestskotoday").unwrap_or(0),
+        max_misses_per_day: number("maxrequestskoperday").filter(|n| *n > 0),
+    })
+}
+
+/// What an answer means, from its status and its text.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Answer {
+    /// A game (or not-a-game) in XML.
+    Xml,
+    /// No game matches.
+    NotFound,
+    /// Busy for now: wait and ask again.
+    Retry(String),
+    Failed(MetaError),
+}
+
+/// Sorts an answer. The codes are the API doc's; the texts are what the service sends, often
+/// with a 200, in French.
+pub(crate) fn classify(status: reqwest::StatusCode, body: &str) -> Answer {
+    let short = || {
+        format!("HTTP {}: {}", status.as_u16(), body.trim().chars().take(160).collect::<String>())
+    };
+    let lower = body.to_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
+    if status.is_success() && body.trim_start().starts_with('<') {
+        return Answer::Xml;
+    }
+    match status.as_u16() {
+        // Closed to guests, or the server is overloaded.
+        401 | 429 => return Answer::Retry(short()),
+        403 | 426 => return Answer::Failed(MetaError::Unauthorized(short())),
+        423 => return Answer::Failed(MetaError::Unavailable(short())),
+        430 | 431 => return Answer::Failed(MetaError::Quota(short())),
+        _ => {}
+    }
+    if status.as_u16() == 404 || has(&["non trouvée", "non trouvee"]) {
+        return Answer::NotFound;
+    }
+    if has(&["totalement fermé", "totalement ferme", "fully closed"]) {
+        Answer::Failed(MetaError::Unavailable(short()))
+    } else if has(&["blacklist"]) {
+        Answer::Failed(MetaError::Unauthorized(short()))
+    } else if has(&["quota"]) {
+        Answer::Failed(MetaError::Quota(short()))
+    } else if has(&["fermé pour les non membres", "closed for non", "maximum threads", "trop"]) {
+        Answer::Retry(short())
+    } else if has(&["identifiant", "login"]) {
+        Answer::Failed(MetaError::Unauthorized(short()))
+    } else {
+        Answer::Failed(MetaError::Other(short()))
+    }
 }
 
 /// [`parse`] with region and language preferences (most preferred first).
@@ -182,7 +281,16 @@ impl ScreenScraper {
             http,
             regions: own(DEFAULT_REGIONS),
             languages: own(DEFAULT_LANGUAGES),
+            delay: Duration::from_millis(1200),
+            last: tokio::sync::Mutex::new(None),
+            quota: Mutex::new(None),
         }
+    }
+
+    /// The pause between requests (ScreenScraper asks for about a second on free accounts).
+    pub fn with_delay(mut self, delay: Duration) -> Self {
+        self.delay = delay;
+        self
     }
 
     /// Region and language preferences, most preferred first (empty keeps the defaults).
@@ -216,50 +324,118 @@ impl ScreenScraper {
         parsed.into()
     }
 
-    pub async fn lookup(&self, input: &LookupInput) -> Result<Option<GameInfo>, MetaError> {
-        let Some(system) = system_id(&input.system) else { return Ok(None) };
+    /// The query for `input`: by the game's id once known, else by the file.
+    fn query(&self, system: u32, input: &LookupInput) -> Vec<(&'static str, String)> {
         let c = &self.credentials;
         let mut query: Vec<(&str, String)> = vec![
             ("devid", c.dev_id.clone()),
             ("devpassword", c.dev_password.clone()),
             ("softname", concat!("SovEmu ", env!("CARGO_PKG_VERSION")).to_owned()),
             ("output", "xml".to_owned()),
-            ("romtype", "rom".to_owned()),
             ("systemeid", system.to_string()),
-            ("romnom", input.file_name.clone()),
-            ("romtaille", input.size.to_string()),
         ];
-        if let Some(md5) = &input.md5 {
-            query.push(("md5", md5.clone()));
+        if let Some(id) = input.known_ids.get("screenscraper") {
+            query.push(("gameid", id.clone()));
+        } else {
+            query.push(("romtype", "rom".to_owned()));
+            query.push(("romnom", input.file_name.clone()));
+            query.push(("romtaille", input.size.to_string()));
+            if let Some(md5) = &input.md5 {
+                query.push(("md5", md5.clone()));
+            }
         }
         if let Some((user, password)) = &c.user {
             query.push(("ssid", user.clone()));
             query.push(("sspassword", password.clone()));
         }
-        let response =
-            self.http.get(format!("{}/jeuInfos.php", self.base)).query(&query).send().await?;
-        let status = response.status();
-        let body = response.text().await?;
-        if status == reqwest::StatusCode::NOT_FOUND || body.starts_with("Erreur") {
-            return Ok(None);
+        query
+    }
+
+    /// One request, paced after the last one.
+    async fn ask(
+        &self,
+        query: &[(&str, String)],
+        progress: Progress<'_>,
+    ) -> Result<(reqwest::StatusCode, String), MetaError> {
+        let mut last = self.last.lock().await;
+        if let Some(wait) = last.map(|t| self.delay.saturating_sub(t.elapsed()))
+            && !wait.is_zero()
+        {
+            progress(Step::Waiting);
+            tokio::time::sleep(wait).await;
         }
-        if !status.is_success() {
-            return Err(status_error("ScreenScraper", status, &body));
+        progress(Step::Asking);
+        let result = async {
+            let response =
+                self.http.get(format!("{}/jeuInfos.php", self.base)).query(query).send().await?;
+            let status = response.status();
+            Ok::<_, reqwest::Error>((status, response.text().await?))
         }
-        // Some quota and maintenance messages arrive as plain text with a 200.
-        if !body.trim_start().starts_with('<') {
-            let lower = body.to_lowercase();
-            return Err(
-                if lower.contains("quota") || lower.contains("maximum") || lower.contains("trop") {
-                    MetaError::Quota(body.chars().take(160).collect())
-                } else if lower.contains("identifiant") || lower.contains("login") {
-                    MetaError::Unauthorized(body.chars().take(160).collect())
-                } else {
-                    MetaError::Other(body.chars().take(160).collect())
+        .await;
+        *last = Some(Instant::now());
+        Ok(result?)
+    }
+
+    pub async fn lookup(
+        &self,
+        input: &LookupInput,
+        progress: Progress<'_>,
+    ) -> Result<Option<Found>, MetaError> {
+        let Some(system) = system_id(&input.system) else { return Ok(None) };
+        let query = self.query(system, input);
+        let mut backoff = BACKOFF.iter();
+        loop {
+            let (status, body) = self.ask(&query, progress).await?;
+            match classify(status, &body) {
+                Answer::Xml => {
+                    if let Some(q) = quota(&body) {
+                        *self.quota.lock().unwrap_or_else(|e| e.into_inner()) = Some(q);
+                    }
+                    return Ok(parse_with(&body, &self.regions, &self.languages)
+                        .map(|info| Found { info, id: game_id(&body) }));
+                }
+                Answer::NotFound => return Ok(None),
+                Answer::Failed(e) => return Err(e),
+                Answer::Retry(why) => match backoff.next() {
+                    Some(wait) => {
+                        tracing::debug!(wait_s = wait.as_secs(), reason = %why, "ScreenScraper busy");
+                        progress(Step::Waiting);
+                        tokio::time::sleep(*wait).await;
+                    }
+                    None => return Err(MetaError::Unavailable(why)),
                 },
-            );
+            }
         }
-        Ok(parse_with(&body, &self.regions, &self.languages))
+    }
+}
+
+impl Provider for ScreenScraper {
+    fn id(&self) -> &'static str {
+        "screenscraper"
+    }
+
+    fn name(&self) -> &'static str {
+        "ScreenScraper"
+    }
+
+    fn wants_md5(&self) -> bool {
+        true
+    }
+
+    fn lookup<'a>(
+        &'a self,
+        input: &'a LookupInput,
+        progress: Progress<'a>,
+    ) -> BoxFuture<'a, Result<Option<Found>, MetaError>> {
+        Box::pin(ScreenScraper::lookup(self, input, progress))
+    }
+
+    fn quota(&self) -> Option<Quota> {
+        *self.quota.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn box_art_url(&self, stored: &str) -> String {
+        self.authorize(stored)
     }
 }
 
@@ -340,9 +516,92 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn maps_systems() {
+    fn maps_every_system() {
         assert_eq!(system_id("snes"), Some(4));
         assert_eq!(system_id("psx"), Some(57));
-        assert_eq!(system_id("n64"), None);
+        assert_eq!(system_id("nope"), None);
+        for system in crate::systems::SYSTEMS {
+            assert!(system_id(system.id).is_some(), "{} has no ScreenScraper id", system.id);
+        }
+    }
+
+    #[test]
+    fn reads_the_game_id_and_the_quota() {
+        assert_eq!(game_id(SAMPLE).as_deref(), Some("1234"));
+        assert_eq!(game_id("<Data><jeu id=\"0\"/></Data>"), None);
+        assert_eq!(
+            quota(SAMPLE),
+            Some(Quota {
+                requests_today: 3,
+                max_requests_per_day: Some(20000),
+                misses_today: 0,
+                max_misses_per_day: None
+            })
+        );
+        assert_eq!(quota("<Data><jeu/></Data>"), None);
+    }
+
+    #[test]
+    fn sorts_answers_by_status_and_text() {
+        use reqwest::StatusCode;
+        let code = |c| StatusCode::from_u16(c).unwrap();
+        assert_eq!(classify(StatusCode::OK, "<Data/>"), Answer::Xml);
+        assert_eq!(
+            classify(StatusCode::NOT_FOUND, "Erreur : Rom/Iso/Dossier non trouvée !"),
+            Answer::NotFound
+        );
+        assert_eq!(classify(StatusCode::OK, "Erreur : Jeu non trouvée !"), Answer::NotFound);
+        assert!(matches!(classify(code(401), "API fermé pour les non membres"), Answer::Retry(_)));
+        assert!(matches!(classify(code(429), ""), Answer::Retry(_)));
+        assert!(matches!(
+            classify(StatusCode::OK, "Le nombre maximum threads est atteint"),
+            Answer::Retry(_)
+        ));
+        assert!(matches!(
+            classify(code(403), "Erreur de login"),
+            Answer::Failed(MetaError::Unauthorized(_))
+        ));
+        assert!(matches!(
+            classify(StatusCode::OK, "Le logiciel de scrape utilisé a été blacklisté"),
+            Answer::Failed(MetaError::Unauthorized(_))
+        ));
+        assert!(matches!(
+            classify(code(423), "API totalement fermé"),
+            Answer::Failed(MetaError::Unavailable(_))
+        ));
+        assert!(matches!(
+            classify(code(430), "Votre quota de scrape est dépassé"),
+            Answer::Failed(MetaError::Quota(_))
+        ));
+        assert!(matches!(classify(code(431), ""), Answer::Failed(MetaError::Quota(_))));
+        assert!(matches!(
+            classify(StatusCode::BAD_GATEWAY, "<html>"),
+            Answer::Failed(MetaError::Other(_))
+        ));
+    }
+
+    #[test]
+    fn asks_by_game_id_once_known() {
+        let ss = ScreenScraper::new(
+            DEFAULT_BASE,
+            Credentials { dev_id: "d".into(), dev_password: "p".into(), user: None },
+            reqwest::Client::new(),
+        );
+        let mut input = LookupInput {
+            system: "nes".into(),
+            title: "Castlevania".into(),
+            file_name: "Castlevania (USA).nes".into(),
+            size: 131088,
+            md5: Some("abc".into()),
+            known_ids: Default::default(),
+        };
+        let keys =
+            |q: Vec<(&'static str, String)>| q.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+        let by_file = keys(ss.query(3, &input));
+        assert!(by_file.contains(&"md5") && by_file.contains(&"romnom"), "{by_file:?}");
+        assert!(!by_file.contains(&"gameid"));
+        input.known_ids.insert("screenscraper".into(), "1234".into());
+        let by_id = keys(ss.query(3, &input));
+        assert!(by_id.contains(&"gameid") && !by_id.contains(&"md5"), "{by_id:?}");
     }
 }

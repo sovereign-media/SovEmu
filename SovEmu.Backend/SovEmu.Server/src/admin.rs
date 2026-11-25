@@ -51,7 +51,11 @@ pub(crate) async fn after_scan(state: &AppState, trigger: Trigger) {
     if state.config.metadata_auto {
         let _ = state
             .jobs
-            .run(Job::Metadata, trigger, lookup(state.clone(), metadata::Scope::default()))
+            .run(
+                Job::Metadata,
+                trigger,
+                lookup(state.clone(), metadata::Scope::automatic(&state.config)),
+            )
             .await;
     }
 }
@@ -62,7 +66,7 @@ pub(crate) fn after_scan_in_background(state: &AppState) {
         let _ = state.jobs.start(
             Job::Metadata,
             Trigger::Schedule,
-            lookup(state.clone(), metadata::Scope::default()),
+            lookup(state.clone(), metadata::Scope::automatic(&state.config)),
         );
     }
 }
@@ -161,6 +165,13 @@ pub(crate) fn metadata_status(state: &AppState) -> JobStatus {
 /// Starts looking up game information in the background (`system`: one system only; `force`:
 /// look up games that already have it too).
 pub(crate) fn metadata_fetch(state: &AppState, scope: metadata::Scope) -> ApiResult<JobStatus> {
+    if let Some(unknown) = scope.providers.iter().find(|id| state.metadata.provider(id).is_none()) {
+        let known: Vec<&str> = state.metadata.providers.iter().map(|p| p.id()).collect();
+        return Err(ApiError::bad_request(format!(
+            "{unknown} is not a configured source (configured: {})",
+            known.join(", ")
+        )));
+    }
     state.jobs.start(Job::Metadata, Trigger::Admin, lookup(state.clone(), scope)).map_err(|e| {
         match e {
             JobError::Running => ApiError::conflict("a metadata job is already running"),

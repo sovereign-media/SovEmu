@@ -120,13 +120,13 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Library modes: `direct` (NAS on the LAN, the default), `cache` (remote NAS), `mirror`
       (a full local copy synced in the background, optionally per system), with a Library page
 - [x] Game information: FBNeo DATs (arcade and Neo Geo, no account; all 502 sets named on the
-      NAS), ScreenScraper (MD5 + size + name) and TheGamesDB (name + platform) clients, merged into
-      `game_metadata`; missing box art downloaded; descriptions, dates, developers, genres and
-      players in the game list
-- [x] LaunchBox Games Database as the default source: its dump downloaded and refreshed by the
-      server, matched by name and alternate names per platform, with community ratings
-- [ ] Live-test the ScreenScraper and TheGamesDB clients once credentials exist (tested against
-      mock services built from ES-DE's parsing code)
+      NAS) and ScreenScraper (MD5 + size + name), merged into `game_metadata`; missing box art
+      downloaded; descriptions, dates, developers, genres and players in the game list
+- [x] ScreenScraper as the only online source, behind a provider interface (#207): LaunchBox and
+      TheGamesDB removed, detailed lookup progress, partial refreshes by field, source and age
+- [ ] Live-test the ScreenScraper client once credentials exist (tested against a mock service
+      built from ES-DE's parsing code): status codes, quota fields, the GameCube and PS2 system
+      ids, whether stored box art URLs expire
 - [x] Group multi-disc games (`(Disc N)`) into one entry: the scanner folds them (`game_discs`),
       the worker plays an `.m3u` of the discs and changes disc through libretro's disk control
       (`setDisc`), and the in-game menus offer Change disc

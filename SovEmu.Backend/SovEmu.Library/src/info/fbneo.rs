@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::sync::OnceCell;
 
-use super::{GameInfo, LookupInput};
+use super::{BoxFuture, Found, GameInfo, LookupInput, MetaError, Progress, Provider};
 
 /// The FBNeo in the libretro stable release scripts/cores.list names (1.22.2); its probe
 /// version ends in this commit. Bump it with the release.
@@ -28,6 +28,7 @@ pub(crate) type Dat = HashMap<String, Entry>;
 #[derive(Debug)]
 pub struct FbNeoDats {
     dir: PathBuf,
+    http: reqwest::Client,
     arcade: OnceCell<Dat>,
     neogeo: OnceCell<Dat>,
 }
@@ -72,16 +73,12 @@ fn cached(dir: &Path, file: &str) -> PathBuf {
 }
 
 impl FbNeoDats {
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir, arcade: OnceCell::new(), neogeo: OnceCell::new() }
+    /// The DATs kept in `dir`, downloaded with `http` on first use.
+    pub fn new(dir: PathBuf, http: reqwest::Client) -> Self {
+        Self { dir, http, arcade: OnceCell::new(), neogeo: OnceCell::new() }
     }
 
-    async fn load<'a>(
-        &'a self,
-        http: &reqwest::Client,
-        cell: &'a OnceCell<Dat>,
-        file: &str,
-    ) -> &'a Dat {
+    async fn load<'a>(&'a self, cell: &'a OnceCell<Dat>, file: &str) -> &'a Dat {
         cell.get_or_init(|| async {
             let path = cached(&self.dir, file);
             if !path.is_file() {
@@ -89,7 +86,7 @@ impl FbNeoDats {
                     "https://raw.githubusercontent.com/libretro/FBNeo/{FBNEO_COMMIT}/dats/{}",
                     file.replace(' ', "%20")
                 );
-                match fetch(http, &url, &path).await {
+                match fetch(&self.http, &url, &path).await {
                     Ok(()) => tracing::info!(file, "metadata file downloaded"),
                     Err(e) => {
                         tracing::warn!(file, error = %e, "cannot download metadata file");
@@ -108,16 +105,38 @@ impl FbNeoDats {
     }
 
     /// Looks an arcade or Neo Geo set up by its file name. `None` for other systems.
-    pub async fn lookup(&self, http: &reqwest::Client, input: &LookupInput) -> Option<GameInfo> {
+    pub(crate) async fn find(&self, input: &LookupInput) -> Option<GameInfo> {
         if input.system != "fbneo" && input.system != "neogeo" {
             return None;
         }
         let set = Path::new(&input.file_name).file_stem()?.to_string_lossy().to_lowercase();
         // Arcade folders often hold Neo Geo sets too, so check both lists for either system.
-        let neogeo = self.load(http, &self.neogeo, NEOGEO_DAT).await;
-        let arcade = self.load(http, &self.arcade, ARCADE_DAT).await;
+        let neogeo = self.load(&self.neogeo, NEOGEO_DAT).await;
+        let arcade = self.load(&self.arcade, ARCADE_DAT).await;
         let entry = neogeo.get(&set).or_else(|| arcade.get(&set))?;
         Some(to_info(entry))
+    }
+}
+
+impl Provider for FbNeoDats {
+    fn id(&self) -> &'static str {
+        "fbneo"
+    }
+
+    fn name(&self) -> &'static str {
+        "FinalBurn Neo"
+    }
+
+    fn lookup<'a>(
+        &'a self,
+        input: &'a LookupInput,
+        progress: Progress<'a>,
+    ) -> BoxFuture<'a, Result<Option<Found>, MetaError>> {
+        Box::pin(async move {
+            progress(super::Step::Asking);
+            // The set name is the id: nothing to remember.
+            Ok(self.find(input).await.map(|info| Found { info, id: None }))
+        })
     }
 }
 
@@ -187,18 +206,20 @@ mod tests {
         std::fs::create_dir_all(cached(&dir, "")).unwrap();
         std::fs::write(cached(&dir, NEOGEO_DAT), SAMPLE).unwrap();
         std::fs::write(cached(&dir, ARCADE_DAT), "<datafile/>").unwrap();
-        let dats = FbNeoDats::new(dir);
-        let http = reqwest::Client::new();
+        let dats = FbNeoDats::new(dir, reqwest::Client::new());
         let input = |system: &str, file: &str| LookupInput {
             system: system.into(),
             title: String::new(),
             file_name: file.into(),
             size: 0,
             md5: None,
+            known_ids: Default::default(),
         };
-        let found = dats.lookup(&http, &input("fbneo", "MSLUG.zip")).await.unwrap();
-        assert_eq!(found.developer.as_deref(), Some("Nazca"));
-        assert!(dats.lookup(&http, &input("neogeo", "unknown.zip")).await.is_none());
-        assert!(dats.lookup(&http, &input("nes", "mslug.nes")).await.is_none(), "arcade only");
+        let quiet = |_| {};
+        let found = dats.lookup(&input("fbneo", "MSLUG.zip"), &quiet).await.unwrap().unwrap();
+        assert_eq!(found.info.developer.as_deref(), Some("Nazca"));
+        assert_eq!(found.id, None);
+        assert!(dats.find(&input("neogeo", "unknown.zip")).await.is_none());
+        assert!(dats.find(&input("nes", "mslug.nes")).await.is_none(), "arcade only");
     }
 }

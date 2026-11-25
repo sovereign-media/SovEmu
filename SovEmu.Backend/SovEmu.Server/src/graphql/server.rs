@@ -103,7 +103,7 @@ pub(super) struct StorageReport {
 
 #[derive(SimpleObject)]
 pub(super) struct StorageArea {
-    /// `database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `launchbox`, `metadata`,
+    /// `database`, `saves`, `cache`, `discs`, `mirror`, `artwork`, `metadata`,
     /// `decorations`, `builtin_decorations`, `roms`, `bios` or `other`.
     pub(super) id: String,
     pub(super) path: String,

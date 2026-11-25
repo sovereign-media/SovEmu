@@ -170,23 +170,20 @@ pub struct Config {
     #[arg(long, env = "SOVEMU_MIRROR_SYSTEMS", value_delimiter = ',')]
     pub mirror_systems: Vec<String>,
 
-    /// Look games up in the LaunchBox Games Database dump (free, no account; about 110 MB,
-    /// downloaded into `<data>/metadata/launchbox/`).
-    #[arg(long, env = "SOVEMU_LAUNCHBOX", default_value_t = true, action = clap::ArgAction::Set)]
-    pub launchbox: bool,
-    #[arg(long, env = "SOVEMU_LAUNCHBOX_URL", default_value = sovemu_library::info::launchbox::DEFAULT_URL)]
-    pub launchbox_url: String,
-    /// Where the dump's image file names are served from (box art).
+    /// The game-information sources, asked in this order: `fbneo` (FinalBurn Neo's DATs, arcade
+    /// and Neo Geo names) and `screenscraper` (needs its developer credentials).
     #[arg(
         long,
-        env = "SOVEMU_LAUNCHBOX_IMAGES_URL",
-        default_value = sovemu_library::info::launchbox::DEFAULT_IMAGES_URL
+        env = "SOVEMU_METADATA_SOURCES",
+        value_delimiter = ',',
+        default_value = "fbneo,screenscraper"
     )]
-    pub launchbox_images_url: String,
-    /// Look for a newer LaunchBox dump when a metadata job starts and the last check is this
-    /// many hours old (0: download it once, never again).
-    #[arg(long, env = "SOVEMU_LAUNCHBOX_REFRESH_HOURS", default_value_t = 168)]
-    pub launchbox_refresh_hours: u64,
+    pub metadata_sources: Vec<String>,
+
+    /// Look games up again once their information is this many days old, with the lookup that
+    /// follows each scan (0: never; a game is looked up once).
+    #[arg(long, env = "SOVEMU_METADATA_REFRESH_DAYS", default_value_t = 0)]
+    pub metadata_refresh_days: u32,
 
     /// ScreenScraper developer id and password (request them from screenscraper.fr).
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVID")]
@@ -200,12 +197,6 @@ pub struct Config {
     pub screenscraper_password: Option<String>,
     #[arg(long, env = "SOVEMU_SCREENSCRAPER_URL", default_value = sovemu_library::info::screenscraper::DEFAULT_BASE)]
     pub screenscraper_url: String,
-
-    /// TheGamesDB API key (request one at forums.thegamesdb.net).
-    #[arg(long, env = "SOVEMU_THEGAMESDB_KEY")]
-    pub thegamesdb_key: Option<String>,
-    #[arg(long, env = "SOVEMU_THEGAMESDB_URL", default_value = sovemu_library::info::thegamesdb::DEFAULT_BASE)]
-    pub thegamesdb_url: String,
 
     /// Resolved: in `mirror` mode the share being mirrored (and `roms_dir` is the mirror).
     #[arg(skip)]
@@ -579,7 +570,6 @@ const SECRETS: &[&str] = &[
     "SOVEMU_ASSET_KEY",
     "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
     "SOVEMU_SCREENSCRAPER_PASSWORD",
-    "SOVEMU_THEGAMESDB_KEY",
     "SOVEMU_TOKEN_KEY",
 ];
 
@@ -674,7 +664,6 @@ impl Config {
             "SOVEMU_TOKEN_KEY" => &self.token_key,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &self.screenscraper_password,
-            "SOVEMU_THEGAMESDB_KEY" => &self.thegamesdb_key,
             _ => return None,
         }
         .as_deref()
@@ -687,7 +676,6 @@ impl Config {
             "SOVEMU_TOKEN_KEY" => &mut self.token_key,
             "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
             "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
-            "SOVEMU_THEGAMESDB_KEY" => &mut self.thegamesdb_key,
             _ => return None,
         })
     }
@@ -893,6 +881,90 @@ fn default_worker() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(name))
 }
 
+/// The game-information providers `SOVEMU_METADATA_SOURCES` names, in its order, and a note for
+/// each one named but not usable (ScreenScraper without its developer credentials).
+fn metadata_providers(
+    config: &Config,
+    paths: &paths::DataPaths,
+) -> Result<(Vec<metadata::SharedProvider>, Vec<String>)> {
+    use sovemu_library::info::{fbneo, screenscraper};
+    const KNOWN: &[&str] = &["fbneo", "screenscraper"];
+    let http = sovemu_library::info::http_client();
+    let mut providers: Vec<metadata::SharedProvider> = Vec::new();
+    let mut notes = Vec::new();
+    for id in config.metadata_sources.iter().map(|s| s.trim().to_lowercase()) {
+        if providers.iter().any(|p| p.id() == id) {
+            continue;
+        }
+        match id.as_str() {
+            "" => {}
+            "fbneo" => {
+                providers.push(Arc::new(fbneo::FbNeoDats::new(paths.fbneo_dats(), http.clone())))
+            }
+            "screenscraper" => {
+                match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
+                    (Some(dev_id), Some(dev_password))
+                        if !dev_id.is_empty() && !dev_password.is_empty() =>
+                    {
+                        let credentials = screenscraper::Credentials {
+                            dev_id: dev_id.clone(),
+                            dev_password: dev_password.clone(),
+                            user: config
+                                .screenscraper_user
+                                .clone()
+                                .filter(|u| !u.is_empty())
+                                .zip(config.screenscraper_password.clone()),
+                        };
+                        let ss = screenscraper::ScreenScraper::new(
+                            config.screenscraper_url.clone(),
+                            credentials,
+                            http.clone(),
+                        )
+                        .with_preferences(
+                            config.metadata_regions.clone(),
+                            config.metadata_languages.clone(),
+                        )
+                        .with_delay(std::time::Duration::from_millis(
+                            config.screenscraper_delay_ms,
+                        ));
+                        providers.push(Arc::new(ss));
+                    }
+                    _ => notes.push(
+                        "ScreenScraper: no developer credentials (SOVEMU_SCREENSCRAPER_DEVID and \
+                     SOVEMU_SCREENSCRAPER_DEVPASSWORD), so it is not asked"
+                            .to_owned(),
+                    ),
+                }
+            }
+            other => anyhow::bail!(
+                "SOVEMU_METADATA_SOURCES: unknown source {other:?} (known: {})",
+                KNOWN.join(", ")
+            ),
+        }
+    }
+    for note in &notes {
+        tracing::warn!(note = %note, "game information");
+    }
+    Ok((providers, notes))
+}
+
+/// Settings earlier versions had, for sources that are gone: set, they are ignored with a
+/// warning rather than refusing to start.
+const REMOVED_SETTINGS: &[&str] = &[
+    "SOVEMU_LAUNCHBOX",
+    "SOVEMU_LAUNCHBOX_URL",
+    "SOVEMU_LAUNCHBOX_IMAGES_URL",
+    "SOVEMU_LAUNCHBOX_REFRESH_HOURS",
+    "SOVEMU_THEGAMESDB_KEY",
+    "SOVEMU_THEGAMESDB_KEY_FILE",
+    "SOVEMU_THEGAMESDB_URL",
+];
+
+/// The removed settings among `vars`.
+fn removed_settings(vars: &[(String, String)]) -> Vec<&'static str> {
+    REMOVED_SETTINGS.iter().copied().filter(|r| vars.iter().any(|(k, _)| k == r)).collect()
+}
+
 pub async fn build_state(mut config: Config) -> Result<AppState> {
     let paths = config.paths();
     let library = config.roms.clone().unwrap_or_else(|| paths.roms());
@@ -1004,50 +1076,10 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
             "library mirrored"
         ),
     }
-    let http = sovemu_library::info::http_client();
-    let screenscraper = match (&config.screenscraper_devid, &config.screenscraper_devpassword) {
-        (Some(id), Some(pw)) if !id.is_empty() && !pw.is_empty() => Some(
-            sovemu_library::info::screenscraper::ScreenScraper::new(
-                config.screenscraper_url.clone(),
-                sovemu_library::info::screenscraper::Credentials {
-                    dev_id: id.clone(),
-                    dev_password: pw.clone(),
-                    user: config
-                        .screenscraper_user
-                        .clone()
-                        .filter(|u| !u.is_empty())
-                        .zip(config.screenscraper_password.clone()),
-                },
-                http.clone(),
-            )
-            .with_preferences(config.metadata_regions.clone(), config.metadata_languages.clone()),
-        ),
-        _ => None,
-    };
-    let thegamesdb = config.thegamesdb_key.clone().filter(|k| !k.is_empty()).map(|key| {
-        sovemu_library::info::thegamesdb::TheGamesDb::new(
-            config.thegamesdb_url.clone(),
-            key,
-            http.clone(),
-        )
-    });
-    let launchbox = config.launchbox.then(|| {
-        sovemu_library::info::launchbox::LaunchBox::new(
-            config.launchbox_url.clone(),
-            config.launchbox_images_url.clone(),
-            paths.launchbox(),
-            config.launchbox_refresh_hours,
-            config.metadata_regions.clone(),
-        )
-    });
-    let metadata = metadata::Metadata::new(
-        &paths,
-        launchbox,
-        screenscraper,
-        thegamesdb,
-        std::time::Duration::from_millis(config.screenscraper_delay_ms),
-        config.artwork_downloads,
-    );
+    let (providers, setup_notes) = metadata_providers(&config, &paths)?;
+    metadata::tidy(&paths, &db).await;
+    let metadata =
+        metadata::Metadata::new(&paths, providers, setup_notes, config.artwork_downloads);
     let copy_threads = config.copy_threads;
     // The built-in set: drawn here unless the image already holds it (it does, once per version).
     if config.decorations_builtin.is_none()
@@ -1227,6 +1259,12 @@ async fn run(mut config: Config) -> Result<()> {
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!(summary = %state.config.summary(), "configuration");
+    for var in removed_settings(&vars) {
+        tracing::warn!(
+            setting = var,
+            "ignored: LaunchBox and TheGamesDB are no longer game-information sources"
+        );
+    }
     let _gauges = telemetry::observe(&state);
     // Scans the library in the background: a network library can take minutes, and the last
     // scan's games are already in the database meanwhile.
@@ -1264,6 +1302,36 @@ mod tests {
     }
 
     #[test]
+    fn metadata_sources_are_built_in_order() {
+        let paths = paths::DataPaths::new(std::env::temp_dir().join("sovemu-sources"));
+        let ids = |args: &[&str]| {
+            let config = Config::parse_from(["sovemu-server"].iter().chain(args));
+            let (providers, notes) = metadata_providers(&config, &paths).unwrap();
+            (providers.iter().map(|p| p.id()).collect::<Vec<_>>(), notes.len())
+        };
+        assert_eq!(ids(&[]), (vec!["fbneo"], 1), "ScreenScraper needs credentials: a note");
+        let creds = ["--screenscraper-devid", "d", "--screenscraper-devpassword", "p"];
+        assert_eq!(ids(&creds), (vec!["fbneo", "screenscraper"], 0));
+        let reversed = [&creds[..], &["--metadata-sources", "screenscraper,fbneo"]].concat();
+        assert_eq!(ids(&reversed), (vec!["screenscraper", "fbneo"], 0));
+        let config = Config::parse_from(["sovemu-server", "--metadata-sources", "launchbox"]);
+        let err = metadata_providers(&config, &paths).err().unwrap().to_string();
+        assert!(err.contains("launchbox") && err.contains("screenscraper"), "{err}");
+    }
+
+    #[test]
+    fn removed_settings_are_noticed() {
+        let vars = |names: &[&str]| -> Vec<(String, String)> {
+            names.iter().map(|n| ((*n).to_owned(), "x".to_owned())).collect()
+        };
+        assert_eq!(
+            removed_settings(&vars(&["SOVEMU_LAUNCHBOX", "SOVEMU_HTTP", "SOVEMU_THEGAMESDB_KEY"])),
+            ["SOVEMU_LAUNCHBOX", "SOVEMU_THEGAMESDB_KEY"]
+        );
+        assert!(removed_settings(&vars(&["SOVEMU_SCREENSCRAPER_DEVID"])).is_empty());
+    }
+
+    #[test]
     fn secrets_come_from_files_and_are_redacted() {
         let file = std::env::temp_dir().join(format!("sovemu-secret-{}", std::process::id()));
         std::fs::write(&file, "s3cret\n").unwrap();
@@ -1271,7 +1339,7 @@ mod tests {
             "sovemu-server",
             "--admin-username",
             "boss",
-            "--thegamesdb-key",
+            "--screenscraper-password",
             "",
         ]);
         let path = file.display().to_string();
@@ -1279,12 +1347,12 @@ mod tests {
             .resolve_secrets(|var| (var == "SOVEMU_ADMIN_PASSWORD_FILE").then(|| path.clone()))
             .unwrap();
         assert_eq!(config.admin_password.as_deref(), Some("s3cret"), "trailing newline trimmed");
-        assert_eq!(config.thegamesdb_key, None, "empty means unset");
+        assert_eq!(config.screenscraper_password, None, "empty means unset");
         let summary = config.summary();
         assert!(summary.contains("SOVEMU_ADMIN_PASSWORD=(set) (from file)"), "{summary}");
         assert!(!summary.contains("s3cret"));
         let missing = Config::parse_from(["sovemu-server"]).resolve_secrets(|v| {
-            (v == "SOVEMU_THEGAMESDB_KEY_FILE").then(|| "/nonexistent/key".to_owned())
+            (v == "SOVEMU_SCREENSCRAPER_PASSWORD_FILE").then(|| "/nonexistent/key".to_owned())
         });
         assert!(missing.is_err(), "a named secret file that cannot be read is an error");
         std::fs::remove_file(file).ok();

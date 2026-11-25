@@ -121,20 +121,21 @@ by path, so game ids (and with them play history and saves) survive a rescan.
 
 ### Game information
 
-`SovEmu.Library`'s `info/` holds one client per source (FBNeo DATs, LaunchBox, ScreenScraper,
-TheGamesDB), and the server's `metadata/` runs the lookups and stores what they find. Each source
-turns a lookup into a `GameInfo`. LaunchBox has no lookup API, only a daily dump of its
-whole database (`Metadata.zip`, 110 MB, a 500 MB XML file inside), so it is the one source the
-server keeps a copy of: downloaded into `data/metadata/launchbox`, checked again (by ETag) once
-the last check is `SOVEMU_LAUNCHBOX_REFRESH_HOURS` old, and read in one streaming pass into an
-in-memory index of the games on SovEmu's platforms (about 35,000; under two seconds), rebuilt
-only when the file changes. It needs no account and has no quota, so it is the default and
-comes right after FBNeo; ScreenScraper and TheGamesDB are only asked about what is still
-incomplete. A background job, started by an admin, tries the sources in order.
+`SovEmu.Library`'s `info/` holds one client per source (FBNeo DATs, ScreenScraper), each a
+`Provider`: it turns a lookup into a `GameInfo` and, where the service has one, its own id for
+the game. The server's `metadata/` asks the providers `SOVEMU_METADATA_SOURCES` names, in that
+order, and stores what they find; it names none of them, so a source can be replaced without
+touching it. FBNeo's DATs name arcade and Neo Geo sets; ScreenScraper matches every other file
+by MD5, size and name (hashes find hacks, translations and homebrew a name search misses), paces
+its own requests, backs off a busy server and reports its quota with every answer. LaunchBox's
+dump and TheGamesDB were sources once and were removed (migration `0030` cleared what they had
+found). A background job, started by an admin or after a scan, tries the sources in order.
 Earlier sources' fields win, and later ones fill the gaps. The result goes into `game_metadata`,
-one row per game, found or not, so the next job skips it. A lookup that failed is not stored,
-so it's retried next time. A source that rejects credentials or runs out of quota is skipped
-for the rest of the job. A lookup stores box art only as a URL, with its source, never with
+one row per game, found or not, so the next job skips it. Each row remembers which source filled
+each field (`field_sources`) and each source's id for the game (`provider_ids`); a lookup merges
+into the row, replacing only the fields it was asked to refresh and never clearing one a source
+no longer knows. A lookup that failed is not stored, so it's retried next time. A source that
+rejects credentials, runs out of quota or is closed is skipped for the rest of the job. A lookup stores box art only as a URL, with its source, never with
 credentials (ScreenScraper's are stripped, and added again when downloading). When the lookup
 ends, a second background job (`metadata/artwork.rs`) downloads, `SOVEMU_ARTWORK_DOWNLOADS` at a
 time, the box art of the games that will show it (no local thumb), giving up on a URL after

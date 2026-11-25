@@ -10,7 +10,7 @@ about the API.
 | `scan` | Walking a library into games: which system a file is, parts (discs, disks, tapes, sides) folded into one game, soft patches beside a game, artwork file names |
 | `labels` | Release labels for games that share a title on a system (`Game.release`) |
 | `bios` | Which BIOS files each system needs, and checking a folder for them |
-| `info` | Game-information clients: FBNeo DATs, LaunchBox (its dump), ScreenScraper, TheGamesDB |
+| `info` | Game-information providers (one interface, `Provider`): FBNeo DATs, ScreenScraper |
 | `cache` | The local copy of games from a network library (`cache` mode) |
 | `mirror` | Syncing a whole network library to local disk (`mirror` mode) |
 | `decorations` | Decoration (bezel) sets in Batocera's layout, and the built-in set |
@@ -21,6 +21,4 @@ the server.
 
 ```bash
 cargo test -p sovemu-library
-# Against a real LaunchBox dump:
-SOVEMU_LAUNCHBOX_DUMP=/path/to/Metadata.zip cargo test -p sovemu-library real_dump -- --ignored --nocapture
 ```
