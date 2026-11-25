@@ -1,7 +1,7 @@
 //! The key ID tokens are signed with: an ES256 key (oauth-as's `EcdsaP256Key`), published at
 //! `/oauth/jwks`.
 //!
-//! The private scalar is derived from a secret string (`SOVEMU_TOKEN_KEY`, else one generated into
+//! The private scalar is derived from a secret string (`SovEmu__Authentication__TokenSigningKey`, else one generated into
 //! `server.json` like the asset signing key), so the key survives restarts and can be set from the
 //! environment like every other setting.
 

@@ -1,7 +1,7 @@
 // Client errors: what went wrong in the apps (a connection that failed or dropped, a picture
 // that stalled, a screen that crashed, a controller nobody knows), as each client reported it,
 // grouped by kind and by app and device, with how often and how lately. A group opens onto its
-// events, each with its player and the game it happened in. Kept for SOVEMU_CLIENT_EVENT_DAYS.
+// events, each with its player and the game it happened in. Kept for SovEmu__ClientErrors__RetentionDays.
 
 import { useQuery } from "@tanstack/react-query";
 import { Bug, ChevronDown, ChevronRight } from "lucide-react";

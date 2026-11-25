@@ -11,11 +11,11 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 | Scale | Personal/family, single node |
 | Database | SQLite (WAL mode) via `sqlx` with migrations; large files stay on disk |
 | Licensing | Non-commercial, so non-commercial cores (snes9x, genesis_plus_gx, etc.) are allowed |
-| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are in `SOVEMU_BIOS_DIR` in any layout (a folder per system recommended), found by MD5 or by name and linked per session where each core reads them. No user uploads. |
+| ROMs / BIOS | Shared library managed by the admin: the server scans a `roms/` folder; BIOS files are in `SovEmu__Paths__Bios` in any layout (a folder per system recommended), found by MD5 or by name and linked per session where each core reads them. No user uploads. |
 | Multiplayer | Single-player first. The data model allows multiple players and spectators later. |
 | Mobile clients | Native Kotlin (Android) and Swift (iOS), both using libwebrtc |
 | Auth | Local accounts (argon2) with a role (`viewer` or `admin`). Sign-in is `SovEmu.Identity`: an OAuth 2.1 authorization server from the `oauth-as` crate, stored in SQLite, with OpenID Connect over it. The web client signs in with the code flow and PKCE; the apps with the device grant, or a password fallback; the API takes bearer access tokens |
-| Video | VP8 (libvpx realtime, on the CPU's threads) or H.264, chosen for each client as it connects (`SOVEMU_VIDEO_CODEC=auto`, `codec.rs`): the cheapest to encode here and decode there; encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`): Constrained Baseline, no B-frames, keyframes on demand. A TV's hardware H.264 decoder can be far slower than its software VP8 one (23 ms against 3.6 ms a frame at 640×448 on an Amlogic TV), which is why a device's measured decode time replaces what it declares |
+| Video | VP8 (libvpx realtime, on the CPU's threads) or H.264, chosen for each client as it connects (`SovEmu__Streaming__Video__Codec=auto`, `codec.rs`): the cheapest to encode here and decode there; encoded at the console's native resolution. H.264 goes through libavcodec on the GPU's encoder (VA-API, NVENC) where one opens and returns every frame at once, else x264 (`superfast` + `zerolatency`): Constrained Baseline, no B-frames, keyframes on demand. A TV's hardware H.264 decoder can be far slower than its software VP8 one (23 ms against 3.6 ms a frame at 640×448 on an Amlogic TV), which is why a device's measured decode time replaces what it declares |
 | Audio | Opus at 48 kHz, resampled from the core's own rate with `rubato`, sent as redundant audio (RED, RFC 2198) to clients that offer it, so a lost packet is rebuilt without a retransmission |
 | Input | Unreliable, unordered WebRTC DataChannel; each packet carries a sequence number and the full button state |
 | Designed for, not in v1 | Rewind/fast-forward, cheats, RetroAchievements (rcheevos), per-game controller remapping, client-side shaders |
@@ -110,7 +110,7 @@ by path, so game ids (and with them play history and saves) survive a rescan.
 
 ### Library modes
 
-`SOVEMU_LIBRARY_MODE` sets how the server uses the library:
+`SovEmu__Library__Mode` sets how the server uses the library:
 - **`direct`** (the default): read games from where they are. This is right for local
   disk or a NAS on the LAN.
 - **`cache`**: for a remote share; see below.
@@ -123,7 +123,7 @@ by path, so game ids (and with them play history and saves) survive a rescan.
 
 `SovEmu.Library`'s `info/` holds one client per source (FBNeo DATs, ScreenScraper), each a
 `Provider`: it turns a lookup into a `GameInfo` and, where the service has one, its own id for
-the game. The server's `metadata/` asks the providers `SOVEMU_METADATA_SOURCES` names, in that
+the game. The server's `metadata/` asks the providers `SovEmu__Metadata__Sources` names, in that
 order, and stores what they find; it names none of them, so a source can be replaced without
 touching it. FBNeo's DATs name arcade and Neo Geo sets; ScreenScraper matches every other file
 by MD5, size and name (hashes find hacks, translations and homebrew a name search misses), paces
@@ -137,7 +137,7 @@ into the row, replacing only the fields it was asked to refresh and never cleari
 no longer knows. A lookup that failed is not stored, so it's retried next time. A source that
 rejects credentials, runs out of quota or is closed is skipped for the rest of the job. A lookup stores pictures (box art, a screenshot, the logo) and a video only as URLs, with their source, never with
 credentials (ScreenScraper's are stripped, and added again when downloading). When the lookup
-ends, a second background job (`metadata/artwork.rs`) downloads them, `SOVEMU_ARTWORK_DOWNLOADS`
+ends, a second background job (`metadata/artwork.rs`) downloads them, `SovEmu__Artwork__MaxConcurrentDownloads`
 at a time, giving up on a URL after three failures. Its queue is the table, so a restart resumes
 it. The files live in `data/artwork/games/<game id>/` (`box.webp`, `shot.webp`, `marquee.webp`,
 `video.mp4`), pictures as lossy WebP, and are a game's only
@@ -220,7 +220,7 @@ after another so they do not slow each other, the whole test has 10 seconds, spl
 an encoder still running when its share is up counts as not working. No game can start before
 it has finished. The result is logged (`encoder test`) and shown on the admin's Streaming page.
 
-**Choosing a client's codec** (`SovEmu.Server/src/codec.rs`, `SOVEMU_VIDEO_CODEC=auto`). When a
+**Choosing a client's codec** (`SovEmu.Server/src/codec.rs`, `SovEmu__Streaming__Video__Codec=auto`). When a
 client offers, each codec the server has a working encoder for and the client lists a decoder
 for is priced in milliseconds a frame: the encoder test's time at the tested size nearest the
 game's picture, plus the decode time. The decode time is what that device measured in its last
@@ -243,7 +243,7 @@ the client has reported one). An answered request whose keyframe never comes is 
 500 ms, so a client is never left asking. The `session health` and `session summary` lines count
 keyframes, requests and ignored requests, and give the largest frame.
 
-**Dropouts** (`keyframes.rs`, `adapt.rs`, `SOVEMU_DROPOUT_KEYFRAME_MS`). A connected client is
+**Dropouts** (`keyframes.rs`, `adapt.rs`, `SovEmu__Streaming__Video__DropoutKeyframeMilliseconds`). A connected client is
 never silent for long: its feedback on what it receives comes many times a second. One that has
 been silent for 700 ms and is then heard again was cut off (Wi-Fi, mostly), and it has missed
 that much video. Left alone, a browser waits on retransmissions for a second or more before it
@@ -254,7 +254,7 @@ of that moment: a link that was down was not congested. Measured in Chromium wit
 delay, the picture came back 0.03 s after a 2-second dropout ended, where it had taken 1.3 s on
 average and 1.8 s at worst.
 
-**Packet priority** (`SovEmu.Worker/src/priority.rs`, `SOVEMU_UDP_DSCP`). Each session's socket
+**Packet priority** (`SovEmu.Worker/src/priority.rs`, `SovEmu__Streaming__Udp__Dscp`). Each session's socket
 marks what it sends with a DSCP value, 34 (AF41, interactive video, as WebRTC marks a picture) by
 default. A Wi-Fi access point maps that to its video queue, which is sent ahead of ordinary
 traffic, so other use of the network delays a game less. Whatever sits between the server and the
@@ -309,7 +309,7 @@ exited workers are reaped.
 
 ### Latency target
 
-The target is under ~80 ms from button press to photon on a good network. The largest variable costs are frame alignment (up to 16.7 ms), encoding (1–3 ms at native resolution), the client's jitter buffer (reduce it with `playoutDelayHint` on the web and the equivalent native settings on mobile), and the network round trip. Run-ahead (single-instance, per system, `SOVEMU_SYSTEMS__<id>__RUN_AHEAD`) hides the games' own input lag on the 2D systems.
+The target is under ~80 ms from button press to photon on a good network. The largest variable costs are frame alignment (up to 16.7 ms), encoding (1–3 ms at native resolution), the client's jitter buffer (reduce it with `playoutDelayHint` on the web and the equivalent native settings on mobile), and the network round trip. Run-ahead (single-instance, per system, `SovEmu__Systems__<id>__RunAhead`) hides the games' own input lag on the 2D systems.
 
 ## Open questions
 

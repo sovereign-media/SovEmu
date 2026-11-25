@@ -2,10 +2,10 @@
 //! much of its CPU and memory the container is using ([`cgroup`]), as Sovereign's System
 //! Resources.
 //!
-//! One sampler ([`Monitor::tick`], run by `Jobs::sampler` every `SOVEMU_RESOURCE_SAMPLE_SECONDS`)
+//! One sampler ([`Monitor::tick`], run by `Jobs::sampler` every `SovEmu__SystemResources__SampleSeconds`)
 //! keeps the last hour of readings in memory and, each minute, writes that minute's average and
 //! highest figure per resource to `resource_samples`, which maintenance prunes after
-//! `SOVEMU_RESOURCE_HISTORY_DAYS`. The live figures and the hour's chart read the memory, the
+//! `SovEmu__SystemResources__RetentionDays`. The live figures and the hour's chart read the memory, the
 //! longer charts the table: no request ever reads `/sys`.
 
 pub(crate) mod cgroup;

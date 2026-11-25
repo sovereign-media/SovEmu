@@ -8,7 +8,7 @@ pub(super) struct SessionNode(pub(super) sovemu_sessions::workers::SessionInfo);
 
 /// A game that failed: the server refused to start it, it failed to start, or it crashed,
 /// errored or had to be killed while playing. The newest the server keeps
-/// (`SOVEMU_SESSION_FAILURES`).
+/// (`SovEmu__Sessions__FailuresKept`).
 #[derive(SimpleObject)]
 pub(super) struct SessionFailure {
     /// When it ended (Unix seconds).

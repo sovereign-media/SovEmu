@@ -3,10 +3,10 @@
 //!
 //! A lookup records where each is (`game_metadata.box_art_url`, `screenshot_url`,
 //! `marquee_url`, `video_url`, and their sources). When the lookup ends, this job downloads, a
-//! few at a time (`SOVEMU_ARTWORK_DOWNLOADS`, within the sources' own thread limits), every
-//! picture and, with `SOVEMU_METADATA_VIDEOS`, every video not downloaded yet that has not
+//! few at a time (`SovEmu__Artwork__MaxConcurrentDownloads`, within the sources' own thread limits), every
+//! picture and, with `SovEmu__Metadata__Videos`, every video not downloaded yet that has not
 //! failed `MAX_ATTEMPTS` times. Pictures are asked for at the size they are shown
-//! (`SOVEMU_ARTWORK_MAX_PX`), not as a full scan, and kept as lossy WebP. The queue is the
+//! (`SovEmu__Artwork__MaxPixels`), not as a full scan, and kept as lossy WebP. The queue is the
 //! table, so a restart resumes it (the next lookup, even one with nothing to look up, starts
 //! the job again). Once a round is done it asks the table again, so what a lookup that finished
 //! meanwhile queued is fetched too.

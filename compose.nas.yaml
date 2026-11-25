@@ -8,16 +8,16 @@
 # are found in any layout). Nothing else of the share is visible in the container.
 #
 # A decorations folder on the share too? Add a third volume like these (device .../decorations)
-# mounted at /sov-decorations, and set SOVEMU_DECORATIONS_DIRS=/sov-decorations. It is not
+# mounted at /sov-decorations, and set SovEmu__Decorations__Directories=/sov-decorations. It is not
 # mounted by default: a folder the share lacks would stop the container from starting.
 #
 # Credentials come from .env (gitignored; see .env.example), never from this file.
 services:
   sovemu:
     environment:
-      SOVEMU_ROMS_DIR: /sov-library
-      SOVEMU_BIOS_DIR: /sov-bios
-      # SOVEMU_LIBRARY_MODE (direct | cache | mirror), SOVEMU_CACHE_GB and SOVEMU_MIRROR_SYSTEMS
+      SovEmu__Paths__Library: /sov-library
+      SovEmu__Paths__Bios: /sov-bios
+      # SovEmu__Library__Mode (direct | cache | mirror), SovEmu__Library__Cache__MaxGigabytes and SovEmu__Library__Mirror__Systems
       # come from .env like every other setting.
       # The share's credentials are only for the mounts below: blank them inside the container
       # (compose still reads them from .env to mount the share).

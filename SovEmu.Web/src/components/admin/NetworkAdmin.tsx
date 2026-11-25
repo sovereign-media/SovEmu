@@ -55,7 +55,7 @@ function Network() {
               <Fact label="Media goes to">
                 <code className={mono}>{n.advertisedIp}</code>{" "}
                 <span className="text-xs text-muted">
-                  {n.advertisedIpDetected ? "(worked out: SOVEMU_ADVERTISE_IP is not set)" : ""}
+                  {n.advertisedIpDetected ? "(worked out: SovEmu__Streaming__AdvertiseAddress is not set)" : ""}
                 </span>
               </Fact>
               <Fact label="UDP ports">
@@ -89,9 +89,9 @@ function Network() {
             </ul>
             <p className="mt-3 text-xs text-muted">
               {n.publicUrlsConfigured
-                ? "From SOVEMU_PUBLIC_URL."
-                : "SOVEMU_PUBLIC_URL is not set, so these are this host's own: set it when people use a hostname or a proxy."}{" "}
-              Cookies are {n.secureCookies ? "" : "not "}marked Secure (<code>SOVEMU_SECURE_COOKIES</code>).
+                ? "From SovEmu__Http__PublicUrl."
+                : "SovEmu__Http__PublicUrl is not set, so these are this host's own: set it when people use a hostname or a proxy."}{" "}
+              Cookies are {n.secureCookies ? "" : "not "}marked Secure (<code>SovEmu__Http__SecureCookies</code>).
             </p>
           </AdminSection>
 
@@ -116,7 +116,7 @@ function Network() {
             </Facts>
             <p className="mt-3 text-xs text-muted">
               Behind a reverse proxy, "Your address" should be your own, not the proxy's: if it is the proxy's, add the
-              proxy to <code>SOVEMU_TRUSTED_PROXIES</code>.
+              proxy to <code>SovEmu__Network__TrustedProxyNetwork</code>.
             </p>
           </AdminSection>
 

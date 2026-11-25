@@ -77,57 +77,57 @@ use sovemu_sessions::workers::{WorkerConfig, Workers};
 #[command(name = "sovemu-server", version, about = "SovEmu: console emulation over WebRTC")]
 pub struct Config {
     /// Address for the web client and API.
-    #[arg(long, env = "SOVEMU_HTTP", default_value = "0.0.0.0:8080")]
+    #[arg(long, env = "SovEmu__Http__Listen", default_value = "0.0.0.0:8080")]
     pub http: SocketAddr,
 
     /// Where SovEmu keeps its database, saves and BIOS files (`system/`).
-    #[arg(long, env = "SOVEMU_DATA_DIR", default_value = "data")]
+    #[arg(long, env = "SovEmu__Paths__Data", default_value = "data")]
     pub data_dir: PathBuf,
 
     /// The ROM library: one folder per system (`nes/`, `snes/`, …). Default: `<data-dir>/roms`.
-    #[arg(long = "roms-dir", env = "SOVEMU_ROMS_DIR")]
+    #[arg(long = "roms-dir", env = "SovEmu__Paths__Library")]
     roms: Option<PathBuf>,
 
     /// BIOS files, one folder per system named like its ROM folder (`psx/`, `ps2/` …).
     /// Default: `<data-dir>/bios`.
-    #[arg(long = "bios-dir", env = "SOVEMU_BIOS_DIR")]
+    #[arg(long = "bios-dir", env = "SovEmu__Paths__Bios")]
     bios: Option<PathBuf>,
 
     /// Directory of libretro cores (`<name>_libretro.so`).
-    #[arg(long, env = "SOVEMU_CORES_DIR", default_value = "cores")]
+    #[arg(long, env = "SovEmu__Paths__Cores", default_value = "cores")]
     pub cores_dir: PathBuf,
 
     /// The built web client (`SovEmu.Web/dist`).
-    #[arg(long, env = "SOVEMU_WEB_DIR")]
+    #[arg(long, env = "SovEmu__Paths__Web")]
     pub web_dir: Option<PathBuf>,
 
     /// Decoration (bezel) folders in Batocera's layout, besides `<data>/artwork/decorations` and
-    /// the built-in one: a `decorations` folder on the NAS, say. Comma-separated; for the same
-    /// file the first folder wins, and the built-in set comes last.
-    #[arg(long, env = "SOVEMU_DECORATIONS_DIRS", value_delimiter = ',')]
+    /// the built-in one: a `decorations` folder on the NAS, say. One per index (`__0`, `__1`); for
+    /// the same file the first folder wins, and the built-in set comes last.
+    #[arg(long, env = "SovEmu__Decorations__Directories", value_delimiter = ',')]
     pub decorations_dirs: Vec<PathBuf>,
 
     /// The built-in artwork, laid out as `<data>/artwork` (the image sets
     /// `/opt/sovemu/artwork`): backgrounds, system photos, the `sovemu` decorations and the
     /// ESRB icons. Unset: written into `<data>/cache/builtin-artwork` at startup.
-    #[arg(long, env = "SOVEMU_ARTWORK_BUILTIN")]
+    #[arg(long, env = "SovEmu__Paths__BuiltInArtwork")]
     pub artwork_builtin: Option<PathBuf>,
 
     /// The decoration set games are framed with: `sovemu` (built in), a set from the
-    /// decoration folders, or `none`. Per system: `SOVEMU_SYSTEMS__<id>__DECORATION`.
-    #[arg(long, env = "SOVEMU_DECORATION", default_value = decorations::BUILTIN)]
+    /// decoration folders, or `none`. Per system: `SovEmu__Systems__<id>__Decoration`.
+    #[arg(long, env = "SovEmu__Decorations__Set", default_value = decorations::BUILTIN)]
     pub decoration: String,
 
     /// The background behind every screen, for everyone: a background's name (`dither`,
     /// `lattice`, `screens`, or a file's name in the background folders), `random` (a different
     /// one each visit) or `none`. Unset: the admin's choice on the Appearance page, else `random`.
-    #[arg(long, env = "SOVEMU_BACKGROUND")]
+    #[arg(long, env = "SovEmu__Appearance__Background")]
     pub background: Option<String>,
 
     /// Background folders besides `<data>/artwork/backgrounds`: images (WebP, PNG, JPEG) named as they
-    /// are offered (`sunset-beach.png` is "Sunset beach"). Comma-separated; for the same name the
-    /// first folder wins, and any wins over a built-in one.
-    #[arg(long, env = "SOVEMU_BACKGROUNDS_DIRS", value_delimiter = ',')]
+    /// are offered (`sunset-beach.png` is "Sunset beach"). One per index (`__0`, `__1`); for the same name
+    /// the first folder wins, and any wins over a built-in one.
+    #[arg(long, env = "SovEmu__Appearance__BackgroundDirectories", value_delimiter = ',')]
     pub backgrounds_dirs: Vec<PathBuf>,
 
     /// Writes the built-in artwork into this folder and exits (the image's build runs it, into
@@ -136,47 +136,49 @@ pub struct Config {
     pub write_artwork: Option<PathBuf>,
 
     /// The worker binary. Default: `sovemu-worker` next to this binary.
-    #[arg(long, env = "SOVEMU_WORKER")]
+    #[arg(long, env = "SovEmu__Paths__Worker")]
     worker: Option<PathBuf>,
 
     /// UDP ports for game sessions, one per concurrent session: `FIRST-LAST`.
-    #[arg(long, env = "SOVEMU_UDP_PORTS", default_value = "50000-50009", value_parser = parse_ports)]
+    #[arg(long, env = "SovEmu__Streaming__Udp__Ports", default_value = "50000-50009", value_parser = parse_ports)]
     pub udp_ports: (u16, u16),
 
     /// Address workers bind their UDP ports on.
-    #[arg(long, env = "SOVEMU_UDP_BIND", default_value = "0.0.0.0")]
+    #[arg(long, env = "SovEmu__Streaming__Udp__Bind", default_value = "0.0.0.0")]
     pub udp_bind: IpAddr,
 
     /// The DSCP value every game's packets are marked with, so Wi-Fi access points (and
     /// routers that honour it) send them ahead of ordinary traffic: 34 (AF41, interactive
     /// video, the access point's video queue) by default, 46 for its voice queue, 0 for none.
-    #[arg(long, env = "SOVEMU_UDP_DSCP", default_value_t = 34,
+    #[arg(long, env = "SovEmu__Streaming__Udp__Dscp", default_value_t = 34,
           value_parser = clap::value_parser!(u8).range(0..=63))]
     pub udp_dscp: u8,
 
     /// The IP address browsers send media to: in a container, the host's address.
-    #[arg(long, env = "SOVEMU_ADVERTISE_IP")]
+    #[arg(long, env = "SovEmu__Streaming__AdvertiseAddress")]
     pub advertise_ip: Option<IpAddr>,
 
     /// How to use the library: `direct` (play from it as is: local disk or a share on the LAN),
     /// `cache` (a slow, remote share: keep what is played on local disk) or `mirror` (keep a
     /// full local copy, synced in the background, and play from that).
-    #[arg(long, env = "SOVEMU_LIBRARY_MODE", value_enum, default_value_t = LibraryMode::Direct)]
+    #[arg(long, env = "SovEmu__Library__Mode", value_enum, default_value_t = LibraryMode::Direct)]
     pub library_mode: LibraryMode,
 
     /// `cache` mode: keep up to this many GiB on local disk (default 20 in that mode).
-    #[arg(long, env = "SOVEMU_CACHE_GB")]
+    #[arg(long, env = "SovEmu__Library__Cache__MaxGigabytes")]
     pub cache_gb: Option<u64>,
 
-    /// `mirror` mode: only these systems (ids, comma-separated, e.g. `nes,snes`). Default: all.
-    #[arg(long, env = "SOVEMU_MIRROR_SYSTEMS", value_delimiter = ',')]
+    /// `mirror` mode: only these systems, by id, one per index (`__0=nes`, `__1=snes`). Default:
+    /// all.
+    #[arg(long, env = "SovEmu__Library__Mirror__Systems", value_delimiter = ',')]
     pub mirror_systems: Vec<String>,
 
-    /// The game-information sources, asked in this order: `fbneo` (FinalBurn Neo's DATs, arcade
-    /// and Neo Geo names) and `screenscraper` (needs its developer credentials).
+    /// The game-information sources, asked in index order (`__0`, `__1`): `fbneo` (FinalBurn
+    /// Neo's DATs, arcade and Neo Geo names) and `screenscraper` (needs its developer
+    /// credentials).
     #[arg(
         long,
-        env = "SOVEMU_METADATA_SOURCES",
+        env = "SovEmu__Metadata__Sources",
         value_delimiter = ',',
         default_value = "fbneo,screenscraper"
     )]
@@ -184,20 +186,20 @@ pub struct Config {
 
     /// Look games up again once their information is this many days old, with the lookup that
     /// follows each scan (0: never; a game is looked up once).
-    #[arg(long, env = "SOVEMU_METADATA_REFRESH_DAYS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Metadata__RefreshDays", default_value_t = 0)]
     pub metadata_refresh_days: u32,
 
     /// ScreenScraper developer id and password (request them from screenscraper.fr).
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVID")]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__DevId")]
     pub screenscraper_devid: Option<String>,
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DEVPASSWORD")]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__DevPassword")]
     pub screenscraper_devpassword: Option<String>,
     /// A ScreenScraper user account (optional; raises the daily quota).
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_USER")]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__Username")]
     pub screenscraper_user: Option<String>,
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_PASSWORD")]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__Password")]
     pub screenscraper_password: Option<String>,
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_URL", default_value = sovemu_library::info::screenscraper::DEFAULT_BASE)]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__Url", default_value = sovemu_library::info::screenscraper::DEFAULT_BASE)]
     pub screenscraper_url: String,
 
     /// Resolved: in `mirror` mode the share being mirrored (and `roms_dir` is the mirror).
@@ -205,108 +207,108 @@ pub struct Config {
     pub source_dir: Option<PathBuf>,
 
     /// End a session after this many seconds with no client connected.
-    #[arg(long, env = "SOVEMU_IDLE_TIMEOUT", default_value_t = 300)]
+    #[arg(long, env = "SovEmu__Sessions__IdleTimeoutSeconds", default_value_t = 300)]
     pub idle_timeout: u64,
 
     /// Mark the session cookie `Secure` (set when served over HTTPS).
-    #[arg(long, env = "SOVEMU_SECURE_COOKIES")]
+    #[arg(long, env = "SovEmu__Http__SecureCookies")]
     pub secure_cookies: bool,
 
-    /// STUN/TURN servers for browsers, as a JSON array of `RTCIceServer` objects, e.g.
-    /// `[{"urls":"turn:turn.example:3478","username":"u","credential":"p"}]`. Only needed when
-    /// clients cannot reach the session UDP ports directly.
-    #[arg(long, env = "SOVEMU_ICE_SERVERS", default_value = "[]", value_parser = parse_ice_servers)]
+    /// STUN/TURN servers for browsers, one per index: `__0__Urls` (a URL, or several
+    /// comma-separated), `__0__Username`, `__0__Credential`. Only needed when clients cannot reach
+    /// the session UDP ports directly.
+    #[arg(long, env = "SovEmu__Streaming__IceServers", default_value = "[]", value_parser = parse_ice_servers)]
     pub ice_servers: serde_json::Value,
 
     /// How log lines are written to stderr: `text` for a person, `json` (one object per line,
     /// with the request's or session's fields) for a log collector. Workers log the same way.
-    #[arg(long, env = "SOVEMU_LOG_FORMAT", value_enum, default_value_t = telemetry::LogFormat::Text)]
+    #[arg(long, env = "SovEmu__Logging__Format", value_enum, default_value_t = telemetry::LogFormat::Text)]
     pub log_format: telemetry::LogFormat,
 
     /// An OpenTelemetry collector's OTLP/HTTP address (`http://otel-collector:4318`): traces
     /// go to `/v1/traces` and metrics to `/v1/metrics`. Unset: nothing is exported. The
     /// standard `OTEL_*` variables (service name, resource attributes, headers, export
     /// interval) apply on top.
-    #[arg(long, env = "SOVEMU_OTEL_ENDPOINT")]
+    #[arg(long, env = "SovEmu__Telemetry__Otlp__Endpoint")]
     pub otel_endpoint: Option<String>,
 
     /// The admin account, created at startup if missing; its password is kept in step with
     /// this setting. With it set there is no first-run setup page.
-    #[arg(long, env = "SOVEMU_ADMIN_USERNAME")]
+    #[arg(long, env = "SovEmu__Authentication__AdminUsername")]
     pub admin_username: Option<String>,
-    #[arg(long, env = "SOVEMU_ADMIN_PASSWORD")]
+    #[arg(long, env = "SovEmu__Authentication__AdminPassword")]
     pub admin_password: Option<String>,
 
     /// The key that signs the file URLs the API hands out (artwork, videos, screenshots). Unset:
     /// one is generated on first run and kept in `<data>/server.json`. Changing it invalidates
     /// every URL handed out until clients ask again.
-    #[arg(long, env = "SOVEMU_ASSET_KEY")]
+    #[arg(long, env = "SovEmu__Assets__SecretKey")]
     pub asset_key: Option<String>,
 
     /// The secret the server's sign-in (OpenID Connect) key is derived from: it signs the ID
     /// tokens apps receive. Unset: one is generated on first run and kept in
     /// `<data>/server.json`.
-    #[arg(long, env = "SOVEMU_TOKEN_KEY")]
+    #[arg(long, env = "SovEmu__Authentication__TokenSigningKey")]
     pub token_key: Option<String>,
 
-    /// The addresses people reach the server at, comma-separated
-    /// (`https://games.example.com,http://192.168.1.10:8080`). Each is an issuer of sign-in
-    /// tokens, and a browser can sign in only at one of them. Unset: `localhost`, `127.0.0.1`
-    /// and `SOVEMU_ADVERTISE_IP` on the HTTP port.
-    #[arg(long, env = "SOVEMU_PUBLIC_URL", value_delimiter = ',')]
+    /// The addresses people reach the server at, one per index (`__0=https://games.example.com`,
+    /// `__1=http://192.168.1.10:8080`; a single one may be given without an index). Each is an
+    /// issuer of sign-in tokens, and a browser can sign in only at one of them. Unset: `localhost`, `127.0.0.1`
+    /// and `SovEmu__Streaming__AdvertiseAddress` on the HTTP port.
+    #[arg(long, env = "SovEmu__Http__PublicUrl", value_delimiter = ',')]
     pub public_url: Vec<String>,
 
     /// Whether the apps may sign in with a username and password (`POST /oauth/password`),
     /// beside signing in with a code shown on the screen (the device grant).
-    #[arg(long, env = "SOVEMU_PASSWORD_SIGN_IN", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "SovEmu__Authentication__PasswordSignIn", default_value_t = true, action = clap::ArgAction::Set)]
     pub password_sign_in: bool,
 
     /// Whether what goes wrong on a client (a connection that failed, a stalled picture, a
     /// screen that crashed), sent with `reportClientEvents`, is logged and kept for the admin
     /// Client errors page. Off, they are dropped.
-    #[arg(long, env = "SOVEMU_CLIENT_EVENTS", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "SovEmu__ClientErrors__Enabled", default_value_t = true, action = clap::ArgAction::Set)]
     pub client_events: bool,
 
     /// How long an app's access token lasts, in minutes, before it refreshes it. Signing out
     /// and role changes apply at once regardless: every request checks its token.
-    #[arg(long, env = "SOVEMU_ACCESS_TOKEN_MINUTES", default_value_t = 60)]
+    #[arg(long, env = "SovEmu__Authentication__Tokens__AccessTokenMinutes", default_value_t = 60)]
     pub access_token_minutes: u32,
 
     /// How long a just-used refresh token is still honoured, in seconds: two tabs or requests
     /// refreshing at once get the same new tokens. Presenting it after this ends the sign-in (a
     /// copied token). 0: strictly once.
-    #[arg(long, env = "SOVEMU_REFRESH_RETRY_SECONDS", default_value_t = 30)]
+    #[arg(long, env = "SovEmu__Authentication__Tokens__RefreshRetrySeconds", default_value_t = 30)]
     pub refresh_retry_seconds: u64,
 
     /// How long a signed file URL stays valid, in hours (rounded to the hour, so URLs are
     /// cacheable).
-    #[arg(long, env = "SOVEMU_ASSET_URL_HOURS", default_value_t = 24)]
+    #[arg(long, env = "SovEmu__Assets__UrlHours", default_value_t = 24)]
     pub asset_url_hours: u64,
 
     /// Rescan the library every this many minutes (0: only at startup).
-    #[arg(long, env = "SOVEMU_SCAN_INTERVAL_MINUTES", default_value_t = 60)]
+    #[arg(long, env = "SovEmu__Library__ScanIntervalMinutes", default_value_t = 60)]
     pub scan_interval_minutes: u64,
 
     /// `mirror` mode: sync every this many minutes (0: only at startup).
-    #[arg(long, env = "SOVEMU_MIRROR_INTERVAL_MINUTES", default_value_t = 360)]
+    #[arg(long, env = "SovEmu__Library__Mirror__IntervalMinutes", default_value_t = 360)]
     pub mirror_interval_minutes: u64,
 
     /// Look up game information for new games after every scan.
-    #[arg(long, env = "SOVEMU_METADATA_AUTO", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "SovEmu__Metadata__AutoLookup", default_value_t = true, action = clap::ArgAction::Set)]
     pub metadata_auto: bool,
 
     /// Video bitrate a game stream starts at, kbit/s. It then follows the connection (up
     /// while there is headroom, down on congestion) and the client (down while its decoder
     /// falls behind), between the floor and the ceiling.
-    #[arg(long, env = "SOVEMU_VIDEO_KBPS", default_value_t = 5000)]
+    #[arg(long, env = "SovEmu__Streaming__Video__Kbps", default_value_t = 5000)]
     pub video_kbps: u32,
 
     /// The lowest video bitrate a stream adapts down to, kbit/s.
-    #[arg(long, env = "SOVEMU_VIDEO_MIN_KBPS", default_value_t = 300)]
+    #[arg(long, env = "SovEmu__Streaming__Video__MinKbps", default_value_t = 300)]
     pub video_min_kbps: u32,
 
     /// The highest video bitrate a stream adapts up to, kbit/s (never below the starting rate).
-    #[arg(long, env = "SOVEMU_VIDEO_MAX_KBPS", default_value_t = 12000)]
+    #[arg(long, env = "SovEmu__Streaming__Video__MaxKbps", default_value_t = 12000)]
     pub video_max_kbps: u32,
 
     /// Video codec for game streams: `auto`, `vp8` or `h264`. `auto` chooses for each client
@@ -314,202 +316,206 @@ pub struct Config {
     /// by what the startup encoder test measured here and what the client's decoder measured
     /// last time (or, until it has, what it declares). A client that sends no capabilities
     /// gets VP8. Naming a codec sends it to every client.
-    #[arg(long, env = "SOVEMU_VIDEO_CODEC", default_value = "auto",
+    #[arg(long, env = "SovEmu__Streaming__Video__Codec", default_value = "auto",
           value_parser = ["auto", "h264", "vp8"])]
     pub video_codec: String,
 
     /// H.264 encoder: `auto` (the GPU's, VA-API or NVENC, else x264), `vaapi`, `nvenc` or
     /// `software` (x264). One that does not open, or holds frames back, falls back to x264.
-    #[arg(long, env = "SOVEMU_VIDEO_ENCODER", default_value = "auto",
+    #[arg(long, env = "SovEmu__Streaming__Video__Encoder", default_value = "auto",
           value_parser = ["auto", "vaapi", "nvenc", "software"])]
     pub video_encoder: String,
 
     /// Opus audio bitrate for game streams, kbit/s.
-    #[arg(long, env = "SOVEMU_AUDIO_KBPS", default_value_t = 128)]
+    #[arg(long, env = "SovEmu__Streaming__Audio__Kbps", default_value_t = 128)]
     pub audio_kbps: u32,
 
     /// How many days a sign-in lasts before signing in again (an app's, from signing in:
     /// refreshing does not extend it; the browser's at the server). 0: until signed out.
-    #[arg(long, env = "SOVEMU_SESSION_DAYS", default_value_t = 90)]
+    #[arg(long, env = "SovEmu__Authentication__SessionDays", default_value_t = 90)]
     pub session_days: u32,
 
     /// Failed sign-ins per username before it is locked out (0: never).
-    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES", default_value_t = sovemu_identity::MAX_FAILURES)]
+    #[arg(long, env = "SovEmu__Authentication__Lockout__MaxFailures", default_value_t = sovemu_identity::MAX_FAILURES)]
     pub login_max_failures: u32,
 
     /// How long a locked-out username waits, and the window failures are counted in.
-    #[arg(long, env = "SOVEMU_LOGIN_LOCKOUT_MINUTES", default_value_t = 5)]
+    #[arg(long, env = "SovEmu__Authentication__Lockout__Minutes", default_value_t = 5)]
     pub login_lockout_minutes: u64,
 
     /// Failed sign-ins from one address, across usernames, before it is locked out (0: never).
-    /// Behind a reverse proxy, list it in `SOVEMU_TRUSTED_PROXIES`, or every client is the proxy.
-    #[arg(long, env = "SOVEMU_LOGIN_MAX_FAILURES_PER_IP", default_value_t = sovemu_identity::MAX_FAILURES_PER_IP)]
+    /// Behind a reverse proxy, list it in `SovEmu__Network__TrustedProxyNetwork`, or every client is the proxy.
+    #[arg(long, env = "SovEmu__Authentication__Lockout__MaxFailuresPerAddress", default_value_t = sovemu_identity::MAX_FAILURES_PER_IP)]
     pub login_max_failures_per_ip: u32,
 
-    /// Reverse proxies whose `X-Forwarded-For` is believed (addresses or ranges,
-    /// comma-separated, e.g. `10.0.0.0/8,172.16.0.0/12`). Default: none, so the client is the
+    /// Reverse proxies whose `X-Forwarded-For` is believed: addresses or ranges, one per index
+    /// (`__0=10.0.0.0/8`, `__1=172.16.0.0/12`). Default: none, so the client is the
     /// connection's address.
-    #[arg(long, env = "SOVEMU_TRUSTED_PROXIES", value_delimiter = ',')]
+    #[arg(long, env = "SovEmu__Network__TrustedProxyNetwork", value_delimiter = ',')]
     pub trusted_proxies: Vec<client_ip::Network>,
 
     /// Database upkeep every this many minutes: expired sign-ins deleted, the query planner's
     /// statistics refreshed and the write-ahead log folded back into the database (0: never).
-    #[arg(long, env = "SOVEMU_MAINTENANCE_INTERVAL_MINUTES", default_value_t = 60)]
+    #[arg(long, env = "SovEmu__Jobs__MaintenanceIntervalMinutes", default_value_t = 60)]
     pub maintenance_interval_minutes: u64,
 
     /// Where backups are kept (default `<data>/backups`). A backup holds the database, the
     /// signing keys and every save: keep it somewhere as safe as they are.
-    #[arg(long, env = "SOVEMU_BACKUP_DIR")]
+    #[arg(long, env = "SovEmu__Backups__Directory")]
     pub backup_dir: Option<PathBuf>,
 
     /// A backup every this many hours (0: none on a schedule; the admin's button still makes one).
-    #[arg(long, env = "SOVEMU_BACKUP_INTERVAL_HOURS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Backups__IntervalHours", default_value_t = 0)]
     pub backup_interval_hours: u64,
 
     /// Backups kept, the newest (0: every one).
-    #[arg(long, env = "SOVEMU_BACKUP_KEEP", default_value_t = 7)]
+    #[arg(long, env = "SovEmu__Backups__Keep", default_value_t = 7)]
     pub backup_keep: u32,
 
     /// A backup to restore at startup, before the database opens. What was there is moved into
     /// `<data>/before-restore-<time>/`, and each backup is restored once, however often the
     /// server restarts with this set.
-    #[arg(long, env = "SOVEMU_RESTORE_FROM")]
+    #[arg(long, env = "SovEmu__Backups__RestoreFrom")]
     pub restore_from: Option<PathBuf>,
 
     /// Days of background-job history kept (each scan, sync, lookup and upkeep run, on the
     /// admin Jobs page); maintenance deletes older runs (0: kept for ever).
-    #[arg(long, env = "SOVEMU_JOB_HISTORY_DAYS", default_value_t = 30)]
+    #[arg(long, env = "SovEmu__Jobs__RetentionDays", default_value_t = 30)]
     pub job_history_days: u32,
 
     /// Days of the activity log kept (sign-ins, games started and ended, admin changes, on the
     /// admin Activity page); maintenance deletes older entries (0: kept for ever).
-    #[arg(long, env = "SOVEMU_ACTIVITY_HISTORY_DAYS", default_value_t = 90)]
+    #[arg(long, env = "SovEmu__ActivityLog__RetentionDays", default_value_t = 90)]
     pub activity_history_days: u32,
 
     /// Lines of the server's log kept in memory for the admin Logs page (its own and its game
     /// sessions'); 0 keeps none and turns the page's view off. Lines go to stderr regardless.
-    #[arg(long, env = "SOVEMU_LOG_BUFFER_LINES", default_value_t = 2000)]
+    #[arg(long, env = "SovEmu__Logging__BufferLines", default_value_t = 2000)]
     pub log_buffer_lines: usize,
 
     /// Days of client errors kept (what the apps reported, on the admin Client errors page);
     /// maintenance deletes older ones (0: kept for ever).
-    #[arg(long, env = "SOVEMU_CLIENT_EVENT_DAYS", default_value_t = 30)]
+    #[arg(long, env = "SovEmu__ClientErrors__RetentionDays", default_value_t = 30)]
     pub client_event_days: u32,
 
     /// Seconds between readings of the container's CPU and memory, for the admin Resources page
     /// and the OpenTelemetry gauges (0: not read).
-    #[arg(long, env = "SOVEMU_RESOURCE_SAMPLE_SECONDS", default_value_t = 5)]
+    #[arg(long, env = "SovEmu__SystemResources__SampleSeconds", default_value_t = 5)]
     pub resource_sample_seconds: u32,
 
     /// Days of CPU and memory history kept (a row per minute); maintenance deletes older rows
     /// (0: kept for ever).
-    #[arg(long, env = "SOVEMU_RESOURCE_HISTORY_DAYS", default_value_t = 30)]
+    #[arg(long, env = "SovEmu__SystemResources__RetentionDays", default_value_t = 30)]
     pub resource_history_days: u32,
 
-    /// Delete accounts not declared in `SOVEMU_USERS__*` (or `SOVEMU_ADMIN_USERNAME`) at
+    /// Delete accounts not declared in `SovEmu__Users__*` (or `SovEmu__Authentication__AdminUsername`) at
     /// startup, so the environment is the whole list of users.
-    #[arg(long, env = "SOVEMU_USERS_PRUNE")]
+    #[arg(long, env = "SovEmu__Users__Prune")]
     pub users_prune: bool,
 
     /// How long a worker may take to load a core and game, seconds.
-    #[arg(long, env = "SOVEMU_WORKER_START_TIMEOUT", default_value_t = 120)]
+    #[arg(long, env = "SovEmu__Sessions__StartTimeoutSeconds", default_value_t = 120)]
     pub worker_start_timeout: u64,
 
     /// How long a worker may take to write its saves and exit when its session ends, seconds,
     /// before it is killed. A 3D core (PCSX2) can take several seconds to tear down.
-    #[arg(long, env = "SOVEMU_WORKER_STOP_TIMEOUT", default_value_t = 15)]
+    #[arg(long, env = "SovEmu__Sessions__StopTimeoutSeconds", default_value_t = 15)]
     pub worker_stop_timeout: u64,
 
     /// Rewind history per session, seconds (0 turns rewind off).
-    #[arg(long, env = "SOVEMU_REWIND_SECONDS", default_value_t = 60)]
+    #[arg(long, env = "SovEmu__Sessions__Rewind__Seconds", default_value_t = 60)]
     pub rewind_seconds: u32,
 
     /// Memory cap for one session's rewind history, MiB.
-    #[arg(long, env = "SOVEMU_REWIND_MAX_MB", default_value_t = 64)]
+    #[arg(long, env = "SovEmu__Sessions__Rewind__MaxMegabytes", default_value_t = 64)]
     pub rewind_max_mb: u32,
 
     /// Fast-forward speed (frames emulated per frame shown).
-    #[arg(long, env = "SOVEMU_FAST_FORWARD", default_value_t = 4)]
+    #[arg(long, env = "SovEmu__Sessions__FastForward", default_value_t = 4)]
     pub fast_forward: u32,
 
     /// Games in the home screen's hero (0 hides it).
-    #[arg(long, env = "SOVEMU_HOME_FEATURED", default_value_t = 8)]
+    #[arg(long, env = "SovEmu__Home__FeaturedCount", default_value_t = 8)]
     pub home_featured: u32,
 
     /// Games in each of the home screen's rows (recently played, recently added, top rated).
-    #[arg(long, env = "SOVEMU_HOME_ROW", default_value_t = 20)]
+    #[arg(long, env = "SovEmu__Home__RowLength", default_value_t = 20)]
     pub home_row: u32,
 
     /// Frames between VP8 keyframes (lost packets recover sooner with fewer).
-    #[arg(long, env = "SOVEMU_KEYFRAME_INTERVAL", default_value_t = 600)]
+    #[arg(long, env = "SovEmu__Streaming__Video__KeyframeInterval", default_value_t = 600)]
     pub keyframe_interval: u32,
 
     /// Testing only: throw away this share (percent) of every game's outgoing video packets,
     /// as a lossy link would, to see how a stream recovers. Audio and the connection's own
     /// packets always go. Leave it at 0.
-    #[arg(long, env = "SOVEMU_DEBUG_DROP_VIDEO_PERCENT", default_value_t = 0.0)]
+    #[arg(long, env = "SovEmu__Streaming__Debug__VideoDropPercent", default_value_t = 0.0)]
     pub debug_drop_video_percent: f64,
 
     /// Testing only: hold each of every game's outgoing video packets this many milliseconds,
     /// as a distant client's link would, so a retransmission arrives late. Leave it at 0.
-    #[arg(long, env = "SOVEMU_DEBUG_DELAY_VIDEO_MS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Streaming__Debug__VideoDelayMilliseconds", default_value_t = 0)]
     pub debug_delay_video_ms: u32,
 
     /// Testing only: throw away all of every game's outgoing video packets for this many
     /// milliseconds once every 10 seconds, as a Wi-Fi dropout would. Leave it at 0.
-    #[arg(long, env = "SOVEMU_DEBUG_DROP_VIDEO_BURST_MS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Streaming__Debug__VideoDropBurstMilliseconds", default_value_t = 0)]
     pub debug_drop_video_burst_ms: u32,
 
     /// Testing only: every game's link carries at most this much video, kbit/s, as a slow
     /// internet connection would: more than that waits, then is thrown away. 0: no limit.
-    #[arg(long, env = "SOVEMU_DEBUG_LIMIT_VIDEO_KBPS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Streaming__Debug__VideoLimitKbps", default_value_t = 0)]
     pub debug_limit_video_kbps: u32,
 
     /// Testing only: hold each of every game's outgoing video packets a different time, up
     /// to this many milliseconds, as Wi-Fi and busy routes do. Leave it at 0.
-    #[arg(long, env = "SOVEMU_DEBUG_JITTER_VIDEO_MS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Streaming__Debug__VideoJitterMilliseconds", default_value_t = 0)]
     pub debug_jitter_video_ms: u32,
 
     /// A client that has been silent this many milliseconds and is then heard again was cut
     /// off (a Wi-Fi dropout): it is sent a keyframe at once, where it would otherwise stall
     /// until it asked for one. 0 leaves it to the client.
-    #[arg(long, env = "SOVEMU_DROPOUT_KEYFRAME_MS", default_value_t = 700)]
+    #[arg(
+        long,
+        env = "SovEmu__Streaming__Video__DropoutKeyframeMilliseconds",
+        default_value_t = 700
+    )]
     pub dropout_keyframe_ms: u32,
 
     /// Seconds between each game's `session health` log line while someone is playing (frame
     /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
     /// logs a `session summary` when it ends.
-    #[arg(long, env = "SOVEMU_SESSION_HEALTH_SECS", default_value_t = 10)]
+    #[arg(long, env = "SovEmu__Sessions__HealthSeconds", default_value_t = 10)]
     pub session_health_secs: u32,
 
     /// How many failed games (a load error, a crash, a worker that had to be killed) the admin
     /// Sessions page keeps, with the core's last log lines; 0 keeps none. In memory: the log
     /// has every one.
-    #[arg(long, env = "SOVEMU_SESSION_FAILURES", default_value_t = 50)]
+    #[arg(long, env = "SovEmu__Sessions__FailuresKept", default_value_t = 50)]
     pub session_failures: usize,
 
     /// `cache` mode: games larger than this (MiB) are copied before starting, smaller ones
     /// are played from the share while the copy runs.
-    #[arg(long, env = "SOVEMU_CACHE_LARGE_GAME_MB", default_value_t = 64)]
+    #[arg(long, env = "SovEmu__Library__Cache__LargeGameMegabytes", default_value_t = 64)]
     pub cache_large_game_mb: u64,
 
     /// Files copied at once by the mirror sync.
-    #[arg(long, env = "SOVEMU_COPY_THREADS", default_value_t = 4)]
+    #[arg(long, env = "SovEmu__Library__CopyThreads", default_value_t = 4)]
     pub copy_threads: usize,
 
-    /// Region preference for game information, most preferred first.
+    /// Region preference for game information, one per index, most preferred first.
     #[arg(
         long,
-        env = "SOVEMU_METADATA_REGIONS",
+        env = "SovEmu__Metadata__Regions",
         value_delimiter = ',',
         default_value = "us,wor,eu,ss,uk,jp"
     )]
     pub metadata_regions: Vec<String>,
 
-    /// Language preference for descriptions, most preferred first.
+    /// Language preference for descriptions, one per index, most preferred first.
     #[arg(
         long,
-        env = "SOVEMU_METADATA_LANGUAGES",
+        env = "SovEmu__Metadata__Languages",
         value_delimiter = ',',
         default_value = "en,wor"
     )]
@@ -517,53 +523,57 @@ pub struct Config {
 
     /// Box art and videos downloaded at once by the background job that follows a lookup
     /// (never more than the sources' accounts allow).
-    #[arg(long, env = "SOVEMU_ARTWORK_DOWNLOADS", default_value_t = 4)]
+    #[arg(long, env = "SovEmu__Artwork__MaxConcurrentDownloads", default_value_t = 4)]
     pub artwork_downloads: usize,
 
     /// Box art is asked for at most this many pixels wide and high, the size the largest screen
     /// shows it at (0: full size, as scanned).
-    #[arg(long, env = "SOVEMU_ARTWORK_MAX_PX", default_value_t = 1000)]
+    #[arg(long, env = "SovEmu__Artwork__MaxPixels", default_value_t = 1000)]
     pub artwork_max_px: u32,
 
     /// Quality of the lossy WebP artwork is made in, box art on download and the copies made
     /// at each client's width (1-100).
-    #[arg(long, env = "SOVEMU_ARTWORK_WEBP_QUALITY", default_value_t = 80, value_parser = clap::value_parser!(u8).range(1..=100))]
+    #[arg(long, env = "SovEmu__Artwork__WebpQuality", default_value_t = 80, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub artwork_webp_quality: u8,
 
     /// Download gameplay videos for games with none of their own.
-    #[arg(long, env = "SOVEMU_METADATA_VIDEOS", default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, env = "SovEmu__Metadata__Videos", default_value_t = true, action = clap::ArgAction::Set)]
     pub metadata_videos: bool,
 
     /// Pause between ScreenScraper requests, milliseconds, when the account does not say how
     /// many it may make a minute.
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_DELAY_MS", default_value_t = 1200)]
+    #[arg(
+        long,
+        env = "SovEmu__Metadata__ScreenScraper__DelayMilliseconds",
+        default_value_t = 1200
+    )]
     pub screenscraper_delay_ms: u64,
 
     /// At most this many ScreenScraper requests at once (0: as many as the account allows).
-    #[arg(long, env = "SOVEMU_SCREENSCRAPER_THREADS", default_value_t = 0)]
+    #[arg(long, env = "SovEmu__Metadata__ScreenScraper__Threads", default_value_t = 0)]
     pub screenscraper_threads: usize,
 
     /// The GPU for 3D systems (N64, Dreamcast, GameCube, PS2): `auto` (the first GPU that
     /// works, else software rendering), `software` (Mesa's llvmpipe), `off` (no 3D systems) or
     /// a render node such as `/dev/dri/renderD128`. Probed at startup.
-    #[arg(long, env = "SOVEMU_GPU", default_value = "auto")]
+    #[arg(long, env = "SovEmu__Rendering__Gpu", default_value = "auto")]
     pub gpu: String,
 
-    /// Users declared as `SOVEMU_USERS__<n>__USERNAME` / `__PASSWORD` / `__ADMIN`.
+    /// Users declared as `SovEmu__Users__<n>__Username` / `__PASSWORD` / `__ADMIN`.
     #[arg(skip)]
     pub users: Vec<structured::UserSpec>,
 
-    /// Per-system overrides declared as `SOVEMU_SYSTEMS__<id>__CORE` / `__ENABLED` /
+    /// Per-system overrides declared as `SovEmu__Systems__<id>__Core` / `__ENABLED` /
     /// `__OPTIONS__<name>`.
     #[arg(skip)]
     pub systems: std::collections::BTreeMap<String, structured::SystemSpec>,
 
-    /// Default controller mappings declared as `SOVEMU_CONTROLLERS__<n>__ID` / `__BINDINGS` /
+    /// Default controller mappings declared as `SovEmu__Controllers__<n>__Id` / `__BINDINGS` /
     /// `__NAME`, which win over the admin page's.
     #[arg(skip)]
     pub controllers: Vec<controllers::ControllerSpec>,
 
-    /// Shared collections declared as `SOVEMU_COLLECTIONS__<n>__NAME` / `__GAMES__<m>`, kept in
+    /// Shared collections declared as `SovEmu__Collections__<n>__Name` / `__GAMES__<m>`, kept in
     /// step after each scan and locked on the admin page.
     #[arg(skip)]
     pub collections: Vec<structured::CollectionSpec>,
@@ -585,14 +595,14 @@ pub enum LibraryMode {
     Mirror,
 }
 
-/// Settings that hold secrets: each may instead come from a file named by `<VAR>_FILE` (Docker
-/// and Kubernetes secrets), and is redacted in the startup log.
+/// Settings that hold secrets: redacted in the startup log and on the Configuration page. They
+/// come as any other setting, from Docker or Kubernetes secrets put in the environment.
 const SECRETS: &[&str] = &[
-    "SOVEMU_ADMIN_PASSWORD",
-    "SOVEMU_ASSET_KEY",
-    "SOVEMU_SCREENSCRAPER_DEVPASSWORD",
-    "SOVEMU_SCREENSCRAPER_PASSWORD",
-    "SOVEMU_TOKEN_KEY",
+    "SovEmu__Authentication__AdminPassword",
+    "SovEmu__Assets__SecretKey",
+    "SovEmu__Metadata__ScreenScraper__DevPassword",
+    "SovEmu__Metadata__ScreenScraper__Password",
+    "SovEmu__Authentication__TokenSigningKey",
 ];
 
 impl Config {
@@ -609,7 +619,7 @@ impl Config {
         config
     }
 
-    /// The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own on the HTTP
+    /// The addresses sign-in works at: `SovEmu__Http__PublicUrl`, else this host's own on the HTTP
     /// port.
     pub fn public_urls(&self) -> Vec<String> {
         if !self.public_url.is_empty() {
@@ -655,7 +665,7 @@ impl Config {
         dirs
     }
 
-    /// The built-in artwork folder (`SOVEMU_ARTWORK_BUILTIN`, else written into the cache).
+    /// The built-in artwork folder (`SovEmu__Paths__BuiltInArtwork`, else written into the cache).
     pub fn builtin_artwork(&self) -> sovemu_library::layout::ArtworkDir {
         sovemu_library::layout::ArtworkDir::new(
             self.artwork_builtin
@@ -672,14 +682,14 @@ impl Config {
 
     /// Where BIOS files live: `<bios_dir>/<system>/`.
     pub fn bios_dir(&self) -> PathBuf {
-        // `SOVEMU_BIOS_DIR=` (empty) means the default, not the working directory.
+        // `SovEmu__Paths__Bios=` (empty) means the default, not the working directory.
         self.bios
             .clone()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| self.paths().bios())
     }
 
-    /// Where backups are kept: `SOVEMU_BACKUP_DIR`, else `<data>/backups`.
+    /// Where backups are kept: `SovEmu__Backups__Directory`, else `<data>/backups`.
     pub fn backup_dir(&self) -> PathBuf {
         self.backup_dir
             .clone()
@@ -690,44 +700,35 @@ impl Config {
     /// A secret's value, by its variable.
     fn secret(&self, var: &str) -> Option<&str> {
         match var {
-            "SOVEMU_ADMIN_PASSWORD" => &self.admin_password,
-            "SOVEMU_ASSET_KEY" => &self.asset_key,
-            "SOVEMU_TOKEN_KEY" => &self.token_key,
-            "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &self.screenscraper_devpassword,
-            "SOVEMU_SCREENSCRAPER_PASSWORD" => &self.screenscraper_password,
+            "SovEmu__Authentication__AdminPassword" => &self.admin_password,
+            "SovEmu__Assets__SecretKey" => &self.asset_key,
+            "SovEmu__Authentication__TokenSigningKey" => &self.token_key,
+            "SovEmu__Metadata__ScreenScraper__DevPassword" => &self.screenscraper_devpassword,
+            "SovEmu__Metadata__ScreenScraper__Password" => &self.screenscraper_password,
             _ => return None,
         }
         .as_deref()
     }
 
-    fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
-        Some(match var {
-            "SOVEMU_ADMIN_PASSWORD" => &mut self.admin_password,
-            "SOVEMU_ASSET_KEY" => &mut self.asset_key,
-            "SOVEMU_TOKEN_KEY" => &mut self.token_key,
-            "SOVEMU_SCREENSCRAPER_DEVPASSWORD" => &mut self.screenscraper_devpassword,
-            "SOVEMU_SCREENSCRAPER_PASSWORD" => &mut self.screenscraper_password,
-            _ => return None,
-        })
-    }
-
-    /// Fills unset secrets from `<VAR>_FILE`, and treats empty values as unset.
-    pub fn resolve_secrets(&mut self, env: impl Fn(&str) -> Option<String>) -> Result<()> {
+    /// Treats empty secrets as unset (`--admin-password ""`).
+    pub fn clear_empty_secrets(&mut self) {
         for var in SECRETS {
             let slot = self.secret_mut(var).expect("every secret has a field");
-            if slot.as_deref().is_some_and(|v| v.is_empty()) {
+            if slot.as_deref().is_some_and(str::is_empty) {
                 *slot = None;
             }
-            if slot.is_none()
-                && let Some(path) = env(&format!("{var}_FILE")).filter(|p| !p.is_empty())
-            {
-                let value = std::fs::read_to_string(&path)
-                    .with_context(|| format!("reading {var}_FILE ({path})"))?;
-                *slot = Some(value.trim_end_matches(['\n', '\r']).to_owned());
-                self.given.from_files.push(var);
-            }
         }
-        Ok(())
+    }
+
+    fn secret_mut(&mut self, var: &str) -> Option<&mut Option<String>> {
+        Some(match var {
+            "SovEmu__Authentication__AdminPassword" => &mut self.admin_password,
+            "SovEmu__Assets__SecretKey" => &mut self.asset_key,
+            "SovEmu__Authentication__TokenSigningKey" => &mut self.token_key,
+            "SovEmu__Metadata__ScreenScraper__DevPassword" => &mut self.screenscraper_devpassword,
+            "SovEmu__Metadata__ScreenScraper__Password" => &mut self.screenscraper_password,
+            _ => return None,
+        })
     }
 
     /// The effective settings, grouped, secrets redacted: logged at startup so a deployment's
@@ -815,7 +816,7 @@ pub struct AppState {
     pub(crate) activity: activity::Activity,
     /// When this server process started (Unix seconds), for its uptime.
     pub(crate) started_at: f64,
-    /// The server's recent log, when `SOVEMU_LOG_BUFFER_LINES` keeps any (`logs`).
+    /// The server's recent log, when `SovEmu__Logging__BufferLines` keeps any (`logs`).
     pub(crate) logs: Option<Arc<logs::LogBuffer>>,
 }
 
@@ -934,7 +935,7 @@ fn builtin_screenscraper() -> Option<(String, String)> {
 
 /// The ScreenScraper developer credentials to use: the settings when both are set, else the
 /// ones this build carries. ScreenScraper answers no request without a pair; they say which
-/// program asks, while the user account (`SOVEMU_SCREENSCRAPER_USER`) says who.
+/// program asks, while the user account (`SovEmu__Metadata__ScreenScraper__Username`) says who.
 fn screenscraper_developer(
     config: &Config,
     builtin: Option<(String, String)>,
@@ -947,7 +948,7 @@ fn screenscraper_developer(
     }
 }
 
-/// The game-information providers `SOVEMU_METADATA_SOURCES` names, in its order, and a note for
+/// The game-information providers `SovEmu__Metadata__Sources` names, in its order, and a note for
 /// each one named but not usable (ScreenScraper without its developer credentials).
 fn metadata_providers(
     config: &Config,
@@ -994,13 +995,13 @@ fn metadata_providers(
                 }
                 None => notes.push(
                     "ScreenScraper: this build has no developer credentials of its own \
-                         (release images do), and SOVEMU_SCREENSCRAPER_DEVID and \
-                         SOVEMU_SCREENSCRAPER_DEVPASSWORD are not set, so it is not asked"
+                         (release images do), and SovEmu__Metadata__ScreenScraper__DevId and \
+                         SovEmu__Metadata__ScreenScraper__DevPassword are not set, so it is not asked"
                         .to_owned(),
                 ),
             },
             other => anyhow::bail!(
-                "SOVEMU_METADATA_SOURCES: unknown source {other:?} (known: {})",
+                "SovEmu__Metadata__Sources: unknown source {other:?} (known: {})",
                 KNOWN.join(", ")
             ),
         }
@@ -1032,37 +1033,20 @@ fn write_builtin_artwork(dir: &sovemu_library::layout::ArtworkDir) -> std::io::R
     sovemu_library::layout::write_esrb(dir)
 }
 
-const REMOVED_SETTINGS: &[&str] = &[
-    // Now SOVEMU_ARTWORK_BUILTIN, whose folder holds the decorations in `decorations/`.
-    "SOVEMU_DECORATIONS_BUILTIN",
-    "SOVEMU_LAUNCHBOX",
-    "SOVEMU_LAUNCHBOX_URL",
-    "SOVEMU_LAUNCHBOX_IMAGES_URL",
-    "SOVEMU_LAUNCHBOX_REFRESH_HOURS",
-    "SOVEMU_THEGAMESDB_KEY",
-    "SOVEMU_THEGAMESDB_KEY_FILE",
-    "SOVEMU_THEGAMESDB_URL",
-];
-
-/// The removed settings among `vars`.
-fn removed_settings(vars: &[(String, String)]) -> Vec<&'static str> {
-    REMOVED_SETTINGS.iter().copied().filter(|r| vars.iter().any(|(k, _)| k == r)).collect()
-}
-
 pub async fn build_state(mut config: Config) -> Result<AppState> {
     let paths = config.paths();
     if let Some(old) = moved_data_dir(&paths, Path::new(LEGACY_DATA_DIR)) {
         anyhow::bail!(
-            "the data folder is {} (SOVEMU_DATA_DIR), which has no database, but {} has one: \
+            "the data folder is {} (SovEmu__Paths__Data), which has no database, but {} has one: \
              the image now keeps data in /sov-data. Mount the data volume there (or set \
-             SOVEMU_DATA_DIR={}), so it does not start empty",
+             SovEmu__Paths__Data={}), so it does not start empty",
             paths.root().display(),
             old.display(),
             LEGACY_DATA_DIR
         );
     }
     let library = config.roms.clone().unwrap_or_else(|| paths.roms());
-    // `SOVEMU_MIRROR_SYSTEMS=` (empty) means all systems, not a system called "".
+    // `SovEmu__Library__Mirror__Systems=` (empty) means all systems, not a system called "".
     config.mirror_systems.retain(|s| !s.trim().is_empty());
     for s in &mut config.mirror_systems {
         *s = s.trim().to_lowercase();
@@ -1087,7 +1071,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
             ),
             backup::Restored::Already => tracing::info!(
                 backup = %file.display(),
-                "this backup was restored already; SOVEMU_RESTORE_FROM can be removed"
+                "this backup was restored already; SovEmu__Backups__RestoreFrom can be removed"
             ),
         }
     }
@@ -1259,7 +1243,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
 }
 
 /// Brings the accounts in line with the environment: the admin and every declared user exist
-/// with their declared passwords, and with `SOVEMU_USERS_PRUNE` nobody else does.
+/// with their declared passwords, and with `SovEmu__Users__Prune` nobody else does.
 async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) -> Result<()> {
     if let (Some(user), Some(password)) = (&config.admin_username, &config.admin_password) {
         identity.ensure_user(user, password, auth::Role::Admin).await?;
@@ -1271,7 +1255,7 @@ async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) 
     if config.users_prune {
         if declared.is_empty() {
             anyhow::bail!(
-                "SOVEMU_USERS_PRUNE is set but no users are declared: that would delete everyone"
+                "SovEmu__Users__Prune is set but no users are declared: that would delete everyone"
             );
         }
         identity.prune_users(&declared).await?;
@@ -1279,23 +1263,122 @@ async fn reconcile_users(identity: &sovemu_identity::Identity, config: &Config) 
     Ok(())
 }
 
-/// Tidies the environment before the settings are parsed:
-/// - an empty `SOVEMU_*` variable means "not set" (a blank line in `.env`), so it is removed
-///   rather than rejected as an invalid value;
-/// - `SOVEMU_NAS_*` are compose's, for mounting the share; the server has no use for the NAS
-///   password, so it does not keep it.
-fn unset_empty_settings() {
-    let empty: Vec<String> = std::env::vars_os()
-        .filter_map(|(k, v)| {
-            let k = k.into_string().ok()?;
-            (k.starts_with("SOVEMU_") && (v.is_empty() || k.starts_with("SOVEMU_NAS_")))
-                .then_some(k)
-        })
+/// One change to the environment ([`environment_changes`]).
+#[derive(Debug, PartialEq, Eq)]
+enum EnvChange {
+    Set(String, String),
+    Remove(String),
+}
+
+/// Where a list setting's entries are gathered: `SovEmu__Streaming__IceServers__<n>__<field>`.
+const ICE_SERVERS: &str = "SovEmu__Streaming__IceServers";
+
+/// How the environment becomes what the options read, as .NET reads its configuration:
+/// - a setting in any letter case is renamed to its own spelling (`SOVEMU__HTTP__LISTEN`);
+/// - a list setting's entries, one per index (`SovEmu__Network__TrustedProxyNetwork__0`, `__1`),
+///   are joined into the setting, in index order (a single plain value still works);
+/// - the ICE servers' entries (`SovEmu__Streaming__IceServers__0__Urls`, `__Username`,
+///   `__Credential`) become the JSON list the option reads;
+/// - an empty setting is unset, as are the NAS mount's credentials, which compose passes in
+///   (`SOVEMU_NAS_*`).
+///
+/// `known` are the options' variables; `lists` those that take several values.
+fn environment_changes(
+    known: &[String],
+    lists: &[String],
+    vars: &[(String, String)],
+) -> Vec<EnvChange> {
+    let find =
+        |name: &str, among: &[String]| among.iter().find(|k| k.eq_ignore_ascii_case(name)).cloned();
+    let mut changes = Vec::new();
+    let mut entries: std::collections::BTreeMap<String, Vec<(u32, String)>> = Default::default();
+    let mut ice: std::collections::BTreeMap<u32, serde_json::Map<String, serde_json::Value>> =
+        Default::default();
+    for (name, value) in vars {
+        if name.starts_with("SOVEMU_NAS_") {
+            changes.push(EnvChange::Remove(name.clone()));
+            continue;
+        }
+        if !name.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("SovEmu__")) {
+            continue;
+        }
+        if value.is_empty() {
+            changes.push(EnvChange::Remove(name.clone()));
+            continue;
+        }
+        if let Some(own) = find(name, known) {
+            if own != *name {
+                changes.push(EnvChange::Remove(name.clone()));
+                changes.push(EnvChange::Set(own, value.clone()));
+            }
+            continue;
+        }
+        if let Some(rest) = name.get(ICE_SERVERS.len()..).filter(|_| {
+            name.get(..ICE_SERVERS.len()).is_some_and(|p| p.eq_ignore_ascii_case(ICE_SERVERS))
+        }) && let Some((index, field)) = rest.strip_prefix("__").and_then(|r| r.split_once("__"))
+            && let Ok(index) = index.parse::<u32>()
+        {
+            let field = match field.to_ascii_lowercase().as_str() {
+                "urls" => "urls",
+                "username" => "username",
+                "credential" => "credential",
+                _ => continue,
+            };
+            let value = if field == "urls" && value.contains(',') {
+                serde_json::Value::from(value.split(',').map(str::trim).collect::<Vec<_>>())
+            } else {
+                serde_json::Value::from(value.as_str())
+            };
+            ice.entry(index).or_default().insert(field.to_owned(), value);
+            changes.push(EnvChange::Remove(name.clone()));
+            continue;
+        }
+        if let Some((list, index)) = name.rsplit_once("__")
+            && let Ok(index) = index.parse::<u32>()
+            && let Some(own) = find(list, lists)
+        {
+            entries.entry(own).or_default().push((index, value.clone()));
+            changes.push(EnvChange::Remove(name.clone()));
+        }
+    }
+    for (list, mut values) in entries {
+        values.sort();
+        let joined = values.into_iter().map(|(_, v)| v).collect::<Vec<_>>().join(",");
+        changes.push(EnvChange::Set(list, joined));
+    }
+    if !ice.is_empty() {
+        let servers: Vec<serde_json::Value> =
+            ice.into_values().map(serde_json::Value::Object).collect();
+        changes.push(EnvChange::Set(
+            ICE_SERVERS.to_owned(),
+            serde_json::Value::from(servers).to_string(),
+        ));
+    }
+    changes
+}
+
+/// Puts the environment as the options read it ([`environment_changes`]).
+fn normalize_environment() {
+    use clap::CommandFactory;
+    let command = Config::command();
+    let env_of = |a: &clap::Arg| a.get_env().and_then(|e| e.to_str()).map(str::to_owned);
+    let known: Vec<String> = command.get_arguments().filter_map(env_of).collect();
+    let lists: Vec<String> = command
+        .get_arguments()
+        .filter(|a| a.get_value_delimiter() == Some(','))
+        .filter_map(env_of)
         .collect();
-    for key in empty {
-        // SAFETY: called first thing in `main`, before the runtime or any other thread exists,
-        // so nothing can be reading the environment concurrently.
-        unsafe { std::env::remove_var(key) };
+    let vars: Vec<(String, String)> = std::env::vars_os()
+        .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+        .collect();
+    for change in environment_changes(&known, &lists, &vars) {
+        match change {
+            // SAFETY: called first thing in `main`, before the runtime or any other thread
+            // exists, so nothing can be reading the environment concurrently.
+            EnvChange::Set(k, v) => unsafe { std::env::set_var(k, v) },
+            // SAFETY: as above.
+            EnvChange::Remove(k) => unsafe { std::env::remove_var(k) },
+        }
     }
 }
 
@@ -1329,7 +1412,7 @@ async fn shutdown_signal() {
 const JOBS_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn main() -> Result<()> {
-    unset_empty_settings();
+    normalize_environment();
     let config = Config::parse_with_sources(std::env::args_os());
     if let Some(dir) = &config.write_artwork {
         let art = sovemu_library::layout::ArtworkDir::new(dir);
@@ -1347,26 +1430,16 @@ fn main() -> Result<()> {
 }
 
 async fn run(mut config: Config) -> Result<()> {
-    config.resolve_secrets(|var| std::env::var(var).ok())?;
+    config.clear_empty_secrets();
     let vars: Vec<(String, String)> = std::env::vars().collect();
     config.given.keep_environment(&vars);
-    config.users = structured::users(&vars, |path| {
-        std::fs::read_to_string(path)
-            .map(|s| s.trim_end_matches(['\n', '\r']).to_owned())
-            .with_context(|| format!("reading {path}"))
-    })?;
+    config.users = structured::users(&vars)?;
     config.systems = structured::systems(&vars)?;
     config.controllers = structured::controllers(&vars)?;
     config.collections = structured::collections(&vars)?;
     let addr = config.http;
     let state = build_state(config).await?;
     tracing::info!(summary = %state.config.summary(), "configuration");
-    for var in removed_settings(&vars) {
-        tracing::warn!(
-            setting = var,
-            "ignored: LaunchBox and TheGamesDB are no longer game-information sources"
-        );
-    }
     let _gauges = telemetry::observe(&state);
     // The sources' accounts (level, limits), for the Library page before the first lookup.
     let metadata = state.metadata.clone();
@@ -1510,46 +1583,74 @@ mod tests {
         let ss = providers.iter().find(|p| p.id() == "screenscraper").unwrap();
         ss.prepare().await.unwrap();
         assert_eq!(ss.account().unwrap().max_threads, Some(4));
-        assert_eq!(ss.concurrency(), 2, "capped by SOVEMU_SCREENSCRAPER_THREADS");
+        assert_eq!(ss.concurrency(), 2, "capped by SovEmu__Metadata__ScreenScraper__Threads");
     }
 
     #[test]
-    fn removed_settings_are_noticed() {
-        let vars = |names: &[&str]| -> Vec<(String, String)> {
-            names.iter().map(|n| ((*n).to_owned(), "x".to_owned())).collect()
-        };
-        assert_eq!(
-            removed_settings(&vars(&["SOVEMU_LAUNCHBOX", "SOVEMU_HTTP", "SOVEMU_THEGAMESDB_KEY"])),
-            ["SOVEMU_LAUNCHBOX", "SOVEMU_THEGAMESDB_KEY"]
-        );
-        assert!(removed_settings(&vars(&["SOVEMU_SCREENSCRAPER_DEVID"])).is_empty());
+    fn the_environment_is_read_as_dotnet_reads_its_configuration() {
+        let known: Vec<String> = ["SovEmu__Http__Listen", "SovEmu__Network__TrustedProxyNetwork"]
+            .map(String::from)
+            .to_vec();
+        let lists = vec!["SovEmu__Network__TrustedProxyNetwork".to_owned()];
+        let vars: Vec<(String, String)> = [
+            ("SOVEMU__HTTP__LISTEN", "0.0.0.0:9000"),
+            ("SovEmu__Network__TrustedProxyNetwork__1", "10.1.0.0/16"),
+            ("sovemu__network__trustedproxynetwork__0", "10.0.0.0/8"),
+            ("SovEmu__Streaming__IceServers__0__Urls", "turn:a:3478,turns:a:5349"),
+            ("SovEmu__Streaming__IceServers__0__Username", "u"),
+            ("SovEmu__Streaming__IceServers__1__Urls", "stun:b:3478"),
+            ("SovEmu__Metadata__Videos", ""),
+            ("SovEmu__Users__0__Username", "kid"),
+            ("SOVEMU_NAS_PASSWORD", "hunter2"),
+            ("HOME", "/sov-data"),
+        ]
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .to_vec();
+        let changes = environment_changes(&known, &lists, &vars);
+        let set = |k: &str, v: &str| EnvChange::Set(k.to_owned(), v.to_owned());
+        let removed = |k: &str| EnvChange::Remove(k.to_owned());
+        for expected in [
+            removed("SOVEMU__HTTP__LISTEN"),
+            set("SovEmu__Http__Listen", "0.0.0.0:9000"),
+            set("SovEmu__Network__TrustedProxyNetwork", "10.0.0.0/8,10.1.0.0/16"),
+            removed("SovEmu__Metadata__Videos"),
+            removed("SOVEMU_NAS_PASSWORD"),
+            set(
+                "SovEmu__Streaming__IceServers",
+                r#"[{"urls":["turn:a:3478","turns:a:5349"],"username":"u"},{"urls":"stun:b:3478"}]"#,
+            ),
+        ] {
+            assert!(changes.contains(&expected), "{expected:?} in {changes:?}");
+        }
+        for untouched in ["SovEmu__Users__0__Username", "HOME"] {
+            assert!(!changes.iter().any(
+                |c| matches!(c, EnvChange::Remove(k) | EnvChange::Set(k, _) if k == untouched)
+            ));
+        }
+        // What the server builds from that reads as a plain value would.
+        let ice = changes.iter().find_map(|c| match c {
+            EnvChange::Set(k, v) if k == ICE_SERVERS => Some(v.clone()),
+            _ => None,
+        });
+        assert!(parse_ice_servers(&ice.unwrap()).is_ok());
     }
 
     #[test]
-    fn secrets_come_from_files_and_are_redacted() {
-        let file = std::env::temp_dir().join(format!("sovemu-secret-{}", std::process::id()));
-        std::fs::write(&file, "s3cret\n").unwrap();
+    fn secrets_are_redacted_and_empty_ones_unset() {
         let mut config = Config::parse_from([
             "sovemu-server",
             "--admin-username",
             "boss",
+            "--admin-password",
+            "s3cret",
             "--screenscraper-password",
             "",
         ]);
-        let path = file.display().to_string();
-        config
-            .resolve_secrets(|var| (var == "SOVEMU_ADMIN_PASSWORD_FILE").then(|| path.clone()))
-            .unwrap();
-        assert_eq!(config.admin_password.as_deref(), Some("s3cret"), "trailing newline trimmed");
+        config.clear_empty_secrets();
         assert_eq!(config.screenscraper_password, None, "empty means unset");
         let summary = config.summary();
-        assert!(summary.contains("SOVEMU_ADMIN_PASSWORD=(set) (from file)"), "{summary}");
+        assert!(summary.contains("SovEmu__Authentication__AdminPassword=(set)"), "{summary}");
         assert!(!summary.contains("s3cret"));
-        let missing = Config::parse_from(["sovemu-server"]).resolve_secrets(|v| {
-            (v == "SOVEMU_SCREENSCRAPER_PASSWORD_FILE").then(|| "/nonexistent/key".to_owned())
-        });
-        assert!(missing.is_err(), "a named secret file that cannot be read is an error");
-        std::fs::remove_file(file).ok();
     }
 
     #[test]
@@ -1566,8 +1667,11 @@ mod tests {
         ]);
         assert_eq!(config.log_format, telemetry::LogFormat::Json);
         let summary = config.summary();
-        assert!(summary.contains("SOVEMU_LOG_FORMAT=json (command line)"), "{summary}");
-        assert!(summary.contains("SOVEMU_OTEL_ENDPOINT=http://collector:4318/"), "{summary}");
+        assert!(summary.contains("SovEmu__Logging__Format=json (command line)"), "{summary}");
+        assert!(
+            summary.contains("SovEmu__Telemetry__Otlp__Endpoint=http://collector:4318/"),
+            "{summary}"
+        );
         let config = Config::parse_with_sources([
             "sovemu-server",
             "--otel-endpoint",
@@ -1577,7 +1681,8 @@ mod tests {
         ]);
         let summary = config.summary();
         assert!(
-            summary.contains("SOVEMU_OTEL_ENDPOINT=https://***@collector:4318/otlp?***"),
+            summary
+                .contains("SovEmu__Telemetry__Otlp__Endpoint=https://***@collector:4318/otlp?***"),
             "{summary}"
         );
         assert!(summary.contains("turn:turn.example:3478"), "{summary}");

@@ -45,9 +45,10 @@ function Configuration() {
         </div>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">
           Every setting is an environment variable (or a <code>--flag</code>), read at startup: change one and restart
-          the server. Secrets show only whether they are set; a secret can also come from the file{" "}
-          <code>&lt;NAME&gt;_FILE</code> names. Credentials inside other values are masked. "Copy settings" copies the
-          ones given to this server, secrets left out, as lines for <code>.env</code>.
+          the server. Names are <code>SovEmu__&lt;Area&gt;__&lt;Name&gt;</code>, in any letter case; a list takes one
+          entry per index (<code>__0</code>, <code>__1</code>). Secrets show only whether they are set. Credentials
+          inside other values are masked. "Copy settings" copies the ones given to this server, secrets left out, as
+          lines for <code>.env</code>.
         </p>
       </section>
       {groups.map((g) => (

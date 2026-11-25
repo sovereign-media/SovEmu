@@ -18,8 +18,6 @@ use crate::{Config, LibraryMode, SECRETS, redact};
 pub(crate) enum Source {
     Default,
     Environment,
-    /// A secret read from the file `<VAR>_FILE` names.
-    File,
     CommandLine,
 }
 
@@ -49,12 +47,12 @@ impl Group {
 #[derive(Debug, Clone)]
 pub(crate) struct Setting {
     pub(crate) group: Group,
-    /// The environment variable (`SOVEMU_HTTP`, `SOVEMU_USERS__0__USERNAME`, `RUST_LOG`).
+    /// The environment variable (`SovEmu__Http__Listen`, `SovEmu__Users__0__Username`, `RUST_LOG`).
     pub(crate) name: String,
     /// As given, redacted; none when unset.
     pub(crate) value: Option<String>,
     /// What the server works it out to be, where that differs from the value (an unset
-    /// `SOVEMU_ROMS_DIR` is `<data>/roms`).
+    /// `SovEmu__Paths__Library` is `<data>/roms`).
     pub(crate) effective: Option<String>,
     pub(crate) source: Source,
     /// Holds a secret: the value only says whether it is set.
@@ -71,10 +69,8 @@ pub(crate) struct Setting {
 pub(crate) struct Given {
     /// Argument id → where its value came from, and its values as given.
     args: BTreeMap<String, (Source, Vec<String>)>,
-    /// Secrets read from `<VAR>_FILE`, by variable.
-    pub(crate) from_files: Vec<&'static str>,
-    /// Variables read outside clap: the structured settings (`SOVEMU_USERS__…`,
-    /// `SOVEMU_SYSTEMS__…`, `SOVEMU_CONTROLLERS__…`) and the standard ones (`RUST_LOG`, `TZ`,
+    /// Variables read outside clap: the structured settings (`SovEmu__Users__…`,
+    /// `SovEmu__Systems__…`, `SovEmu__Controllers__…`) and the standard ones (`RUST_LOG`, `TZ`,
     /// `OTEL_*`).
     pub(crate) environment: Vec<(String, String)>,
 }
@@ -105,14 +101,14 @@ impl Given {
             .iter()
             .filter(|(k, _)| {
                 [
-                    "SOVEMU_USERS__",
-                    "SOVEMU_SYSTEMS__",
-                    "SOVEMU_CONTROLLERS__",
-                    "SOVEMU_COLLECTIONS__",
-                    "OTEL_",
+                    "SovEmu__Users__",
+                    "SovEmu__Systems__",
+                    "SovEmu__Controllers__",
+                    "SovEmu__Collections__",
                 ]
                 .iter()
-                .any(|p| k.starts_with(p))
+                .any(|p| starts_with_any_case(k, p))
+                    || k.starts_with("OTEL_")
                     || k == "RUST_LOG"
                     || k == "TZ"
             })
@@ -122,116 +118,120 @@ impl Given {
     }
 }
 
-/// The README group of each `SOVEMU_*` setting clap reads.
+/// The README group of each `SovEmu__*` setting clap reads.
 fn group(env: &str) -> Option<Group> {
     use Group::*;
     Some(match env {
-        "SOVEMU_ADMIN_USERNAME"
-        | "SOVEMU_ADMIN_PASSWORD"
-        | "SOVEMU_USERS_PRUNE"
-        | "SOVEMU_SESSION_DAYS"
-        | "SOVEMU_ACCESS_TOKEN_MINUTES"
-        | "SOVEMU_REFRESH_RETRY_SECONDS"
-        | "SOVEMU_PUBLIC_URL"
-        | "SOVEMU_PASSWORD_SIGN_IN"
-        | "SOVEMU_CLIENT_EVENTS"
-        | "SOVEMU_TOKEN_KEY"
-        | "SOVEMU_LOGIN_MAX_FAILURES"
-        | "SOVEMU_LOGIN_MAX_FAILURES_PER_IP"
-        | "SOVEMU_LOGIN_LOCKOUT_MINUTES" => Accounts,
-        "SOVEMU_DATA_DIR"
-        | "SOVEMU_ROMS_DIR"
-        | "SOVEMU_BIOS_DIR"
-        | "SOVEMU_LIBRARY_MODE"
-        | "SOVEMU_CACHE_GB"
-        | "SOVEMU_MIRROR_SYSTEMS"
-        | "SOVEMU_SCAN_INTERVAL_MINUTES"
-        | "SOVEMU_MIRROR_INTERVAL_MINUTES"
-        | "SOVEMU_CORES_DIR"
-        | "SOVEMU_CACHE_LARGE_GAME_MB"
-        | "SOVEMU_COPY_THREADS" => Library,
-        "SOVEMU_METADATA_AUTO"
-        | "SOVEMU_METADATA_SOURCES"
-        | "SOVEMU_METADATA_REFRESH_DAYS"
-        | "SOVEMU_SCREENSCRAPER_DEVID"
-        | "SOVEMU_SCREENSCRAPER_DEVPASSWORD"
-        | "SOVEMU_SCREENSCRAPER_USER"
-        | "SOVEMU_SCREENSCRAPER_PASSWORD"
-        | "SOVEMU_METADATA_REGIONS"
-        | "SOVEMU_METADATA_LANGUAGES"
-        | "SOVEMU_SCREENSCRAPER_DELAY_MS"
-        | "SOVEMU_SCREENSCRAPER_THREADS"
-        | "SOVEMU_ARTWORK_DOWNLOADS"
-        | "SOVEMU_ARTWORK_MAX_PX"
-        | "SOVEMU_ARTWORK_WEBP_QUALITY"
-        | "SOVEMU_METADATA_VIDEOS"
-        | "SOVEMU_SCREENSCRAPER_URL" => GameInformation,
-        "SOVEMU_HTTP"
-        | "SOVEMU_UDP_PORTS"
-        | "SOVEMU_UDP_BIND"
-        | "SOVEMU_UDP_DSCP"
-        | "SOVEMU_ADVERTISE_IP"
-        | "SOVEMU_ICE_SERVERS"
-        | "SOVEMU_VIDEO_KBPS"
-        | "SOVEMU_VIDEO_MIN_KBPS"
-        | "SOVEMU_VIDEO_MAX_KBPS"
-        | "SOVEMU_VIDEO_CODEC"
-        | "SOVEMU_VIDEO_ENCODER"
-        | "SOVEMU_AUDIO_KBPS"
-        | "SOVEMU_IDLE_TIMEOUT"
-        | "SOVEMU_WORKER_START_TIMEOUT"
-        | "SOVEMU_WORKER_STOP_TIMEOUT"
-        | "SOVEMU_REWIND_SECONDS"
-        | "SOVEMU_REWIND_MAX_MB"
-        | "SOVEMU_FAST_FORWARD"
-        | "SOVEMU_KEYFRAME_INTERVAL"
-        | "SOVEMU_DEBUG_DROP_VIDEO_PERCENT"
-        | "SOVEMU_DEBUG_DELAY_VIDEO_MS"
-        | "SOVEMU_DEBUG_DROP_VIDEO_BURST_MS"
-        | "SOVEMU_DEBUG_LIMIT_VIDEO_KBPS"
-        | "SOVEMU_DEBUG_JITTER_VIDEO_MS"
-        | "SOVEMU_DROPOUT_KEYFRAME_MS"
-        | "SOVEMU_SESSION_HEALTH_SECS"
-        | "SOVEMU_SESSION_FAILURES"
-        | "SOVEMU_HOME_FEATURED"
-        | "SOVEMU_HOME_ROW"
-        | "SOVEMU_GPU" => Streaming,
-        "SOVEMU_SECURE_COOKIES"
-        | "SOVEMU_TRUSTED_PROXIES"
-        | "SOVEMU_MAINTENANCE_INTERVAL_MINUTES"
-        | "SOVEMU_BACKUP_DIR"
-        | "SOVEMU_BACKUP_INTERVAL_HOURS"
-        | "SOVEMU_BACKUP_KEEP"
-        | "SOVEMU_RESTORE_FROM"
-        | "SOVEMU_JOB_HISTORY_DAYS"
-        | "SOVEMU_CLIENT_EVENT_DAYS"
-        | "SOVEMU_ACTIVITY_HISTORY_DAYS"
-        | "SOVEMU_LOG_BUFFER_LINES"
-        | "SOVEMU_RESOURCE_SAMPLE_SECONDS"
-        | "SOVEMU_RESOURCE_HISTORY_DAYS"
-        | "SOVEMU_ASSET_KEY"
-        | "SOVEMU_ASSET_URL_HOURS"
-        | "SOVEMU_LOG_FORMAT"
-        | "SOVEMU_OTEL_ENDPOINT"
-        | "SOVEMU_DECORATION"
-        | "SOVEMU_BACKGROUND"
-        | "SOVEMU_BACKGROUNDS_DIRS"
-        | "SOVEMU_DECORATIONS_DIRS"
-        | "SOVEMU_WEB_DIR"
-        | "SOVEMU_WORKER"
-        | "SOVEMU_ARTWORK_BUILTIN" => Operations,
+        "SovEmu__Authentication__AdminUsername"
+        | "SovEmu__Authentication__AdminPassword"
+        | "SovEmu__Users__Prune"
+        | "SovEmu__Authentication__SessionDays"
+        | "SovEmu__Authentication__Tokens__AccessTokenMinutes"
+        | "SovEmu__Authentication__Tokens__RefreshRetrySeconds"
+        | "SovEmu__Http__PublicUrl"
+        | "SovEmu__Authentication__PasswordSignIn"
+        | "SovEmu__ClientErrors__Enabled"
+        | "SovEmu__Authentication__TokenSigningKey"
+        | "SovEmu__Authentication__Lockout__MaxFailures"
+        | "SovEmu__Authentication__Lockout__MaxFailuresPerAddress"
+        | "SovEmu__Authentication__Lockout__Minutes" => Accounts,
+        "SovEmu__Paths__Data"
+        | "SovEmu__Paths__Library"
+        | "SovEmu__Paths__Bios"
+        | "SovEmu__Library__Mode"
+        | "SovEmu__Library__Cache__MaxGigabytes"
+        | "SovEmu__Library__Mirror__Systems"
+        | "SovEmu__Library__ScanIntervalMinutes"
+        | "SovEmu__Library__Mirror__IntervalMinutes"
+        | "SovEmu__Paths__Cores"
+        | "SovEmu__Library__Cache__LargeGameMegabytes"
+        | "SovEmu__Library__CopyThreads" => Library,
+        "SovEmu__Metadata__AutoLookup"
+        | "SovEmu__Metadata__Sources"
+        | "SovEmu__Metadata__RefreshDays"
+        | "SovEmu__Metadata__ScreenScraper__DevId"
+        | "SovEmu__Metadata__ScreenScraper__DevPassword"
+        | "SovEmu__Metadata__ScreenScraper__Username"
+        | "SovEmu__Metadata__ScreenScraper__Password"
+        | "SovEmu__Metadata__Regions"
+        | "SovEmu__Metadata__Languages"
+        | "SovEmu__Metadata__ScreenScraper__DelayMilliseconds"
+        | "SovEmu__Metadata__ScreenScraper__Threads"
+        | "SovEmu__Artwork__MaxConcurrentDownloads"
+        | "SovEmu__Artwork__MaxPixels"
+        | "SovEmu__Artwork__WebpQuality"
+        | "SovEmu__Metadata__Videos"
+        | "SovEmu__Metadata__ScreenScraper__Url" => GameInformation,
+        "SovEmu__Http__Listen"
+        | "SovEmu__Streaming__Udp__Ports"
+        | "SovEmu__Streaming__Udp__Bind"
+        | "SovEmu__Streaming__Udp__Dscp"
+        | "SovEmu__Streaming__AdvertiseAddress"
+        | "SovEmu__Streaming__IceServers"
+        | "SovEmu__Streaming__Video__Kbps"
+        | "SovEmu__Streaming__Video__MinKbps"
+        | "SovEmu__Streaming__Video__MaxKbps"
+        | "SovEmu__Streaming__Video__Codec"
+        | "SovEmu__Streaming__Video__Encoder"
+        | "SovEmu__Streaming__Audio__Kbps"
+        | "SovEmu__Sessions__IdleTimeoutSeconds"
+        | "SovEmu__Sessions__StartTimeoutSeconds"
+        | "SovEmu__Sessions__StopTimeoutSeconds"
+        | "SovEmu__Sessions__Rewind__Seconds"
+        | "SovEmu__Sessions__Rewind__MaxMegabytes"
+        | "SovEmu__Sessions__FastForward"
+        | "SovEmu__Streaming__Video__KeyframeInterval"
+        | "SovEmu__Streaming__Debug__VideoDropPercent"
+        | "SovEmu__Streaming__Debug__VideoDelayMilliseconds"
+        | "SovEmu__Streaming__Debug__VideoDropBurstMilliseconds"
+        | "SovEmu__Streaming__Debug__VideoLimitKbps"
+        | "SovEmu__Streaming__Debug__VideoJitterMilliseconds"
+        | "SovEmu__Streaming__Video__DropoutKeyframeMilliseconds"
+        | "SovEmu__Sessions__HealthSeconds"
+        | "SovEmu__Sessions__FailuresKept"
+        | "SovEmu__Home__FeaturedCount"
+        | "SovEmu__Home__RowLength"
+        | "SovEmu__Rendering__Gpu" => Streaming,
+        "SovEmu__Http__SecureCookies"
+        | "SovEmu__Network__TrustedProxyNetwork"
+        | "SovEmu__Jobs__MaintenanceIntervalMinutes"
+        | "SovEmu__Backups__Directory"
+        | "SovEmu__Backups__IntervalHours"
+        | "SovEmu__Backups__Keep"
+        | "SovEmu__Backups__RestoreFrom"
+        | "SovEmu__Jobs__RetentionDays"
+        | "SovEmu__ClientErrors__RetentionDays"
+        | "SovEmu__ActivityLog__RetentionDays"
+        | "SovEmu__Logging__BufferLines"
+        | "SovEmu__SystemResources__SampleSeconds"
+        | "SovEmu__SystemResources__RetentionDays"
+        | "SovEmu__Assets__SecretKey"
+        | "SovEmu__Assets__UrlHours"
+        | "SovEmu__Logging__Format"
+        | "SovEmu__Telemetry__Otlp__Endpoint"
+        | "SovEmu__Decorations__Set"
+        | "SovEmu__Appearance__Background"
+        | "SovEmu__Appearance__BackgroundDirectories"
+        | "SovEmu__Decorations__Directories"
+        | "SovEmu__Paths__Web"
+        | "SovEmu__Paths__Worker"
+        | "SovEmu__Paths__BuiltInArtwork" => Operations,
         _ => return None,
     })
 }
 
+/// Whether `name` starts with `prefix`, in any letter case (as settings are read).
+fn starts_with_any_case(name: &str, prefix: &str) -> bool {
+    name.get(..prefix.len()).is_some_and(|p| p.eq_ignore_ascii_case(prefix))
+}
+
 /// A variable read outside clap: its group, and whether it holds a secret.
 fn environment_setting(name: &str) -> (Group, bool) {
-    if name.starts_with("SOVEMU_USERS__") {
-        // `__PASSWORD` is a secret; `__PASSWORD_FILE` is only a path.
-        (Group::Accounts, name.ends_with("__PASSWORD"))
-    } else if ["SOVEMU_SYSTEMS__", "SOVEMU_CONTROLLERS__", "SOVEMU_COLLECTIONS__"]
+    if starts_with_any_case(name, "SovEmu__Users__") {
+        (Group::Accounts, name.to_ascii_lowercase().ends_with("__password"))
+    } else if ["SovEmu__Systems__", "SovEmu__Controllers__", "SovEmu__Collections__"]
         .iter()
-        .any(|p| name.starts_with(p))
+        .any(|p| starts_with_any_case(name, p))
     {
         (Group::Library, false)
     } else {
@@ -246,8 +246,8 @@ fn shown(env: &str, values: &[String]) -> Option<String> {
         return None;
     }
     Some(match env {
-        "SOVEMU_OTEL_ENDPOINT" => redact::url(&joined),
-        "SOVEMU_ICE_SERVERS" => serde_json::from_str(&joined)
+        "SovEmu__Telemetry__Otlp__Endpoint" => redact::url(&joined),
+        "SovEmu__Streaming__IceServers" => serde_json::from_str(&joined)
             .map_or_else(|_| redact::MASK.to_owned(), |v| redact::ice_servers(&v).to_string()),
         "OTEL_EXPORTER_OTLP_HEADERS" => format!("({})", redact::header_names(&joined).join(",")),
         _ => joined,
@@ -257,11 +257,11 @@ fn shown(env: &str, values: &[String]) -> Option<String> {
 /// What the server makes of a setting, where that differs from what was given.
 fn effective(config: &Config, env: &str) -> Option<String> {
     Some(match env {
-        "SOVEMU_ROMS_DIR" => config.roms_dir.display().to_string(),
-        "SOVEMU_BIOS_DIR" => config.bios_dir().display().to_string(),
-        "SOVEMU_PUBLIC_URL" => config.public_urls().join(","),
-        "SOVEMU_ARTWORK_BUILTIN" => config.builtin_artwork().root().display().to_string(),
-        "SOVEMU_CACHE_GB" if config.library_mode == LibraryMode::Cache => {
+        "SovEmu__Paths__Library" => config.roms_dir.display().to_string(),
+        "SovEmu__Paths__Bios" => config.bios_dir().display().to_string(),
+        "SovEmu__Http__PublicUrl" => config.public_urls().join(","),
+        "SovEmu__Paths__BuiltInArtwork" => config.builtin_artwork().root().display().to_string(),
+        "SovEmu__Library__Cache__MaxGigabytes" if config.library_mode == LibraryMode::Cache => {
             config.cache_gb.unwrap_or(20).to_string()
         }
         _ => return None,
@@ -284,9 +284,8 @@ pub(crate) fn settings(config: &Config) -> Vec<Setting> {
             });
         let secret = SECRETS.contains(&env);
         let (value, source) = if secret {
-            // Secrets are read after parsing (`<VAR>_FILE`): ask `Config` itself.
+            // Empty secrets are cleared after parsing: ask `Config` itself.
             let set = config.secret(env).is_some();
-            let source = if config.given.from_files.contains(&env) { Source::File } else { source };
             (Some(if set { "(set)" } else { "(unset)" }.to_owned()), source)
         } else {
             (shown(env, &values), source)
@@ -350,7 +349,6 @@ pub(crate) fn summary(config: &Config) -> String {
             line.push_str(&format!(" → {effective}"));
         }
         match s.source {
-            Source::File => line.push_str(" (from file)"),
             Source::CommandLine => line.push_str(" (command line)"),
             Source::Default | Source::Environment => {}
         }
@@ -371,7 +369,9 @@ mod tests {
         for arg in Config::command().get_arguments() {
             let Some(env) = arg.get_env().and_then(|e| e.to_str()) else { continue };
             assert!(group(env).is_some(), "{env} has no group in configuration.rs");
-            assert!(README.contains(&format!("`{env}`")), "{env} has no row in README.md");
+            // A list's row shows how its entries are given: `SovEmu__…__<n>`.
+            let documented = [format!("`{env}`"), format!("`{env}__<n>`")];
+            assert!(documented.iter().any(|d| README.contains(d)), "{env} has no row in README.md");
         }
     }
 
@@ -386,22 +386,22 @@ mod tests {
         ]);
         let all = settings(&config);
         let get = |name: &str| all.iter().find(|s| s.name == name).unwrap().clone();
-        let ports = get("SOVEMU_UDP_PORTS");
+        let ports = get("SovEmu__Streaming__Udp__Ports");
         assert_eq!(
             (ports.value.as_deref(), ports.source),
             (Some("6000-6001"), Source::CommandLine)
         );
         assert_eq!(ports.default.as_deref(), Some("50000-50009"));
         assert_eq!(ports.group, Group::Streaming);
-        let http = get("SOVEMU_HTTP");
+        let http = get("SovEmu__Http__Listen");
         assert_eq!((http.value.as_deref(), http.source), (Some("0.0.0.0:8080"), Source::Default));
         assert!(http.description.contains("Address for the web client"));
-        let otel = get("SOVEMU_OTEL_ENDPOINT");
+        let otel = get("SovEmu__Telemetry__Otlp__Endpoint");
         assert_eq!(otel.value.as_deref(), Some("https://***@collector/v1?***"));
-        let roms = get("SOVEMU_ROMS_DIR");
+        let roms = get("SovEmu__Paths__Library");
         assert_eq!(roms.value, None);
         assert_eq!(roms.effective, None, "resolved as the state is built, not by parsing");
-        let password = get("SOVEMU_ADMIN_PASSWORD");
+        let password = get("SovEmu__Authentication__AdminPassword");
         assert_eq!((password.value.as_deref(), password.secret), (Some("(unset)"), true));
         assert!(all.windows(2).all(|w| w[0].group <= w[1].group), "grouped");
     }
@@ -410,18 +410,18 @@ mod tests {
     fn structured_and_standard_variables_are_listed_and_redacted() {
         let mut config = Config::parse_with_sources(["sovemu-server"]);
         config.given.keep_environment(&[
-            ("SOVEMU_USERS__0__USERNAME".into(), "kid".into()),
-            ("SOVEMU_USERS__0__PASSWORD".into(), "hunter22".into()),
-            ("SOVEMU_SYSTEMS__psx__CORE".into(), "pcsx_rearmed".into()),
+            ("SovEmu__Users__0__Username".into(), "kid".into()),
+            ("SovEmu__Users__0__Password".into(), "hunter22".into()),
+            ("SovEmu__Systems__psx__Core".into(), "pcsx_rearmed".into()),
             ("OTEL_EXPORTER_OTLP_HEADERS".into(), "authorization=Bearer s3cr3t".into()),
             ("RUST_LOG".into(), "debug".into()),
             ("HOME".into(), "/root".into()),
         ]);
         let all = settings(&config);
         let get = |name: &str| all.iter().find(|s| s.name == name).map(|s| s.value.clone());
-        assert_eq!(get("SOVEMU_USERS__0__USERNAME"), Some(Some("kid".into())));
-        assert_eq!(get("SOVEMU_USERS__0__PASSWORD"), Some(Some("(set)".into())));
-        assert_eq!(get("SOVEMU_SYSTEMS__psx__CORE"), Some(Some("pcsx_rearmed".into())));
+        assert_eq!(get("SovEmu__Users__0__Username"), Some(Some("kid".into())));
+        assert_eq!(get("SovEmu__Users__0__Password"), Some(Some("(set)".into())));
+        assert_eq!(get("SovEmu__Systems__psx__Core"), Some(Some("pcsx_rearmed".into())));
         assert_eq!(get("OTEL_EXPORTER_OTLP_HEADERS"), Some(Some("(authorization)".into())));
         assert_eq!(get("RUST_LOG"), Some(Some("debug".into())));
         assert_eq!(get("HOME"), None, "only the settings SovEmu reads");

@@ -123,7 +123,7 @@ pub struct SignInConfig {
     pub device_authorization_endpoint: String,
     /// Where a person approves that code, signed in, in a browser.
     pub verification_uri: String,
-    /// The password fallback, when `SOVEMU_PASSWORD_SIGN_IN` allows it.
+    /// The password fallback, when `SovEmu__Authentication__PasswordSignIn` allows it.
     pub password_endpoint: Option<String>,
 }
 
@@ -182,7 +182,7 @@ impl Identity {
     }
 
     /// Where and how to sign in at the address a request reached (its `Host`); `None` when that
-    /// address is not one of `SOVEMU_PUBLIC_URL`'s, so nothing can sign in there.
+    /// address is not one of `SovEmu__Http__PublicUrl`'s, so nothing can sign in there.
     pub fn sign_in_config(&self, headers: &HeaderMap) -> Option<SignInConfig> {
         let issuer = self.inner.provider.issuer(headers)?;
         let url = &issuer.url;

@@ -255,7 +255,7 @@ function Controllers() {
         {locked && (
           <p className="mt-2 flex items-start gap-2 text-sm text-slate-400">
             <Info className="mt-0.5 size-4 shrink-0" /> This controller's default comes from the server's environment
-            (SOVEMU_CONTROLLERS), which always wins. Change it there.
+            (SovEmu__Controllers), which always wins. Change it there.
           </p>
         )}
         {message && (

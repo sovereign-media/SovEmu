@@ -45,7 +45,7 @@ describe("the rendering page", () => {
   });
 
   it("says when the probe ran", () => {
-    expect(probedText(null)).toContain("SOVEMU_GPU is off");
+    expect(probedText(null)).toContain("SovEmu__Rendering__Gpu is off");
     expect(probedText(1_700_000_000)).toContain("needs a restart");
   });
 });

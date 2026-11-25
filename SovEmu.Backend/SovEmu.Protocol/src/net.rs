@@ -9,7 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 /// Exactly one, because str0m's ICE answers a connectivity check only when the packet's
 /// destination is one of its local candidates, and with a wildcard bind the OS does not tell us
 /// which local address a datagram arrived on. So every received datagram is tagged with this
-/// address. In a container that is the host's address (`SOVEMU_ADVERTISE_IP`), which the
+/// address. In a container that is the host's address (`SovEmu__Streaming__AdvertiseAddress`), which the
 /// container could not discover on its own.
 pub fn advertised_addr(advertise: Option<IpAddr>, bound: SocketAddr) -> SocketAddr {
     let ip = advertise

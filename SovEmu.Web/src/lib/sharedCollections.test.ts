@@ -16,10 +16,10 @@ describe("shared collections", () => {
         collection("Empty", []),
       ]),
     ).toEqual([
-      "SOVEMU_COLLECTIONS__0__NAME=Family night",
-      "SOVEMU_COLLECTIONS__0__GAMES__0=nes/Super Stand-in (USA).nes",
-      "SOVEMU_COLLECTIONS__0__GAMES__1=psx/Big (Disc 1).chd",
-      "SOVEMU_COLLECTIONS__1__NAME=Empty",
+      "SovEmu__Collections__0__Name=Family night",
+      "SovEmu__Collections__0__Games__0=nes/Super Stand-in (USA).nes",
+      "SovEmu__Collections__0__Games__1=psx/Big (Disc 1).chd",
+      "SovEmu__Collections__1__Name=Empty",
     ]);
   });
 });

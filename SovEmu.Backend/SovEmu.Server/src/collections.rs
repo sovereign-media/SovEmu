@@ -1,6 +1,6 @@
 //! A user's favourite games and named collections of games, and the collections an admin keeps
 //! for everyone (shared: no user), some of them declared in the environment
-//! (`SOVEMU_COLLECTIONS__…`, kept in step after each scan and locked on the admin page).
+//! (`SovEmu__Collections__…`, kept in step after each scan and locked on the admin page).
 //!
 //! A user's and the shared collections are one table and one set of functions, told apart by
 //! [`Owner`]: a user reads the shared ones but changes only their own.
@@ -320,7 +320,7 @@ async fn owned(state: &AppState, owner: Owner, collection_id: i64) -> ApiResult<
 async fn changeable(state: &AppState, owner: Owner, collection_id: i64) -> ApiResult<()> {
     if owned(state, owner, collection_id).await? {
         return Err(ApiError::conflict(
-            "this collection is set in the environment (SOVEMU_COLLECTIONS__…): change it there",
+            "this collection is set in the environment (SovEmu__Collections__…): change it there",
         ));
     }
     Ok(())

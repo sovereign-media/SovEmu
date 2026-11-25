@@ -8,7 +8,7 @@
 //! the page says to start one. A game starts with
 //! each option taken from, last one winning: the core's default, SovEmu's own default for the
 //! system ([`sovemu_library::systems`]), the admin's choice (the `system_settings` table), and the
-//! environment (`SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`). The environment always wins and is shown
+//! environment (`SovEmu__Systems__<id>__Options__<name>`). The environment always wins and is shown
 //! as locked, so the app stays reproducible from configuration; the page offers the admin's
 //! choices as environment lines to move there.
 
@@ -321,7 +321,7 @@ pub(crate) async fn set_run_ahead(
     if environment_run_ahead(state, system).is_some() {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
-            format!("run-ahead is set by SOVEMU_SYSTEMS__{}__RUN_AHEAD", system.id),
+            format!("run-ahead is set by SovEmu__Systems__{}__RunAhead", system.id),
         ));
     }
     match frames {
@@ -412,10 +412,10 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
         layered_run_ahead(system, admin_run_ahead, environment_run_ahead(state, system));
     let mut environment: Vec<String> = admin
         .iter()
-        .map(|(k, v)| format!("SOVEMU_SYSTEMS__{}__OPTIONS__{k}={v}", system.id))
+        .map(|(k, v)| format!("SovEmu__Systems__{}__Options__{k}={v}", system.id))
         .collect();
     if let (Some(frames), Source::Admin) = (admin_run_ahead, run_ahead.source) {
-        environment.push(format!("SOVEMU_SYSTEMS__{}__RUN_AHEAD={frames}", system.id));
+        environment.push(format!("SovEmu__Systems__{}__RunAhead={frames}", system.id));
     }
     let core = [info.name.clone(), info.version.clone()].into_iter().flatten().collect::<Vec<_>>();
     Ok(SystemSettings {
@@ -457,7 +457,7 @@ pub(crate) async fn put_settings(
         if locked.contains_key(key) {
             return Err(ApiError::new(
                 StatusCode::CONFLICT,
-                format!("{key} is set by SOVEMU_SYSTEMS__{}__OPTIONS__{key}", system.id),
+                format!("{key} is set by SovEmu__Systems__{}__Options__{key}", system.id),
             ));
         }
         let option = options.iter().find(|o| &o.key == key);

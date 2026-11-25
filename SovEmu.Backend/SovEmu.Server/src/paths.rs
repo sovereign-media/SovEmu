@@ -1,4 +1,4 @@
-//! The data folder's layout (`SOVEMU_DATA_DIR`, `/sov-data` in the image), in one place. It holds
+//! The data folder's layout (`SovEmu__Paths__Data`, `/sov-data` in the image), in one place. It holds
 //! everything SovEmu writes and nothing it ships: the image's own files are in `/opt/sovemu`,
 //! whose `artwork/` has the same layout as the one here, so a file here replaces the built-in one
 //! at the same path (`sovemu_library::layout`).
@@ -15,13 +15,13 @@
 //!     games/<game id>/      downloaded box art, screenshot, logo and video
 //!   saves/<user>/<system>/<game>.srm            battery saves
 //!   saves/<user>/<system>/states/<game>/        save states and their screenshots
-//!   bios/                 BIOS files in any layout, unless SOVEMU_BIOS_DIR points elsewhere
+//!   bios/                 BIOS files in any layout, unless SovEmu__Paths__Bios points elsewhere
 //!   metadata/fbneo/       FBNeo's DATs, by commit
-//!   backups/              backups, unless SOVEMU_BACKUP_DIR points elsewhere
-//!   restored.json         the backup last restored (SOVEMU_RESTORE_FROM), so it is restored once
+//!   backups/              backups, unless SovEmu__Backups__Directory points elsewhere
+//!   restored.json         the backup last restored (SovEmu__Backups__RestoreFrom), so it is restored once
 //!   before-restore-<time>/  what a restore replaced, kept
 //!   library/              mode `mirror`: the local copy of the library
-//!   roms/                 the library when SOVEMU_ROMS_DIR is not set (development)
+//!   roms/                 the library when SovEmu__Paths__Library is not set (development)
 //!   cache/                made again as needed:
 //!     games/                mode `cache`: games copied from the library as they are played
 //!     discs/                generated .m3u playlists for multi-disc games
@@ -54,7 +54,7 @@ impl DataPaths {
         self.root.join("sovemu.db")
     }
 
-    /// The library when `SOVEMU_ROMS_DIR` is not set.
+    /// The library when `SovEmu__Paths__Library` is not set.
     pub fn roms(&self) -> PathBuf {
         self.root.join("roms")
     }
@@ -64,7 +64,7 @@ impl DataPaths {
         self.root.join("library")
     }
 
-    /// BIOS files when `SOVEMU_BIOS_DIR` is not set.
+    /// BIOS files when `SovEmu__Paths__Bios` is not set.
     pub fn bios(&self) -> PathBuf {
         self.root.join("bios")
     }
@@ -107,7 +107,7 @@ impl DataPaths {
         self.cache().join("discs")
     }
 
-    /// The built-in artwork when the image does not hold it (`SOVEMU_ARTWORK_BUILTIN` unset):
+    /// The built-in artwork when the image does not hold it (`SovEmu__Paths__BuiltInArtwork` unset):
     /// written here at startup, as the image writes `/opt/sovemu/artwork` at build.
     pub fn builtin_artwork(&self) -> PathBuf {
         self.cache().join("builtin-artwork")
@@ -170,7 +170,7 @@ impl DataPaths {
         self.cache().join("artwork")
     }
 
-    /// Backups, when `SOVEMU_BACKUP_DIR` is not set (`backup`).
+    /// Backups, when `SovEmu__Backups__Directory` is not set (`backup`).
     pub fn backups(&self) -> PathBuf {
         self.root.join("backups")
     }

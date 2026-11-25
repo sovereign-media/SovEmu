@@ -44,12 +44,12 @@ impl DecorationsReportNode {
             })
             .collect()
     }
-    /// The set for systems without one of their own (`SOVEMU_DECORATION`; `none`: no frame).
+    /// The set for systems without one of their own (`SovEmu__Decorations__Set`; `none`: no frame).
     async fn default(&self) -> &str {
         &self.0.default
     }
     /// The folders sets are read from, the first winning for the same file: those in
-    /// `SOVEMU_DECORATIONS_DIRS`, `<data>/decorations`, then the built-in one.
+    /// `SovEmu__Decorations__Directories`, `<data>/decorations`, then the built-in one.
     async fn folders(&self) -> &[String] {
         &self.0.folders
     }
@@ -84,7 +84,7 @@ impl SystemDecorationNode<'_> {
     async fn set(&self) -> &str {
         &self.0.set
     }
-    /// Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`) rather than the default.
+    /// Chosen for this system (`SovEmu__Systems__<id>__Decoration`) rather than the default.
     async fn per_system(&self) -> bool {
         self.0.per_system
     }
@@ -220,7 +220,7 @@ pub(super) struct MetadataProviderProgress {
     /// The account the source uses, as the service last described it.
     pub(super) account: Option<MetadataAccount>,
     /// Lookups the source takes at once, from its account's limits (and
-    /// `SOVEMU_SCREENSCRAPER_THREADS`).
+    /// `SovEmu__Metadata__ScreenScraper__Threads`).
     pub(super) threads: i32,
 }
 

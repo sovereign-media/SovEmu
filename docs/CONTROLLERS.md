@@ -88,7 +88,7 @@ Consoles label their buttons differently: the Mega Drive's A, B and C are RetroP
 4. **the default** for every system;
 5. **the built-in defaults** below.
 
-The user's own choices come before any default. A default comes from the environment, or from an admin on the admin page (Admin ▸ Controllers). For the same controller and system, the environment wins, and the admin page shows that default locked. The environment variables are `SOVEMU_CONTROLLERS__<n>__ID`, `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` and `__NAME`. The admin page offers its own defaults in that form.
+The user's own choices come before any default. A default comes from the environment, or from an admin on the admin page (Admin ▸ Controllers). For the same controller and system, the environment wins, and the admin page shows that default locked. The environment variables are `SovEmu__Controllers__<n>__Id`, `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` and `__NAME`. The admin page offers its own defaults in that form.
 
 `controllerMappings(system:)` returns the mapping in force for each model that has one on that system. Each comes with its `source` (`USER`, `ADMIN` or `ENVIRONMENT`) and its `system` (null when it is an every-system mapping). Without `system`, it returns the every-system mappings. A model missing from the list uses the built-in defaults. After a reset, a client fetches the list again, so the next layer applies. The built-in defaults:
 

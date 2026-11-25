@@ -52,7 +52,7 @@ impl From<JobName> for crate::jobs::Job {
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum JobTrigger {
     Startup,
-    /// Its interval (`SOVEMU_*_INTERVAL_MINUTES`).
+    /// Its interval (`SovEmu__…IntervalMinutes`).
     Schedule,
     /// An admin.
     Admin,

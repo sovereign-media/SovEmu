@@ -80,7 +80,7 @@ pub(crate) async fn reconcile(state: &AppState) -> anyhow::Result<String> {
 }
 
 /// What follows a reconcile, without waiting: the lookup of games without information, which
-/// ends by downloading the artwork that is missing (with `SOVEMU_METADATA_AUTO`, or when an admin
+/// ends by downloading the artwork that is missing (with `SovEmu__Metadata__AutoLookup`, or when an admin
 /// asked); else only the downloads.
 pub(crate) fn fetch_missing(state: &AppState, trigger: Trigger) {
     if state.config.metadata_auto || trigger == Trigger::Admin {
@@ -215,7 +215,7 @@ pub(crate) fn metadata_fetch(state: &AppState, scope: metadata::Scope) -> ApiRes
 pub(crate) struct DecorationsReport {
     /// Each set, by name, and what it holds.
     pub(crate) sets: Vec<(String, decorations::SetSummary)>,
-    /// `SOVEMU_DECORATION`: the set for systems without one of their own.
+    /// `SovEmu__Decorations__Set`: the set for systems without one of their own.
     pub(crate) default: String,
     /// The folders sets are read from, first wins.
     pub(crate) folders: Vec<String>,
@@ -225,7 +225,7 @@ pub(crate) struct DecorationsReport {
 pub(crate) struct SystemDecoration {
     pub(crate) system: crate::api::SystemSummary,
     pub(crate) set: String,
-    /// Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`), not the default.
+    /// Chosen for this system (`SovEmu__Systems__<id>__Decoration`), not the default.
     pub(crate) per_system: bool,
     /// What its games are framed with when they have no image of their own: the system's
     /// image, else the set's default. None for `none`, or a set that isn't there.

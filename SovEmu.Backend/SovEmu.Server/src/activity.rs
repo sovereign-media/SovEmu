@@ -1,7 +1,7 @@
 //! The activity log: who did what, and when. Sign-ins and refusals (`sovemu_identity`, as its
 //! observer), games started (by their resolver) and how they ended (`sovemu_sessions`, as its
 //! observer), and what admins changed (by each change's resolver). Kept in `activity`, read by
-//! the admin Activity page, pruned after `SOVEMU_ACTIVITY_HISTORY_DAYS`.
+//! the admin Activity page, pruned after `SovEmu__ActivityLog__RetentionDays`.
 //!
 //! [`Activity::record`] never waits: one writer in the background keeps entries in the order
 //! they were recorded, so recording cannot slow or fail what it records. Nothing secret is recorded: subjects are names (an account, a game, a

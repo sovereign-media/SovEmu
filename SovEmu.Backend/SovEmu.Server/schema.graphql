@@ -177,7 +177,7 @@ The backgrounds there are, and the one chosen.
 type AppearanceSettings {
 	"""
 	The built-in ones, then the admin's own (from `<data>/backgrounds` and
-	`SOVEMU_BACKGROUNDS_DIRS`).
+	`SovEmu__Appearance__BackgroundDirectories`).
 	"""
 	backgrounds: [Background!]!
 	"""
@@ -185,7 +185,7 @@ type AppearanceSettings {
 	"""
 	chosen: String!
 	"""
-	`SOVEMU_BACKGROUND` sets it: the page cannot change it.
+	`SovEmu__Appearance__Background` sets it: the page cannot change it.
 	"""
 	fromEnvironment: Boolean!
 	"""
@@ -316,7 +316,7 @@ colour, scaled to cover the screen.
 """
 type Background {
 	"""
-	Its name in settings (`SOVEMU_BACKGROUND`): `lattice`, or a file's name in the folders.
+	Its name in settings (`SovEmu__Appearance__Background`): `lattice`, or a file's name in the folders.
 	"""
 	id: String!
 	"""
@@ -354,19 +354,19 @@ The backups, and how they are made.
 """
 type Backups {
 	"""
-	Where they are kept (`SOVEMU_BACKUP_DIR`).
+	Where they are kept (`SovEmu__Backups__Directory`).
 	"""
 	dir: String!
 	"""
-	A backup every this many hours (`SOVEMU_BACKUP_INTERVAL_HOURS`; 0: none on a schedule).
+	A backup every this many hours (`SovEmu__Backups__IntervalHours`; 0: none on a schedule).
 	"""
 	intervalHours: Float!
 	"""
-	How many are kept (`SOVEMU_BACKUP_KEEP`; 0: every one).
+	How many are kept (`SovEmu__Backups__Keep`; 0: every one).
 	"""
 	keep: Int!
 	"""
-	The backup restored at startup, if `SOVEMU_RESTORE_FROM` is set.
+	The backup restored at startup, if `SovEmu__Backups__RestoreFrom` is set.
 	"""
 	restoreFrom: String
 	"""
@@ -508,7 +508,7 @@ and use these URLs as given (they hard-code nothing but `/graphql`).
 type BootstrapConfig {
 	"""
 	Whether anything can sign in at this address. False when it is not one of
-	`SOVEMU_PUBLIC_URL`'s; then the rest is null, and `address` says what to add.
+	`SovEmu__Http__PublicUrl`'s; then the rest is null, and `address` says what to add.
 	"""
 	signInAvailable: Boolean!
 	"""
@@ -541,7 +541,7 @@ type BootstrapConfig {
 	verificationUri: String
 	"""
 	The apps' password fallback: a form post of `client_id`, `username`, `password` and
-	`scope`, answered like the token endpoint. Null when `SOVEMU_PASSWORD_SIGN_IN` is off.
+	`scope`, answered like the token endpoint. Null when `SovEmu__Authentication__PasswordSignIn` is off.
 	"""
 	passwordEndpoint: String
 }
@@ -636,7 +636,7 @@ input ClientCapabilitiesInput {
 
 type ClientConfig {
 	"""
-	`RTCIceServer` objects (STUN/TURN) for WebRTC, from `SOVEMU_ICE_SERVERS`.
+	`RTCIceServer` objects (STUN/TURN) for WebRTC, from `SovEmu__Streaming__IceServers`.
 	"""
 	iceServers: JSON!
 }
@@ -782,7 +782,7 @@ type Collection {
 	"""
 	shared: Boolean!
 	"""
-	Declared in the server's environment (`SOVEMU_COLLECTIONS__…`): changed only there.
+	Declared in the server's environment (`SovEmu__Collections__…`): changed only there.
 	"""
 	declared: Boolean!
 	"""
@@ -818,7 +818,7 @@ type ConfigSetting {
 	value: String
 	"""
 	What the server makes of it, where that differs from the value (an unset
-	`SOVEMU_ROMS_DIR` is `<data>/roms`).
+	`SovEmu__Paths__Library` is `<data>/roms`).
 	"""
 	effective: String
 	source: ConfigSource!
@@ -836,10 +836,6 @@ enum ConfigSource {
 	"""
 	DEFAULT
 	ENVIRONMENT
-	"""
-	A secret read from the file `<VAR>_FILE` names.
-	"""
-	FILE
 	COMMAND_LINE
 }
 
@@ -887,7 +883,7 @@ type ControllerDefaults {
 	"""
 	mappings: [ControllerMapping!]!
 	"""
-	The admin page's defaults as `SOVEMU_CONTROLLERS__<n>__…` lines.
+	The admin page's defaults as `SovEmu__Controllers__<n>__…` lines.
 	"""
 	environment: [String!]!
 }
@@ -1016,12 +1012,12 @@ type DecorationsReport {
 	"""
 	sets: [DecorationSet!]!
 	"""
-	The set for systems without one of their own (`SOVEMU_DECORATION`; `none`: no frame).
+	The set for systems without one of their own (`SovEmu__Decorations__Set`; `none`: no frame).
 	"""
 	default: String!
 	"""
 	The folders sets are read from, the first winning for the same file: those in
-	`SOVEMU_DECORATIONS_DIRS`, `<data>/decorations`, then the built-in one.
+	`SovEmu__Decorations__Directories`, `<data>/decorations`, then the built-in one.
 	"""
 	folders: [String!]!
 	systems: [SystemDecoration!]!
@@ -1100,7 +1096,7 @@ type EmulatorSettings {
 	"""
 	needsGame: Boolean!
 	"""
-	The admin's changes as `SOVEMU_SYSTEMS__…` lines, to move into configuration.
+	The admin's changes as `SovEmu__Systems__…` lines, to move into configuration.
 	"""
 	environment: [String!]!
 	runAhead: RunAheadSetting!
@@ -1267,7 +1263,7 @@ type Game {
 	patches: [Patch!]!
 	"""
 	The decoration (bezel) to draw around its picture: the set chosen for its system
-	(`SOVEMU_DECORATION`, `SOVEMU_SYSTEMS__<id>__DECORATION`), its own image there, else its
+	(`SovEmu__Decorations__Set`, `SovEmu__Systems__<id>__Decoration`), its own image there, else its
 	system's, else the set's default. Null when the set is `none` or has nothing for it.
 	"""
 	decoration: Decoration
@@ -1293,7 +1289,7 @@ type Game {
 	media: [MediaKind!]!
 	"""
 	Where to load a kind of artwork from, if the game has it: a URL signed for this user
-	(valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one). With `width` (the box it is
+	(valid `SovEmu__Assets__UrlHours`; ask again for a fresh one). With `width` (the box it is
 	shown in, in device pixels), a lossy WebP copy at most that wide: the width is rounded up
 	to the grid copies are made on (16 px steps, from 144), and a picture narrower than it is
 	not enlarged. Without it, the original. Videos are always the original.
@@ -1425,7 +1421,7 @@ Where 3D systems render, decided at startup.
 """
 type GpuStatus {
 	"""
-	`SOVEMU_GPU` as configured.
+	`SovEmu__Rendering__Gpu` as configured.
 	"""
 	setting: String!
 	mode: Rendering!
@@ -1444,7 +1440,7 @@ type GpuStatus {
 	workerArg: String!
 	"""
 	When the probe ran (Unix seconds): once, at startup, so a GPU added later needs a
-	restart. None when nothing was probed (`SOVEMU_GPU=off`).
+	restart. None when nothing was probed (`SovEmu__Rendering__Gpu=off`).
 	"""
 	probedAt: Float
 }
@@ -1641,7 +1637,7 @@ What started a job's run.
 enum JobTrigger {
 	STARTUP
 	"""
-	Its interval (`SOVEMU_*_INTERVAL_MINUTES`).
+	Its interval (`SovEmu__…IntervalMinutes`).
 	"""
 	SCHEDULE
 	"""
@@ -1730,7 +1726,7 @@ Lines of the log, and where to read on from.
 """
 type LogPage {
 	"""
-	Whether the server keeps its log for this view (`SOVEMU_LOG_BUFFER_LINES` above 0).
+	Whether the server keeps its log for this view (`SovEmu__Logging__BufferLines` above 0).
 	"""
 	enabled: Boolean!
 	"""
@@ -1756,7 +1752,7 @@ enum MappingSource {
 	"""
 	ADMIN
 	"""
-	A default from `SOVEMU_CONTROLLERS__<n>__…`, which an admin cannot change (locked).
+	A default from `SovEmu__Controllers__<n>__…`, which an admin cannot change (locked).
 	"""
 	ENVIRONMENT
 }
@@ -1880,7 +1876,7 @@ type MetadataProviderProgress {
 	account: MetadataAccount
 	"""
 	Lookups the source takes at once, from its account's limits (and
-	`SOVEMU_SCREENSCRAPER_THREADS`).
+	`SovEmu__Metadata__ScreenScraper__Threads`).
 	"""
 	threads: Int!
 }
@@ -2157,7 +2153,7 @@ type Mutation {
 	"""
 	Admins: how many frames a system's pictures run ahead of its games (0: off), or with no
 	`frames` back to SovEmu's default (1 frame on the systems that support it). Applies to the next game started. Refused while
-	`SOVEMU_SYSTEMS__<id>__RUN_AHEAD` sets it.
+	`SovEmu__Systems__<id>__RunAhead` sets it.
 	"""
 	setRunAhead(system: ID!, frames: Int): EmulatorSettings!
 	"""
@@ -2181,7 +2177,7 @@ type Mutation {
 	resetControllerMapping(controller: String!, system: ID): Boolean!
 	"""
 	Admins: the background for everyone: a background's id, `random` or `none`. `CONFLICT`
-	while `SOVEMU_BACKGROUND` sets it; `NOT_FOUND` for a background that is not there.
+	while `SovEmu__Appearance__Background` sets it; `NOT_FOUND` for a background that is not there.
 	"""
 	setBackground(id: String!): Boolean!
 	"""
@@ -2196,7 +2192,7 @@ type Mutation {
 	picture, a screen that crashed), for the server's log beside the session's own lines and
 	the admin's Client errors page. `client` names it and its version (`android 0.1.0
 	(MiTV-AFMU1, Android 11)`). At most 20 events a call and 60 a minute per user; the rest
-	are dropped. Returns how many were taken (0 when `SOVEMU_CLIENT_EVENTS` is off).
+	are dropped. Returns how many were taken (0 when `SovEmu__ClientErrors__Enabled` is off).
 	"""
 	reportClientEvents(client: String!, events: [ClientEventInput!]!): Int!
 	"""
@@ -2232,11 +2228,11 @@ How browsers and apps reach the server and its game streams.
 """
 type NetworkReport {
 	"""
-	The web client and API's address (`SOVEMU_HTTP`).
+	The web client and API's address (`SovEmu__Http__Listen`).
 	"""
 	http: String!
 	"""
-	The UDP ports for game sessions, one per concurrent session (`SOVEMU_UDP_PORTS`).
+	The UDP ports for game sessions, one per concurrent session (`SovEmu__Streaming__Udp__Ports`).
 	"""
 	udpFirst: Int!
 	udpLast: Int!
@@ -2247,7 +2243,7 @@ type NetworkReport {
 	portsInUse: Int!
 	sessions: Int!
 	"""
-	The address session ports bind to (`SOVEMU_UDP_BIND`).
+	The address session ports bind to (`SovEmu__Streaming__Udp__Bind`).
 	"""
 	udpBind: String!
 	"""
@@ -2255,12 +2251,12 @@ type NetworkReport {
 	"""
 	advertisedIp: String!
 	"""
-	It was worked out (the machine's primary address), not set (`SOVEMU_ADVERTISE_IP`). In
+	It was worked out (the machine's primary address), not set (`SovEmu__Streaming__AdvertiseAddress`). In
 	a container that is the container's own address, which browsers cannot reach.
 	"""
 	advertisedIpDetected: Boolean!
 	"""
-	The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own.
+	The addresses sign-in works at: `SovEmu__Http__PublicUrl`, else this host's own.
 	"""
 	publicUrls: [String!]!
 	publicUrlsConfigured: Boolean!
@@ -2609,7 +2605,7 @@ type Query {
 	"""
 	libretroRelease: String!
 	"""
-	Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
+	Admins: the BIOS folder on the server (`SovEmu__Paths__Bios`): each system's files go in
 	the subfolder its `bios.folder` names.
 	"""
 	biosDir: String!
@@ -2806,7 +2802,7 @@ type RunAheadSetting {
 	max: Int!
 	"""
 	`SOVEMU` when nothing sets it (1 frame on the systems that support it); `ENVIRONMENT` is
-	`SOVEMU_SYSTEMS__<id>__RUN_AHEAD`, which always wins (locked).
+	`SovEmu__Systems__<id>__RunAhead`, which always wins (locked).
 	"""
 	source: SettingSource!
 	"""
@@ -2843,7 +2839,7 @@ The admin Resources page: the host, and the container's latest use.
 type ServerResources {
 	host: HostFacts!
 	"""
-	Seconds between readings (`SOVEMU_RESOURCE_SAMPLE_SECONDS`; 0: not read).
+	Seconds between readings (`SovEmu__SystemResources__SampleSeconds`; 0: not read).
 	"""
 	sampleSeconds: Int!
 	"""
@@ -2864,7 +2860,7 @@ type ServerResources {
 """
 A game that failed: the server refused to start it, it failed to start, or it crashed,
 errored or had to be killed while playing. The newest the server keeps
-(`SOVEMU_SESSION_FAILURES`).
+(`SovEmu__Sessions__FailuresKept`).
 """
 type SessionFailure {
 	"""
@@ -2947,7 +2943,7 @@ enum SettingSource {
 	"""
 	ADMIN
 	"""
-	Set by `SOVEMU_SYSTEMS__<id>__OPTIONS__<name>`, which always wins (locked).
+	Set by `SovEmu__Systems__<id>__Options__<name>`, which always wins (locked).
 	"""
 	ENVIRONMENT
 }
@@ -3118,7 +3114,7 @@ type StorageReport {
 	totalBytes: Float
 	freeBytes: Float
 	"""
-	`cache` mode: the cache's cap, in bytes (`SOVEMU_CACHE_GB`).
+	`cache` mode: the cache's cap, in bytes (`SovEmu__Library__Cache__MaxGigabytes`).
 	"""
 	cacheLimitBytes: Float
 }
@@ -3281,7 +3277,7 @@ type SystemBios {
 	state: BiosState!
 	"""
 	The folder SovEmu recommends for the system's files, relative to the server's BIOS folder
-	(`SOVEMU_BIOS_DIR`). Files are found in any layout; this one keeps them tidy.
+	(`SovEmu__Paths__Bios`). Files are found in any layout; this one keeps them tidy.
 	"""
 	folder: String!
 	groups: [BiosGroup!]!
@@ -3318,7 +3314,7 @@ type SystemDecoration {
 	"""
 	set: String!
 	"""
-	Chosen for this system (`SOVEMU_SYSTEMS__<id>__DECORATION`) rather than the default.
+	Chosen for this system (`SovEmu__Systems__<id>__Decoration`) rather than the default.
 	"""
 	perSystem: Boolean!
 	"""
@@ -3354,7 +3350,7 @@ OpenTelemetry export: whether it is on, where to, and how it has gone.
 """
 type TelemetryReport {
 	"""
-	`SOVEMU_OTEL_ENDPOINT` is set: traces and metrics are exported.
+	`SovEmu__Telemetry__Otlp__Endpoint` is set: traces and metrics are exported.
 	"""
 	enabled: Boolean!
 	"""
@@ -3362,7 +3358,7 @@ type TelemetryReport {
 	"""
 	endpoint: String
 	"""
-	`text` or `json` (`SOVEMU_LOG_FORMAT`).
+	`text` or `json` (`SovEmu__Logging__Format`).
 	"""
 	logFormat: String!
 	"""
@@ -3445,7 +3441,7 @@ type User {
 	"""
 	isAdmin: Boolean!
 	"""
-	The environment declares it (`SOVEMU_ADMIN_USERNAME`, `SOVEMU_USERS__<n>__…`) and sets
+	The environment declares it (`SovEmu__Authentication__AdminUsername`, `SovEmu__Users__<n>__…`) and sets
 	it again at every start: its role and password are changed there, and it is not removed
 	here.
 	"""

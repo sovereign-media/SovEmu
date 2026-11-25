@@ -193,7 +193,7 @@ impl ClientEventsMutation {
     /// picture, a screen that crashed), for the server's log beside the session's own lines and
     /// the admin's Client errors page. `client` names it and its version (`android 0.1.0
     /// (MiTV-AFMU1, Android 11)`). At most 20 events a call and 60 a minute per user; the rest
-    /// are dropped. Returns how many were taken (0 when `SOVEMU_CLIENT_EVENTS` is off).
+    /// are dropped. Returns how many were taken (0 when `SovEmu__ClientErrors__Enabled` is off).
     async fn report_client_events(
         &self,
         ctx: &Context<'_>,

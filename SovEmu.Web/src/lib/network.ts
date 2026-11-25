@@ -14,20 +14,20 @@ export function networkWarnings(n: NetworkReport): NetworkWarning[] {
   if (!n.signInAvailableHere) {
     warnings.push({
       title: `Signing in does not work at ${n.requestHost || "this address"}`,
-      detail: `Sign-in works only at the server's sign-in addresses (${n.publicUrls.join(", ")}). Add this address to SOVEMU_PUBLIC_URL, or open the server at one of them. The check compares the host and port only: behind a proxy that serves HTTPS, list the https:// address.`,
+      detail: `Sign-in works only at the server's sign-in addresses (${n.publicUrls.join(", ")}). Add this address to SovEmu__Http__PublicUrl, or open the server at one of them. The check compares the host and port only: behind a proxy that serves HTTPS, list the https:// address.`,
     });
   }
   if (n.advertisedIpDetected) {
     warnings.push({
       title: `Game streams go to ${n.advertisedIp}, an address the server worked out`,
       detail:
-        "That is the machine's own primary address. In a container it is the container's, which browsers cannot reach: set SOVEMU_ADVERTISE_IP to the host's address.",
+        "That is the machine's own primary address. In a container it is the container's, which browsers cannot reach: set SovEmu__Streaming__AdvertiseAddress to the host's address.",
     });
   }
   if (n.portCount > 0 && n.portsInUse >= n.portCount) {
     warnings.push({
       title: "Every game port is in use",
-      detail: `All ${n.portCount} UDP ports are held, so no one else can start a game. Widen SOVEMU_UDP_PORTS (and publish the range).`,
+      detail: `All ${n.portCount} UDP ports are held, so no one else can start a game. Widen SovEmu__Streaming__Udp__Ports (and publish the range).`,
     });
   }
   return warnings;

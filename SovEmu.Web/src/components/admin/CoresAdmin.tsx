@@ -1,6 +1,6 @@
 // Cores: every libretro core the image ships (and any other in the cores folder), with its
 // version, whether it loads, the systems it plays and its licence. Read-only: a system's core is
-// chosen on Emulator settings or with `SOVEMU_SYSTEMS__<id>__CORE`.
+// chosen on Emulator settings or with `SovEmu__Systems__<id>__Core`.
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Search } from "lucide-react";
@@ -43,7 +43,7 @@ function Cores() {
           <a href="/admin/settings/" className="underline">
             Emulator settings
           </a>{" "}
-          or with <code>SOVEMU_SYSTEMS__&lt;id&gt;__CORE</code>.
+          or with <code>SovEmu__Systems__&lt;id&gt;__CORE</code>.
         </p>
       </section>
 

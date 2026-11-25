@@ -55,7 +55,7 @@ struct Cli {
     command: Command,
 
     /// How log lines are written to stderr: `text`, or `json` (one object per line) for a log
-    /// collector. The server passes its own `SOVEMU_LOG_FORMAT`.
+    /// collector. The server passes its own `SovEmu__Logging__Format`.
     #[arg(long, global = true, value_enum, default_value_t = LogFormat::Text)]
     log_format: LogFormat,
 
@@ -297,11 +297,11 @@ struct ServeArgs {
     rom: Option<PathBuf>,
 
     /// Address for the test page and signalling (`POST /api/offer`). Port 0 picks one.
-    #[arg(long, default_value = "0.0.0.0:8080", env = "SOVEMU_HTTP")]
+    #[arg(long, default_value = "0.0.0.0:8080", env = "SovEmu__Http__Listen")]
     http: SocketAddr,
 
     /// The built web client to serve (`SovEmu.Web/dist`).
-    #[arg(long, env = "SOVEMU_WEB_DIR")]
+    #[arg(long, env = "SovEmu__Paths__Web")]
     web_dir: Option<PathBuf>,
 
     /// UDP address for all WebRTC traffic (one port for everything). Port 0 picks one.
@@ -310,7 +310,7 @@ struct ServeArgs {
 
     /// The IP address clients should send media to, if not the bound one: in a container, the
     /// host's address as browsers reach it.
-    #[arg(long = "advertise-ip", env = "SOVEMU_ADVERTISE_IP")]
+    #[arg(long = "advertise-ip", env = "SovEmu__Streaming__AdvertiseAddress")]
     advertise: Option<IpAddr>,
 
     /// Video bitrate a stream starts at, kbit/s; it then follows the connection and the client.
@@ -417,7 +417,7 @@ struct ServeArgs {
 #[derive(Debug, clap::Args)]
 struct ProbeArgs {
     /// Core libraries, or directories of them.
-    #[arg(required = true, env = "SOVEMU_CORES_DIR", value_delimiter = ':')]
+    #[arg(required = true, env = "SovEmu__Paths__Cores", value_delimiter = ':')]
     cores: Vec<PathBuf>,
 }
 

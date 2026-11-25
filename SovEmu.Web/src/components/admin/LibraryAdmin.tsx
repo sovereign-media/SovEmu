@@ -145,7 +145,7 @@ function Library() {
           Titles, descriptions, release dates, developers, genres, ratings, ESRB age ratings, play modes, series,
           themes, box art, screenshots, logos and videos. Arcade and Neo Geo names come from FinalBurn Neo's own lists;
           every other game is matched by its file's hash on ScreenScraper, which needs developer credentials set on the
-          server (<code>SOVEMU_SCREENSCRAPER_*</code>).
+          server (<code>SovEmu__Metadata__ScreenScraper__*</code>).
         </p>
         <p className="mt-3 text-sm">
           Sources:{" "}

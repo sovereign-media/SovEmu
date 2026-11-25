@@ -1,6 +1,6 @@
 // Decorations: the bezel sets found in the decoration folders, and the set each system's games
 // are framed with, previewed with the game's window outlined. Read-only: the choice is
-// `SOVEMU_DECORATION` and `SOVEMU_SYSTEMS__<id>__DECORATION`, shown as lines to copy.
+// `SovEmu__Decorations__Set` and `SovEmu__Systems__<id>__Decoration`, shown as lines to copy.
 
 import { useQuery } from "@tanstack/react-query";
 import type { DecorationsReport } from "../../lib/api";
@@ -76,7 +76,7 @@ function Decorations() {
         <>
           <AdminSection title="Sets">
             <p className="mt-1 text-sm text-slate-400">
-              Games are framed with <EnvLine>SOVEMU_DECORATION={data.default}</EnvLine>, or per system with{" "}
+              Games are framed with <EnvLine>SovEmu__Decorations__Set={data.default}</EnvLine>, or per system with{" "}
               <EnvLine>{systemDecorationEnv("<id>", "<set>")}</EnvLine> (<code>none</code> for no frame). Sets use
               Batocera's layout and are listed again after each library scan.
             </p>
@@ -117,7 +117,7 @@ function Decorations() {
                 ))}
               </ol>
               <p className="mt-2 text-xs text-muted">
-                Add folders with <code>SOVEMU_DECORATIONS_DIRS</code>.
+                Add folders with <code>SovEmu__Decorations__Directories</code>.
               </p>
             </details>
           </AdminSection>

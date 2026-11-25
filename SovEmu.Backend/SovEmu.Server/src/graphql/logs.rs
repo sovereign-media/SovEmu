@@ -63,7 +63,7 @@ pub(super) struct LogLineNode {
 /// Lines of the log, and where to read on from.
 #[derive(SimpleObject)]
 pub(super) struct LogPage {
-    /// Whether the server keeps its log for this view (`SOVEMU_LOG_BUFFER_LINES` above 0).
+    /// Whether the server keeps its log for this view (`SovEmu__Logging__BufferLines` above 0).
     pub(super) enabled: bool,
     /// Oldest first.
     pub(super) lines: Vec<LogLineNode>,

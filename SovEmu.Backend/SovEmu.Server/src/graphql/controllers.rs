@@ -16,7 +16,7 @@ fn controller_entry(controller: &str, system: Option<&ID>, what: &str) -> Entry 
 pub(super) struct ControllerDefaults {
     /// From the environment (locked) and from the admin page.
     pub(super) mappings: Vec<crate::controllers::ControllerMapping>,
-    /// The admin page's defaults as `SOVEMU_CONTROLLERS__<n>__…` lines.
+    /// The admin page's defaults as `SovEmu__Controllers__<n>__…` lines.
     pub(super) environment: Vec<String>,
 }
 

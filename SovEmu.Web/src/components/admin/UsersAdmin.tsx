@@ -1,7 +1,7 @@
 // Users: the accounts on this server and what each may do. An admin adds accounts, makes them
 // admins or viewers, sets their passwords, signs them out everywhere and removes them. The server
 // keeps one admin at least, and refuses changes to accounts the environment declares
-// (`SOVEMU_ADMIN_USERNAME`, `SOVEMU_USERS__<n>__…`), which it would undo at the next start:
+// (`SovEmu__Authentication__AdminUsername`, `SovEmu__Users__<n>__…`), which it would undo at the next start:
 // those show locked, and are changed there.
 
 import { useMutation, useQuery } from "@tanstack/react-query";

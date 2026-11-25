@@ -39,11 +39,11 @@ pub(super) struct Attributions {
 /// OpenTelemetry export: whether it is on, where to, and how it has gone.
 #[derive(SimpleObject)]
 pub(super) struct TelemetryReport {
-    /// `SOVEMU_OTEL_ENDPOINT` is set: traces and metrics are exported.
+    /// `SovEmu__Telemetry__Otlp__Endpoint` is set: traces and metrics are exported.
     pub(super) enabled: bool,
     /// The collector, credentials masked.
     pub(super) endpoint: Option<String>,
-    /// `text` or `json` (`SOVEMU_LOG_FORMAT`).
+    /// `text` or `json` (`SovEmu__Logging__Format`).
     pub(super) log_format: String,
     /// `OTEL_SERVICE_NAME`, else SovEmu's.
     pub(super) service_name: String,
@@ -97,7 +97,7 @@ pub(super) struct StorageReport {
     /// The data folder's filesystem, in bytes.
     pub(super) total_bytes: Option<f64>,
     pub(super) free_bytes: Option<f64>,
-    /// `cache` mode: the cache's cap, in bytes (`SOVEMU_CACHE_GB`).
+    /// `cache` mode: the cache's cap, in bytes (`SovEmu__Library__Cache__MaxGigabytes`).
     pub(super) cache_limit_bytes: Option<f64>,
 }
 
@@ -124,23 +124,23 @@ pub(super) struct UserStorage {
 /// How browsers and apps reach the server and its game streams.
 #[derive(SimpleObject)]
 pub(super) struct NetworkReport {
-    /// The web client and API's address (`SOVEMU_HTTP`).
+    /// The web client and API's address (`SovEmu__Http__Listen`).
     pub(super) http: String,
-    /// The UDP ports for game sessions, one per concurrent session (`SOVEMU_UDP_PORTS`).
+    /// The UDP ports for game sessions, one per concurrent session (`SovEmu__Streaming__Udp__Ports`).
     pub(super) udp_first: i32,
     pub(super) udp_last: i32,
     pub(super) port_count: i32,
     /// Ports held: by a session, or by a worker that has not exited yet.
     pub(super) ports_in_use: i32,
     pub(super) sessions: i32,
-    /// The address session ports bind to (`SOVEMU_UDP_BIND`).
+    /// The address session ports bind to (`SovEmu__Streaming__Udp__Bind`).
     pub(super) udp_bind: String,
     /// The address browsers send media to, as workers advertise it.
     pub(super) advertised_ip: String,
-    /// It was worked out (the machine's primary address), not set (`SOVEMU_ADVERTISE_IP`). In
+    /// It was worked out (the machine's primary address), not set (`SovEmu__Streaming__AdvertiseAddress`). In
     /// a container that is the container's own address, which browsers cannot reach.
     pub(super) advertised_ip_detected: bool,
-    /// The addresses sign-in works at: `SOVEMU_PUBLIC_URL`, else this host's own.
+    /// The addresses sign-in works at: `SovEmu__Http__PublicUrl`, else this host's own.
     public_urls: Vec<String>,
     public_urls_configured: bool,
     /// Sign-in works at the address this request was made to.
@@ -169,14 +169,14 @@ pub(super) struct IceServerSummary {
 
 /// The settings the Network page shows.
 pub(super) const NETWORK_SETTINGS: &[&str] = &[
-    "SOVEMU_HTTP",
-    "SOVEMU_UDP_PORTS",
-    "SOVEMU_UDP_BIND",
-    "SOVEMU_ADVERTISE_IP",
-    "SOVEMU_ICE_SERVERS",
-    "SOVEMU_PUBLIC_URL",
-    "SOVEMU_TRUSTED_PROXIES",
-    "SOVEMU_SECURE_COOKIES",
+    "SovEmu__Http__Listen",
+    "SovEmu__Streaming__Udp__Ports",
+    "SovEmu__Streaming__Udp__Bind",
+    "SovEmu__Streaming__AdvertiseAddress",
+    "SovEmu__Streaming__IceServers",
+    "SovEmu__Http__PublicUrl",
+    "SovEmu__Network__TrustedProxyNetwork",
+    "SovEmu__Http__SecureCookies",
 ];
 
 /// A group of settings, as the README's settings table has them.
@@ -195,8 +195,6 @@ pub(super) enum ConfigSource {
     /// Not set: the default.
     Default,
     Environment,
-    /// A secret read from the file `<VAR>_FILE` names.
-    File,
     CommandLine,
 }
 
@@ -210,7 +208,7 @@ pub(super) struct ConfigSetting {
     /// `(unset)`.
     pub(super) value: Option<String>,
     /// What the server makes of it, where that differs from the value (an unset
-    /// `SOVEMU_ROMS_DIR` is `<data>/roms`).
+    /// `SovEmu__Paths__Library` is `<data>/roms`).
     pub(super) effective: Option<String>,
     pub(super) source: ConfigSource,
     pub(super) secret: bool,
@@ -232,7 +230,6 @@ impl From<crate::configuration::Setting> for ConfigSetting {
             source: match s.source {
                 Source::Default => ConfigSource::Default,
                 Source::Environment => ConfigSource::Environment,
-                Source::File => ConfigSource::File,
                 Source::CommandLine => ConfigSource::CommandLine,
             },
             name: s.name,
@@ -297,7 +294,7 @@ pub(super) struct GpuDevice {
 /// Where 3D systems render, decided at startup.
 #[derive(SimpleObject)]
 pub(super) struct GpuStatus {
-    /// `SOVEMU_GPU` as configured.
+    /// `SovEmu__Rendering__Gpu` as configured.
     pub(super) setting: String,
     pub(super) mode: Rendering,
     /// What 3D games draw with.
@@ -308,7 +305,7 @@ pub(super) struct GpuStatus {
     /// What workers are started with (`--gpu`): a render node, `auto`, `software` or `off`.
     pub(super) worker_arg: String,
     /// When the probe ran (Unix seconds): once, at startup, so a GPU added later needs a
-    /// restart. None when nothing was probed (`SOVEMU_GPU=off`).
+    /// restart. None when nothing was probed (`SovEmu__Rendering__Gpu=off`).
     pub(super) probed_at: Option<f64>,
 }
 
@@ -429,8 +426,10 @@ impl ServerQuery {
             traces: traces.into(),
             metrics: metrics.into(),
             settings: crate::configuration::settings_where(config, |name| {
-                matches!(name, "SOVEMU_OTEL_ENDPOINT" | "SOVEMU_LOG_FORMAT" | "RUST_LOG")
-                    || name.starts_with("OTEL_")
+                matches!(
+                    name,
+                    "SovEmu__Telemetry__Otlp__Endpoint" | "SovEmu__Logging__Format" | "RUST_LOG"
+                ) || name.starts_with("OTEL_")
             })
             .into_iter()
             .map(Into::into)
@@ -582,7 +581,7 @@ impl ServerQuery {
         Ok(sovemu_library::cores::LIBRETRO_RELEASE)
     }
 
-    /// Admins: the BIOS folder on the server (`SOVEMU_BIOS_DIR`): each system's files go in
+    /// Admins: the BIOS folder on the server (`SovEmu__Paths__Bios`): each system's files go in
     /// the subfolder its `bios.folder` names.
     async fn bios_dir(&self, ctx: &Context<'_>) -> Result<String> {
         admin(ctx).await?;

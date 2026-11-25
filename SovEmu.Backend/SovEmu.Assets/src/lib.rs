@@ -10,8 +10,8 @@
 //! (a screenshot's `?t=` cache-buster) are not signed. The path is signed percent-decoded, so a
 //! client that re-encodes it (`%28` for `(`) still matches.
 //!
-//! Expiries are rounded down to the hour, then `SOVEMU_ASSET_URL_HOURS` added: the same file's URL
-//! stays the same for up to an hour, so caches keep working. The key is `SOVEMU_ASSET_KEY`, else
+//! Expiries are rounded down to the hour, then `SovEmu__Assets__UrlHours` added: the same file's URL
+//! stays the same for up to an hour, so caches keep working. The key is `SovEmu__Assets__SecretKey`, else
 //! one generated on first run and kept in `<data>/server.json` (owner-only). Changing it rejects
 //! every URL already handed out, until each client asks for fresh ones.
 //!
@@ -162,7 +162,7 @@ impl std::fmt::Display for KeyError {
 
 impl std::error::Error for KeyError {}
 
-/// The signing key: `configured` (`SOVEMU_ASSET_KEY`), else the one kept in
+/// The signing key: `configured` (`SovEmu__Assets__SecretKey`), else the one kept in
 /// `<data_dir>/server.json`, generated there on first run.
 pub fn load_key(configured: Option<&str>, data_dir: &Path) -> Result<Vec<u8>, KeyError> {
     load_secret(configured, data_dir, "assetSigningKey", "asset signing key")

@@ -162,7 +162,7 @@ pub(super) enum BiosState {
 pub(super) struct SystemBios {
     pub(super) state: BiosState,
     /// The folder SovEmu recommends for the system's files, relative to the server's BIOS folder
-    /// (`SOVEMU_BIOS_DIR`). Files are found in any layout; this one keeps them tidy.
+    /// (`SovEmu__Paths__Bios`). Files are found in any layout; this one keeps them tidy.
     pub(super) folder: String,
     pub(super) groups: Vec<BiosGroup>,
 }
@@ -385,7 +385,7 @@ impl GameNode {
             .collect())
     }
     /// The decoration (bezel) to draw around its picture: the set chosen for its system
-    /// (`SOVEMU_DECORATION`, `SOVEMU_SYSTEMS__<id>__DECORATION`), its own image there, else its
+    /// (`SovEmu__Decorations__Set`, `SovEmu__Systems__<id>__Decoration`), its own image there, else its
     /// system's, else the set's default. Null when the set is `none` or has nothing for it.
     async fn decoration(&self, ctx: &Context<'_>) -> Option<DecorationNode> {
         let state = state(ctx);
@@ -419,7 +419,7 @@ impl GameNode {
         self.0.media.split(',').filter_map(MediaKind::parse).collect()
     }
     /// Where to load a kind of artwork from, if the game has it: a URL signed for this user
-    /// (valid `SOVEMU_ASSET_URL_HOURS`; ask again for a fresh one). With `width` (the box it is
+    /// (valid `SovEmu__Assets__UrlHours`; ask again for a fresh one). With `width` (the box it is
     /// shown in, in device pixels), a lossy WebP copy at most that wide: the width is rounded up
     /// to the grid copies are made on (16 px steps, from 144), and a picture narrower than it is
     /// not enlarged. Without it, the original. Videos are always the original.
@@ -658,7 +658,7 @@ impl CollectionNode {
     async fn shared(&self) -> bool {
         self.0.shared
     }
-    /// Declared in the server's environment (`SOVEMU_COLLECTIONS__…`): changed only there.
+    /// Declared in the server's environment (`SovEmu__Collections__…`): changed only there.
     async fn declared(&self) -> bool {
         self.0.declared
     }

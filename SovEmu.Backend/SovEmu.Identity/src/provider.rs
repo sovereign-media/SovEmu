@@ -13,12 +13,12 @@
 //!   granted, `/oauth/jwks`, `/oauth/userinfo`, and `/oauth/logout` (end session).
 //! - **The sign-in form's target**, `POST /oauth/signin`.
 //! - **The password fallback** for the apps, `POST /oauth/password` (behind
-//!   `SOVEMU_PASSWORD_SIGN_IN`): OAuth 2.1 has no password grant, so this checks the password,
+//!   `SovEmu__Authentication__PasswordSignIn`): OAuth 2.1 has no password grant, so this checks the password,
 //!   then runs an ordinary code exchange with oauth-as on the app's behalf, so its tokens are
 //!   oauth-as's own and refresh and revoke exactly like the others.
 //!
 //! oauth-as fixes one issuer per server, so there is one server per address people reach SovEmu
-//! at (`SOVEMU_PUBLIC_URL`), all sharing one store; a request is answered by the server for its
+//! at (`SovEmu__Http__PublicUrl`), all sharing one store; a request is answered by the server for its
 //! `Host`.
 
 use std::collections::HashMap;
@@ -111,7 +111,7 @@ pub(crate) struct Lifetimes {
 }
 
 fn authority_of(url: &str) -> crate::Result<String> {
-    let bad = |why: String| crate::Error::Config(format!("SOVEMU_PUBLIC_URL {url}: {why}"));
+    let bad = |why: String| crate::Error::Config(format!("SovEmu__Http__PublicUrl {url}: {why}"));
     let parsed = url::Url::parse(url).map_err(|e| bad(e.to_string()))?;
     let host = parsed.host_str().ok_or_else(|| bad("no host".into()))?;
     Ok(match parsed.port() {
@@ -133,7 +133,7 @@ impl Provider {
     ) -> crate::Result<Self> {
         if urls.is_empty() {
             return Err(crate::Error::Config(
-                "no address to sign in at (SOVEMU_PUBLIC_URL)".into(),
+                "no address to sign in at (SovEmu__Http__PublicUrl)".into(),
             ));
         }
         let csrf: CsrfTokens = Arc::default();
@@ -278,7 +278,7 @@ fn wrong_address() -> Response {
     (
         StatusCode::BAD_REQUEST,
         [(CACHE_CONTROL, "no-store")],
-        "Sign-in is not available at this address: add it to SOVEMU_PUBLIC_URL.",
+        "Sign-in is not available at this address: add it to SovEmu__Http__PublicUrl.",
     )
         .into_response()
 }
@@ -568,7 +568,7 @@ struct PasswordForm {
 }
 
 /// The apps' password fallback: a username and password in, the same token answer as
-/// `/oauth/token` out. Off with `SOVEMU_PASSWORD_SIGN_IN=false`.
+/// `/oauth/token` out. Off with `SovEmu__Authentication__PasswordSignIn=false`.
 async fn password(
     State(identity): State<Identity>,
     headers: HeaderMap,

@@ -14,19 +14,19 @@ use crate::error::{ApiError, ApiResult};
 /// The settings that shape a game's stream: its bitrates, codec and encoder, keyframes,
 /// fast-forward and rewind, and how long it waits for a player.
 const STREAMING_SETTINGS: &[&str] = &[
-    "SOVEMU_VIDEO_KBPS",
-    "SOVEMU_VIDEO_MIN_KBPS",
-    "SOVEMU_VIDEO_MAX_KBPS",
-    "SOVEMU_VIDEO_CODEC",
-    "SOVEMU_VIDEO_ENCODER",
-    "SOVEMU_AUDIO_KBPS",
-    "SOVEMU_KEYFRAME_INTERVAL",
-    "SOVEMU_DROPOUT_KEYFRAME_MS",
-    "SOVEMU_FAST_FORWARD",
-    "SOVEMU_REWIND_SECONDS",
-    "SOVEMU_REWIND_MAX_MB",
-    "SOVEMU_IDLE_TIMEOUT",
-    "SOVEMU_SESSION_HEALTH_SECS",
+    "SovEmu__Streaming__Video__Kbps",
+    "SovEmu__Streaming__Video__MinKbps",
+    "SovEmu__Streaming__Video__MaxKbps",
+    "SovEmu__Streaming__Video__Codec",
+    "SovEmu__Streaming__Video__Encoder",
+    "SovEmu__Streaming__Audio__Kbps",
+    "SovEmu__Streaming__Video__KeyframeInterval",
+    "SovEmu__Streaming__Video__DropoutKeyframeMilliseconds",
+    "SovEmu__Sessions__FastForward",
+    "SovEmu__Sessions__Rewind__Seconds",
+    "SovEmu__Sessions__Rewind__MaxMegabytes",
+    "SovEmu__Sessions__IdleTimeoutSeconds",
+    "SovEmu__Sessions__HealthSeconds",
 ];
 
 /// The Streaming page's settings, as the Configuration page shows them.

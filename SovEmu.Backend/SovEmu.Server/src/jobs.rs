@@ -1,19 +1,19 @@
 //! Background jobs: what the server does on its own, on intervals set in the environment, and
 //! what an admin starts by hand.
 //!
-//! - [`Job::Scan`]: rescans the library (at startup, then `SOVEMU_SCAN_INTERVAL_MINUTES`).
+//! - [`Job::Scan`]: rescans the library (at startup, then `SovEmu__Library__ScanIntervalMinutes`).
 //! - [`Job::MirrorSync`]: in `mirror` mode, copies the source into the local library, then
-//!   rescans it (at startup, then `SOVEMU_MIRROR_INTERVAL_MINUTES`).
+//!   rescans it (at startup, then `SovEmu__Library__Mirror__IntervalMinutes`).
 //! - [`Job::Metadata`]: looks up game information for games without it (after each scan with
-//!   `SOVEMU_METADATA_AUTO`).
+//!   `SovEmu__Metadata__AutoLookup`).
 //! - [`Job::Reconcile`]: after every scan (and before its lookup), the game information and
 //!   artwork of games no longer in the library deleted, and downloaded files that went missing
 //!   queued to download again (`metadata/reconcile.rs`).
-//! - [`Job::Maintenance`] (`SOVEMU_MAINTENANCE_INTERVAL_MINUTES`): expired sign-ins and old job
+//! - [`Job::Maintenance`] (`SovEmu__Jobs__MaintenanceIntervalMinutes`): expired sign-ins and old job
 //!   history deleted, the query planner's statistics refreshed (`PRAGMA optimize`) and the
 //!   write-ahead log folded back into the database, so none of them grows without end.
 //!
-//! - [`Job::Backup`] (`SOVEMU_BACKUP_INTERVAL_HOURS`, off by default): a backup of the database,
+//! - [`Job::Backup`] (`SovEmu__Backups__IntervalHours`, off by default): a backup of the database,
 //!   the signing keys and the saves (`backup.rs`).
 //!
 //! Work too frequent to be a job (the resource readings, every few seconds) is a sampler
