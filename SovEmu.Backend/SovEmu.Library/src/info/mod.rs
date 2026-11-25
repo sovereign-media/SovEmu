@@ -30,6 +30,14 @@ pub struct GameInfo {
     pub players: Option<String>,
     /// 0 to 1.
     pub rating: Option<f64>,
+    /// The ESRB's age rating, as [`Esrb::code`] gives it (`"E10+"`).
+    pub esrb: Option<String>,
+    /// Ways to play ("Single player, Multiplayer (simultaneous)"), comma-separated.
+    pub modes: Option<String>,
+    /// The series and families it belongs to ("Castlevania"), comma-separated.
+    pub series: Option<String>,
+    /// Its themes ("Horror, Fantasy"), comma-separated.
+    pub themes: Option<String>,
     /// Front box art.
     pub box_art_url: Option<String>,
     /// A screenshot of the game, shown behind it (the `image` artwork).
@@ -55,6 +63,10 @@ impl GameInfo {
             genre,
             players,
             rating,
+            esrb,
+            modes,
+            series,
+            themes,
             box_art_url,
             screenshot_url,
             marquee_url,
@@ -65,6 +77,65 @@ impl GameInfo {
     /// Whether the fields a game page shows are all present.
     pub fn complete(&self) -> bool {
         self.description.is_some() && self.release_date.is_some() && self.box_art_url.is_some()
+    }
+}
+
+/// The ESRB's age ratings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Esrb {
+    EarlyChildhood,
+    Everyone,
+    Everyone10Plus,
+    Teen,
+    Mature,
+    AdultsOnly,
+    RatingPending,
+}
+
+impl Esrb {
+    pub const ALL: [Esrb; 7] = [
+        Esrb::EarlyChildhood,
+        Esrb::Everyone,
+        Esrb::Everyone10Plus,
+        Esrb::Teen,
+        Esrb::Mature,
+        Esrb::AdultsOnly,
+        Esrb::RatingPending,
+    ];
+
+    /// As the ESRB writes it, and as it is stored: `EC`, `E`, `E10+`, `T`, `M`, `AO`, `RP`.
+    pub fn code(self) -> &'static str {
+        match self {
+            Esrb::EarlyChildhood => "EC",
+            Esrb::Everyone => "E",
+            Esrb::Everyone10Plus => "E10+",
+            Esrb::Teen => "T",
+            Esrb::Mature => "M",
+            Esrb::AdultsOnly => "AO",
+            Esrb::RatingPending => "RP",
+        }
+    }
+
+    /// A rating as a source writes it: the code in any case, with or without "ESRB" before it
+    /// ("ESRB - T", "e10"), and "K-A" (Kids to Adults, the ESRB's name for E until 1998).
+    pub fn parse(text: &str) -> Option<Esrb> {
+        let upper = text.trim().to_ascii_uppercase();
+        let code: String = upper
+            .strip_prefix("ESRB")
+            .unwrap_or(&upper)
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '+')
+            .collect();
+        match code.trim_end_matches('+') {
+            "EC" => Some(Esrb::EarlyChildhood),
+            "E" | "KA" => Some(Esrb::Everyone),
+            "E10" => Some(Esrb::Everyone10Plus),
+            "T" => Some(Esrb::Teen),
+            "M" => Some(Esrb::Mature),
+            "AO" => Some(Esrb::AdultsOnly),
+            "RP" => Some(Esrb::RatingPending),
+            _ => None,
+        }
     }
 }
 
@@ -235,6 +306,25 @@ pub fn http_client() -> reqwest::Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn esrb_ratings_as_sources_write_them() {
+        for (text, want) in [
+            ("T", Some(Esrb::Teen)),
+            ("e10+", Some(Esrb::Everyone10Plus)),
+            ("E10", Some(Esrb::Everyone10Plus)),
+            ("ESRB - M", Some(Esrb::Mature)),
+            ("K-A", Some(Esrb::Everyone)),
+            (" AO ", Some(Esrb::AdultsOnly)),
+            ("12", None),
+            ("", None),
+        ] {
+            assert_eq!(Esrb::parse(text), want, "{text:?}");
+        }
+        for r in Esrb::ALL {
+            assert_eq!(Esrb::parse(r.code()), Some(r), "its own code reads back");
+        }
+    }
 
     #[test]
     fn merge_keeps_earlier_fields() {

@@ -3,10 +3,23 @@
 // right edge, over the page, which dims behind it and never reflows for it. Not modal: the grid
 // stays usable, and choosing another card switches the panel to it.
 
-import { Building2, CalendarDays, Play, RotateCcw, Tag, Users, X } from "lucide-react";
+import {
+  Building2,
+  CalendarDays,
+  Gamepad2,
+  Library,
+  Play,
+  RotateCcw,
+  Sparkles,
+  Star,
+  Tag,
+  Users,
+  X,
+} from "lucide-react";
 import { Dialog } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
+import { ESRB, esrbLabel, stars } from "../../lib/esrb";
 import { maxPlayers } from "../../lib/games";
 import { formatBytes } from "../../lib/numbers";
 import { ago, agoFromSqlite } from "../../lib/time";
@@ -117,20 +130,31 @@ export function GamePanel({
             </Dialog.Close>
           </div>
           <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-6 pt-2 pb-6">
-            <div>
-              <Dialog.Title className="text-2xl leading-tight font-black">{shown.title}</Dialog.Title>
-              {shown.release && <p className="mt-1 text-sm font-medium text-amber-200/90">{shown.release}</p>}
-              {shown.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{shown.tags.join(" · ")}</p>}
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-                {year && <Fact icon={<CalendarDays />}>{year}</Fact>}
-                {(shown.developer || shown.publisher) && (
-                  <Fact icon={<Building2 />}>{shown.developer ?? shown.publisher}</Fact>
-                )}
-                {shown.genre && <Fact icon={<Tag />}>{shown.genre}</Fact>}
-                {players !== null && (
-                  <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>
-                )}
+            <div className="flex items-start gap-4">
+              <div className="min-w-0 flex-1">
+                <Dialog.Title className="text-2xl leading-tight font-black">{shown.title}</Dialog.Title>
+                {shown.release && <p className="mt-1 text-sm font-medium text-amber-200/90">{shown.release}</p>}
+                {shown.tags.length > 0 && <p className="mt-1 text-xs text-slate-500">{shown.tags.join(" · ")}</p>}
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                  {year && <Fact icon={<CalendarDays />}>{year}</Fact>}
+                  {(shown.developer || shown.publisher) && (
+                    <Fact icon={<Building2 />}>{shown.developer ?? shown.publisher}</Fact>
+                  )}
+                  {shown.genre && <Fact icon={<Tag />}>{shown.genre}</Fact>}
+                  {players !== null && (
+                    <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>
+                  )}
+                  {shown.rating !== null && <Fact icon={<Star />}>{stars(shown.rating)} out of 5</Fact>}
+                  {shown.modes.length > 0 && <Fact icon={<Gamepad2 />}>{shown.modes.join(", ")}</Fact>}
+                  {shown.series.length > 0 && <Fact icon={<Library />}>{shown.series.join(", ")}</Fact>}
+                  {shown.themes.length > 0 && <Fact icon={<Sparkles />}>{shown.themes.join(", ")}</Fact>}
+                </div>
               </div>
+              {shown.esrb && (
+                <Tooltip content={esrbLabel(shown.esrb)}>
+                  <img src={ESRB[shown.esrb].badge} alt={esrbLabel(shown.esrb)} className="h-14 w-auto shrink-0" />
+                </Tooltip>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {auto ? (

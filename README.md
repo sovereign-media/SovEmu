@@ -263,8 +263,11 @@ and `none` turns frames off.
 ## Game information
 
 The **Library** page (admins) fetches titles, descriptions, release dates, developers,
-publishers, genres, player counts, ratings, box art and gameplay videos. The information is
-stored as each game is looked up. Its artwork follows in the background,
+publishers, genres, player counts, ratings, ESRB age ratings, play modes, series, themes, box
+art and gameplay videos. The information is stored as each game is looked up. A game's panel
+shows its ESRB rating as a badge (SovEmu's own, `SovEmu.Web/src/assets/esrb/`, not the ESRB's
+icons) and its rating as stars, and Home has a **Top rated** row of the library's best rated
+games (ScreenScraper's players' ratings). Its artwork follows in the background,
 `SOVEMU_ARTWORK_DOWNLOADS` at a time: box art, a screenshot (shown behind the game; in play,
 else the title screen), its logo (the wheel, for the marquee) and a video. Pictures are asked for
 at the size the largest screen shows them (`SOVEMU_ARTWORK_MAX_PX`, 1000 pixels), not as a full
@@ -437,7 +440,7 @@ effective configuration at startup, with secrets redacted.
 | `SOVEMU_SESSION_HEALTH_SECS` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
 | `SOVEMU_SESSION_FAILURES` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
 | `SOVEMU_HOME_FEATURED` | `8` | Games in the home screen's hero (0 hides it) |
-| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added) |
+| `SOVEMU_HOME_ROW` | `20` | Games in each home screen row (recently played, recently added, top rated) |
 | `SOVEMU_GPU` | `auto` | 3D rendering: `auto` (first working GPU, else software), `software`, `off`, or a render node (`/dev/dri/renderD128`) |
 | **Operations** | | |
 | `SOVEMU_SECURE_COOKIES` | off | Set when served over HTTPS |

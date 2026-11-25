@@ -245,6 +245,45 @@ impl SystemBios {
     }
 }
 
+/// The ESRB's age ratings.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EsrbRating {
+    /// EC: Early Childhood (until 2018).
+    EarlyChildhood,
+    /// E: Everyone (K-A, Kids to Adults, until 1998).
+    Everyone,
+    /// E10+: Everyone 10+.
+    Everyone10Plus,
+    /// T: Teen.
+    Teen,
+    /// M: Mature 17+.
+    Mature,
+    /// AO: Adults Only 18+.
+    AdultsOnly,
+    /// RP: Rating Pending.
+    RatingPending,
+}
+
+impl From<sovemu_library::info::Esrb> for EsrbRating {
+    fn from(r: sovemu_library::info::Esrb) -> Self {
+        use sovemu_library::info::Esrb;
+        match r {
+            Esrb::EarlyChildhood => Self::EarlyChildhood,
+            Esrb::Everyone => Self::Everyone,
+            Esrb::Everyone10Plus => Self::Everyone10Plus,
+            Esrb::Teen => Self::Teen,
+            Esrb::Mature => Self::Mature,
+            Esrb::AdultsOnly => Self::AdultsOnly,
+            Esrb::RatingPending => Self::RatingPending,
+        }
+    }
+}
+
+/// A comma-separated list of names as a list.
+fn split_names(names: Option<&str>) -> Vec<&str> {
+    names.unwrap_or("").split(',').map(str::trim).filter(|n| !n.is_empty()).collect()
+}
+
 /// Artwork and video kinds a game can have.
 #[derive(Enum, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MediaKind {
@@ -422,6 +461,26 @@ impl GameNode {
     async fn rating(&self) -> Option<f64> {
         self.0.rating
     }
+    /// The ESRB's age rating, if the game information has one.
+    async fn esrb(&self) -> Option<EsrbRating> {
+        self.0.esrb.as_deref().and_then(sovemu_library::info::Esrb::parse).map(EsrbRating::from)
+    }
+    /// Ways to play: "Single player", "Multiplayer (simultaneous)" …
+    async fn modes(&self) -> Vec<&str> {
+        split_names(self.0.modes.as_deref())
+    }
+    /// The series and families it belongs to: "Castlevania" …
+    async fn series(&self) -> Vec<&str> {
+        split_names(self.0.series.as_deref())
+    }
+    /// Its themes: "Horror", "Fantasy" …
+    async fn themes(&self) -> Vec<&str> {
+        split_names(self.0.themes.as_deref())
+    }
+    /// Its genres, as `genre` lists them.
+    async fn genres(&self) -> Vec<&str> {
+        split_names(self.0.genre.as_deref())
+    }
     /// This user's save states (slot 0 is the auto save, written when a session ends).
     async fn saves(&self, ctx: &Context<'_>) -> Result<Vec<SaveSlotNode>> {
         let user = user(ctx).await?;
@@ -487,6 +546,8 @@ pub(super) struct Home {
     pub(super) added: Vec<GameNode>,
     /// This user's favourites, by title.
     pub(super) favourites: Vec<GameNode>,
+    /// The library's best rated games (`Game.rating`), best first.
+    pub(super) top_rated: Vec<GameNode>,
 }
 
 /// A named list of this user's games.
@@ -614,6 +675,7 @@ impl LibraryQuery {
             recent: home.recent.into_iter().map(GameNode).collect(),
             added: home.added.into_iter().map(GameNode).collect(),
             favourites: home.favourites.into_iter().map(GameNode).collect(),
+            top_rated: home.top_rated.into_iter().map(GameNode).collect(),
         })
     }
 

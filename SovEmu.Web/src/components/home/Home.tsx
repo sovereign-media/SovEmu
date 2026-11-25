@@ -1,11 +1,11 @@
-// Home: a hero of featured games over rows (continue playing, systems, recently added), laid out
+// Home: a hero of featured games over rows (continue playing, systems, recently added, top rated), laid out
 // as Sovereign's home. A pad or the keyboard moves between rows (up/down) and along them
 // (left/right); A plays or opens; X (or /) searches every system; Start rescans. A "Continue
 // playing" card opens a panel here (where the player left off, Continue, Game details), open
 // while the URL names its game (`?game=`), so Back from the game or the details comes back to it.
 
 import { useQuery } from "@tanstack/react-query";
-import { FolderHeart, Gamepad2, Heart, History, Sparkles } from "lucide-react";
+import { FolderHeart, Gamepad2, Heart, History, Sparkles, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Collection, type Game, type HomeFeed, type SystemSummary } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
@@ -25,8 +25,9 @@ const RECENT = 1;
 const FAVOURITES = 2;
 const SYSTEMS = 3;
 const ADDED = 4;
+const TOP_RATED = 5;
 /** Each collection's row follows: the shared ones, then the user's own, each in name order. */
-const COLLECTIONS = 5;
+const COLLECTIONS = 6;
 
 const play = (g: Game) => go(`/play/?game=${g.id}`);
 /** Plays a game as its Continue panel says: from the auto save, or from the start. */
@@ -68,6 +69,7 @@ function HomeScreen() {
       { length: feed?.favourites.length ?? 0, wraps: true },
       { length: systems.length, wraps: true },
       { length: feed?.added.length ?? 0, wraps: true },
+      { length: feed?.topRated.length ?? 0, wraps: true },
       ...collections.map((c) => ({ length: c.games.length, wraps: true })),
     ],
     [feed, systems, collections],
@@ -93,6 +95,7 @@ function HomeScreen() {
       if (f.row === SYSTEMS && systems[col]) openSystem(systems[col]);
       if (f.row === ADDED && feed.added[col]) browse(feed.added[col]);
       if (f.row === FAVOURITES && feed.favourites[col]) browse(feed.favourites[col]);
+      if (f.row === TOP_RATED && feed.topRated[col]) browse(feed.topRated[col]);
       const list = collections[f.row - COLLECTIONS];
       if (list?.games[col]) browse(list.games[col]);
     },
@@ -222,6 +225,22 @@ function HomeScreen() {
                 row={ADDED}
                 col={i}
                 focused={focused(ADDED, i)}
+                color={colorOf(g.system)}
+                short={shortOf(g.system)}
+                onOpen={() => browse(g)}
+              />
+            ))}
+          </Row>
+        )}
+        {feed.topRated.length > 0 && (
+          <Row title="Top rated" icon={<Star />}>
+            {feed.topRated.map((g, i) => (
+              <GameCard
+                key={g.id}
+                game={g}
+                row={TOP_RATED}
+                col={i}
+                focused={focused(TOP_RATED, i)}
                 color={colorOf(g.system)}
                 short={shortOf(g.system)}
                 onOpen={() => browse(g)}

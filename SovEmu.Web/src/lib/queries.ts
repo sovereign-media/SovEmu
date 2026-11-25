@@ -27,6 +27,10 @@ export const GameFields = graphql(`
     genre
     players
     rating
+    esrb
+    modes
+    series
+    themes
     favourite
     release
     patch
@@ -326,6 +330,9 @@ export const HomeQuery = graphql(
         ...GameFields
       }
       favourites {
+        ...GameFields
+      }
+      topRated {
         ...GameFields
       }
     }

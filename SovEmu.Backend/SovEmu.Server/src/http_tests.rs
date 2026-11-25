@@ -1022,6 +1022,19 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     assert_eq!(nes[0]["developer"], "Konami");
     assert_eq!(nes[0]["releaseDate"], "1987-05-01");
     assert_eq!(nes[0]["rating"], 0.8);
+    let details = h
+        .ok("{ system(id: \"nes\") { games { esrb genres modes series themes } } }", json!({}))
+        .await["system"]["games"][0]
+        .clone();
+    assert_eq!(
+        details,
+        json!({"esrb": "TEEN", "genres": ["Platform", "Action"],
+               "modes": ["Single player", "Multiplayer (alternating)"],
+               "series": ["Castlevania"], "themes": ["Horror", "Fantastique"]})
+    );
+    // Home's top rated row: only games with a rating (the GBA game has none).
+    let top = h.ok("{ home { topRated { title rating } } }", json!({})).await;
+    assert_eq!(top["home"]["topRated"], json!([{"title": "Castlevania", "rating": 0.8}]));
 
     let gba = h.games("gba").await;
     assert_eq!(gba[0]["description"], "From ScreenScraper");

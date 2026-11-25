@@ -168,6 +168,65 @@ fn pick<'a, S: AsRef<str>>(
         .filter(|t| !t.is_empty())
 }
 
+/// The names of a list's entries (genres, modes, families, themes), comma-separated, in order,
+/// each once. An entry (one `id`) is named once per language, as `<genre id="1"
+/// langue="en">Platform</genre>` or with its names inside (`<noms><nom langue="en">`): it is
+/// given in the most preferred language it has, else without one, else as it first comes.
+/// Entries without an id are kept in the most preferred language any of them has.
+fn names<'a, S: AsRef<str>>(
+    nodes: impl Iterator<Item = roxmltree::Node<'a, 'a>>,
+    languages: &[S],
+) -> Option<String> {
+    // (entry, language, name), the entry being its id or, without one, none.
+    let mut all: Vec<(Option<&str>, &str, &str)> = Vec::new();
+    for node in nodes {
+        let id = node.attribute("id");
+        let inner: Vec<_> = node.descendants().filter(|d| d.has_tag_name("nom")).collect();
+        let named = if inner.is_empty() { vec![node] } else { inner };
+        for n in named {
+            if let Some(text) = n.text().map(str::trim).filter(|t| !t.is_empty()) {
+                all.push((id, n.attribute("langue").unwrap_or(""), text));
+            }
+        }
+    }
+    let best = |of: &[&(Option<&str>, &str, &str)]| -> Option<String> {
+        languages
+            .iter()
+            .find(|l| of.iter().any(|e| e.1 == l.as_ref()))
+            .map(|l| l.as_ref().to_owned())
+            .or_else(|| of.iter().any(|e| e.1.is_empty()).then(String::new))
+            .or_else(|| of.first().map(|e| e.1.to_owned()))
+    };
+    let mut out: Vec<&str> = Vec::new();
+    let mut push = |name: &'a str| {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    };
+    let unnamed: Vec<_> = all.iter().filter(|e| e.0.is_none()).collect();
+    let unnamed_language = best(&unnamed);
+    let mut seen: Vec<&str> = Vec::new();
+    for entry in &all {
+        match entry.0 {
+            None => {
+                if Some(entry.1) == unnamed_language.as_deref() {
+                    push(entry.2);
+                }
+            }
+            Some(id) if !seen.contains(&id) => {
+                seen.push(id);
+                let same: Vec<_> = all.iter().filter(|e| e.0 == Some(id)).collect();
+                let language = best(&same);
+                if let Some(e) = same.iter().find(|e| Some(e.1) == language.as_deref()) {
+                    push(e.2);
+                }
+            }
+            Some(_) => {}
+        }
+    }
+    (!out.is_empty()).then(|| out.join(", "))
+}
+
 /// Parses a `jeuInfos.php` XML response with the default preferences. `None` when it holds no
 /// game.
 #[cfg(test)]
@@ -408,16 +467,11 @@ pub(crate) fn parse_with<S: AsRef<str>>(
     if title.as_deref().is_some_and(|t| t.starts_with("ZZZ(notgame)")) {
         return None;
     }
-    let genre = child("genres").and_then(|g| {
-        let names: Vec<String> = g
-            .children()
-            .filter(|c| c.has_tag_name("genre"))
-            .filter(|c| c.attribute("langue").is_none_or(|l| l == "en"))
-            .filter_map(|c| c.text().map(|t| t.trim().to_owned()))
-            .filter(|t| !t.is_empty())
-            .collect();
-        (!names.is_empty()).then(|| names.join(", "))
-    });
+    let genre = names(list("genres", "genre"), languages);
+    let esrb = list("classifications", "classification")
+        .filter(|c| c.attribute("type").is_some_and(|t| t.eq_ignore_ascii_case("ESRB")))
+        .find_map(|c| super::Esrb::parse(c.text()?))
+        .map(|r| r.code().to_owned());
     let rating =
         text("note").and_then(|n| n.parse::<f64>().ok()).map(|n| (n / 20.0).clamp(0.0, 1.0));
     // An image of one of `kinds`: the preferred region first (a logo's words are the region's),
@@ -458,6 +512,10 @@ pub(crate) fn parse_with<S: AsRef<str>>(
         genre,
         players: text("joueurs"),
         rating,
+        esrb,
+        modes: names(list("modes", "mode"), languages),
+        series: names(list("familles", "famille"), languages),
+        themes: names(list("themes", "theme"), languages),
         box_art_url,
         screenshot_url,
         marquee_url,
@@ -797,6 +855,11 @@ pub(crate) mod tests {
         assert_eq!(info.rating, Some(0.8), "ScreenScraper rates out of 20");
         assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20us.png"));
         assert_eq!(info.screenshot_url.as_deref(), Some("https://example.invalid/ss.png"));
+        assert_eq!(info.esrb.as_deref(), Some("T"), "the ESRB's, not PEGI's");
+        assert_eq!(info.modes.as_deref(), Some("Single player, Multiplayer (alternating)"));
+        assert_eq!(info.series.as_deref(), Some("Castlevania"));
+        // Names inside the entry too, and an entry with no English name in French.
+        assert_eq!(info.themes.as_deref(), Some("Horror, Fantastique"));
         assert_eq!(info.marquee_url.as_deref(), Some("https://example.invalid/wheel%20us.png"));
     }
 
@@ -806,8 +869,19 @@ pub(crate) mod tests {
         assert_eq!(info.title.as_deref(), Some("Akumajou Dracula"));
         assert_eq!(info.release_date.as_deref(), Some("1986-09-26"));
         assert_eq!(info.description.as_deref(), Some("Simon Belmont part affronter Dracula."));
+        assert_eq!(info.modes.as_deref(), Some("Solo, Multiplayer (alternating)"));
+        assert_eq!(info.genre.as_deref(), Some("Plateforme, Action"));
         assert_eq!(info.box_art_url.as_deref(), Some("https://example.invalid/box%20jp.png"));
         assert_eq!(info.marquee_url.as_deref(), Some("https://example.invalid/wheel-hd%20jp.png"));
+    }
+
+    #[test]
+    fn names_without_ids_keep_one_language() {
+        let xml = r#"<Data><jeu><noms><nom region="wor">X</nom></noms><genres>
+            <genre langue="fr">Course</genre><genre langue="en">Racing</genre>
+            <genre langue="en">Sports</genre></genres></jeu></Data>"#;
+        assert_eq!(parse(xml).unwrap().genre.as_deref(), Some("Racing, Sports"));
+        assert_eq!(parse(xml).unwrap().esrb, None, "no rating");
     }
 
     #[test]
