@@ -1,6 +1,6 @@
-// The admin menu: the gear in the dock opens one flat list of the admin pages, a separator
-// between groups. One list drives the menu, the page headings and the document titles, so a new
-// page is one entry here.
+// The admin menu: the gear in the dock opens the admin's sections, each a submenu of its pages
+// (a section with one page is that page). One list drives the menu, the page headings and the
+// document titles, so a new page is one entry here.
 import {
   Activity,
   BarChart3,
@@ -44,8 +44,10 @@ export interface AdminNavItem {
 
 export interface AdminNavGroup {
   id: string;
-  /** Names the group in its pages' document titles (`Users & Devices · Users`). */
+  /** Names the group in the menu and in its pages' document titles (`Users & Devices · Users`). */
   label: string;
+  /** The group's submenu in the admin menu. */
+  icon: LucideIcon;
   items: AdminNavItem[];
 }
 
@@ -53,6 +55,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "overview",
     label: "Overview",
+    icon: LayoutDashboard,
     items: [
       {
         href: "/admin/overview/",
@@ -65,6 +68,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "library",
     label: "Library",
+    icon: Library,
     items: [
       {
         href: "/admin/",
@@ -95,6 +99,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "users-devices",
     label: "Users & Devices",
+    icon: Users,
     items: [
       { href: "/admin/users/", label: "Users", title: "Accounts on this server and their roles", icon: Users },
       {
@@ -120,6 +125,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "emulation",
     label: "Emulation",
+    icon: Gamepad,
     items: [
       {
         href: "/admin/settings/",
@@ -162,6 +168,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     id: "server",
     label: "Server",
+    icon: MonitorCog,
     items: [
       {
         href: "/admin/sessions/",

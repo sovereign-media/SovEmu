@@ -1,17 +1,32 @@
-// The admin's server pages: the menu that reaches them, the active sessions, the background jobs,
+// The admin's server pages: the menu that reaches them (a submenu per section), the active sessions, the background jobs,
 // and the resources.
 
 import { expect, test } from "@playwright/test";
 import { ADMIN_NAV_GROUPS } from "../src/lib/adminNav";
 
-test("the admin menu lists every admin page, flat", async ({ page }) => {
+test("the admin menu has a submenu per section, holding every admin page", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Admin", exact: true }).click();
-  for (const name of ADMIN_NAV_GROUPS.flatMap((g) => g.items.map((i) => i.label))) {
-    await expect(page.getByRole("menuitem", { name, exact: true })).toBeVisible();
+  const admin = page.getByRole("button", { name: "Admin", exact: true });
+  for (const group of ADMIN_NAV_GROUPS) {
+    // A fresh menu for each section: a submenu stays open while the pointer heads its way.
+    await page.keyboard.press("Escape");
+    await admin.click();
+    if (group.items.length === 1) {
+      // A section with one page is that page.
+      await expect(page.getByRole("menuitem", { name: group.items[0].label, exact: true })).toBeVisible();
+      continue;
+    }
+    await page.getByRole("menuitem", { name: group.label, exact: true }).first().hover();
+    const submenu = page.getByRole("menu").last();
+    for (const item of group.items) {
+      await expect(submenu.getByRole("menuitem", { name: item.label, exact: true })).toBeVisible();
+    }
   }
-  // Pages, not group submenus.
-  await expect(page.getByRole("menuitem", { name: "Users & Devices" })).toHaveCount(0);
+  // Sections, not one long list: Jobs sits in Server's submenu.
+  await page.keyboard.press("Escape");
+  await admin.click();
+  await expect(page.getByRole("menuitem", { name: "Jobs", exact: true })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Server", exact: true }).hover();
   await page.getByRole("menuitem", { name: "Jobs", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/jobs\/$/);
 });
