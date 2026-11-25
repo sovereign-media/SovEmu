@@ -697,9 +697,16 @@ async fn look_up(
 
     let mut found = Lookup::default();
     let mut failed = None;
+    // A provider not asked because it stopped (quota, refused credentials): the game is not
+    // done with, and the next job asks it again.
+    let mut skipped = None;
     for provider in providers {
         let id = provider.id();
-        if stopped_now().contains(&id) || found.info.complete() {
+        if found.info.complete() {
+            continue;
+        }
+        if stopped_now().contains(&id) {
+            skipped = Some(id);
             continue;
         }
         meta.update(|s| {
@@ -755,6 +762,12 @@ async fn look_up(
     }
 
     let any = !found.field_sources.is_empty();
+    if failed.is_none()
+        && !any
+        && let Some(id) = skipped
+    {
+        failed = Some(format!("not asked: {id} had stopped"));
+    }
     let outcome = if any {
         Outcome::Found
     } else if failed.is_some() {
@@ -762,10 +775,11 @@ async fn look_up(
     } else {
         Outcome::NotFound
     };
-    // A lookup that failed and found nothing is not stored, so the next job asks again.
+    // A lookup that failed and found nothing is not stored, so the next job asks again; one that
+    // found something but skipped a stopped provider is stored as still to finish (`refresh`).
     if outcome != Outcome::Failed {
         let row = merge_row(&old, &found, fields);
-        if let Err(e) = store(state, game.id, &row, &meta.providers).await {
+        if let Err(e) = store(state, game.id, &row, &meta.providers, skipped.is_some()).await {
             tracing::warn!(game = %game.title, error = %e, "metadata: cannot store");
         }
     }
@@ -805,6 +819,7 @@ async fn store(
     game_id: i64,
     row: &Row,
     providers: &[Arc<dyn Provider>],
+    unfinished: bool,
 ) -> Result<(), sqlx::Error> {
     let sources_map = row.sources();
     let sources: Vec<&str> = providers
@@ -851,7 +866,13 @@ async fn store(
            provider_ids = excluded.provider_ids, fetched_at = excluded.fetched_at",
     )
     .bind(game_id)
-    .bind(if sources_map.is_empty() { "not_found" } else { "found" })
+    .bind(if unfinished {
+        "refresh"
+    } else if sources_map.is_empty() {
+        "not_found"
+    } else {
+        "found"
+    })
     .bind(sources.join(","))
     .bind(&row.title)
     .bind(&row.description)
