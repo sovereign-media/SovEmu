@@ -260,6 +260,11 @@ enum AttentionKind {
 	"""
 	NO_INFORMATION
 	"""
+	Has information, but is queued to be looked up again (a source stopped before reaching
+	it, or fields were added since); the lookup after each scan asks it.
+	"""
+	AWAITING_LOOKUP
+	"""
 	No box art, beside it or downloaded.
 	"""
 	NO_BOX_ART
