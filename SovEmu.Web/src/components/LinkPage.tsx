@@ -3,7 +3,7 @@
 // as the phone apps' *Sign in a TV* (`approveDeviceCode`). It stands outside the console's frame,
 // as the sign-in page does: whoever opens it is on a phone or laptop, setting up a TV.
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CircleAlert, CircleCheck, Gamepad2, Tv } from "lucide-react";
+import { CircleAlert, CircleCheck, Tv } from "lucide-react";
 import { type ReactNode, type SubmitEvent, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { signIn } from "../lib/auth";
@@ -90,7 +90,7 @@ function Frame({ children }: FrameProps) {
     <main className="grid min-h-dvh place-items-center bg-[radial-gradient(ellipse_at_top,#1e2a4a,transparent_60%)] p-6">
       <div className="grid w-full max-w-sm gap-6 rounded-2xl border border-edge bg-panel/80 p-8 shadow-2xl backdrop-blur">
         <p className="flex items-center gap-2 text-xl font-black tracking-tight">
-          <Gamepad2 className="size-5 text-accent" aria-hidden />
+          <img src="/sovemu-mark.svg" alt="" className="h-6 w-auto" />
           <span>
             Sov<span className="text-accent">Emu</span>
           </span>

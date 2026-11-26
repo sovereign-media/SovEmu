@@ -1,0 +1,13 @@
+{
+  "name": "sovemu-brand",
+  "private": true,
+  "type": "module",
+  "description": "SovEmu's mark and icons, and the generator that writes every client's sizes from them",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "opentype.js": "2.0.0"
+  }
+}
