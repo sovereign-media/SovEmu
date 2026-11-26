@@ -138,7 +138,7 @@ pub(crate) const COMPONENTS: &[Component] = &[
         commit: None,
     },
     Component {
-        name: "FFmpeg (libavcodec, Debian's build)",
+        name: "FFmpeg 7.1.5 (libavcodec, built for H.264 only)",
         what: "H.264 video encoding: VA-API, NVENC or x264",
         licence: "GPL-2.0-or-later",
         url: "https://ffmpeg.org",
@@ -173,6 +173,24 @@ mod tests {
 
     /// The image's list, whose `data` lines pin the components' commits.
     const CORES_LIST: &str = include_str!("../../../scripts/cores.list");
+    const DOCKERFILE: &str = include_str!("../../Dockerfile");
+
+    #[test]
+    fn the_ffmpeg_shown_is_the_one_the_image_builds() {
+        let built = DOCKERFILE
+            .lines()
+            .find_map(|l| l.strip_prefix("ARG FFMPEG_VERSION="))
+            .expect("the Dockerfile's ffmpeg stage pins FFMPEG_VERSION");
+        let shown = COMPONENTS
+            .iter()
+            .find(|c| c.name.starts_with("FFmpeg "))
+            .expect("the About page lists FFmpeg");
+        assert!(
+            shown.name.starts_with(&format!("FFmpeg {built} ")),
+            "the Dockerfile builds FFmpeg {built}: update about.rs ({})",
+            shown.name
+        );
+    }
 
     #[test]
     fn pinned_components_are_the_commits_the_image_installs() {
