@@ -185,26 +185,11 @@ pub fn load_secret(
     keep(data_dir, field, name, || generate_key().map_err(|e| KeyError::NoRandomness(name, e)))
 }
 
-/// Whether `<data_dir>/server.json` exists: whether this server has run here before (it writes
-/// the file on its first start).
-pub fn server_file_exists(data_dir: &Path) -> bool {
-    data_dir.join("server.json").exists()
-}
-
 /// A per-install identifier, such as an OAuth client id: the one kept under `field` in
-/// `<data_dir>/server.json`, else `first` (what an install that ran before the id was kept
-/// already used), else a new random one (32 hex digits), kept there from then on. Not a secret,
+/// `<data_dir>/server.json`, else a new random one (32 hex digits), kept there from then on. Not a secret,
 /// but per install so nobody can predict it. `name` is what it is called in logs and errors.
-pub fn load_id(
-    data_dir: &Path,
-    field: &str,
-    name: &'static str,
-    first: Option<&str>,
-) -> Result<String, KeyError> {
-    keep(data_dir, field, name, || match first {
-        Some(id) => Ok(id.to_owned()),
-        None => generate_id().map_err(|e| KeyError::NoRandomness(name, e)),
-    })
+pub fn load_id(data_dir: &Path, field: &str, name: &'static str) -> Result<String, KeyError> {
+    keep(data_dir, field, name, || generate_id().map_err(|e| KeyError::NoRandomness(name, e)))
 }
 
 /// The value kept under `field` in `<data_dir>/server.json`, else `make`'s, written there.
@@ -374,19 +359,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sovemu-assets-id-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        assert!(!server_file_exists(&dir), "a first start");
-        let id = load_id(&dir, "deviceClientId", "device client id", None).unwrap();
-        assert!(server_file_exists(&dir));
+        let id = load_id(&dir, "deviceClientId", "device client id").unwrap();
         assert_eq!(id.len(), 32);
         assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
-        // Kept: what it was first made is what every later start reads, `first` or not.
-        assert_eq!(load_id(&dir, "deviceClientId", "device client id", Some("x")).unwrap(), id);
-        let other = load_id(&dir, "mobileClientId", "mobile client id", None).unwrap();
+        // Kept: what it was first made is what every later start reads.
+        assert_eq!(load_id(&dir, "deviceClientId", "device client id").unwrap(), id);
+        let other = load_id(&dir, "mobileClientId", "mobile client id").unwrap();
         assert_ne!(other, id, "each id its own");
-        // An install from before ids were kept keeps the one it used.
-        let legacy = load_id(&dir, "webClientId", "web client id", Some("sovemu-web")).unwrap();
-        assert_eq!(legacy, "sovemu-web");
-        assert_eq!(load_id(&dir, "webClientId", "web client id", None).unwrap(), "sovemu-web");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

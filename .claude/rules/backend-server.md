@@ -64,7 +64,7 @@ cookie's. Never hand out or serve an unsigned file URL.
   `SovEmu__Authentication__PasswordSignIn`) and **mobile** (phones through the system browser, to
   `media.sovereign.sovemu:/oauth2redirect`). Clients learn every id and sign-in URL from the
   anonymous `bootstrapConfig` query and hard-code none. A replaced id's registration is removed
-  with its sign-ins on start; an install from before keeps `sovemu-web` and `sovemu-native`.
+  with its sign-ins on start.
 - **Sign in a TV**: an app signed in already approves a TV's code with `approveDeviceCode`
   (GraphQL, where Sovereign has `POST /connect/verify`), through `Identity::approve_device`
   (oauth-as's `approve_device`; wrong codes throttled per user).

@@ -54,7 +54,6 @@ pub struct SignIn {
     /// wrote it; none until it has started a stream.
     pub capabilities: Option<String>,
 }
-pub use provider::{LEGACY_DEVICE_CLIENT, LEGACY_WEB_CLIENT};
 
 /// The OAuth clients SovEmu signs in, by id. Each is per install (kept in `server.json` by the
 /// server), so nobody can call a server's endpoints as its apps without first asking it which id

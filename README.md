@@ -206,8 +206,7 @@ Android and iOS clients all use it. The schema, with every type and field docume
   `/.well-known/openid-configuration`, and every API request carries `Authorization: Bearer
   <access token>`. Three clients are built in, all public, as in Sovereign. Their ids are made
   once per install and kept in `data/server.json` (`webClientId`, `deviceClientId`,
-  `mobileClientId`); an install from before keeps `sovemu-web` and `sovemu-native`, so nobody is
-  signed out. Replacing an id there removes the old registration, and every sign-in under it, on
+  `mobileClientId`). Replacing an id there removes the old registration, and every sign-in under it, on
   the next start. Apps learn the ids from `bootstrapConfig`; there is no setting for them.
   - The **web** client: the authorization code flow with PKCE (S256, required) and refresh
     tokens. It has no password grant; the password goes only to the server's own sign-in page

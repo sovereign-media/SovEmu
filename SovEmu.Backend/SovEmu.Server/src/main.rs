@@ -55,7 +55,7 @@ mod telemetry;
 mod user_details;
 
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -738,25 +738,6 @@ impl Config {
     }
 }
 
-/// Moves copies from where the cache kept them before it had a folder of its own (beside the
-/// disc playlists and the built-in decorations, which its eviction then deleted) into
-/// `cache/games`, so nothing is copied again. A rename: the same filesystem.
-fn move_legacy_cache(paths: &paths::DataPaths) {
-    for old in paths.legacy_cache_kinds() {
-        let Some(kind) = old.file_name() else { continue };
-        let new = paths.cache_games().join(kind);
-        if !old.is_dir() || new.exists() {
-            continue;
-        }
-        let moved =
-            std::fs::create_dir_all(paths.cache_games()).and_then(|()| std::fs::rename(&old, &new));
-        match moved {
-            Ok(()) => tracing::info!(from = %old.display(), to = %new.display(), "cache moved"),
-            Err(e) => tracing::warn!(from = %old.display(), error = %e, "cache not moved"),
-        }
-    }
-}
-
 /// The STUN servers each game and client asks for its public address: free public ones that
 /// need no account, Cloudflare's, then Google's. Not a setting, by decision: remote play works
 /// with nothing configured, and there is nothing to get wrong. Tests ask none (no internet).
@@ -1016,19 +997,6 @@ fn metadata_providers(
     Ok((providers, notes))
 }
 
-/// Settings earlier versions had, for sources that are gone: set, they are ignored with a
-/// warning rather than refusing to start.
-/// Where the image kept its data before `/sov-data`.
-const LEGACY_DATA_DIR: &str = "/data";
-
-/// `legacy`'s database, when the data folder is another folder that has none: a volume still
-/// mounted where the image used to keep its data. Started like that, the server would begin
-/// empty: every account, save and setting would seem gone.
-fn moved_data_dir(paths: &paths::DataPaths, legacy: &Path) -> Option<PathBuf> {
-    let old = legacy.join("sovemu.db");
-    (paths.root() != legacy && !paths.database().exists() && old.is_file()).then_some(old)
-}
-
 /// Writes the built-in artwork into `dir`, laid out as `<data>/artwork`: the backgrounds and
 /// system photos, the `sovemu` decorations, and the ESRB icons.
 fn write_builtin_artwork(dir: &sovemu_library::layout::ArtworkDir) -> std::io::Result<()> {
@@ -1039,16 +1007,6 @@ fn write_builtin_artwork(dir: &sovemu_library::layout::ArtworkDir) -> std::io::R
 
 pub async fn build_state(mut config: Config) -> Result<AppState> {
     let paths = config.paths();
-    if let Some(old) = moved_data_dir(&paths, Path::new(LEGACY_DATA_DIR)) {
-        anyhow::bail!(
-            "the data folder is {} (SovEmu__Paths__Data), which has no database, but {} has one: \
-             the image now keeps data in /sov-data. Mount the data volume there (or set \
-             SovEmu__Paths__Data={}), so it does not start empty",
-            paths.root().display(),
-            old.display(),
-            LEGACY_DATA_DIR
-        );
-    }
     let library = config.roms.clone().unwrap_or_else(|| paths.roms());
     // `SovEmu__Library__Mirror__Systems=` (empty) means all systems, not a system called "".
     config.mirror_systems.retain(|s| !s.trim().is_empty());
@@ -1138,7 +1096,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         observer: Arc::new(sovemu_sessions::Observers(observers)),
     });
     let cache_dir = paths.cache_games();
-    move_legacy_cache(&paths);
     let cache_bytes = match config.library_mode {
         LibraryMode::Cache => config.cache_gb.unwrap_or(20).saturating_mul(1 << 30),
         _ => 0,
@@ -1160,7 +1117,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ),
     }
     let (providers, setup_notes) = metadata_providers(&config, &paths)?;
-    metadata::tidy(&paths).await;
     let metadata = metadata::Metadata::new(
         &paths,
         providers,
@@ -1254,26 +1210,12 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
 /// Brings the accounts in line with the environment: the admin and every declared user exist
 /// with their declared passwords, and with `SovEmu__Users__Prune` nobody else does.
 /// The OAuth clients' ids, per install, kept in `server.json` (never a setting: the apps learn
-/// them from `bootstrapConfig`). An install that ran before they were kept (its `server.json`
-/// already there) keeps the two ids every install used then, so nobody is signed out; a new
-/// install, and every new kind of client, gets ids of its own.
+/// them from `bootstrapConfig`), generated on first run.
 fn client_ids(data_dir: &std::path::Path) -> Result<sovemu_identity::ClientIds> {
-    let upgrade = sovemu_assets::server_file_exists(data_dir);
-    let legacy = |id| upgrade.then_some(id);
     Ok(sovemu_identity::ClientIds {
-        web: sovemu_assets::load_id(
-            data_dir,
-            "webClientId",
-            "web client id",
-            legacy(sovemu_identity::LEGACY_WEB_CLIENT),
-        )?,
-        device: sovemu_assets::load_id(
-            data_dir,
-            "deviceClientId",
-            "device client id",
-            legacy(sovemu_identity::LEGACY_DEVICE_CLIENT),
-        )?,
-        mobile: sovemu_assets::load_id(data_dir, "mobileClientId", "mobile client id", None)?,
+        web: sovemu_assets::load_id(data_dir, "webClientId", "web client id")?,
+        device: sovemu_assets::load_id(data_dir, "deviceClientId", "device client id")?,
+        mobile: sovemu_assets::load_id(data_dir, "mobileClientId", "mobile client id")?,
     })
 }
 
@@ -1469,26 +1411,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_volume_left_at_the_old_data_folder_is_noticed() {
-        let root = std::env::temp_dir().join(format!("sovemu-moved-data-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let (old, new) = (root.join("data"), root.join("sov-data"));
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::create_dir_all(&new).unwrap();
-        let paths = paths::DataPaths::new(&new);
-        assert_eq!(moved_data_dir(&paths, &old), None, "nothing at the old place");
-        std::fs::write(old.join("sovemu.db"), b"db").unwrap();
-        assert_eq!(moved_data_dir(&paths, &old), Some(old.join("sovemu.db")), "start empty? no");
-        std::fs::write(new.join("sovemu.db"), b"db").unwrap();
-        assert_eq!(moved_data_dir(&paths, &old), None, "the new place has its own");
-        assert_eq!(moved_data_dir(&paths::DataPaths::new(&old), &old), None, "still at /data");
-        std::fs::remove_dir_all(root).ok();
-    }
-
-    #[test]
-    fn ice_server_config() {}
-
-    #[test]
     fn metadata_sources_are_built_in_order() {
         let paths = paths::DataPaths::new(std::env::temp_dir().join("sovemu-sources"));
         let ids = |args: &[&str]| {
@@ -1666,23 +1588,6 @@ mod tests {
             assert!(!summary.contains(secret), "{secret} in {summary}");
         }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
-    }
-
-    #[test]
-    fn copies_move_out_of_the_shared_cache_folder() {
-        let root = std::env::temp_dir().join(format!("sovemu-legacy-cache-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let paths = paths::DataPaths::new(&root);
-        std::fs::create_dir_all(paths.cache().join("roms/nes")).unwrap();
-        std::fs::write(paths.cache().join("roms/nes/a.nes"), [1u8]).unwrap();
-        std::fs::create_dir_all(paths.disc_playlists()).unwrap();
-        std::fs::write(paths.disc_playlists().join("g.m3u"), "x").unwrap();
-        move_legacy_cache(&paths);
-        assert!(paths.cache_games().join("roms/nes/a.nes").exists());
-        assert!(!paths.cache().join("roms").exists());
-        assert!(paths.disc_playlists().join("g.m3u").exists(), "playlists stay where they are");
-        move_legacy_cache(&paths); // nothing left to move
-        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

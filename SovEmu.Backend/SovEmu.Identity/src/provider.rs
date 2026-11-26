@@ -49,21 +49,12 @@ use crate::accounts::Credentials;
 use crate::store::SqliteStorage;
 use crate::{ClientIp, Identity, sessions};
 
-/// The web client's id on an install from before ids were per install: such an install keeps
-/// it, so its browsers stay signed in.
-pub const LEGACY_WEB_CLIENT: &str = "sovemu-web";
-/// The apps' id from before, kept the same way as the device client's.
-pub const LEGACY_DEVICE_CLIENT: &str = "sovemu-native";
-
-/// The clients' registered names, by kind. A registration with one of these names (or one an
-/// older server gave the same kind) that is not this server's id of that kind is a replaced one,
-/// removed with its sign-ins on start.
+/// The clients' registered names, by kind. A registration with one of these names that is not
+/// this server's id of that kind is a replaced one, removed with its sign-ins on start.
 const WEB_NAME: &str = "SovEmu (web)";
 const DEVICE_NAME: &str = "SovEmu (devices)";
 const MOBILE_NAME: &str = "SovEmu (phones and tablets)";
-/// What the apps' client was called when one client served them all.
-const LEGACY_DEVICE_NAME: &str = "SovEmu (Android, iOS)";
-const OUR_NAMES: [&str; 4] = [WEB_NAME, DEVICE_NAME, MOBILE_NAME, LEGACY_DEVICE_NAME];
+const OUR_NAMES: [&str; 3] = [WEB_NAME, DEVICE_NAME, MOBILE_NAME];
 
 /// Where the mobile client's sign-in comes back to: the Android and iOS apps' private-use scheme
 /// (RFC 8252 section 7.1), named for their application id and bundle id, `media.sovereign.sovemu`.

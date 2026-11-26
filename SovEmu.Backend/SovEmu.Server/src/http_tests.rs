@@ -1222,50 +1222,6 @@ async fn artwork_at_a_width_is_a_kept_webp_copy() {
 }
 
 #[tokio::test]
-async fn startup_removes_the_launchbox_dump() {
-    let h = Harness::new("metadata-tidy", false).await;
-    let paths = h.state.config.paths();
-    std::fs::create_dir_all(paths.removed_launchbox()).unwrap();
-    std::fs::write(paths.removed_launchbox().join("Metadata.zip"), b"zip").unwrap();
-    let old_art = paths.removed_cache_artwork().join("nes/images/A-thumb.png");
-    std::fs::create_dir_all(old_art.parent().unwrap()).unwrap();
-    std::fs::write(&old_art, b"png").unwrap();
-    // An install from before `artwork/`: the admin's decorations and backgrounds at the top of
-    // the data folder (one background already moved), and game art named by game id.
-    let old_frame = paths.root().join("decorations/arcade/default.png");
-    std::fs::create_dir_all(old_frame.parent().unwrap()).unwrap();
-    std::fs::write(&old_frame, b"frame").unwrap();
-    std::fs::create_dir_all(paths.root().join("backgrounds")).unwrap();
-    std::fs::write(paths.root().join("backgrounds/beach.png"), b"old beach").unwrap();
-    std::fs::write(paths.root().join("backgrounds/hills.png"), b"hills").unwrap();
-    std::fs::create_dir_all(paths.artwork().backgrounds()).unwrap();
-    std::fs::write(paths.artwork().backgrounds().join("beach.png"), b"new beach").unwrap();
-    let media = paths.moved_game_art();
-    std::fs::create_dir_all(&media).unwrap();
-    for name in ["12-box.webp", "12-video.mp4", "7-shot.webp", "7-box.webp.part", "notes.txt"] {
-        std::fs::write(media.join(name), name).unwrap();
-    }
-    for old in paths.removed_caches() {
-        std::fs::create_dir_all(&old).unwrap();
-    }
-    crate::metadata::tidy(&paths).await;
-    assert!(!paths.removed_launchbox().exists());
-    assert!(!paths.removed_cache_artwork().exists(), "nor the library's cached artwork");
-    assert!(paths.removed_caches().iter().all(|p| !p.exists()), "nor the moved caches");
-    let art = paths.artwork();
-    assert_eq!(std::fs::read(art.decorations().join("arcade/default.png")).unwrap(), b"frame");
-    assert!(!paths.root().join("decorations").exists(), "moved whole");
-    let read = |p: std::path::PathBuf| std::fs::read(p).unwrap();
-    assert_eq!(read(art.backgrounds().join("beach.png")), b"new beach", "what is there stays");
-    assert_eq!(read(art.backgrounds().join("hills.png")), b"hills");
-    assert_eq!(read(paths.game_artwork().join("12/box.webp")), b"12-box.webp");
-    assert_eq!(read(paths.game_artwork().join("12/video.mp4")), b"12-video.mp4");
-    assert_eq!(read(paths.game_artwork().join("7/shot.webp")), b"7-shot.webp");
-    assert!(!media.join("7-box.webp.part").exists(), "half-written downloads go");
-    assert!(media.join("notes.txt").exists(), "anything else stays");
-}
-
-#[tokio::test]
 async fn reconciling_deletes_what_removed_games_left_and_fetches_missing_files_again() {
     let mut h = Harness::new("reconcile", false).await;
     h.sign_up_admin().await;
@@ -4025,26 +3981,16 @@ async fn a_replaced_client_is_removed_with_its_sign_ins() {
 }
 
 #[test]
-fn a_new_install_gets_client_ids_of_its_own_and_an_upgrade_keeps_its_own() {
+fn a_new_install_gets_client_ids_of_its_own() {
     let root = std::env::temp_dir().join(format!("sovemu-client-ids-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let (fresh, upgrade) = (root.join("fresh"), root.join("upgrade"));
-    std::fs::create_dir_all(&fresh).unwrap();
-    std::fs::create_dir_all(&upgrade).unwrap();
-
-    let new = crate::client_ids(&fresh).unwrap();
+    std::fs::create_dir_all(&root).unwrap();
+    let new = crate::client_ids(&root).unwrap();
     for id in [&new.web, &new.device, &new.mobile] {
         assert_eq!(id.len(), 32, "{id}");
     }
     assert!(new.web != new.device && new.device != new.mobile && new.web != new.mobile);
-    assert_eq!(crate::client_ids(&fresh).unwrap(), new, "kept");
-
-    // An install that ran before (its `server.json` there, with only its keys) keeps the ids its
-    // browsers and apps signed in with; the phones' client is new either way.
-    std::fs::write(upgrade.join("server.json"), r#"{"assetSigningKey":"k"}"#).unwrap();
-    let kept = crate::client_ids(&upgrade).unwrap();
-    assert_eq!((kept.web.as_str(), kept.device.as_str()), ("sovemu-web", "sovemu-native"));
-    assert_eq!(kept.mobile.len(), 32);
+    assert_eq!(crate::client_ids(&root).unwrap(), new, "kept");
     std::fs::remove_dir_all(&root).ok();
 }
 
