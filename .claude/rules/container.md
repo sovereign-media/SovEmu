@@ -85,8 +85,8 @@ same checks for whatever a push changes.
 **Each commit's image is built once** (#245). The merge queue builds and tests the commit `main`
 will get and pushes it as `sha-<commit>`; the push to `main` retags that image as `bleeding`
 (`docker buildx imagetools create`) without compiling. `main` builds only when that image is
-missing (a push that skipped the queue) or when the Cargo caches for this lockfile and Rust version
-are not saved yet: it then saves them, once per key, with SovEmu's own crates pruned (they
+missing (a push that skipped the queue) or when the Cargo caches for this `Cargo.lock`, workspace
+`Cargo.toml` and Dockerfile are not saved yet (a change to any of them changes how things compile): it then saves them, once per key, with SovEmu's own crates pruned (they
 recompile every commit). Pull requests and the queue only read the caches.
 
 ## Never commit
