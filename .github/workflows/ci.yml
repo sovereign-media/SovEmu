@@ -197,15 +197,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The Cargo caches belong to a lockfile and a Rust version, never to a run: what changes
-      # from one commit to the next (SovEmu's own crates) recompiles every time anyway, and is
-      # pruned before saving. So a key is saved once, on main, the first time it is missing.
+      # The Cargo caches belong to what decides how the dependencies compile, never to a run: the
+      # lockfile, the workspace's profiles (Cargo.toml) and the build environment (the Dockerfile,
+      # Rust's version among it). A change to any of them would leave a cache that no longer
+      # matches, which nothing would replace. What changes from one commit to the next (SovEmu's
+      # own crates) recompiles every time anyway, and is pruned before saving. So a key is saved
+      # once, on main, the first time it is missing.
       - name: Cargo cache key
         id: cache
         working-directory: .
         run: |
           rust=$(sed -n 's/^ARG RUST_VERSION=//p' SovEmu.Backend/Dockerfile)
-          echo "key=cargo-mounts-rust$rust-${{ hashFiles('SovEmu.Backend/Cargo.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "key=cargo-mounts-rust$rust-${{ hashFiles('SovEmu.Backend/Cargo.lock', 'SovEmu.Backend/Cargo.toml', 'SovEmu.Backend/Dockerfile') }}" >> "$GITHUB_OUTPUT"
 
       # On main: is this key saved already? Looked up, not downloaded.
       - name: Cargo caches saved for this lockfile?

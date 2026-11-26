@@ -102,6 +102,10 @@ RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registr
 # One compile for the test suite's wait and the image both: nothing here varies by target or by
 # commit (the build stamp is written by the runtime stage), so a bake of both runs it once.
 FROM toolchain AS build
+# No debug info: the binaries are stripped of it below, so generating the line tables
+# (`debug = "line-tables-only"` in the workspace's release profile, which local release builds
+# keep) cost about 7% of this compile for nothing (#245). Symbol names stay for backtraces.
+ENV CARGO_PROFILE_RELEASE_DEBUG=0
 # SovEmu's own ScreenScraper developer credentials, built into the server (`build.rs`) so a
 # released image needs only the admin's ScreenScraper account. BuildKit secrets, never build
 # arguments: they reach this one compile as variables and stay out of the image's history and
@@ -114,7 +118,7 @@ RUN --mount=type=secret,id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DE
     cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
     && install -D target/release/sovemu-server /out/sovemu-server \
-    # Drop the line tables (most of the binaries' size) but keep symbol names for backtraces.
+    # Drop any debug info that still comes in (the standard library's) but keep symbol names.
     && strip --strip-debug /out/sovemu-worker /out/sovemu-server
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
@@ -144,9 +148,14 @@ FROM test-base AS test
 # Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
 # must be several times faster than normal play), and a release link on the same cores would
 # slow them. Copying from `build` makes BuildKit wait for it before the tests run.
+# With the test core, the stand-in core the tests load: SovEmu.TestCore/locate.rs builds it on first
+# use, the same way, and every test that loads it waited on that compile while the suite ran
+# (half the suite's time: 39 s against 19 s with it built, #245). Built here, the tests find it
+# ready and locate.rs's own build has nothing to do.
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
-    cargo nextest run --workspace --locked --no-run
+    cargo nextest run --workspace --locked --no-run \
+    && cargo build --locked -p sovemu-test-core --features sovemu-libretro-ffi/frontend
 COPY --from=build /out/sovemu-server /tmp/release-built
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=target-test,target=/src/target \
