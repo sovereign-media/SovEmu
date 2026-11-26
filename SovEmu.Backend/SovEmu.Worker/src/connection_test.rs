@@ -23,7 +23,7 @@ use sovemu_protocol::ipc::{Reply, Request};
 use sovemu_protocol::{SdpKind, SessionDescription};
 use str0m::change::SdpOffer;
 use str0m::net::{Protocol, Receive};
-use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
+use str0m::{Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 
 use crate::ConnectionTestArgs;
 
@@ -31,6 +31,9 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
     let socket = UdpSocket::bind(args.udp).with_context(|| format!("binding {}", args.udp))?;
     let advertised = crate::stream::advertised_addr(args.advertise, socket.local_addr()?);
+    // Asked before the offer is read, so the answer is usually back by then.
+    let mut reflexive = crate::stun::Reflexive::new(&args.stun, &socket);
+    reflexive.ask(&socket);
 
     let mut stdin = std::io::stdin().lock();
     let mut line = String::new();
@@ -38,7 +41,8 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
     let Ok(Request::Offer { id, offer, .. }) = serde_json::from_str::<Request>(&line) else {
         bail!("expected an offer on stdin, got {:?}", line.trim());
     };
-    let mut rtc = match answer(&offer, advertised) {
+    let public = reflexive.current(&socket);
+    let mut rtc = match answer(&offer, advertised, public) {
         Ok((rtc, answer)) => {
             reply(&Reply::Answer { id, answer });
             rtc
@@ -68,10 +72,12 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
 fn answer(
     offer: &SessionDescription,
     advertised: std::net::SocketAddr,
+    public: Option<std::net::SocketAddr>,
 ) -> Result<(Rtc, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
-    let mut rtc = RtcConfig::new().set_ice_lite(true).clear_codecs().build(Instant::now());
-    rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
+    // As a game session's: full ICE, and its public address beside its own.
+    let mut rtc = RtcConfig::new().clear_codecs().build(Instant::now());
+    crate::stream::add_candidates(&mut rtc, advertised, public)?;
     let answer = rtc.sdp_api().accept_offer(offer)?;
     Ok((rtc, SessionDescription { kind: SdpKind::Answer, sdp: answer.to_sdp_string() }))
 }

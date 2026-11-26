@@ -204,7 +204,10 @@ held 59.93 fps over 300 frames with no resyncs.
       (TWCC/REMB) drives the target (85% of the estimate minus audio, changes over 10% only), and
       the stats every client sends once a second lower it while the client's decoder falls
       behind. Encoders that reopen to change rate (VA-API, NVENC) are raised less often
-- [x] STUN/TURN: `SovEmu__Streaming__IceServers` is handed to browsers through `/api/config`
+- [x] STUN (Cloudflare's and Google's free servers): each session
+      offers its public address and runs full ICE, so players away from home connect with no
+      port forwarded; and a built-in TURN relay (always on, port 3478, `SovEmu.Relay`, #50),
+      the only TURN server, with per-player credentials, relaying only to the server's sessions
 - [x] Sign-in throttling: five failures lock a username out for five minutes
 - [x] `GET /health` for probes
 - [x] Structured logs (`SovEmu__Logging__Format=json`): every API request in a `request` span (route,

@@ -31,22 +31,6 @@ pub(crate) fn url(raw: &str) -> String {
     out
 }
 
-/// ICE servers (`RTCIceServer` objects) with their `username` and `credential` masked, their
-/// URLs kept.
-pub(crate) fn ice_servers(servers: &serde_json::Value) -> serde_json::Value {
-    let mut servers = servers.clone();
-    if let Some(list) = servers.as_array_mut() {
-        for server in list.iter_mut().filter_map(|s| s.as_object_mut()) {
-            for key in ["username", "credential"] {
-                if let Some(value) = server.get_mut(key) {
-                    *value = serde_json::Value::String(MASK.to_owned());
-                }
-            }
-        }
-    }
-    servers
-}
-
 /// The names in an `OTEL_EXPORTER_OTLP_HEADERS`-style list (`key1=value1,key2=value2`), without
 /// their values, which are usually tokens.
 pub(crate) fn header_names(raw: &str) -> Vec<String> {
@@ -73,21 +57,6 @@ mod tests {
         assert_eq!(url("not a url, maybe a secret"), MASK);
         let shown = url("https://u:secret@h/?api-key=abc");
         assert!(!shown.contains("secret") && !shown.contains("abc"), "{shown}");
-    }
-
-    #[test]
-    fn ice_servers_keep_urls_and_mask_credentials() {
-        let servers = serde_json::json!([
-            {"urls": "stun:stun.example:3478"},
-            {"urls": ["turn:turn.example:3478"], "username": "u", "credential": "p"},
-        ]);
-        assert_eq!(
-            ice_servers(&servers),
-            serde_json::json!([
-                {"urls": "stun:stun.example:3478"},
-                {"urls": ["turn:turn.example:3478"], "username": MASK, "credential": MASK},
-            ])
-        );
     }
 
     #[test]

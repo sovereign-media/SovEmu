@@ -260,8 +260,16 @@ impl AccountsQuery {
     }
 
     async fn client_config(&self, ctx: &Context<'_>) -> Result<ClientConfig> {
-        user(ctx).await?;
-        Ok(ClientConfig { ice_servers: Json(state(ctx).config.ice_servers.clone()) })
+        let user = user(ctx).await?;
+        let state = state(ctx);
+        let ice_servers = crate::relay::ice_servers(
+            &state.config,
+            state.relay.as_deref(),
+            user.id,
+            request_headers(ctx),
+            std::time::SystemTime::now(),
+        );
+        Ok(ClientConfig { ice_servers: Json(ice_servers.into()) })
     }
 
     /// Admins: one account, with its sign-ins, what it has played and its saves.

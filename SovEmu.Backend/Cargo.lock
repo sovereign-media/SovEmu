@@ -454,7 +454,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
- "sha1",
+ "sha1 0.10.7",
  "sync_wrapper",
  "tokio",
  "tokio-tungstenite",
@@ -1613,6 +1613,12 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+
+[[package]]
+name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -2341,6 +2347,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "no-std-net"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2758,6 +2770,48 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "pnet_base"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffc190d4067df16af3aba49b3b74c469e611cad6314676eaf1157f31aa0fb2f7"
+dependencies = [
+ "no-std-net",
+]
+
+[[package]]
+name = "pnet_macros"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13325ac86ee1a80a480b0bc8e3d30c25d133616112bb16e86f712dcf8a71c863"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "pnet_macros_support"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eed67a952585d509dd0003049b1fc56b982ac665c8299b124b90ea2bdb3134ab"
+dependencies = [
+ "pnet_base",
+]
+
+[[package]]
+name = "pnet_packet"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c96ebadfab635fcc23036ba30a7d33a80c39e8461b8bd7dc7bb186acb96560f"
+dependencies = [
+ "glob",
+ "pnet_base",
+ "pnet_macros",
+ "pnet_macros_support",
+]
 
 [[package]]
 name = "png"
@@ -3414,6 +3468,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sans-io-time"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e1c4baf93f2fbecd194191bdb8b911b14f37ae35f0d1e1cbfb4cb6e067e8c52"
+
+[[package]]
 name = "schannel"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3574,6 +3634,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3661,6 +3732,12 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "siphasher"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "slab"
@@ -3767,6 +3844,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sovemu-relay"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hmac 0.12.1",
+ "sha1 0.10.7",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "turn-client-proto",
+ "turn-server-proto",
+]
+
+[[package]]
 name = "sovemu-retro-host"
 version = "0.1.0"
 dependencies = [
@@ -3798,6 +3890,7 @@ dependencies = [
  "sovemu-identity",
  "sovemu-library",
  "sovemu-protocol",
+ "sovemu-relay",
  "sovemu-sessions",
  "sqlx",
  "tokio",
@@ -3838,6 +3931,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "getrandom 0.3.4",
  "hound",
  "png",
  "serde",
@@ -3995,7 +4089,7 @@ dependencies = [
  "percent-encoding",
  "rand 0.8.8",
  "rsa",
- "sha1",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "smallvec",
  "sqlx-core",
@@ -4180,6 +4274,43 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "stun-proto"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25cbfd0e9a3033f7cb5d9c4eb1155f18b2531f34bd75dae9032f0b77823c4190"
+dependencies = [
+ "base64 0.22.1",
+ "byteorder",
+ "hashbrown 0.16.1",
+ "rand 0.10.3",
+ "sans-io-time",
+ "siphasher",
+ "smallvec",
+ "stun-types",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "stun-types"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd1108cee751e52425400125c21f66d0a78db0e053caefba1c41ced8a0717005"
+dependencies = [
+ "byteorder",
+ "crc",
+ "hmac 0.13.0",
+ "md-5 0.11.0",
+ "rand 0.10.3",
+ "sha1 0.11.0",
+ "sha2 0.11.1",
+ "smallvec",
+ "subtle",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -4632,8 +4763,50 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
- "sha1",
+ "sha1 0.10.7",
  "thiserror",
+]
+
+[[package]]
+name = "turn-client-proto"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57914c655cc6cc1d6cb6541673b87be69595365a3226b6bfd34dad8af7d779a1"
+dependencies = [
+ "byteorder",
+ "smallvec",
+ "stun-proto",
+ "thiserror",
+ "tracing",
+ "turn-types",
+]
+
+[[package]]
+name = "turn-server-proto"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf80e0856b153a6a410de2843860273a8ddd0a694526dfc1636860b13a60c1d"
+dependencies = [
+ "byteorder",
+ "pnet_packet",
+ "rand 0.9.5",
+ "smallvec",
+ "stun-proto",
+ "thiserror",
+ "tracing",
+ "turn-types",
+]
+
+[[package]]
+name = "turn-types"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd0f1a1dd935d81a348f9dceafd423e507c1f16c80fcd3a4fb8e2057756a8c82"
+dependencies = [
+ "byteorder",
+ "stun-proto",
+ "stun-types",
+ "tracing",
 ]
 
 [[package]]

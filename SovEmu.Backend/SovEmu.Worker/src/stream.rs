@@ -455,13 +455,16 @@ pub(crate) use sovemu_protocol::net::advertised_addr;
 fn accept_offer(
     offer: &SessionDescription,
     advertised: SocketAddr,
+    reflexive: Option<SocketAddr>,
     video: Limits,
     starting_estimate_kbps: u64,
     codecs: CodecSetting,
 ) -> Result<(Peer, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
+    // Full ICE, not ICE-lite: the worker sends connectivity checks of its own to the client's
+    // addresses, which is what opens the home router to a player away from home (and ICE-lite
+    // takes no server-reflexive candidate).
     let mut config = RtcConfig::new()
-        .set_ice_lite(true)
         // Playout delay is not in str0m's standard extensions, so without this the 0/0 delay
         // `step` writes on every video packet is never negotiated and never sent. The receiver's
         // WebRTC (Android, iOS, and browsers that ignore `jitterBufferTarget`) then buffers frames
@@ -495,10 +498,24 @@ fn accept_offer(
         Bitrate::kbps(u64::from(video.min_kbps)),
         Bitrate::kbps(u64::from(video.max_kbps)),
     );
-    rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
+    add_candidates(&mut rtc, advertised, reflexive)?;
     let answer = rtc.sdp_api().accept_offer(offer)?;
     let peer = Peer { rtc, video: None, audio: None, input: None, connected: false };
     Ok((peer, SessionDescription { kind: SdpKind::Answer, sdp: answer.to_sdp_string() }))
+}
+
+/// The session's own address, and the one the STUN servers see it at (`stun.rs`) when that is
+/// another: behind a router, the address a player away from home reaches it at.
+pub(crate) fn add_candidates(
+    rtc: &mut Rtc,
+    advertised: SocketAddr,
+    reflexive: Option<SocketAddr>,
+) -> Result<()> {
+    rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
+    if let Some(public) = reflexive.filter(|r| *r != advertised) {
+        rtc.add_local_candidate(Candidate::server_reflexive(public, advertised, "udp")?);
+    }
+    Ok(())
 }
 
 /// The payload type negotiated for `codec` on `mid`.
@@ -513,12 +530,15 @@ pub(crate) fn run(
     mut session: Session,
     socket: UdpSocket,
     advertised: SocketAddr,
+    mut reflexive: crate::stun::Reflexive,
     commands: Receiver<Command>,
     on_event: &mut dyn FnMut(StreamEvent),
     idle_timeout: Option<Duration>,
 ) -> Result<ExitReason> {
     // Tag every datagram with the advertised address; see `advertised_addr`.
     let local = advertised;
+    // The public address, asked for now so the first client's answer needn't wait for it.
+    reflexive.ask(&socket);
     let mut buf = vec![0u8; 2048];
     let mut peer: Option<Peer> = None;
     let mut pacer: Option<Pacer> = None;
@@ -541,9 +561,11 @@ pub(crate) fn run(
                         }
                         None => session.video.codec_setting(),
                     };
+                    let public = reflexive.current(&socket);
                     let result = accept_offer(
                         &offer,
                         advertised,
+                        public,
                         session.adaptation.limits(),
                         session.adaptation.starting_estimate_kbps(),
                         codecs,
@@ -651,7 +673,9 @@ pub(crate) fn run(
             socket.set_read_timeout(Some(wait))?;
             match socket.recv_from(&mut buf) {
                 Ok((n, source)) => {
-                    if let Some(p) = &mut peer
+                    // A STUN server's answer is the session's, never the peer's.
+                    if reflexive.handle(&buf[..n]) {
+                    } else if let Some(p) = &mut peer
                         && let Ok(contents) = buf[..n].try_into()
                     {
                         let input = Input::Receive(

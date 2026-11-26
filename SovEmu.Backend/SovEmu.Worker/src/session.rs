@@ -131,10 +131,12 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
 
     let event_out = out.clone();
     let idle = (args.idle_timeout > 0).then(|| Duration::from_secs(args.idle_timeout));
+    let reflexive = crate::stun::Reflexive::new(&args.stun, &socket);
     let result = stream::run(
         session,
         socket,
         advertised,
+        reflexive,
         commands_rx,
         &mut |event| {
             event_out.send(&match event {
