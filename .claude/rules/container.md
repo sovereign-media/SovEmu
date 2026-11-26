@@ -22,8 +22,10 @@ Never split it into per-GPU images.
 
 Stages: `web` (the web client's tests and build, on `node:<ver>-trixie-slim`); `cores`
 (`scripts/install-cores.sh` over `scripts/cores.list`, refusing anything but `linux/amd64`);
-`toolchain` (`rust:<ver>-trixie` with Debian's libvpx, libopus and libavcodec, and the pinned
-nextest and cargo-about); `notices` (cargo-about with `about.toml`/`about.hbs`, writing
+`ffmpeg` (libavcodec and libavutil from a pinned FFmpeg release, built for H.264 only: the x264,
+VA-API and NVENC encoders and the H.264 decoder the tests use, #236); `toolchain`
+(`rust:<ver>-trixie` with Debian's libvpx and libopus, the `ffmpeg` stage's libraries, and the
+pinned nextest and cargo-about); `notices` (cargo-about with `about.toml`/`about.hbs`, writing
 `third-party-notices.json`); `build` (release binaries); `test-base` and `test` (`cargo nextest
 run --workspace --profile ci` with Mesa's llvmpipe); `coverage-run` and `coverage`; and
 `runtime`. `build` and `test` compile side by side with their own `target/` cache mounts; CI
@@ -36,7 +38,7 @@ copied there too; the server reads both beside its binary at startup. Both bake 
 same secrets: a difference between them would split `build` into two compiles.
 
 `runtime` is `debian:trixie-slim` with the codecs' and GL's run-time libraries (libvpx, libopus,
-libavcodec with x264, libva with Intel's and Mesa's VA-API drivers, libglvnd and Mesa GL/EGL, no
+the `ffmpeg` stage's libavcodec with Debian's x264, libva with Intel's and Mesa's VA-API drivers, libglvnd and Mesa GL/EGL, no
 Vulkan drivers yet), `tini`, and what the release's cores link (`libxi6`, `libusb-1.0-0`,
 `libgomp1` …). It:
 
@@ -94,3 +96,12 @@ recompile every commit). Pull requests and the queue only read the caches.
 Cores, ROMs, BIOS files or data: `cores/`, `roms/`, `system/` and `data/` are gitignored.
 `scripts/fetch-cores.sh` downloads cores for local testing, `scripts/fetch-free-roms.sh` freely
 licensed homebrew.
+
+## Codecs
+
+**SovEmu builds its own FFmpeg, for H.264 only** (`ffmpeg` stage). Never install Debian's
+`libavcodec61` or `libavcodec-dev` in the image or the toolchain: it brings every codec Debian
+builds (~90 MB) for three encoders. A new codec or encoder SovEmu.Media opens by name is added to
+the stage's `--enable-encoder`/`--enable-decoder` list, or it is missing at run time
+(`avcodec_find_encoder_by_name` returns null). Moving FFMPEG_VERSION also moves the About page's
+entry (`about.rs`; a test checks they agree).

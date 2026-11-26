@@ -58,17 +58,61 @@ WORKDIR /build
 COPY scripts/cores.list scripts/install-cores.sh ./
 RUN ./install-cores.sh --out /out/cores
 
+## ---- ffmpeg: libavcodec and libavutil, H.264 only -------------------------------------------------
+# SovEmu.Media uses FFmpeg for H.264 alone: x264 on the CPU, VA-API and NVENC on a GPU, and the H.264
+# decoder for the tests. Debian's libavcodec61 brings every codec it was built with and their
+# libraries (~90 MB: x265, codec2, SVT-AV1, aom, ...); this build has those three encoders and that
+# decoder, ~3 MB (#236). The test stages link the same build, so the tests encode with what ships.
+# A pinned release, checked, so it stays cached until FFMPEG_VERSION changes. NVENC needs only
+# NVIDIA's headers (nv-codec-headers, MIT): the driver's library is loaded at run time.
+FROM debian:${DEBIAN_RELEASE}-slim AS ffmpeg
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
+        ca-certificates curl xz-utils make gcc libc6-dev nasm pkg-config libx264-dev libva-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+# Also SovEmu.Server's about.rs, the About page (a test there checks they agree).
+ARG FFMPEG_VERSION=7.1.5
+ARG FFMPEG_SHA256=de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f
+ARG NV_CODEC_HEADERS_VERSION=n12.2.72.0
+ARG NV_CODEC_HEADERS_SHA256=dbeaec433d93b850714760282f1d0992b1254fc3b5a6cb7d76fc1340a1e47563
+RUN curl -sSfL --retry 5 -o nv-codec-headers.tar.gz \
+        "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/${NV_CODEC_HEADERS_VERSION}.tar.gz" \
+    && echo "${NV_CODEC_HEADERS_SHA256}  nv-codec-headers.tar.gz" | sha256sum -c - \
+    && tar xzf nv-codec-headers.tar.gz \
+    && make -C "nv-codec-headers-${NV_CODEC_HEADERS_VERSION}" PREFIX=/usr/local install \
+    && curl -sSfL --retry 5 -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
+    && echo "${FFMPEG_SHA256}  ffmpeg.tar.xz" | sha256sum -c - \
+    && tar xJf ffmpeg.tar.xz
+# Everything off (no other codec, no formats, filters, scaling or programs, no library found by
+# itself), then exactly what SovEmu.Media opens by name. GPL for x264, as Debian's build is.
+RUN cd "ffmpeg-${FFMPEG_VERSION}" \
+    && ./configure --prefix=/opt/ffmpeg --enable-shared --disable-static \
+        --disable-programs --disable-doc --disable-network --disable-autodetect \
+        --disable-avformat --disable-avdevice --disable-avfilter --disable-swscale --disable-swresample \
+        --disable-everything --enable-gpl --enable-libx264 --enable-vaapi --enable-ffnvcodec --enable-nvenc \
+        --enable-encoder=libx264,h264_vaapi,h264_nvenc --enable-decoder=h264 \
+    && make -j"$(nproc)" && make install \
+    # The runtime takes only the libraries; the licence travels with them (GPL-2.0-or-later).
+    && mkdir -p /out/lib /out/doc \
+    && cp -a /opt/ffmpeg/lib/libavcodec.so.* /opt/ffmpeg/lib/libavutil.so.* /out/lib/ \
+    && cp LICENSE.md COPYING.GPLv2 /out/doc/
+
 ## ---- toolchain: Rust, the build dependencies and the sources --------------------------------------
 # `build` and `test` both start here and neither waits for the other, so BuildKit compiles the
 # release binaries and the test suite side by side. Each has its own `target/` cache (cargo locks
 # a target directory, so a shared one would make them take turns); CI keeps the caches between
 # runs (buildkit-cache-dance in .github/workflows/ci.yml).
 FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS toolchain
-# libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev, libavcodec-dev,
-# libavutil-dev: the codecs SovEmu.Media links (libavcodec brings x264 for the H.264 tests).
+# libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev: the codecs
+# SovEmu.Media links. libx264-164, libva2, libva-drm2: what the `ffmpeg` stage's libavcodec links,
+# which SovEmu.Media builds against (pkg-config) and the tests load.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 clang libclang-dev cmake pkg-config libvpx-dev libopus-dev libavcodec-dev libavutil-dev \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 clang libclang-dev cmake pkg-config libvpx-dev libopus-dev libx264-164 libva2 libva-drm2 \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=ffmpeg /opt/ffmpeg/ /opt/ffmpeg/
+RUN echo /opt/ffmpeg/lib > /etc/ld.so.conf.d/sovemu-ffmpeg.conf && ldconfig
+ENV PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
 # No incremental compilation (a one-off build gains nothing from it, and its files would bloat the
 # kept cache); tests keep line tables, enough for a backtrace, not full debug info.
 ENV CARGO_TERM_COLOR=always \
@@ -189,7 +233,8 @@ COPY --from=coverage-run /out/ /
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # libstdc++6, libgomp1: the C++ cores (and flycast's OpenMP). libxi6, libusb-1.0-0: linked by
 # the release's Dolphin (for input devices SovEmu never gives it). libvpx9, libopus0: VP8 and Opus
-# encoding. libavcodec61, libavutil59: H.264 (x264 on the CPU; VA-API and NVENC on a GPU). tini: PID 1, so the per-session workers are reaped. libpng, zstd, xz: the 3D cores'
+# encoding. libx264-164: H.264 on the CPU, through the `ffmpeg` stage's libavcodec (copied below,
+# with VA-API and NVENC for a GPU). tini: PID 1, so the per-session workers are reaped. libpng, zstd, xz: the 3D cores'
 # texture and disc-image formats. tzdata: the time zones, so `TZ` (America/Chicago) gives log lines
 # local times.
 # GPU rendering: libglvnd (libegl1, libgl1, libgles2) dispatches to a vendor. Mesa's is here
@@ -203,7 +248,7 @@ FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 ca-certificates tini tzdata libstdc++6 libgomp1 \
         libxi6 libusb-1.0-0 \
-        libvpx9 libopus0 libavcodec61 libavutil59 libpng16-16t64 libzstd1 liblzma5 \
+        libvpx9 libopus0 libx264-164 libpng16-16t64 libzstd1 liblzma5 \
         libva2 libva-drm2 intel-media-va-driver mesa-va-drivers \
         libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/* \
@@ -213,6 +258,10 @@ RUN apt-get update \
     && chown sovemu:sovemu /sov-data
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
+# H.264: the `ffmpeg` stage's libavcodec and libavutil, and their licence.
+COPY --from=ffmpeg /out/lib/ /usr/local/lib/
+COPY --from=ffmpeg /out/doc/ /usr/share/doc/sovemu-ffmpeg/
+RUN ldconfig
 COPY --from=build /out/sovemu-worker /out/sovemu-server /opt/sovemu/bin/
 # The crates' licences for the admin About page, read beside the server (SovEmu.Server notices.rs).
 COPY --from=notices /out/third-party-notices.json /opt/sovemu/bin/third-party-notices.json
