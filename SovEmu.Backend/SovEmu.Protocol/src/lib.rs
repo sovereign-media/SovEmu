@@ -1,3 +1,4 @@
+// MEASUREMENT (#245): forces a recompile to time a PR run with cargo-chef; never merged.
 //! Wire formats shared by the SovEmu worker, server and clients.
 //!
 //! Every client (web, Android, iOS) implements these byte-for-byte, so this crate is the
