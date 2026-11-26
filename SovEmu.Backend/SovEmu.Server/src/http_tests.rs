@@ -2376,9 +2376,14 @@ async fn admins_see_how_the_server_is_reached() {
         vec![
             "--advertise-ip".into(),
             "192.0.2.10".into(),
-            "--ice-servers".into(),
-            r#"[{"urls":"stun:stun.example:3478"},{"urls":["turn:t.example"],"username":"u","credential":"pa55"}]"#
-                .into(),
+            "--stun-server".into(),
+            "stun:stun.example:3478".into(),
+            "--relay".into(),
+            "true".into(),
+            "--relay-port".into(),
+            "0".into(),
+            "--relay-host".into(),
+            "games.example.com".into(),
         ],
     )
     .await;
@@ -2398,15 +2403,16 @@ async fn admins_see_how_the_server_is_reached() {
         n["iceServers"],
         json!([
             {"urls": ["stun:stun.example:3478"], "hasCredential": false},
-            {"urls": ["turn:t.example"], "hasCredential": true},
+            {"urls": [
+                format!("turn:games.example.com:{}?transport=udp", h.relay_port()),
+                format!("turn:games.example.com:{}?transport=tcp", h.relay_port()),
+            ], "hasCredential": true},
         ])
     );
-    let ice = n["settings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["name"] == "SovEmu__Streaming__IceServers");
-    assert!(!ice.unwrap()["value"].as_str().unwrap().contains("pa55"), "credentials masked");
+    let names: Vec<_> =
+        n["settings"].as_array().unwrap().iter().map(|s| s["name"].clone()).collect();
+    assert!(names.contains(&json!("SovEmu__Streaming__StunServers")), "{names:?}");
+    assert!(names.contains(&json!("SovEmu__Relay__Enabled")), "{names:?}");
 }
 
 #[tokio::test]
@@ -2421,8 +2427,8 @@ async fn players_get_relay_credentials_of_their_own() {
             "0".into(),
             "--relay-host".into(),
             "games.example.com".into(),
-            "--ice-servers".into(),
-            "[]".into(),
+            "--stun-server".into(),
+            "none".into(),
         ],
     )
     .await;
@@ -3229,6 +3235,11 @@ const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 const CALLBACK: &str = "http://sovemu.test/auth/callback/";
 
 impl Harness {
+    /// The built-in relay's port, when the harness runs it.
+    fn relay_port(&self) -> u16 {
+        self.state.relay.as_ref().expect("the relay is on").port()
+    }
+
     /// A request as a browser at `http://sovemu.test` sends it: status, headers, body text.
     /// Keeps a cookie the answer sets.
     async fn browse(

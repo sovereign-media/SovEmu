@@ -173,7 +173,7 @@ pub(super) const NETWORK_SETTINGS: &[&str] = &[
     "SovEmu__Streaming__Udp__Ports",
     "SovEmu__Streaming__Udp__Bind",
     "SovEmu__Streaming__AdvertiseAddress",
-    "SovEmu__Streaming__IceServers",
+    "SovEmu__Streaming__StunServers",
     "SovEmu__Relay__Enabled",
     "SovEmu__Relay__Port",
     "SovEmu__Relay__Host",
@@ -491,24 +491,23 @@ impl ServerQuery {
         };
         let bound = std::net::SocketAddr::new(config.udp_bind, config.udp_ports.0);
         let advertised = sovemu_protocol::net::advertised_addr(config.advertise_ip, bound).ip();
-        let ice_servers = config
-            .ice_servers
-            .as_array()
-            .map(|list| {
-                list.iter()
-                    .map(|s| IceServerSummary {
-                        urls: match &s["urls"] {
-                            serde_json::Value::String(u) => vec![u.clone()],
-                            serde_json::Value::Array(us) => {
-                                us.iter().filter_map(|u| u.as_str().map(str::to_owned)).collect()
-                            }
-                            _ => Vec::new(),
-                        },
-                        has_credential: s.get("credential").is_some(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        // What a player is given (the relay's credentials are the admin's own, never shown).
+        let ice_servers = crate::relay::ice_servers(
+            config,
+            state.relay.as_deref(),
+            0,
+            headers,
+            std::time::SystemTime::now(),
+        )
+        .iter()
+        .map(|s| IceServerSummary {
+            urls: s["urls"]
+                .as_array()
+                .map(|us| us.iter().filter_map(|u| u.as_str().map(str::to_owned)).collect())
+                .unwrap_or_default(),
+            has_credential: s.get("credential").is_some(),
+        })
+        .collect();
         Ok(NetworkReport {
             http: config.http.to_string(),
             udp_first: config.udp_ports.0.into(),

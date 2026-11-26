@@ -215,13 +215,14 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Http__SecureCookies")]
     pub secure_cookies: bool,
 
-    /// STUN/TURN servers for clients, one per index: `__0__Urls` (a URL, or several
-    /// comma-separated), `__0__Username`, `__0__Credential`. Default: Cloudflare's and Google's
-    /// free public STUN servers, so a client away from home learns its public address; `[]` for
-    /// none. Setting any entry replaces the default. The built-in relay (`SovEmu__Relay__Enabled`)
-    /// is added beside these on its own.
-    #[arg(long, env = "SovEmu__Streaming__IceServers", default_value = DEFAULT_ICE_SERVERS, value_parser = parse_ice_servers)]
-    pub ice_servers: serde_json::Value,
+    /// STUN servers, one per index (`__0=stun:stun.cloudflare.com:3478`) or comma-separated:
+    /// each game session asks them for its public address, and offers it so players away from
+    /// home can connect without forwarded ports; clients are given them too. Default:
+    /// Cloudflare's and Google's free public ones. `none` for none. The built-in relay
+    /// (`SovEmu__Relay__Enabled`) is the TURN server.
+    #[arg(long = "stun-server", env = "SovEmu__Streaming__StunServers", value_delimiter = ',',
+          default_value = DEFAULT_STUN_SERVERS, value_parser = parse_stun_server)]
+    pub stun_servers: Vec<String>,
 
     /// Run the built-in TURN relay, for players no direct path reaches (a symmetric or
     /// carrier-grade NAT, or a network that blocks UDP). Signed-in players get short-lived
@@ -766,6 +767,11 @@ impl Config {
     pub fn summary(&self) -> String {
         configuration::summary(self)
     }
+
+    /// The STUN servers to use, as `stun:host:port` (none when the setting is `none`).
+    pub fn stun_urls(&self) -> Vec<String> {
+        self.stun_servers.iter().filter(|s| !s.is_empty()).cloned().collect()
+    }
 }
 
 /// Moves copies from where the cache kept them before it had a folder of its own (beside the
@@ -788,14 +794,41 @@ fn move_legacy_cache(paths: &paths::DataPaths) {
 }
 
 /// Free public STUN servers that need no account: Cloudflare's, then Google's.
-const DEFAULT_ICE_SERVERS: &str =
-    r#"[{"urls":["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}]"#;
+const DEFAULT_STUN_SERVERS: &str = "stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302";
 
-fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
-    let value: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("not JSON: {e}"))?;
-    let ok =
-        value.as_array().is_some_and(|servers| servers.iter().all(|s| s.get("urls").is_some()));
-    if ok { Ok(value) } else { Err("expected an array of objects with \"urls\"".into()) }
+/// A STUN server as `stun:host:port` (the `stun:` may be left off), or `none` (kept as an empty
+/// entry, which [`Config::stun_servers`] drops). TURN is the built-in relay's alone.
+fn parse_stun_server(s: &str) -> Result<String, String> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("none") || s.is_empty() {
+        return Ok(String::new());
+    }
+    if s.starts_with("turn:") || s.starts_with("turns:") {
+        return Err("only STUN servers: the built-in relay (SovEmu__Relay__Enabled) is the TURN \
+                    server"
+            .into());
+    }
+    let host = s.strip_prefix("stun:").unwrap_or(s);
+    let (name, port) = host.rsplit_once(':').ok_or("expected stun:host:port")?;
+    if name.is_empty() || port.parse::<u16>().is_err() {
+        return Err("expected stun:host:port".into());
+    }
+    Ok(format!("stun:{host}"))
+}
+
+/// Settings that no longer exist and would change what happens if they still did: starting
+/// without them would be a surprise, so the server says what replaced them instead.
+fn refuse_removed_settings(vars: &[(String, String)]) -> Result<()> {
+    const ICE: &str = "SovEmu__Streaming__IceServers";
+    if let Some((name, _)) =
+        vars.iter().find(|(k, _)| k.get(..ICE.len()).is_some_and(|p| p.eq_ignore_ascii_case(ICE)))
+    {
+        anyhow::bail!(
+            "{name} is no longer read: STUN servers are SovEmu__Streaming__StunServers, and the \
+             TURN server is the built-in relay (SovEmu__Relay__Enabled)"
+        );
+    }
+    Ok(())
 }
 
 fn parse_ports(s: &str) -> Result<(u16, u16), String> {
@@ -1142,6 +1175,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ports: config.udp_ports,
         bind_ip: config.udp_bind,
         advertise_ip: config.advertise_ip,
+        stun_servers: config.stun_urls(),
         bios_dir: config.bios_dir(),
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
@@ -1334,15 +1368,10 @@ enum EnvChange {
     Remove(String),
 }
 
-/// Where a list setting's entries are gathered: `SovEmu__Streaming__IceServers__<n>__<field>`.
-const ICE_SERVERS: &str = "SovEmu__Streaming__IceServers";
-
 /// How the environment becomes what the options read, as .NET reads its configuration:
 /// - a setting in any letter case is renamed to its own spelling (`SOVEMU__HTTP__LISTEN`);
 /// - a list setting's entries, one per index (`SovEmu__Network__TrustedProxyNetwork__0`, `__1`),
 ///   are joined into the setting, in index order (a single plain value still works);
-/// - the ICE servers' entries (`SovEmu__Streaming__IceServers__0__Urls`, `__Username`,
-///   `__Credential`) become the JSON list the option reads;
 /// - an empty setting is unset, as are the NAS mount's credentials, which compose passes in
 ///   (`SOVEMU_NAS_*`).
 ///
@@ -1356,8 +1385,6 @@ fn environment_changes(
         |name: &str, among: &[String]| among.iter().find(|k| k.eq_ignore_ascii_case(name)).cloned();
     let mut changes = Vec::new();
     let mut entries: std::collections::BTreeMap<String, Vec<(u32, String)>> = Default::default();
-    let mut ice: std::collections::BTreeMap<u32, serde_json::Map<String, serde_json::Value>> =
-        Default::default();
     for (name, value) in vars {
         if name.starts_with("SOVEMU_NAS_") {
             changes.push(EnvChange::Remove(name.clone()));
@@ -1377,26 +1404,6 @@ fn environment_changes(
             }
             continue;
         }
-        if let Some(rest) = name.get(ICE_SERVERS.len()..).filter(|_| {
-            name.get(..ICE_SERVERS.len()).is_some_and(|p| p.eq_ignore_ascii_case(ICE_SERVERS))
-        }) && let Some((index, field)) = rest.strip_prefix("__").and_then(|r| r.split_once("__"))
-            && let Ok(index) = index.parse::<u32>()
-        {
-            let field = match field.to_ascii_lowercase().as_str() {
-                "urls" => "urls",
-                "username" => "username",
-                "credential" => "credential",
-                _ => continue,
-            };
-            let value = if field == "urls" && value.contains(',') {
-                serde_json::Value::from(value.split(',').map(str::trim).collect::<Vec<_>>())
-            } else {
-                serde_json::Value::from(value.as_str())
-            };
-            ice.entry(index).or_default().insert(field.to_owned(), value);
-            changes.push(EnvChange::Remove(name.clone()));
-            continue;
-        }
         if let Some((list, index)) = name.rsplit_once("__")
             && let Ok(index) = index.parse::<u32>()
             && let Some(own) = find(list, lists)
@@ -1409,14 +1416,6 @@ fn environment_changes(
         values.sort();
         let joined = values.into_iter().map(|(_, v)| v).collect::<Vec<_>>().join(",");
         changes.push(EnvChange::Set(list, joined));
-    }
-    if !ice.is_empty() {
-        let servers: Vec<serde_json::Value> =
-            ice.into_values().map(serde_json::Value::Object).collect();
-        changes.push(EnvChange::Set(
-            ICE_SERVERS.to_owned(),
-            serde_json::Value::from(servers).to_string(),
-        ));
     }
     changes
 }
@@ -1496,6 +1495,7 @@ fn main() -> Result<()> {
 async fn run(mut config: Config) -> Result<()> {
     config.clear_empty_secrets();
     let vars: Vec<(String, String)> = std::env::vars().collect();
+    refuse_removed_settings(&vars)?;
     config.given.keep_environment(&vars);
     config.users = structured::users(&vars)?;
     config.systems = structured::systems(&vars)?;
@@ -1553,11 +1553,19 @@ mod tests {
 
     #[test]
     fn ice_server_config() {
-        assert!(parse_ice_servers("[]").is_ok());
-        assert!(parse_ice_servers(r#"[{"urls":"stun:stun.example:3478"}]"#).is_ok());
-        assert!(parse_ice_servers(r#"[{"username":"x"}]"#).is_err());
-        assert!(parse_ice_servers("{}").is_err());
-        assert!(parse_ice_servers("nope").is_err());
+        assert_eq!(parse_stun_server("stun:stun.example:3478").unwrap(), "stun:stun.example:3478");
+        assert_eq!(parse_stun_server("stun.example:3478").unwrap(), "stun:stun.example:3478");
+        assert_eq!(parse_stun_server("none").unwrap(), "");
+        assert!(parse_stun_server("turn:turn.example:3478").is_err(), "TURN is the relay's");
+        assert!(parse_stun_server("stun:stun.example").is_err());
+        assert!(parse_stun_server("stun::3478").is_err());
+        let off = Config::parse_from(["sovemu-server", "--stun-server", "none"]);
+        assert!(off.stun_urls().is_empty());
+        let default = Config::parse_from(["sovemu-server"]);
+        assert_eq!(
+            default.stun_urls(),
+            ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]
+        );
     }
 
     #[test]
@@ -1660,9 +1668,6 @@ mod tests {
             ("SOVEMU__HTTP__LISTEN", "0.0.0.0:9000"),
             ("SovEmu__Network__TrustedProxyNetwork__1", "10.1.0.0/16"),
             ("sovemu__network__trustedproxynetwork__0", "10.0.0.0/8"),
-            ("SovEmu__Streaming__IceServers__0__Urls", "turn:a:3478,turns:a:5349"),
-            ("SovEmu__Streaming__IceServers__0__Username", "u"),
-            ("SovEmu__Streaming__IceServers__1__Urls", "stun:b:3478"),
             ("SovEmu__Metadata__Videos", ""),
             ("SovEmu__Users__0__Username", "kid"),
             ("SOVEMU_NAS_PASSWORD", "hunter2"),
@@ -1679,10 +1684,6 @@ mod tests {
             set("SovEmu__Network__TrustedProxyNetwork", "10.0.0.0/8,10.1.0.0/16"),
             removed("SovEmu__Metadata__Videos"),
             removed("SOVEMU_NAS_PASSWORD"),
-            set(
-                "SovEmu__Streaming__IceServers",
-                r#"[{"urls":["turn:a:3478","turns:a:5349"],"username":"u"},{"urls":"stun:b:3478"}]"#,
-            ),
         ] {
             assert!(changes.contains(&expected), "{expected:?} in {changes:?}");
         }
@@ -1691,12 +1692,18 @@ mod tests {
                 |c| matches!(c, EnvChange::Remove(k) | EnvChange::Set(k, _) if k == untouched)
             ));
         }
-        // What the server builds from that reads as a plain value would.
-        let ice = changes.iter().find_map(|c| match c {
-            EnvChange::Set(k, v) if k == ICE_SERVERS => Some(v.clone()),
-            _ => None,
-        });
-        assert!(parse_ice_servers(&ice.unwrap()).is_ok());
+    }
+
+    #[test]
+    fn a_removed_ice_servers_setting_stops_the_server_with_what_replaced_it() {
+        let vars =
+            [("SovEmu__Streaming__IceServers__0__Urls".to_owned(), "turn:t:3478".to_owned())];
+        let e = refuse_removed_settings(&vars).unwrap_err().to_string();
+        assert!(
+            e.contains("SovEmu__Streaming__StunServers") && e.contains("SovEmu__Relay__Enabled"),
+            "{e}"
+        );
+        assert!(refuse_removed_settings(&[("HOME".into(), "/".into())]).is_ok());
     }
 
     #[test]
@@ -1740,8 +1747,6 @@ mod tests {
             "sovemu-server",
             "--otel-endpoint",
             "https://user:t0k3n@collector:4318/otlp?api-key=k3y",
-            "--ice-servers",
-            r#"[{"urls":"turn:turn.example:3478","username":"u","credential":"pa55"}]"#,
         ]);
         let summary = config.summary();
         assert!(
@@ -1749,8 +1754,7 @@ mod tests {
                 .contains("SovEmu__Telemetry__Otlp__Endpoint=https://***@collector:4318/otlp?***"),
             "{summary}"
         );
-        assert!(summary.contains("turn:turn.example:3478"), "{summary}");
-        for secret in ["t0k3n", "k3y", "pa55"] {
+        for secret in ["t0k3n", "k3y"] {
             assert!(!summary.contains(secret), "{secret} in {summary}");
         }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());

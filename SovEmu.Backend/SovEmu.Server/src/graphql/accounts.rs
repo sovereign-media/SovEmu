@@ -262,20 +262,14 @@ impl AccountsQuery {
     async fn client_config(&self, ctx: &Context<'_>) -> Result<ClientConfig> {
         let user = user(ctx).await?;
         let state = state(ctx);
-        let mut ice_servers = state.config.ice_servers.clone();
-        // The built-in relay, with this player's own short-lived credentials.
-        if let Some(relay) = &state.relay
-            && let Some(server) = crate::relay::ice_server(
-                relay,
-                user.id,
-                request_headers(ctx),
-                std::time::SystemTime::now(),
-            )
-            && let Some(list) = ice_servers.as_array_mut()
-        {
-            list.push(server);
-        }
-        Ok(ClientConfig { ice_servers: Json(ice_servers) })
+        let ice_servers = crate::relay::ice_servers(
+            &state.config,
+            state.relay.as_deref(),
+            user.id,
+            request_headers(ctx),
+            std::time::SystemTime::now(),
+        );
+        Ok(ClientConfig { ice_servers: Json(ice_servers.into()) })
     }
 
     /// Admins: one account, with its sign-ins, what it has played and its saves.

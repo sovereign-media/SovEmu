@@ -167,7 +167,7 @@ fn group(env: &str) -> Option<Group> {
         | "SovEmu__Streaming__Udp__Bind"
         | "SovEmu__Streaming__Udp__Dscp"
         | "SovEmu__Streaming__AdvertiseAddress"
-        | "SovEmu__Streaming__IceServers"
+        | "SovEmu__Streaming__StunServers"
         | "SovEmu__Relay__Enabled"
         | "SovEmu__Relay__Port"
         | "SovEmu__Relay__Host"
@@ -252,8 +252,6 @@ fn shown(env: &str, values: &[String]) -> Option<String> {
     }
     Some(match env {
         "SovEmu__Telemetry__Otlp__Endpoint" => redact::url(&joined),
-        "SovEmu__Streaming__IceServers" => serde_json::from_str(&joined)
-            .map_or_else(|_| redact::MASK.to_owned(), |v| redact::ice_servers(&v).to_string()),
         "OTEL_EXPORTER_OTLP_HEADERS" => format!("({})", redact::header_names(&joined).join(",")),
         _ => joined,
     })

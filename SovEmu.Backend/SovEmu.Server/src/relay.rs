@@ -22,6 +22,12 @@ pub(crate) struct RelayState {
 }
 
 impl RelayState {
+    /// The port the relay was given (the configured one, unless that was 0).
+    #[cfg(test)]
+    pub(crate) fn port(&self) -> u16 {
+        self.port
+    }
+
     pub(crate) fn stats(&self) -> Arc<sovemu_relay::Stats> {
         self.relay.stats()
     }
@@ -59,6 +65,24 @@ pub(crate) async fn start(config: &Config) -> Result<Option<Arc<RelayState>>> {
         host: config.relay_host.clone().filter(|h| !h.trim().is_empty()),
         lifetime: Duration::from_secs(config.relay_credential_hours * 3600),
     })))
+}
+
+/// The `RTCIceServer`s a player is given: the STUN servers (`SovEmu__Streaming__StunServers`),
+/// then the built-in relay with their own credentials, when it runs.
+pub(crate) fn ice_servers(
+    config: &Config,
+    relay: Option<&RelayState>,
+    user: i64,
+    headers: &HeaderMap,
+    now: SystemTime,
+) -> Vec<serde_json::Value> {
+    let mut servers = Vec::new();
+    let stun = config.stun_urls();
+    if !stun.is_empty() {
+        servers.push(serde_json::json!({ "urls": stun }));
+    }
+    servers.extend(relay.and_then(|r| ice_server(r, user, headers, now)));
+    servers
 }
 
 /// The relay as an `RTCIceServer` for `user`, over UDP and TCP, reached where the request

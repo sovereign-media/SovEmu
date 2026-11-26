@@ -46,6 +46,9 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
+    /// STUN servers (`stun:host:port`) a session asks for its public address
+    /// (`SovEmu__Streaming__StunServers`).
+    pub stun_servers: Vec<String>,
     /// BIOS files, in any layout (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
@@ -1024,6 +1027,9 @@ impl Workers {
         if let Some(ip) = self.config.advertise_ip {
             command.arg("--advertise-ip").arg(ip.to_string());
         }
+        for server in &self.config.stun_servers {
+            command.arg("--stun").arg(server.strip_prefix("stun:").unwrap_or(server));
+        }
         command
     }
 
@@ -1159,6 +1165,7 @@ done
             ports: (40000, 40001),
             bind_ip: "127.0.0.1".parse().unwrap(),
             advertise_ip: None,
+            stun_servers: Vec::new(),
             bios_dir: dir.join("bios"),
             idle_timeout_secs: 0,
             video_kbps: 1000,

@@ -478,7 +478,7 @@ value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 | `SovEmu__Streaming__Udp__Bind` | `0.0.0.0` | Address the session ports bind to |
 | `SovEmu__Streaming__Udp__Dscp` | `34` | The DSCP value every game's packets are marked with (0 to 63), asking the network to send them ahead of ordinary traffic. A Wi-Fi access point maps it to one of its queues: `34` (AF41, interactive video, as WebRTC marks a picture) goes to the video queue; `46` to the voice queue; `0` leaves packets unmarked. Routers and switches on the way may honour it, ignore it or clear it |
 | `SovEmu__Streaming__AdvertiseAddress` | detected (`127.0.0.1` in compose) | The address browsers send media to |
-| `SovEmu__Streaming__IceServers__<n>__Urls`, `__Username`, `__Credential` | Cloudflare's and Google's free STUN servers | STUN/TURN for clients, one server per index; `__Urls` takes one URL or several, comma-separated. Setting any entry replaces the default; `SovEmu__Streaming__IceServers=[]` for none |
+| `SovEmu__Streaming__StunServers__<n>` | `stun:stun.cloudflare.com:3478`, `stun:stun.l.google.com:19302` | STUN servers, one per index or comma-separated: each game asks them for its public address, so players away from home connect without forwarded ports, and clients get them too. Listing any replaces the default; `none` for none. TURN is the built-in relay's alone |
 | `SovEmu__Relay__Enabled` | `false` | Run the built-in TURN relay, for players no direct path reaches (see [Playing away from home](#playing-away-from-home)) |
 | `SovEmu__Relay__Port` | `3478` | The relay's port, over UDP and TCP: forward both on the router |
 | `SovEmu__Relay__Host` | the host the client reached the server at | The host name or address clients reach the relay at, when it is not the server's own |
@@ -603,25 +603,26 @@ it, except images and videos.
 Expose 8080 through an HTTPS reverse proxy (and set `SovEmu__Http__SecureCookies=1`). A game's
 picture then needs a path from the player to its session, one of:
 
-- **Forward the session ports**: forward 50000-50009/udp and set
-  `SovEmu__Streaming__AdvertiseAddress` to your public address. Direct, so the lowest latency,
-  but players on your LAN are then sent to the public address too, which needs a router that
-  supports hairpin NAT.
-- **Turn on the built-in relay** (`SovEmu__Relay__Enabled=true`) and forward only its port,
-  3478, over UDP and TCP. `SovEmu__Streaming__AdvertiseAddress` stays the LAN address. Players
-  who cannot reach a session directly are relayed through the server: behind a symmetric or
-  carrier-grade NAT, or on a network that blocks UDP (TCP 3478 still gets through many).
-  Each signed-in player gets short-lived credentials of their own in `clientConfig`, so there is
-  no relay password to set up, and the relay sends only to this server's game sessions, never
-  anywhere else on your network. A relayed player costs the server about 3 Mbit/s each way. The
-  relay is handed out at the host the player reached the server at; set `SovEmu__Relay__Host` if
-  that is a proxy elsewhere.
-- **Your own TURN server** (coturn, or a hosted one) still works: list it in
-  `SovEmu__Streaming__IceServers`.
+- **Nothing, usually.** Each game asks the STUN servers (`SovEmu__Streaming__StunServers`,
+  Cloudflare's and Google's free ones by default) what address your router gives it, and offers
+  that to players beside its own. The player's device does the same. Both send to each other, and
+  most home routers then let the stream through with no port forwarded. This doesn't work behind
+  a router that gives every destination its own port (a symmetric NAT: the log says so when it
+  sees one), behind carrier-grade NAT, or on a network that blocks UDP.
+- **Turn on the built-in relay** (`SovEmu__Relay__Enabled=true`) for those, and forward only its
+  port, 3478, over UDP and TCP. `SovEmu__Streaming__AdvertiseAddress` stays the LAN address.
+  Players no direct path reaches are relayed through the server; TCP 3478 still gets through
+  many networks that block UDP. Each signed-in player gets short-lived credentials of their own
+  in `clientConfig`, so there is no relay password to set up, and the relay sends only to this
+  server's game sessions, never anywhere else on your network. A relayed player costs the server
+  about 3 Mbit/s each way. The relay is handed out at the host the player reached the server at;
+  set `SovEmu__Relay__Host` if that is a proxy elsewhere. It is the only TURN server SovEmu uses.
+- **Forward the session ports** (50000-50009/udp) and set `SovEmu__Streaming__AdvertiseAddress`
+  to your public address, for a direct path whatever the player's network. Players on your LAN
+  are then sent to the public address too, which needs a router that supports hairpin NAT.
 
-Clients get Cloudflare's and Google's free public STUN servers by default, so they know their
-own public address. Each request shows the STUN server a player's address and when they start a
-session, and no game data; set `SovEmu__Streaming__IceServers` to your own, or to `[]`, to opt
+Each STUN request shows the STUN server this server's (or a player's) address and when a game
+starts, and no game data. Set `SovEmu__Streaming__StunServers` to your own, or `none`, to opt
 out. TURN over TLS on 443 isn't offered: it isn't HTTP, so the HTTPS proxy can't carry it.
 
 ## Building from source
