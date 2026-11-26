@@ -29,8 +29,11 @@ pub enum Error {
     SerializeFailed,
     /// The core refused the save state.
     UnserializeFailed,
-    /// The core renders with the GPU and no GL context could be made for it.
+    /// The core renders with the GPU and no GL context could be made for it, or its
+    /// framebuffer could not be resized.
     Gpu(String),
+    /// EGL itself is not there to try any GPU with (no libEGL, or no display).
+    EglUnavailable(String),
     /// The game has no discs to change (the core declared no disk control), or the core
     /// refused the change.
     Disc(String),
@@ -62,6 +65,7 @@ impl fmt::Display for Error {
             Self::SerializeFailed => f.write_str("the core could not write a save state"),
             Self::UnserializeFailed => f.write_str("the core rejected the save state"),
             Self::Gpu(e) => write!(f, "no GPU context for this core: {e}"),
+            Self::EglUnavailable(e) => f.write_str(e),
             Self::Disc(e) => write!(f, "cannot change disc: {e}"),
         }
     }

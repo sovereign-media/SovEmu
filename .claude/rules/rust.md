@@ -26,8 +26,8 @@ How every crate is written. What each crate may do is in the files for its part:
   `pub(crate)` inside one (a binary's modules included). A library crate's public items are its
   interface: keep it small.
 - **Errors**: library crates return their own error enum implementing `std::error::Error`, never
-  `anyhow` (a few older functions return `String` or `io::Error`; give them an enum when you
-  change them). Binaries (`sovemu-server`, `sovemu-worker`) use `anyhow` with `.context(...)`.
+  `anyhow` and never a `String` (`io::Error` is fine where reading or writing a file is the only
+  thing that can fail). Binaries (`sovemu-server`, `sovemu-worker`) use `anyhow` with `.context(...)`.
 - Every type implements `Debug` (`missing_debug_implementations`).
 
 ## unsafe

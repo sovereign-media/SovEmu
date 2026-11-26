@@ -511,7 +511,11 @@ impl GlContext {
             if depth_format.is_some() {
                 (ctx.gl.gen_renderbuffers)(1, &mut ctx.depth);
             }
-            ctx.resize(width.max(1), height.max(1))?;
+            // This constructor's own errors are its message alone: the caller names the GPU.
+            ctx.resize(width.max(1), height.max(1)).map_err(|e| match e {
+                crate::Error::Gpu(message) => message,
+                other => other.to_string(),
+            })?;
             Ok(ctx)
         }
     }
@@ -537,7 +541,7 @@ impl GlContext {
     }
 
     /// Reallocates the framebuffer's storage for a larger frame (the framebuffer keeps its id).
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), String> {
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), crate::Error> {
         if width <= self.width && height <= self.height {
             return Ok(());
         }
@@ -570,7 +574,7 @@ impl GlContext {
             status
         };
         if status != GL_FRAMEBUFFER_COMPLETE {
-            return Err(format!("framebuffer incomplete ({status:#x})"));
+            return Err(crate::Error::Gpu(format!("framebuffer incomplete ({status:#x})")));
         }
         (self.width, self.height) = (w as u32, h as u32);
         Ok(())
@@ -694,8 +698,8 @@ const VIRTUAL_DRIVERS: &[&str] = &[
 
 /// Tries every EGL device: makes a context, draws a frame, reads it back. Err when EGL itself
 /// is unavailable.
-pub fn probe() -> Result<Vec<GpuReport>, String> {
-    let egl = egl()?;
+pub fn probe() -> Result<Vec<GpuReport>, crate::Error> {
+    let egl = egl().map_err(crate::Error::EglUnavailable)?;
     let request =
         ContextRequest { api: GlApi::Gl, major: 0, minor: 0, depth: false, stencil: false };
     let mut reports = Vec::new();
