@@ -200,9 +200,8 @@ jobs:
       # The Cargo caches belong to what decides how the dependencies compile, never to a run: the
       # lockfile, the workspace's profiles (Cargo.toml) and the build environment (the Dockerfile,
       # Rust's version among it). A change to any of them would leave a cache that no longer
-      # matches, which nothing would replace. What changes from one commit to the next (SovEmu's
-      # own crates) recompiles every time anyway, and is pruned before saving. So a key is saved
-      # once, on main, the first time it is missing.
+      # matches, which nothing would replace. So a key is saved once, on main, the first time it is
+      # missing.
       - name: Cargo cache key
         id: cache
         working-directory: .
@@ -236,11 +235,25 @@ jobs:
           fi
 
       # Cargo's cache mounts (the registry and each target/) live in the builder and vanish with
-      # the runner; the Actions cache keeps them, so unchanged crates are not compiled again.
-      # Every build reads them; main saves a key it is missing (the last steps). A cache problem
-      # costs time, never the build: the job still passes without one.
+      # the runner; the Actions cache keeps them, so unchanged crates are not compiled again. Every
+      # build reads them; main saves a key it is missing. A cache problem costs time, never the
+      # build: the job still passes without one.
+      #
+      # The save has to come after the caches are taken back out of the builder, which happens in
+      # the next step's post step, at the end of the job. Post steps run in reverse order, so only
+      # a save in this step's own post (actions/cache, restore and save) comes after it. A save
+      # step of its own ran first and stored an empty folder (#245).
+      - name: Cargo caches (restore, and save on main)
+        if: steps.queued.outputs.found != 'true' && env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: cache-mount
+          key: ${{ steps.cache.outputs.key }}
+          restore-keys: cargo-mounts-
+
       - name: Cargo caches (restore)
-        if: steps.queued.outputs.found != 'true'
+        if: steps.queued.outputs.found != 'true' && !(env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true')
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
@@ -248,8 +261,8 @@ jobs:
           key: ${{ steps.cache.outputs.key }}
           restore-keys: cargo-mounts-
 
-      # Puts the restored caches into the builder's cache mounts, and takes them back out after
-      # the build only when main is about to save them. The ids are the Dockerfile's.
+      # Puts the restored caches into the builder's cache mounts, and takes them back out (in its
+      # post step) only when main is about to save them. The ids are the Dockerfile's.
       - name: Cargo caches into the builder
         if: steps.queued.outputs.found != 'true'
         continue-on-error: true
@@ -290,30 +303,6 @@ jobs:
           # The image runs sovemu-server by default; name each binary to run it instead.
           docker run --rm sovemu:ci sovemu-server --version
           docker run --rm sovemu:ci sovemu-worker probe /opt/sovemu/cores > /dev/null
-
-      # Before saving: SovEmu's own crates out of each target/. They recompile on every commit, so
-      # a cached copy only costs space and the time to move it (once ~11 minutes on main).
-      - name: Prune SovEmu's own crates from the caches
-        if: env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
-        continue-on-error: true
-        working-directory: .
-        run: |
-          for target in cache-mount/target-*; do
-            [ -d "$target" ] || continue
-            sudo find "$target" -mindepth 2 -maxdepth 3 \
-              \( -path '*/deps/*sovemu*' -o -path '*/.fingerprint/sovemu-*' -o -path '*/build/sovemu-*' \
-                 -o -path '*/sovemu-*' -o -path '*/libsovemu*' \) \
-              -prune -exec rm -rf {} +
-          done
-          sudo du -sh cache-mount/* || true
-
-      - name: Cargo caches (save, main)
-        if: env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@v6
-        with:
-          path: cache-mount
-          key: ${{ steps.cache.outputs.key }}
 
       # The merge queue publishes the commit it tested, as `sha-<commit>`: the commit main gets
       # when the queue merges, which main then tags (next step) instead of building it again.

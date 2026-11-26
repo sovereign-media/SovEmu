@@ -86,8 +86,10 @@ same checks for whatever a push changes.
 will get and pushes it as `sha-<commit>`; the push to `main` retags that image as `bleeding`
 (`docker buildx imagetools create`) without compiling. `main` builds only when that image is
 missing (a push that skipped the queue) or when the Cargo caches for this `Cargo.lock`, workspace
-`Cargo.toml` and Dockerfile are not saved yet (a change to any of them changes how things compile): it then saves them, once per key, with SovEmu's own crates pruned (they
-recompile every commit). Pull requests and the queue only read the caches.
+`Cargo.toml` and Dockerfile are not saved yet (a change to any of them changes how things compile):
+it then saves them, once per key. The save is `actions/cache`'s own post step, which runs after
+buildkit-cache-dance's post step has taken the caches out of the builder; a separate save step
+runs before that and stores an empty folder. Pull requests and the queue only read the caches.
 
 ## Never commit
 
