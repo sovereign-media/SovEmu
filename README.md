@@ -211,8 +211,9 @@ Android and iOS clients all use it. The schema, with every type and field docume
     tokens. It has no password grant; the password goes only to the server's own sign-in page
     (`/login/`, which posts to `/oauth/signin`).
   - The **device** client, for TVs and any app signing in with a code or a password:
-    - the device grant (`/oauth/device_authorization`): the TV shows a code, approved at
-      `/device` in a signed-in browser;
+    - the device grant (`/oauth/device_authorization`): the TV shows a code and the address
+      `/link`, the web client's page, where someone signed in approves it (`/device`, the old
+      address, redirects there);
     - or the password fallback, `POST /oauth/password` (`client_id`, `username`, `password`,
       `scope`), which answers like the token endpoint. `SovEmu__Authentication__PasswordSignIn=false` turns it
       off.

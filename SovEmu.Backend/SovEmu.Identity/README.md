@@ -10,7 +10,9 @@ The OAuth protocol is [`oauth-as`](https://crates.io/crates/oauth-as)'s, an embe
 authorization server (stable 1.x; 1.0.0 is OpenID Certified to the FAPI 2.0 profile). It covers:
 
 - the authorization code flow, with PKCE required (S256 only) and exact redirect URIs;
-- the device grant (RFC 8628) and its `/device` verification page;
+- the device grant (RFC 8628). Its code is approved on the web client's `/link/` page, or from
+  an app (*Sign in a TV*), through `Identity::approve_device`; oauth-as's own `/device` form is not
+  used, and `/device` redirects to `/link/`;
 - refresh rotation with reuse detection;
 - revocation, which cascades to the whole sign-in;
 - the RFC 8414 metadata and the `iss` response parameter;
@@ -29,7 +31,7 @@ Do not reimplement any of that here.
 
 What `provider` adds:
 
-- **The front of `/oauth/authorize` and `/device`.** oauth-as has no sessions, so this layer reads
+- **The front of `/oauth/authorize`.** oauth-as has no sessions, so this layer reads
   the browser's cookie. It sends a signed-out browser to `/login/`, and otherwise names the user
   to oauth-as in a header it strips from every incoming request.
 - **OpenID Connect:**

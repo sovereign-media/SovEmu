@@ -36,8 +36,9 @@ game with a UDP port from the pool and talks to it over JSON lines; the server n
 - After a schema change, `UPDATE_SCHEMA=1 cargo test -p sovemu-server schema_file` rewrites
   `schema.graphql`, and every client changes with it (see [contracts.md](contracts.md)).
 - Plain HTTP is only for files the API hands out URLs to (`/media/…`), for sign-in
-  (`/.well-known/openid-configuration`, `/oauth/…`, `/device`), for `/health`, and for the web
-  client's static files (every other page path answers `index.html`; no Node, no SSR).
+  (`/.well-known/openid-configuration`, `/oauth/…`, and `/device`, which only redirects to the
+  web client's `/link/`), for `/health`, and for the web client's static files (every other
+  page path answers `index.html`; no Node, no SSR).
 
 ## Signed file URLs
 
@@ -54,7 +55,9 @@ cookie's. Never hand out or serve an unsigned file URL.
   harness.
 - The API is signed in only by `Authorization: Bearer` access tokens, never a cookie. The
   `sovemu_session` cookie is the browser's sign-in at the server, read only in front of
-  `/oauth/authorize` and `/device`.
+  `/oauth/authorize`. A TV's code is approved by an access token, through `approveDeviceCode`:
+  from the phone apps (*Sign in a TV*), or the web client's `/link/` page, which is the
+  `verificationUri` a TV shows. oauth-as's own `/device` form is not used.
 - **Three clients**, as Sovereign's, each id per install (`data/server.json`, never a setting):
   **web** (the code flow with PKCE, never a password), **device** (TVs and any app signing in
   with the device grant or the password fallback, `/oauth/password`,
