@@ -8,3 +8,8 @@
 	url = https://github.com/sovereign-media/SovEmu.iOS.git
 	branch = main
 	ignore = all
+[submodule "SovEmu.Docs"]
+	path = SovEmu.Docs
+	url = https://github.com/sovereign-media/SovEmu.Docs.git
+	branch = main
+	ignore = all

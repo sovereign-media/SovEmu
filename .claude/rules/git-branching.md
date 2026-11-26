@@ -15,8 +15,8 @@ SovEmu follows the same model as `sovereign-media/sovereign`: **trunk-based on `
 
 ## Submodules
 
-`SovEmu.Android` and `SovEmu.iOS` are their own repositories, checked out here as submodules so
-the boundary between server and client is a git boundary. As in Sovereign, they are **not
+`SovEmu.Android`, `SovEmu.iOS` and `SovEmu.Docs` are their own repositories, checked out here as
+submodules so the boundary between server, clients and documentation is a git boundary. As in Sovereign, they are **not
 pinned**: `.gitmodules` gives each `branch = main` and `ignore = all`, nothing in this
 repository builds from them, and they are updated with `git submodule update --remote`. Branch a
 submodule from its freshly fetched `origin/main`, never from the frozen pointer. A change that spans repos gets a branch, and a PR, in every

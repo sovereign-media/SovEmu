@@ -20,6 +20,7 @@ licensed homebrew games to try it with.
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
 | `SovEmu.Web/` | The web client: Vite + React + TanStack Router, Tailwind, Radix UI and Lucide icons, served by the Rust server |
 | `SovEmu.Android/`, `SovEmu.iOS/` | Native clients, as submodules (`git submodule update --init --remote`) |
+| `SovEmu.Docs/` | The documentation site (Starlight), as a submodule |
 
 ## Container
 
