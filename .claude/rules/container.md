@@ -26,10 +26,18 @@ Stages: `web` (the web client's tests and build, on `node:<ver>-trixie-slim`); `
 VA-API and NVENC encoders and the H.264 decoder the tests use, #236); `toolchain`
 (`rust:<ver>-trixie` with Debian's libvpx and libopus, the `ffmpeg` stage's libraries, and the
 pinned nextest and cargo-about); `notices` (cargo-about with `about.toml`/`about.hbs`, writing
-`third-party-notices.json`); `build` (release binaries); `test-base` and `test` (`cargo nextest
-run --workspace --profile ci` with Mesa's llvmpipe); `coverage-run` and `coverage`; and
-`runtime`. `build` and `test` compile side by side with their own `target/` cache mounts; CI
-builds both at once with `docker-bake.hcl`.
+`third-party-notices.json`); `sources` and `planner` (cargo-chef's recipe: the manifests and the
+lockfile); `deps-release` and `build` (release binaries); `test-base`, `deps-test` and `test`
+(`cargo nextest run --workspace --profile ci` with Mesa's llvmpipe); `coverage-run` and
+`coverage`; and `runtime`. `build` and `test` compile side by side; CI builds both at once with
+`docker-bake.hcl`.
+
+**Dependencies compile in layers of their own** (cargo-chef, #245). `deps-release` and
+`deps-test` cook the dependencies from the recipe alone, so they stay cached until a manifest or
+the lockfile changes; `build` and `test` then compile only SovEmu's crates on top. Nothing that
+depends on a source file may go into a `deps-*` stage. Only those two stages are exported in
+full to BuildKit's GitHub cache (their own bake targets): the layers after them change with every
+commit, and `build` deletes its `target/` so the image's export carries only the binaries.
 
 **Nothing that changes per commit or per target goes into the compile**, so `test` and the image
 share one `build` stage and it runs once (#245). The build stamp (`SOVEMU_REVISION`,
@@ -87,11 +95,11 @@ same checks for whatever a push changes.
 **Each commit's image is built once** (#245). The merge queue builds and tests the commit `main`
 will get and pushes it as `sha-<commit>`; the push to `main` retags that image as `bleeding`
 (`docker buildx imagetools create`) without compiling. `main` builds only when that image is
-missing (a push that skipped the queue) or when the Cargo caches for this `Cargo.lock`, workspace
-`Cargo.toml` and Dockerfile are not saved yet (a change to any of them changes how things compile):
-it then saves them, once per key. The save is `actions/cache`'s own post step, which runs after
-buildkit-cache-dance's post step has taken the caches out of the builder; a separate save step
-runs before that and stores an empty folder. Pull requests and the queue only read the caches.
+missing (a push that skipped the queue) or when the dependency layers for this `Cargo.lock`, the
+manifests and the Dockerfile are not exported yet: it then builds `ci-deps`, which exports them,
+and saves a small marker (`deps-exported-<key>`) that the next push looks up. Only `main`'s cache
+entries can be read by every branch, so only `main` exports them; pull requests and the queue read
+them.
 
 ## Never commit
 

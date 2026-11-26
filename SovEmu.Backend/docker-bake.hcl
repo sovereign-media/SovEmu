@@ -9,6 +9,29 @@ group "ci" {
   targets = ["test", "image"]
 }
 
+# The same, and the dependency layers exported to BuildKit's GitHub cache: main runs this when the
+# cache for its lockfile, manifests and Dockerfile is missing (ci.yml). Every other build reads them.
+group "ci-deps" {
+  targets = ["test", "image", "deps-release", "deps-test"]
+}
+
+# The dependencies alone (Dockerfile `deps-release`, `deps-test`: cargo-chef from the recipe). Only
+# these are exported in full (`mode=max`): the layers after them hold SovEmu's own crates, which
+# change with every commit, and exporting them each run cost as much as it saved (#245).
+target "deps-release" {
+  inherits = ["_common"]
+  target   = "deps-release"
+  output   = ["type=cacheonly"]
+  cache-to = ["type=gha,scope=deps-release,mode=max"]
+}
+
+target "deps-test" {
+  inherits = ["_common"]
+  target   = "deps-test"
+  output   = ["type=cacheonly"]
+  cache-to = ["type=gha,scope=deps-test,mode=max"]
+}
+
 target "_common" {
   context    = "."
   dockerfile = "SovEmu.Backend/Dockerfile"
@@ -27,14 +50,13 @@ variable "SCREENSCRAPER_SECRETS" {
 }
 
 # The whole test suite inside the image's Debian (Mesa's llvmpipe for the GPU tests). Nothing
-# to keep but its cache.
+# is kept: its dependencies come from `deps-test`'s cache, the rest changes with every commit.
 target "test" {
   inherits   = ["_common"]
   target     = "test"
   secret     = SCREENSCRAPER_SECRETS
   output     = ["type=cacheonly"]
-  cache-from = ["type=gha,scope=test"]
-  cache-to   = ["type=gha,scope=test,mode=max"]
+  cache-from = ["type=gha,scope=deps-test", "type=gha,scope=deps-release"]
 }
 
 # Set by GitHub Actions; empty in a local bake.
@@ -66,7 +88,9 @@ target "image" {
   }
   secret = SCREENSCRAPER_SECRETS
   output     = ["type=docker"]
-  cache-from = ["type=gha,scope=image", "type=gha,scope=test"]
+  # Every stage it builds (the web client, the cores, the runtime's packages): `build` leaves only
+  # the two binaries in its layer, so this exports no compiled crates.
+  cache-from = ["type=gha,scope=image", "type=gha,scope=deps-release"]
   cache-to   = ["type=gha,scope=image,mode=max"]
 }
 
@@ -77,6 +101,6 @@ target "coverage" {
   inherits   = ["_common"]
   target     = "coverage"
   output     = ["type=local,dest=coverage"]
-  cache-from = ["type=gha,scope=coverage", "type=gha,scope=test"]
+  cache-from = ["type=gha,scope=coverage", "type=gha,scope=deps-test"]
   cache-to   = ["type=gha,scope=coverage,mode=max"]
 }
