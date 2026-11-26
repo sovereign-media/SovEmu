@@ -13,8 +13,9 @@ How every crate is written. What each crate may do is in the files for its part:
 
 ## Crates
 
-- **Rust 2024 edition**, `rust-version = "1.89"`; the image builds with its own pinned
-  toolchain (`RUST_VERSION` in the Dockerfile). `rustfmt.toml` sets 100 columns.
+- **Rust 2024 edition**, `rust-version` the image's own toolchain (`RUST_VERSION` in the
+  Dockerfile): the one version anything is built and tested with, so the two move together.
+  `rustfmt.toml` sets 100 columns.
 - **One directory per crate**, `SovEmu.<Name>/`, its package `sovemu-<name>`. Every crate inherits
   `version`, `edition`, `rust-version`, `repository`, `license` (AGPL-3.0-or-later) and `publish`
   from `[workspace.package]` and has `[lints] workspace = true`.
