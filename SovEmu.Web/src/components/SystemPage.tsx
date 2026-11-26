@@ -45,20 +45,16 @@ const SORT_KEY = "sovemu.sort";
 /** How long the jump strip rests on a letter before the grid follows it. */
 const FOLLOW_DELAY_MS = 300;
 
-/** A cover in the grid. */
-function GameCard({
-  game,
-  system,
-  focused,
-  open,
-  onOpen,
-}: {
+type GameCardProps = {
   game: Game;
   system: SystemSummary;
   focused: boolean;
   open: boolean;
   onOpen: () => void;
-}) {
+};
+
+/** A cover in the grid. */
+function GameCard({ game, system, focused, open, onOpen }: GameCardProps) {
   const art = game.thumb ?? game.image;
   const players = maxPlayers(game.players);
   // The card takes the shape of the system's boxes; art of another shape is shown whole.
@@ -133,7 +129,9 @@ function GameCard({
   );
 }
 
-function SortChip({ sort, onSort }: { sort: GameSort; onSort: (s: GameSort) => void }) {
+type SortChipProps = { sort: GameSort; onSort: (s: GameSort) => void };
+
+function SortChip({ sort, onSort }: SortChipProps) {
   const label = SORTS.find((s) => s.value === sort)?.label ?? "Title";
   return (
     <DropdownMenu.Root modal={false}>

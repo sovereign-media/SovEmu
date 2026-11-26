@@ -41,7 +41,9 @@ function NewCollection() {
   );
 }
 
-function SharedCollection({ c }: { c: Collection }) {
+type SharedCollectionProps = { c: Collection };
+
+function SharedCollection({ c }: SharedCollectionProps) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const change = useMutation({ mutationFn: (run: () => Promise<unknown>) => run(), onSuccess: changed });

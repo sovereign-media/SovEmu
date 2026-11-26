@@ -5,20 +5,16 @@
 import type { PadLayout } from "../lib/api";
 import { cn } from "./ui/cn";
 
-export function PadDiagram({
-  layout,
-  highlight = [],
-  color = "#4169e1",
-  caption,
-  className,
-}: {
+type PadDiagramProps = {
   layout: PadLayout;
   /** Keys to light up: RetroPad buttons on a system's pad, inputs on a controller's. */
   highlight?: string[];
   color?: string;
   caption?: string;
   className?: string;
-}) {
+};
+
+export function PadDiagram({ layout, highlight = [], color = "#4169e1", caption, className }: PadDiagramProps) {
   const lit = new Set(highlight);
   // Crop to what is drawn, so a flat pad does not float in an empty canvas.
   const shapes = [...layout.body, ...layout.keys];

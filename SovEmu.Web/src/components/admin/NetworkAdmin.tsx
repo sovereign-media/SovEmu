@@ -12,11 +12,15 @@ import { Progress } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
-function Facts({ children }: { children: ReactNode }) {
+type FactsProps = { children: ReactNode };
+
+function Facts({ children }: FactsProps) {
   return <dl className="mt-3 grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">{children}</dl>;
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+type FactProps = { label: string; children: ReactNode };
+
+function Fact({ label, children }: FactProps) {
   return (
     <>
       <dt className="text-muted">{label}</dt>

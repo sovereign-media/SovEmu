@@ -19,7 +19,9 @@ const RANGES: { value: ResourceRange; label: string }[] = [
   { value: "MONTH", label: "Month" },
 ];
 
-function Host({ host }: { host: ServerResources["host"] }) {
+type HostProps = { host: ServerResources["host"] };
+
+function Host({ host }: HostProps) {
   const cpus =
     host.hostCpus && host.hostCpus !== host.usableCpus
       ? `${host.usableCpus} of ${host.hostCpus} logical CPUs`
@@ -56,18 +58,15 @@ function Host({ host }: { host: ServerResources["host"] }) {
   );
 }
 
-/** A figure with its meter: the fill is coloured by how near the limit it is, and says so. */
-function Meter({
-  label,
-  value,
-  percent,
-  detail,
-}: {
+type MeterProps = {
   label: string;
   value: string;
   percent: number | null;
   detail: string;
-}) {
+};
+
+/** A figure with its meter: the fill is coloured by how near the limit it is, and says so. */
+function Meter({ label, value, percent, detail }: MeterProps) {
   const level = severity(percent ?? 0);
   return (
     <div className="rounded-xl border border-edge bg-surface/60 p-4">
@@ -82,7 +81,9 @@ function Meter({
   );
 }
 
-function Usage({ r }: { r: ServerResources }) {
+type UsageProps = { r: ServerResources };
+
+function Usage({ r }: UsageProps) {
   const u = r.usage;
   if (!u) return <p className="mt-4 text-sm text-slate-400">{r.usageNote}</p>;
   const cores = `of ${formatCores(u.allowedCores)} ${u.cpuLimited ? "(the container's quota)" : "(no quota: the host's)"}`;
@@ -107,18 +108,15 @@ function Usage({ r }: { r: ServerResources }) {
 
 const PLOT_H = 140;
 
-/** One resource over the window: each bucket's average as a line, its peak as a faint area. */
-function Chart({
-  title,
-  subtitle,
-  points,
-  history,
-}: {
+type ChartProps = {
   title: string;
   subtitle: string;
   points: Point[];
   history: ResourceHistory;
-}) {
+};
+
+/** One resource over the window: each bucket's average as a line, its peak as a faint area. */
+function Chart({ title, subtitle, points, history }: ChartProps) {
   const [hover, setHover] = useState<Point | null>(null);
   const window = { from: history.from, to: history.to, bucketSeconds: history.bucketSeconds };
   const g = geometry(points, window, 1000, PLOT_H);

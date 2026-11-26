@@ -13,22 +13,17 @@ import { cn } from "../ui/cn";
 import { Progress } from "../ui/primitives";
 import AdminPage, { ErrorNote } from "./AdminPage";
 
-/** One card: a page's summary, linking to it. `warn` marks it, with a word as well as a colour. */
-function Card({
-  href,
-  icon: Icon,
-  title,
-  value,
-  warn,
-  children,
-}: {
+type CardProps = {
   href: string;
   icon: LucideIcon;
   title: string;
   value: ReactNode;
   warn?: string;
   children?: ReactNode;
-}) {
+};
+
+/** One card: a page's summary, linking to it. `warn` marks it, with a word as well as a colour. */
+function Card({ href, icon: Icon, title, value, warn, children }: CardProps) {
   return (
     <a
       href={href}

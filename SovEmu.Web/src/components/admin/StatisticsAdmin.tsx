@@ -12,7 +12,9 @@ import { BUCKET_DAYS, type Bucket, bucketLabel, buckets, playedText, RANGES } fr
 import { Segmented, Tooltip } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
-function Figure({ label, value }: { label: string; value: string }) {
+type FigureProps = { label: string; value: string };
+
+function Figure({ label, value }: FigureProps) {
   return (
     <div className="rounded-xl border border-white/10 bg-black/20 p-4">
       <div className="text-xs tracking-wide text-slate-400 uppercase">{label}</div>
@@ -23,8 +25,10 @@ function Figure({ label, value }: { label: string; value: string }) {
 
 const PLOT_H = 160;
 
+type TimeChartProps = { bars: Bucket[] };
+
 /** Time played per bucket: one series, so no legend; the title names it. */
-function TimeChart({ bars }: { bars: Bucket[] }) {
+function TimeChart({ bars }: TimeChartProps) {
   const max = Math.max(...bars.map((b) => b.seconds), 1);
   return (
     <figure className="mt-5">
@@ -67,8 +71,10 @@ function TimeChart({ bars }: { bars: Bucket[] }) {
   );
 }
 
+type TableProps = { heads: string[]; rows: ReactNode[][]; empty: string };
+
 /** A small table: a header row and the rows given, or a line saying there is nothing. */
-function Table({ heads, rows, empty }: { heads: string[]; rows: ReactNode[][]; empty: string }) {
+function Table({ heads, rows, empty }: TableProps) {
   if (rows.length === 0) return <p className="mt-3 text-sm text-slate-400">{empty}</p>;
   return (
     <div className="mt-3 overflow-x-auto">
@@ -109,7 +115,9 @@ const gameLink = (g: { gameId: number | null; title: string; system: string }) =
     <span className="font-semibold">{g.title}</span>
   );
 
-function Figures({ s, range }: { s: PlayStatistics; range: StatsRange }) {
+type FiguresProps = { s: PlayStatistics; range: StatsRange };
+
+function Figures({ s, range }: FiguresProps) {
   return (
     <>
       <AdminSection icon={<BarChart3 />} title="Played">

@@ -36,8 +36,10 @@ const GLYPH = "grid h-11 w-11 shrink-0 place-items-center [&_svg]:size-5";
 const LABEL =
   "min-w-0 truncate pr-4 text-sm font-medium opacity-0 transition-opacity duration-200 group-data-[open=true]/dock:opacity-100";
 
+type SystemRowProps = { s: SystemSummary; href: string };
+
 /** A system's row: its colour, name and a status if it cannot play (or plays slowly). */
-function SystemRow({ s, href }: { s: SystemSummary; href: string }) {
+function SystemRow({ s, href }: SystemRowProps) {
   const badge = systemBadge(s);
   return (
     <DropdownMenu.Item asChild className={ROW}>
@@ -50,17 +52,15 @@ function SystemRow({ s, href }: { s: SystemSummary; href: string }) {
   );
 }
 
-/** Systems by maker: a submenu per maker, or the system itself where a maker has one. On a
- *  phone (`flat`), where a submenu would open off the screen, makers are headings instead. */
-function SystemsByMaker({
-  systems,
-  href,
-  flat = false,
-}: {
+type SystemsByMakerProps = {
   systems: SystemSummary[];
   href: (s: SystemSummary) => string;
   flat?: boolean;
-}) {
+};
+
+/** Systems by maker: a submenu per maker, or the system itself where a maker has one. On a
+ *  phone (`flat`), where a submenu would open off the screen, makers are headings instead. */
+function SystemsByMaker({ systems, href, flat = false }: SystemsByMakerProps) {
   if (flat) {
     return (
       <>
@@ -111,16 +111,7 @@ function SystemsByMaker({
   );
 }
 
-/** A dock entry that opens a menu beside the dock (on a phone, above the tab bar). */
-function MenuEntry({
-  icon,
-  label,
-  current,
-  shape,
-  heading,
-  children,
-  onOpenChange,
-}: {
+type MenuEntryProps = {
   icon: ReactNode;
   label: string;
   current: boolean;
@@ -128,7 +119,10 @@ function MenuEntry({
   heading: string;
   children: ReactNode;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+/** A dock entry that opens a menu beside the dock (on a phone, above the tab bar). */
+function MenuEntry({ icon, label, current, shape, heading, children, onOpenChange }: MenuEntryProps) {
   return (
     <DropdownMenu.Root modal={false} onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>
@@ -170,20 +164,16 @@ function MenuEntry({
 const BAR_ITEM =
   "flex min-w-0 flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg py-1.5 text-slate-400 outline-none [&_svg]:size-5";
 
-/** The entries, shared by the dock and the tab bar so the two cannot drift apart. */
-function Entries({
-  shape,
-  section,
-  user,
-  systems,
-  onMenu,
-}: {
+type EntriesProps = {
   shape: "dock" | "bar";
   section: Section;
   user: User | null;
   systems: SystemSummary[];
   onMenu: (open: boolean) => void;
-}) {
+};
+
+/** The entries, shared by the dock and the tab bar so the two cannot drift apart. */
+function Entries({ shape, section, user, systems, onMenu }: EntriesProps) {
   const withGames = systems.filter((s) => s.gameCount > 0);
   const biosMissing = systems.filter((s) => s.biosMissing).length;
   const signOut = () => void endSignIn();
@@ -266,8 +256,10 @@ function Entries({
   );
 }
 
+type AdminRowProps = { item: AdminNavItem; active: boolean };
+
 /** One admin page in the menu, lit when it is the page shown. */
-function AdminRow({ item, active }: { item: AdminNavItem; active: boolean }) {
+function AdminRow({ item, active }: AdminRowProps) {
   const Icon = item.icon;
   return (
     <DropdownMenu.Item asChild className={cn(ROW, active && "text-white")}>
@@ -278,10 +270,12 @@ function AdminRow({ item, active }: { item: AdminNavItem; active: boolean }) {
   );
 }
 
+type AdminMenuProps = { flat?: boolean };
+
 /** The admin menu (`ADMIN_NAV_GROUPS`, the one list): a submenu per section, or the page itself
  *  where a section has one; the section of the page shown is lit. On a phone (`flat`), where a
  *  submenu would open off the screen, sections are headings instead, as the systems' makers. */
-function AdminMenu({ flat = false }: { flat?: boolean }) {
+function AdminMenu({ flat = false }: AdminMenuProps) {
   const here = typeof location === "undefined" ? "" : location.pathname;
   const current = findAdminNavItem(here)?.href;
   const currentGroup = findAdminNavGroup(here)?.id;
@@ -325,7 +319,9 @@ function AdminMenu({ flat = false }: { flat?: boolean }) {
 /** How long the pointer rests on the dock before it opens, so crossing it does not flash it. */
 const HOVER_INTENT_MS = 120;
 
-export default function SideNav({ section }: { section: Section }) {
+type SideNavProps = { section: Section };
+
+export default function SideNav({ section }: SideNavProps) {
   const user = useQuery(q.viewer()).data?.user ?? null;
   const systems = useQuery(q.systems()).data ?? [];
   const [hovered, setHovered] = useState(false);

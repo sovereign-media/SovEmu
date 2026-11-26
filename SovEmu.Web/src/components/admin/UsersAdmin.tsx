@@ -34,7 +34,9 @@ const ROLES: { value: Role; label: string }[] = [
   { value: "ADMIN", label: "Admin" },
 ];
 
-function RoleBadge({ role }: { role: Role }) {
+type RoleBadgeProps = { role: Role };
+
+function RoleBadge({ role }: RoleBadgeProps) {
   const admin = role === "ADMIN";
   return (
     <Pill tone={admin ? "accent" : "neutral"}>
@@ -44,17 +46,7 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-/** A form in a dialog: its fields, an error, and the action that submits it. */
-function FormDialog({
-  open,
-  onOpenChange,
-  title,
-  action,
-  busy,
-  error,
-  onSubmit,
-  children,
-}: {
+type FormDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -63,7 +55,10 @@ function FormDialog({
   error: Error | null;
   onSubmit: (data: FormData) => void;
   children: ReactNode;
-}) {
+};
+
+/** A form in a dialog: its fields, an error, and the action that submits it. */
+function FormDialog({ open, onOpenChange, title, action, busy, error, onSubmit, children }: FormDialogProps) {
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSubmit(new FormData(e.currentTarget));

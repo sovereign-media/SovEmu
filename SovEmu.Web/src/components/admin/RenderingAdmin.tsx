@@ -17,7 +17,9 @@ const TONE_TEXT: Record<Tone, string> = {
 
 const TONE_PILL: Record<Tone, PillTone> = { good: "good", warn: "warn", off: "neutral" };
 
-function ToneIcon({ tone }: { tone: Tone }) {
+type ToneIconProps = { tone: Tone };
+
+function ToneIcon({ tone }: ToneIconProps) {
   if (tone === "good") return <CircleCheck aria-hidden className="size-6 shrink-0 text-emerald-400" />;
   if (tone === "warn") return <CircleAlert aria-hidden className="size-6 shrink-0 text-amber-400" />;
   return <CircleOff aria-hidden className="size-6 shrink-0 text-slate-500" />;

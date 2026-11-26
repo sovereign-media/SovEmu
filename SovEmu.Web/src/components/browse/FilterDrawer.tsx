@@ -21,6 +21,17 @@ import { Field, MultiSelect, Select } from "../ui/primitives";
 /** How many values a list filter offers at most: the most common. */
 const MAX_VALUES = 60;
 
+type FilterDrawerProps = {
+  open: boolean;
+  onClose: () => void;
+  games: Game[];
+  query: string;
+  onQuery: (q: string) => void;
+  filters: GameFilters;
+  onFilters: (f: GameFilters) => void;
+  searchRef: React.RefObject<HTMLInputElement | null>;
+};
+
 export function FilterDrawer({
   open,
   onClose,
@@ -30,16 +41,7 @@ export function FilterDrawer({
   filters,
   onFilters,
   searchRef,
-}: {
-  open: boolean;
-  onClose: () => void;
-  games: Game[];
-  query: string;
-  onQuery: (q: string) => void;
-  filters: GameFilters;
-  onFilters: (f: GameFilters) => void;
-  searchRef: React.RefObject<HTMLInputElement | null>;
-}) {
+}: FilterDrawerProps) {
   const players = useMemo(() => knowsPlayers(games), [games]);
   const ratings = useMemo(() => knowsRatings(games), [games]);
   const esrb = useMemo(() => esrbCounts(games), [games]);

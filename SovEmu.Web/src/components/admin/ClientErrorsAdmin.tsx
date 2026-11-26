@@ -15,8 +15,10 @@ import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
 type Days = (typeof WINDOWS)[number]["value"];
 
+type EventsProps = { group: ClientEventGroup; days: number };
+
 /** A group's events, read when it is opened. */
-function Events({ group, days }: { group: ClientEventGroup; days: number }) {
+function Events({ group, days }: EventsProps) {
   const events = useQuery(q.clientEvents(group.kind, group.client, days));
   if (events.error) return <ErrorNote error={events.error} />;
   if (!events.data) return <p className="text-sm text-slate-400">Reading…</p>;

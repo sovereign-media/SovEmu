@@ -30,7 +30,9 @@ const PILL: Record<Tone, string> = {
   quiet: "bg-white/10 text-slate-400",
 };
 
-export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
+type PillProps = { tone: Tone; children: ReactNode };
+
+export function Pill({ tone, children }: PillProps) {
   return (
     <span className={cn("rounded px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap", PILL[tone])}>
       {children}
@@ -44,8 +46,10 @@ const NEED_TONE: Record<BiosRow["group"]["importance"], Tone> = {
   OPTIONAL: "quiet",
 };
 
+type ExpectedMd5Props = { md5s: string[] };
+
 /** A file's good dumps, for an admin to compare a file against. */
-function ExpectedMd5({ md5s }: { md5s: string[] }) {
+function ExpectedMd5({ md5s }: ExpectedMd5Props) {
   if (md5s.length === 0) return null;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
@@ -76,15 +80,13 @@ const COLUMNS: { key: BiosSortKey; label: string; className?: string }[] = [
   { key: "status", label: "Status" },
 ];
 
-function SortHeader({
-  column,
-  sort,
-  onSort,
-}: {
+type SortHeaderProps = {
   column: (typeof COLUMNS)[number];
   sort: { key: BiosSortKey; direction: SortDirection };
   onSort: (key: BiosSortKey) => void;
-}) {
+};
+
+function SortHeader({ column, sort, onSort }: SortHeaderProps) {
   const active = sort.key === column.key;
   const Icon = !active ? ArrowUpDown : sort.direction === "asc" ? ArrowUp : ArrowDown;
   return (
@@ -108,7 +110,9 @@ function SortHeader({
   );
 }
 
-function Row({ row, admin, biosDir }: { row: BiosRow; admin: boolean; biosDir?: string }) {
+type RowProps = { row: BiosRow; admin: boolean; biosDir?: string };
+
+function Row({ row, admin, biosDir }: RowProps) {
   const quiet = row.tone === "quiet";
   const system = STATES[row.systemState];
   const folder = biosDir ? `${biosDir.replace(/\/$/, "")}/${row.folder}/` : `bios/${row.folder}/`;
@@ -159,12 +163,7 @@ function Row({ row, admin, biosDir }: { row: BiosRow; admin: boolean; biosDir?: 
   );
 }
 
-export function BiosTable({
-  systems,
-  initialSystem,
-  admin = false,
-  biosDir,
-}: {
+type BiosTableProps = {
   systems: BiosSystem[];
   /** A system id (`?id=psx`): the search starts on its name. */
   initialSystem?: string | null;
@@ -172,7 +171,9 @@ export function BiosTable({
   admin?: boolean;
   /** The server's BIOS folder, to name each system's folder in full. */
   biosDir?: string;
-}) {
+};
+
+export function BiosTable({ systems, initialSystem, admin = false, biosDir }: BiosTableProps) {
   const rows = useMemo(() => biosRows(systems), [systems]);
   const [text, setText] = useState(() => systems.find((s) => s.id === initialSystem)?.name ?? "");
   const [sort, setSort] = useState<{ key: BiosSortKey; direction: SortDirection }>({

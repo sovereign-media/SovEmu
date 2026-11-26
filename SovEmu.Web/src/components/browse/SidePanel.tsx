@@ -17,19 +17,16 @@ function blockScroll(el: HTMLDivElement | null) {
   };
 }
 
-export function SidePanel({
-  open,
-  onClose,
-  keepOpenOn,
-  children,
-}: {
+type SidePanelProps = {
   open: boolean;
   onClose: () => void;
   /** A selector for what the panel stays open over when the focus moves to it (the grid's
    *  cards: moving to another switches the panel rather than closing it). */
   keepOpenOn?: string;
   children: ReactNode;
-}) {
+};
+
+export function SidePanel({ open, onClose, keepOpenOn, children }: SidePanelProps) {
   return (
     <Dialog.Root open={open} modal={false} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
