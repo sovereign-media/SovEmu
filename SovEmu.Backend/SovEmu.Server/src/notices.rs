@@ -1,8 +1,9 @@
 //! The open-source packages SovEmu ships, with their licences, for the admin About page: the
 //! server's crates (`third-party-notices.json`, written by cargo-about from `about.toml` and
-//! `about.hbs`: committed for a local build, listed again by the image's build stage so the
-//! image always carries the current list) and the web client's npm packages
-//! (`third-party-licenses.json` beside its `index.html`, written by its build).
+//! `about.hbs`: listed again by the image's `notices` stage and put beside the server binary, so
+//! the image always carries the current list; a local build falls back to the committed copy,
+//! built in) and the web client's npm packages (`third-party-licenses.json` beside its
+//! `index.html`, written by its build).
 //!
 //! Both are the same shape: each distinct licence text, with the packages it covers.
 
@@ -28,10 +29,19 @@ pub(crate) struct Package {
     pub(crate) repository: Option<String>,
 }
 
-/// The server's crates, read once from the copy built in.
+/// The server's crates, read once: the image's list beside the binary, else the copy built in.
+/// The image's list is not compiled in, so the release compile never waits for cargo-about.
 pub(crate) fn server() -> &'static [Notice] {
     static NOTICES: OnceLock<Vec<Notice>> = OnceLock::new();
     NOTICES.get_or_init(|| {
+        let beside = crate::about::beside_exe("third-party-notices.json")
+            .and_then(|file| std::fs::read_to_string(&file).ok().map(|text| (file, text)));
+        if let Some((file, text)) = beside {
+            match serde_json::from_str(&text) {
+                Ok(notices) => return notices,
+                Err(e) => tracing::warn!(file = %file.display(), error = %e, "the image's third-party notices cannot be read; using the built-in list"),
+            }
+        }
         serde_json::from_str(include_str!("../third-party-notices.json")).unwrap_or_else(|e| {
             tracing::warn!(error = %e, "the built-in third-party notices cannot be read");
             Vec::new()

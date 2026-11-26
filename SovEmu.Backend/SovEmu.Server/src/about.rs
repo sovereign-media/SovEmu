@@ -2,14 +2,14 @@
 //! game-information services, the components bundled in the image), for the admin About page.
 //! The cores and their licences are `sovemu_library::cores`, shown from there.
 
-/// The build, as the image's build stage passes it (`SOVEMU_REVISION`, `SOVEMU_BUILT`); a
-/// local build has neither.
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use serde::Deserialize;
+
+/// The build: what is compiled in, and the stamp the image writes beside it ([`stamp`]).
 pub(crate) struct BuildInfo {
     pub(crate) version: &'static str,
-    /// The commit it was built from.
-    pub(crate) revision: Option<&'static str>,
-    /// The commit's time (ISO 8601).
-    pub(crate) built: Option<&'static str>,
     pub(crate) libretro_release: &'static str,
     /// SovEmu's own licence (SPDX), and where its source is: the AGPL asks that everyone using
     /// the server over a network be offered the source of the version they use.
@@ -17,21 +17,52 @@ pub(crate) struct BuildInfo {
     pub(crate) source: &'static str,
 }
 
-const fn non_empty(value: Option<&'static str>) -> Option<&'static str> {
-    match value {
-        Some(v) if !v.is_empty() => Some(v),
-        _ => None,
-    }
-}
-
 pub(crate) const BUILD: BuildInfo = BuildInfo {
     version: env!("CARGO_PKG_VERSION"),
-    revision: non_empty(option_env!("SOVEMU_REVISION")),
-    built: non_empty(option_env!("SOVEMU_BUILT")),
     libretro_release: sovemu_library::cores::LIBRETRO_RELEASE,
     licence: env!("CARGO_PKG_LICENSE"),
     source: env!("CARGO_PKG_REPOSITORY"),
 };
+
+/// Which commit the image was built from, and when: `build.json`, which the image's runtime stage
+/// writes beside the server binary. Never compiled in, so the release compile is the same for
+/// every commit and the test and image builds share it. A local build has none.
+#[derive(Debug, Default, Deserialize, PartialEq)]
+pub(crate) struct Stamp {
+    /// The commit it was built from.
+    pub(crate) revision: Option<String>,
+    /// The commit's time (ISO 8601).
+    pub(crate) built: Option<String>,
+}
+
+impl Stamp {
+    /// A stamp from `build.json`'s text; an empty field (a local image build passes none) is no
+    /// value, and text that is not a stamp is none at all.
+    fn parse(text: &str) -> Self {
+        let stamp: Self = serde_json::from_str(text).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "build.json is not a build stamp");
+            Self::default()
+        });
+        let non_empty = |v: Option<String>| v.filter(|v| !v.trim().is_empty());
+        Self { revision: non_empty(stamp.revision), built: non_empty(stamp.built) }
+    }
+}
+
+/// This build's stamp, read once.
+pub(crate) fn stamp() -> &'static Stamp {
+    static STAMP: OnceLock<Stamp> = OnceLock::new();
+    STAMP.get_or_init(|| {
+        beside_exe("build.json")
+            .and_then(|file| std::fs::read_to_string(file).ok())
+            .map_or_else(Stamp::default, |text| Stamp::parse(&text))
+    })
+}
+
+/// A file beside the server binary (`/opt/sovemu/bin` in the image), as the worker is found.
+pub(crate) fn beside_exe(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join(name))
+}
 
 /// A service SovEmu looks games up in.
 pub(crate) struct Service {
@@ -155,8 +186,22 @@ mod tests {
     }
 
     #[test]
-    fn a_local_build_has_no_revision() {
-        assert!(BUILD.revision.is_none_or(|r| !r.is_empty()));
+    fn the_build_names_the_libretro_release() {
         assert_eq!(BUILD.libretro_release, sovemu_library::cores::LIBRETRO_RELEASE);
+    }
+
+    #[test]
+    fn a_stamp_is_read_from_build_json() {
+        let stamp = Stamp::parse(r#"{"revision":"0e1bbf0","built":"2026-11-26T19:28:52Z"}"#);
+        assert_eq!(stamp.revision.as_deref(), Some("0e1bbf0"));
+        assert_eq!(stamp.built.as_deref(), Some("2026-11-26T19:28:52Z"));
+    }
+
+    #[test]
+    fn an_empty_or_unreadable_stamp_is_none() {
+        // A local `docker build` passes no commit: the runtime stage writes empty strings.
+        assert_eq!(Stamp::parse(r#"{"revision":"","built":" "}"#), Stamp::default());
+        assert_eq!(Stamp::parse("not json"), Stamp::default());
+        assert_eq!(Stamp::parse("{}"), Stamp::default());
     }
 }

@@ -84,7 +84,8 @@ held 59.93 fps over 300 frames with no resyncs.
       replaces moved into `before-restore-<time>/`, each backup restored once
 - [x] The About page lists every open-source package shipped, by licence, with its text: the
       server's crates (cargo-about, `about.toml`'s accepted licences, listed again by the image's
-      build stage; `third-party-notices.json` committed for a local build) and the web client's
+      `notices` stage and read beside the server; `third-party-notices.json` committed for a
+      local build) and the web client's
       npm packages (a Vite plugin with its own allow-list), through `thirdPartyNotices`
 - [x] Admins see every browser and app signed in (a live refresh family: its client, when it
       signed in and was last used, when it lapses) on the Devices page and each account's own

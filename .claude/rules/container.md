@@ -29,6 +29,12 @@ run --workspace --profile ci` with Mesa's llvmpipe); `coverage-run` and `coverag
 `runtime`. `build` and `test` compile side by side with their own `target/` cache mounts; CI
 builds both at once with `docker-bake.hcl`.
 
+**Nothing that changes per commit or per target goes into the compile**, so `test` and the image
+share one `build` stage and it runs once (#245). The build stamp (`SOVEMU_REVISION`,
+`SOVEMU_BUILT`) is written by `runtime` as `/opt/sovemu/bin/build.json`, and the notices are
+copied there too; the server reads both beside its binary at startup. Both bake targets pass the
+same secrets: a difference between them would split `build` into two compiles.
+
 `runtime` is `debian:trixie-slim` with the codecs' and GL's run-time libraries (libvpx, libopus,
 libavcodec with x264, libva with Intel's and Mesa's VA-API drivers, libglvnd and Mesa GL/EGL, no
 Vulkan drivers yet), `tini`, and what the release's cores link (`libxi6`, `libusb-1.0-0`,

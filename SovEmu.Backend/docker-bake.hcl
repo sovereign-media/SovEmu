@@ -15,11 +15,23 @@ target "_common" {
   platforms  = ["linux/amd64"]
 }
 
+# SovEmu's ScreenScraper developer credentials, as BuildKit secrets from the environment
+# (ci.yml sets them from the repository's secrets; unset, none are built in). Both `test` and
+# `image` pass them: the test suite waits on the same `build` stage the image ships, and BuildKit
+# runs that compile once only while the two targets ask for it identically.
+variable "SCREENSCRAPER_SECRETS" {
+  default = [
+    "id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID",
+    "id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD",
+  ]
+}
+
 # The whole test suite inside the image's Debian (Mesa's llvmpipe for the GPU tests). Nothing
 # to keep but its cache.
 target "test" {
   inherits   = ["_common"]
   target     = "test"
+  secret     = SCREENSCRAPER_SECRETS
   output     = ["type=cacheonly"]
   cache-from = ["type=gha,scope=test"]
   cache-to   = ["type=gha,scope=test,mode=max"]
@@ -46,17 +58,13 @@ target "image" {
     "org.opencontainers.image.source"   = "https://github.com/sovereign-media/SovEmu"
     "org.opencontainers.image.revision" = GITHUB_SHA
   }
-  # The commit and its time, built into sovemu-server for the admin About page.
+  # The commit and its time, written beside sovemu-server for the admin About page. Only the
+  # runtime stage reads them, after the compile, which therefore stays the same as `test`'s.
   args = {
     SOVEMU_REVISION = GITHUB_SHA
     SOVEMU_BUILT    = SOVEMU_BUILT
   }
-  # SovEmu's ScreenScraper developer credentials, as BuildKit secrets from the environment
-  # (ci.yml sets them from the repository's secrets; unset, none are built in).
-  secret = [
-    "id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID",
-    "id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD",
-  ]
+  secret = SCREENSCRAPER_SECRETS
   output     = ["type=docker"]
   cache-from = ["type=gha,scope=image", "type=gha,scope=test"]
   cache-to   = ["type=gha,scope=image,mode=max"]

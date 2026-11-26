@@ -1,5 +1,5 @@
-# cargo-about (the image's build stage): the licences of every crate the server and worker are
-# built from, written to /opt/sovemu/third-party-notices.json for the admin About page. A crate
+# cargo-about (the image's `notices` stage): the licences of every crate the server and worker are
+# built from, written to /opt/sovemu/bin/third-party-notices.json for the admin About page. A crate
 # under a licence not accepted here fails the build: adding one is a decision, not a lockfile
 # bump. Each accepted licence is permissive and asks only that its notice travels with the code.
 accepted = [

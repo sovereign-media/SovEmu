@@ -162,14 +162,17 @@ jobs:
     steps:
       # GitHub's runner has ~14 GB free; the build and its cargo caches (copied out of the builder
       # to be saved) need more. These preinstalled toolchains are ~25 GB that nothing here uses.
-      # The self-hosted runner has none of them, and its pod requests the disk it needs.
+      # Deleted in the background: the build needs the room only minutes later, and waiting for
+      # the deletion took one to two minutes of every run (#245). A background process lives
+      # until the job ends. The self-hosted runner has none of them, and its pod requests the disk
+      # it needs.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
         working-directory: .
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
-          df -h /
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift \
+            > /dev/null 2>&1 &
 
       - uses: actions/checkout@v7
 
@@ -221,7 +224,7 @@ jobs:
               "cache-mount/target-test": { "target": "/src/target", "id": "target-test" }
             }
 
-      # The commit's time, built into the server (the admin About page) with its SHA.
+      # The commit's time, written beside the server (the admin About page) with its SHA.
       - name: Build stamp
         run: echo "SOVEMU_BUILT=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)" >> "$GITHUB_ENV"
 
