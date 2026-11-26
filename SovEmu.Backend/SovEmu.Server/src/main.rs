@@ -43,6 +43,7 @@ mod play_stats;
 #[cfg(test)]
 mod query_plans;
 mod redact;
+mod relay;
 mod releases;
 mod resources;
 mod search;
@@ -214,11 +215,40 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Http__SecureCookies")]
     pub secure_cookies: bool,
 
-    /// STUN/TURN servers for browsers, one per index: `__0__Urls` (a URL, or several
-    /// comma-separated), `__0__Username`, `__0__Credential`. Only needed when clients cannot reach
-    /// the session UDP ports directly.
-    #[arg(long, env = "SovEmu__Streaming__IceServers", default_value = "[]", value_parser = parse_ice_servers)]
+    /// STUN/TURN servers for clients, one per index: `__0__Urls` (a URL, or several
+    /// comma-separated), `__0__Username`, `__0__Credential`. Default: Cloudflare's and Google's
+    /// free public STUN servers, so a client away from home learns its public address; `[]` for
+    /// none. Setting any entry replaces the default. The built-in relay (`SovEmu__Relay__Enabled`)
+    /// is added beside these on its own.
+    #[arg(long, env = "SovEmu__Streaming__IceServers", default_value = DEFAULT_ICE_SERVERS, value_parser = parse_ice_servers)]
     pub ice_servers: serde_json::Value,
+
+    /// Run the built-in TURN relay, for players no direct path reaches (a symmetric or
+    /// carrier-grade NAT, or a network that blocks UDP). Signed-in players get short-lived
+    /// credentials for it in `clientConfig`; it relays only to this server's game sessions.
+    #[arg(long, env = "SovEmu__Relay__Enabled", default_value_t = false, action = clap::ArgAction::Set)]
+    pub relay: bool,
+
+    /// The relay's port, over UDP and TCP: the one to forward on the router.
+    #[arg(long, env = "SovEmu__Relay__Port", default_value_t = 3478)]
+    pub relay_port: u16,
+
+    /// The host name or address clients reach the relay at. Unset: the host the client reached
+    /// the server at (its request's `Host`), so a server reached as `games.example.com` hands out
+    /// `turn:games.example.com:3478`.
+    #[arg(long, env = "SovEmu__Relay__Host")]
+    pub relay_host: Option<String>,
+
+    /// How long a player's relay credentials last, in hours (rounded up to the hour). A session
+    /// already relayed keeps going until its client next asks for an allocation.
+    #[arg(long, env = "SovEmu__Relay__CredentialHours", default_value_t = 24,
+          value_parser = clap::value_parser!(u64).range(1..=720))]
+    pub relay_credential_hours: u64,
+
+    /// Relayed allocations at once (a relayed player holds one or two).
+    #[arg(long, env = "SovEmu__Relay__MaxAllocations", default_value_t = 32,
+          value_parser = clap::value_parser!(u64).range(1..=10_000))]
+    pub relay_max_allocations: u64,
 
     /// How log lines are written to stderr: `text` for a person, `json` (one object per line,
     /// with the request's or session's fields) for a log collector. Workers log the same way.
@@ -757,6 +787,10 @@ fn move_legacy_cache(paths: &paths::DataPaths) {
     }
 }
 
+/// Free public STUN servers that need no account: Cloudflare's, then Google's.
+const DEFAULT_ICE_SERVERS: &str =
+    r#"[{"urls":["stun:stun.cloudflare.com:3478","stun:stun.l.google.com:19302"]}]"#;
+
 fn parse_ice_servers(s: &str) -> Result<serde_json::Value, String> {
     let value: serde_json::Value = serde_json::from_str(s).map_err(|e| format!("not JSON: {e}"))?;
     let ok =
@@ -818,6 +852,8 @@ pub struct AppState {
     pub(crate) started_at: f64,
     /// The server's recent log, when `SovEmu__Logging__BufferLines` keeps any (`logs`).
     pub(crate) logs: Option<Arc<logs::LogBuffer>>,
+    /// The built-in TURN relay, when `SovEmu__Relay__Enabled` runs it (`relay`).
+    pub(crate) relay: Option<Arc<relay::RelayState>>,
 }
 
 impl AppState {
@@ -1217,6 +1253,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let resources = Arc::new(resources::Monitor::new(host, config.resource_sample_seconds));
     let core_info = Arc::new(settings::CoreInfoCache::from_manifest(&config.cores_dir));
     let game_counts = Arc::new(library::GameCounts::load(&db).await?);
+    let relay = relay::start(&config).await?;
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -1241,6 +1278,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         started_at: client_events::now_unix() as f64,
         jobs,
         resources,
+        relay,
     })
 }
 

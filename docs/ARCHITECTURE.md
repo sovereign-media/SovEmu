@@ -45,7 +45,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 - The worker owns the WebRTC peer ([`str0m`](https://github.com/algesten/str0m), sans-IO). The server only relays SDP offers/answers and ICE candidates over WebSocket, so it never handles media.
 - Frames are encoded at native resolution (e.g. 256×224). Clients scale up with nearest-neighbor or a shader.
 - The run loop must not assume one emulated frame per tick, so that fast-forward (run N frames, encode the last) and rewind (ring buffer of compressed state deltas) can be added later.
-- NAT traversal: STUN, plus coturn for TURN when mobile networks need it.
+- NAT traversal: clients get free public STUN servers by default (Cloudflare's and Google's), and a TURN relay built into the server (`SovEmu.Relay`, off unless `SovEmu__Relay__Enabled`) reaches the players no direct path does. It mints each signed-in player's short-lived credentials itself and relays only to the server's own game sessions, over loopback. An external TURN server (coturn) still works through `SovEmu__Streaming__IceServers`.
 
 ### Repository layout
 

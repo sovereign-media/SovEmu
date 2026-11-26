@@ -205,6 +205,8 @@ held 59.93 fps over 300 frames with no resyncs.
       the stats every client sends once a second lower it while the client's decoder falls
       behind. Encoders that reopen to change rate (VA-API, NVENC) are raised less often
 - [x] STUN/TURN: `SovEmu__Streaming__IceServers` is handed to browsers through `/api/config`
+- [x] Free public STUN servers by default, and a built-in TURN relay (`SovEmu__Relay__Enabled`,
+      `SovEmu.Relay`, #50) with per-player credentials, relaying only to the server's sessions
 - [x] Sign-in throttling: five failures lock a username out for five minutes
 - [x] `GET /health` for probes
 - [x] Structured logs (`SovEmu__Logging__Format=json`): every API request in a `request` span (route,

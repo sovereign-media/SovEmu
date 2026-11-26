@@ -478,7 +478,12 @@ value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 | `SovEmu__Streaming__Udp__Bind` | `0.0.0.0` | Address the session ports bind to |
 | `SovEmu__Streaming__Udp__Dscp` | `34` | The DSCP value every game's packets are marked with (0 to 63), asking the network to send them ahead of ordinary traffic. A Wi-Fi access point maps it to one of its queues: `34` (AF41, interactive video, as WebRTC marks a picture) goes to the video queue; `46` to the voice queue; `0` leaves packets unmarked. Routers and switches on the way may honour it, ignore it or clear it |
 | `SovEmu__Streaming__AdvertiseAddress` | detected (`127.0.0.1` in compose) | The address browsers send media to |
-| `SovEmu__Streaming__IceServers__<n>__Urls`, `__Username`, `__Credential` | none | STUN/TURN for browsers, one server per index; `__Urls` takes one URL or several, comma-separated |
+| `SovEmu__Streaming__IceServers__<n>__Urls`, `__Username`, `__Credential` | Cloudflare's and Google's free STUN servers | STUN/TURN for clients, one server per index; `__Urls` takes one URL or several, comma-separated. Setting any entry replaces the default; `SovEmu__Streaming__IceServers=[]` for none |
+| `SovEmu__Relay__Enabled` | `false` | Run the built-in TURN relay, for players no direct path reaches (see [Playing away from home](#playing-away-from-home)) |
+| `SovEmu__Relay__Port` | `3478` | The relay's port, over UDP and TCP: forward both on the router |
+| `SovEmu__Relay__Host` | the host the client reached the server at | The host name or address clients reach the relay at, when it is not the server's own |
+| `SovEmu__Relay__CredentialHours` | `24` | How long a player's relay credentials last (rounded up to the hour) |
+| `SovEmu__Relay__MaxAllocations` | `32` | Relayed allocations at once (a relayed player holds one or two) |
 | `SovEmu__Streaming__Video__Kbps` | `5000` | Video bitrate a stream starts at. It then adapts throughout the stream: up while the connection has headroom and down on congestion (the send-bandwidth estimate, when the stream is sending more than it leaves: an estimate the stream is already under cuts nothing, since a quiet picture makes the estimator read low on a link with room to spare. A fall is checked against the client's own report, sent once a second. Trouble it has just shown (packets lost, a keyframe asked for, or for two samples running frames arriving short or a long round trip) is believed at once. On a link that has shown no trouble yet, a client reporting a clean link overrules the estimator: it starts again from where it was and the bitrate stays, since over Wi-Fi the estimator also falls when packets merely arrive unevenly. A client that sends no stats, or a link that has shown trouble before, gets one such pass in five seconds, and a second fall is believed. A fall that is believed leaves a ceiling at 85% of what was being sent, which the bitrate does not climb past; the ceiling is tried 5% higher after 30 seconds without a fall (a try that stands doubles the next step, to 20%; one that fails goes back to the ceiling that stood and waits twice as long, to 5 minutes). One fall cuts to no less than half the ceiling), and down while the client's decoder falls behind (the stats every client sends once a second: frames decoded, frames dropped, decode time), back up as it recovers. The player is told of a change of a quarter or more, at most every 15 seconds, by a notice at the top of the screen, worded and drawn as Sovereign's ("Slow connection. Playing at a lower quality."). `video_kbps_target`, `estimate_kbps` and `client_limit_kbps` in the `session health` log line show it |
 | `SovEmu__Streaming__Video__MinKbps` | `300` | The lowest video bitrate a stream adapts down to |
 | `SovEmu__Streaming__Video__MaxKbps` | `12000` | The highest video bitrate a stream adapts up to (never below `SovEmu__Streaming__Video__Kbps`). Set it to `SovEmu__Streaming__Video__Kbps` for a stream that only adapts down |
@@ -569,6 +574,8 @@ repository, and turns its values into these variables. What any deployment needs
   `/sov-data`;
 - the media ports (`SovEmu__Streaming__Udp__Ports`, UDP) reachable at `SovEmu__Streaming__AdvertiseAddress`: a UDP
   `LoadBalancer` Service (MetalLB at home), or host networking;
+- with the relay on (`SovEmu__Relay__Enabled`), its port (`SovEmu__Relay__Port`, 3478) over UDP
+  and TCP;
 - for GPU rendering and encoding, the render node (`/dev/dri`), or NVIDIA's container runtime.
 
 The image runs as uid 1000 and works with a read-only root filesystem and no capabilities. On
@@ -591,10 +598,31 @@ that is not a listed proxy, so a client cannot choose its own). Anyone else's
 `X-Forwarded-For` is ignored. Responses are compressed (Brotli or gzip) for clients that accept
 it, except images and videos.
 
-**Playing away from home:** sessions need UDP from the browser to the session ports. Expose
-8080 through an HTTPS reverse proxy (and set `SovEmu__Http__SecureCookies=1`). Then forward
-50000-50009/udp and set `SovEmu__Streaming__AdvertiseAddress` to your public address, or run a TURN server
-(coturn) and list it in `SovEmu__Streaming__IceServers`.
+### Playing away from home
+
+Expose 8080 through an HTTPS reverse proxy (and set `SovEmu__Http__SecureCookies=1`). A game's
+picture then needs a path from the player to its session, one of:
+
+- **Forward the session ports**: forward 50000-50009/udp and set
+  `SovEmu__Streaming__AdvertiseAddress` to your public address. Direct, so the lowest latency,
+  but players on your LAN are then sent to the public address too, which needs a router that
+  supports hairpin NAT.
+- **Turn on the built-in relay** (`SovEmu__Relay__Enabled=true`) and forward only its port,
+  3478, over UDP and TCP. `SovEmu__Streaming__AdvertiseAddress` stays the LAN address. Players
+  who cannot reach a session directly are relayed through the server: behind a symmetric or
+  carrier-grade NAT, or on a network that blocks UDP (TCP 3478 still gets through many).
+  Each signed-in player gets short-lived credentials of their own in `clientConfig`, so there is
+  no relay password to set up, and the relay sends only to this server's game sessions, never
+  anywhere else on your network. A relayed player costs the server about 3 Mbit/s each way. The
+  relay is handed out at the host the player reached the server at; set `SovEmu__Relay__Host` if
+  that is a proxy elsewhere.
+- **Your own TURN server** (coturn, or a hosted one) still works: list it in
+  `SovEmu__Streaming__IceServers`.
+
+Clients get Cloudflare's and Google's free public STUN servers by default, so they know their
+own public address. Each request shows the STUN server a player's address and when they start a
+session, and no game data; set `SovEmu__Streaming__IceServers` to your own, or to `[]`, to opt
+out. TURN over TLS on 443 isn't offered: it isn't HTTP, so the HTTPS proxy can't carry it.
 
 ## Building from source
 

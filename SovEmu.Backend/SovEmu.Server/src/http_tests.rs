@@ -514,7 +514,8 @@ async fn browses_the_library() {
     h.sign_up_admin().await;
     assert_eq!(
         h.ok("{ clientConfig { iceServers } }", json!({})).await["clientConfig"]["iceServers"],
-        json!([])
+        json!([{"urls": ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]}]),
+        "free public STUN by default, and no relay"
     );
     let systems = h.systems().await;
     assert_eq!(system(&systems, "nes")["gameCount"], 1);
@@ -2406,6 +2407,50 @@ async fn admins_see_how_the_server_is_reached() {
         .iter()
         .find(|s| s["name"] == "SovEmu__Streaming__IceServers");
     assert!(!ice.unwrap()["value"].as_str().unwrap().contains("pa55"), "credentials masked");
+}
+
+#[tokio::test]
+async fn players_get_relay_credentials_of_their_own() {
+    let mut h = Harness::new_with(
+        "relay",
+        false,
+        vec![
+            "--relay".into(),
+            "true".into(),
+            "--relay-port".into(),
+            "0".into(),
+            "--relay-host".into(),
+            "games.example.com".into(),
+            "--ice-servers".into(),
+            "[]".into(),
+        ],
+    )
+    .await;
+    h.sign_up_admin().await;
+    let ice =
+        h.ok("{ clientConfig { iceServers } }", json!({})).await["clientConfig"]["iceServers"]
+            .clone();
+    let servers = ice.as_array().unwrap();
+    assert_eq!(servers.len(), 1, "{ice}");
+    let port = h.state.relay.as_ref().unwrap().stats();
+    assert_eq!(port.allocations(), 0);
+    let urls = servers[0]["urls"].as_array().unwrap();
+    assert!(urls[0].as_str().unwrap().starts_with("turn:games.example.com:"), "{ice}");
+    assert!(urls[0].as_str().unwrap().ends_with("?transport=udp"), "{ice}");
+    assert!(urls[1].as_str().unwrap().ends_with("?transport=tcp"), "{ice}");
+    // `<expiry>:<user id>`, a day ahead (rounded up to the hour).
+    let username = servers[0]["username"].as_str().unwrap();
+    let (expiry, user) = username.split_once(':').unwrap();
+    let ahead = expiry.parse::<f64>().unwrap() - crate::client_events::now_unix() as f64;
+    assert!((24.0 * 3600.0..25.0 * 3600.0).contains(&ahead), "{username}");
+    assert!(user.parse::<i64>().is_ok(), "{username}");
+    assert!(!servers[0]["credential"].as_str().unwrap().is_empty());
+    // The key is kept, so credentials survive a restart.
+    let kept: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(h.state.config.data_dir.join("server.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(kept["relayKey"].is_string());
 }
 
 #[tokio::test]

@@ -1,0 +1,28 @@
+[package]
+name = "sovemu-relay"
+description = "SovEmu's built-in TURN relay: for players no direct path reaches, relaying only to the server's own game sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The TURN protocol, sans-IO (RFC 5766/8656, with its TCP framing): this crate is its sockets,
+# its credentials and its limits on where it relays to.
+turn-server-proto = "0.8"
+base64 = "0.22"
+hmac = "0.12"
+sha1 = "0.10"
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time", "io-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time", "io-util"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+turn-client-proto = "0.8"
+
+[lints]
+workspace = true

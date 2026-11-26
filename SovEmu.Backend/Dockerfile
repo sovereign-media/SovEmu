@@ -240,6 +240,7 @@ USER sovemu
 WORKDIR /sov-data
 VOLUME ["/sov-data"]
 # 8080: the web client and API. 50000-50009/udp: one port per concurrent game session.
-EXPOSE 8080/tcp 50000-50009/udp
+# 3478 is the built-in relay (SovEmu__Relay__Enabled), over UDP and TCP.
+EXPOSE 8080/tcp 50000-50009/udp 3478/udp 3478/tcp
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sovemu-server"]
