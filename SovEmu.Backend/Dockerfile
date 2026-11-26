@@ -89,22 +89,19 @@ COPY SovEmu.Backend/ ./
 
 ## ---- notices: the crates' licences, listed again from the lockfile --------------------------------
 # cargo-about (`about.toml`'s accepted licences: any other fails the build) writes the list the
-# server builds in, so the image always ships the current one; the committed copy is a local
-# build's. Its own stage and registry cache: its `cargo metadata` unpacks crates for every
-# platform, and sharing `build` and `test`'s cache while they compile raced them.
+# runtime stage puts beside the server binary, which reads it there, so the image always ships the
+# current one; the committed copy, built in, is a local build's. Nothing compiles it in, so the
+# release build never waits for it. Its own stage and registry cache: its `cargo metadata` unpacks
+# crates for every platform, and sharing `build` and `test`'s cache while they compile raced them.
 FROM toolchain AS notices
 RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registry \
     mkdir -p /out \
     && cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
 
 ## ---- build: the release binaries ------------------------------------------------------------------
+# One compile for the test suite's wait and the image both: nothing here varies by target or by
+# commit (the build stamp is written by the runtime stage), so a bake of both runs it once.
 FROM toolchain AS build
-COPY --from=notices /out/third-party-notices.json SovEmu.Server/third-party-notices.json
-# Which build this is, for the admin About page (`option_env!` in sovemu-server): the commit and
-# its time, which CI passes (docker-bake.hcl). Empty in a local build. Declared here, not in
-# `toolchain`, so the test stage's compile does not change with every commit.
-ARG SOVEMU_REVISION=""
-ARG SOVEMU_BUILT=""
 # SovEmu's own ScreenScraper developer credentials, built into the server (`build.rs`) so a
 # released image needs only the admin's ScreenScraper account. BuildKit secrets, never build
 # arguments: they reach this one compile as variables and stay out of the image's history and
@@ -208,6 +205,8 @@ RUN apt-get update \
 
 COPY --from=cores /out/cores/ /opt/sovemu/cores/
 COPY --from=build /out/sovemu-worker /out/sovemu-server /opt/sovemu/bin/
+# The crates' licences for the admin About page, read beside the server (SovEmu.Server notices.rs).
+COPY --from=notices /out/third-party-notices.json /opt/sovemu/bin/third-party-notices.json
 COPY --from=web /src/SovEmu.Web/dist/ /opt/sovemu/web/
 
 # The runtime (everything the image ships, read-only) is /opt/sovemu: bin/, cores/, web/ and
@@ -235,6 +234,13 @@ RUN sovemu-worker probe > /opt/sovemu/cores/manifest.json
 # server's own code) and the ESRB's rating icons. The admin's own go at the same paths in
 # /sov-data/artwork (and SovEmu__Decorations__Directories, SovEmu__Appearance__BackgroundDirectories).
 RUN sovemu-server --write-artwork /opt/sovemu/artwork
+
+# Which build this is, for the admin About page: the commit and its time, which CI passes
+# (docker-bake.hcl), written beside the server, which reads it there (SovEmu.Server about.rs).
+# Empty in a local build. Last, so a new commit changes only this layer and the ones after it.
+ARG SOVEMU_REVISION=""
+ARG SOVEMU_BUILT=""
+RUN printf '{"revision":"%s","built":"%s"}\n' "$SOVEMU_REVISION" "$SOVEMU_BUILT" > /opt/sovemu/bin/build.json
 
 USER sovemu
 WORKDIR /sov-data

@@ -242,10 +242,11 @@ impl AccountsQuery {
     async fn build_info(&self, ctx: &Context<'_>) -> Result<BuildInfoNode> {
         user(ctx).await?;
         let b = crate::about::BUILD;
+        let stamp = crate::about::stamp();
         Ok(BuildInfoNode {
             version: b.version.to_owned(),
-            revision: b.revision.map(str::to_owned),
-            built: b.built.map(str::to_owned),
+            revision: stamp.revision.clone(),
+            built: stamp.built.clone(),
             libretro_release: b.libretro_release.to_owned(),
             licence: b.licence.to_owned(),
             source: b.source.to_owned(),
