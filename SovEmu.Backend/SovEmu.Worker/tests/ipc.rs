@@ -2,42 +2,15 @@
 //! states, against `SovEmu.TestCore`.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{OnceLock, mpsc};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use sovemu_protocol::ipc::{ExitReason, LoadPhase, Reply, Request};
 
-fn test_core() -> PathBuf {
-    // Built once per test binary, before any test starts a worker with it: tests run in
-    // parallel, and a second `cargo build` (the workspace's build has other features) could
-    // rewrite the library under a worker that has it loaded.
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(build_test_core).clone()
-}
-
-fn build_test_core() -> PathBuf {
-    if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
-        return PathBuf::from(path);
-    }
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let status = Command::new(cargo)
-        .args(["build", "--quiet", "-p", "sovemu-test-core"])
-        .current_dir(&workspace)
-        .status()
-        .expect("run cargo");
-    assert!(status.success());
-    std::env::var_os("CARGO_TARGET_DIR")
-        .map_or_else(|| workspace.join("target"), PathBuf::from)
-        .join("debug")
-        .join(format!(
-            "{}sovemu_test_core{}",
-            std::env::consts::DLL_PREFIX,
-            std::env::consts::DLL_SUFFIX
-        ))
-}
+#[path = "../../SovEmu.TestCore/locate.rs"]
+mod locate;
+use locate::test_core;
 
 struct Worker {
     child: Child,

@@ -56,8 +56,10 @@ session id as `--session-id`. Core log lines arrive under the `core` target.
   `cargo test`).
 - Tests run beside every other test on a loaded CI machine: **wait for what you measure** (a count
   of frames or acks), never for a fixed time alone.
-- Never depend on a downloaded core or ROM: tests use `SovEmu.TestCore`, built on first use (or
-  `SOVEMU_TEST_CORE`).
+- Never depend on a downloaded core or ROM: tests use `SovEmu.TestCore`, found with
+  `SovEmu.TestCore/locate.rs` (included with `#[path]`; or `SOVEMU_TEST_CORE`). It builds the
+  core with the workspace's features behind a file lock and hands each test a copy nothing
+  rewrites: never build or load `target/debug/libsovemu_test_core` any other way.
 - Coverage is `../scripts/coverage.sh` (cargo-llvm-cov in its own target folder), never bare
   `cargo llvm-cov`. It reports, never gates; a new module with little coverage is a test to write.
 

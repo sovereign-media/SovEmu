@@ -2,9 +2,11 @@
 //!
 //! Only one core may be loaded per process, so every test takes `CORE_LOCK` first.
 
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard};
+
+#[path = "../../SovEmu.TestCore/locate.rs"]
+mod locate;
+use locate::test_core;
 
 use sovemu_retro_host::{Core, CoreOptions, Discs, Error, GpuChoice, JoypadButtons, PixelFormat};
 
@@ -17,32 +19,6 @@ static CORE_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock() -> MutexGuard<'static, ()> {
     CORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Builds the test core once and returns the path of its shared library.
-/// `SOVEMU_TEST_CORE` overrides the path (CI builds it in a separate step).
-fn test_core() -> &'static PathBuf {
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| {
-        if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
-            return PathBuf::from(path);
-        }
-        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-        let status = Command::new(cargo)
-            .args(["build", "--quiet", "-p", "sovemu-test-core"])
-            .current_dir(&workspace)
-            .status()
-            .expect("failed to run cargo to build sovemu-test-core");
-        assert!(status.success(), "building sovemu-test-core failed");
-        let target = std::env::var_os("CARGO_TARGET_DIR")
-            .map_or_else(|| workspace.join("target"), PathBuf::from);
-        target.join("debug").join(format!(
-            "{}sovemu_test_core{}",
-            std::env::consts::DLL_PREFIX,
-            std::env::consts::DLL_SUFFIX
-        ))
-    })
 }
 
 fn options() -> CoreOptions {
