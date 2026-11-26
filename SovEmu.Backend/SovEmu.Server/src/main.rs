@@ -766,21 +766,6 @@ const STUN_SERVERS: &[&str] = if cfg!(test) {
     &["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]
 };
 
-/// Settings that no longer exist and would change what happens if they still did: starting
-/// without them would be a surprise, so the server says what replaced them instead.
-fn refuse_removed_settings(vars: &[(String, String)]) -> Result<()> {
-    const ICE: &str = "SovEmu__Streaming__IceServers";
-    if let Some((name, _)) =
-        vars.iter().find(|(k, _)| k.get(..ICE.len()).is_some_and(|p| p.eq_ignore_ascii_case(ICE)))
-    {
-        anyhow::bail!(
-            "{name} is no longer read: SovEmu uses free public STUN servers and its own built-in \
-             TURN relay, which need no settings; remove it"
-        );
-    }
-    Ok(())
-}
-
 fn parse_ports(s: &str) -> Result<(u16, u16), String> {
     let (a, b) = s.split_once('-').unwrap_or((s, s));
     let (a, b): (u16, u16) = (
@@ -1445,7 +1430,6 @@ fn main() -> Result<()> {
 async fn run(mut config: Config) -> Result<()> {
     config.clear_empty_secrets();
     let vars: Vec<(String, String)> = std::env::vars().collect();
-    refuse_removed_settings(&vars)?;
     config.given.keep_environment(&vars);
     config.users = structured::users(&vars)?;
     config.systems = structured::systems(&vars)?;
@@ -1628,18 +1612,6 @@ mod tests {
                 |c| matches!(c, EnvChange::Remove(k) | EnvChange::Set(k, _) if k == untouched)
             ));
         }
-    }
-
-    #[test]
-    fn a_removed_ice_servers_setting_stops_the_server_with_what_replaced_it() {
-        let vars =
-            [("SovEmu__Streaming__IceServers__0__Urls".to_owned(), "turn:t:3478".to_owned())];
-        let e = refuse_removed_settings(&vars).unwrap_err().to_string();
-        assert!(
-            e.contains("SovEmu__Streaming__IceServers__0__Urls") && e.contains("remove it"),
-            "{e}"
-        );
-        assert!(refuse_removed_settings(&[("HOME".into(), "/".into())]).is_ok());
     }
 
     #[test]
