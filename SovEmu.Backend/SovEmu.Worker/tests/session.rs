@@ -282,8 +282,17 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut pause_window: Option<(Instant, usize)> = None;
     let mut paused_frames = usize::MAX;
     while started.elapsed() < Duration::from_secs(25) {
-        if ff_start.is_none() && video_frames >= 90 && audio_packets >= 100 && acks.len() >= 3 {
-            normal_ratio = frames_per_shown(&acks, &acks_video, 0, acks.len());
+        // Normal play is measured as fast-forward is, over the latest acks once the stream is
+        // steady, never from the first ack: while the stream starts, the game emulates frames the
+        // test has not received yet, and a ratio from the start read 2.2 and 2.3 in CI though the
+        // stream was normal, which put the bar for fast-forward (a true 4.0) at twice that.
+        if ff_start.is_none()
+            && video_frames >= 90
+            && audio_packets >= 100
+            && acks.len() > STARTUP_ACKS + RATIO_ACKS
+        {
+            let recent = acks.len() - (RATIO_ACKS + 1);
+            normal_ratio = frames_per_shown(&acks, &acks_video, recent, acks.len());
             ff_start = Some((Instant::now(), acks.len()));
         }
         // Enough acks to measure past those first ones, however slowly they arrive (a 100 ms
@@ -295,9 +304,9 @@ fn streams_video_and_audio_and_acknowledges_input() {
         if let Some((at, from)) = ff_start
             && pause_start.is_none()
             && at.elapsed() >= ff_window
-            && acks.len() >= from + 4 + FF_ACKS
+            && acks.len() >= from + 4 + RATIO_ACKS
         {
-            let recent = acks.len().saturating_sub(FF_ACKS + 1).max(from + 4);
+            let recent = acks.len().saturating_sub(RATIO_ACKS + 1).max(from + 4);
             ff_ratio = frames_per_shown(&acks, &acks_video, recent, acks.len());
             if ff_ratio >= normal_ratio * 2.0 || at.elapsed() >= ff_deadline {
                 pause_start = Some((Instant::now(), video_frames));
@@ -471,11 +480,13 @@ fn a_client_without_h264_gets_vp8() {
     assert!(!answer.sdp.contains("red/48000"), "nor redundant audio, which it did not offer");
 }
 
+/// The acks each ratio is measured over: the latest ones, normally and fast-forwarding.
+const RATIO_ACKS: usize = 6;
+/// The first acks, while the stream starts, which no ratio is measured over.
+const STARTUP_ACKS: usize = 2;
+
 /// Emulated frames per video frame received, between the acks `from` and `to` (exclusive): how
 /// far the game moved against how many frames were shown meanwhile. 0 if there are too few.
-/// The acks measured fast-forwarding, after the first few.
-const FF_ACKS: usize = 6;
-
 fn frames_per_shown(acks: &[InputAck], video: &[usize], from: usize, to: usize) -> f64 {
     if to < from + 2 || to > acks.len() {
         return 0.0;
