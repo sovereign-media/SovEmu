@@ -510,7 +510,7 @@ impl Core {
 
         if let (Some((ctx, request)), Some((width, height))) = (&mut self.hw, hw_frame) {
             if av_changed && let Some(av) = &self.av_info {
-                ctx.resize(av.max_width, av.max_height).map_err(Error::Gpu)?;
+                ctx.resize(av.max_width, av.max_height)?;
             }
             let started = std::time::Instant::now();
             ctx.read(width, height, request.bottom_left_origin, &mut self.video.data);

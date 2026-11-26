@@ -60,7 +60,7 @@ pub(crate) fn run() -> Result<()> {
                 .collect();
             Report { error: None, devices, best }
         }
-        Err(e) => Report { error: Some(e), devices: Vec::new(), best: None },
+        Err(e) => Report { error: Some(e.to_string()), devices: Vec::new(), best: None },
     };
     writeln!(out, "{}", serde_json::to_string_pretty(&report)?)?;
     Ok(())
