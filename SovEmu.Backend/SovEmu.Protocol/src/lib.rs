@@ -1,3 +1,4 @@
+// EXPERIMENT (#245): a change that forces a recompile; this branch is never merged.
 //! Wire formats shared by the SovEmu worker, server and clients.
 //!
 //! Every client (web, Android, iOS) implements these byte-for-byte, so this crate is the

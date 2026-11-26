@@ -240,7 +240,8 @@ jobs:
       # Every build reads them; main saves a key it is missing (the last steps). A cache problem
       # costs time, never the build: the job still passes without one.
       - name: Cargo caches (restore)
-        if: steps.queued.outputs.found != 'true'
+        # EXPERIMENT (#245): no Cargo caches, to time a build without them.
+        if: false
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
@@ -251,7 +252,8 @@ jobs:
       # Puts the restored caches into the builder's cache mounts, and takes them back out after
       # the build only when main is about to save them. The ids are the Dockerfile's.
       - name: Cargo caches into the builder
-        if: steps.queued.outputs.found != 'true'
+        # EXPERIMENT (#245): no Cargo caches, to time a build without them.
+        if: false
         continue-on-error: true
         uses: reproducible-containers/buildkit-cache-dance@v3
         with:
