@@ -40,8 +40,8 @@ Vulkan drivers yet), `tini`, and what the release's cores link (`libxi6`, `libus
   `/opt/sovemu/artwork`;
 - writes every byte to the `/sov-data` volume and reads the library from `/sov-library`
   (read-only); nothing else in the container is written;
-- exposes 8080/tcp (web + API) and 50000-50009/udp (one port per game session,
-  `SovEmu__Streaming__Udp__Ports`);
+- exposes 8080/tcp (web + API), 50000-50009/udp (one port per game session,
+  `SovEmu__Streaming__Udp__Ports`) and 3478/udp+tcp (the built-in TURN relay, always on);
 - runs `sovemu-worker probe` over every core at build time (writing
   `/opt/sovemu/cores/manifest.json`), so a core that cannot load fails the build;
 - runs `sovemu-server` (`CMD`).

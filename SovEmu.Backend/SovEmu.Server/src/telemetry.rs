@@ -19,7 +19,7 @@ use axum::extract::{MatchedPath, Request};
 use axum::middleware::Next;
 use axum::response::Response;
 use clap::ValueEnum;
-use opentelemetry::metrics::{Counter, Histogram, ObservableGauge};
+use opentelemetry::metrics::{Counter, Histogram, ObservableCounter, ObservableGauge};
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::WithExportConfig;
@@ -346,12 +346,14 @@ pub(crate) fn metrics() -> &'static Metrics {
 /// the returned value for as long as they should be reported.
 pub(crate) struct Gauges {
     _gauges: Vec<ObservableGauge<u64>>,
+    _counters: Vec<ObservableCounter<u64>>,
     _resources: Vec<ObservableGauge<f64>>,
 }
 
 pub(crate) fn observe(state: &AppState) -> Gauges {
     let meter = global::meter(SERVICE);
     let mut gauges = Vec::new();
+    let mut counters = Vec::new();
     let workers = state.workers.clone();
     gauges.push(
         meter
@@ -369,10 +371,31 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
             .with_callback(move |o| o.observe(capacity, &[]))
             .build(),
     );
+    if let Some(relay) = &state.relay {
+        let stats = relay.stats();
+        gauges.push(
+            meter
+                .u64_observable_gauge("sovemu.relay.allocations")
+                .with_description("Relayed allocations open on the built-in relay (a relayed player holds one or two).")
+                .with_callback(move |o| o.observe(stats.allocations() as u64, &[]))
+                .build(),
+        );
+        let stats = relay.stats();
+        counters.push(
+            meter
+                .u64_observable_counter("sovemu.relay.bytes")
+                .with_unit("By")
+                .with_description(
+                    "Bytes the built-in relay has relayed between players and game sessions.",
+                )
+                .with_callback(move |o| o.observe(stats.bytes(), &[]))
+                .build(),
+        );
+    }
     let resources = resource_gauges(&meter, state);
     if state.config.otel_endpoint.is_none() {
         // Nothing reads the gauges: no need to count the library.
-        return Gauges { _gauges: gauges, _resources: resources };
+        return Gauges { _gauges: gauges, _counters: counters, _resources: resources };
     }
 
     let library: Arc<Mutex<Library>> = Arc::default();
@@ -410,7 +433,7 @@ pub(crate) fn observe(state: &AppState) -> Gauges {
             })
             .build(),
     );
-    Gauges { _gauges: gauges, _resources: resources }
+    Gauges { _gauges: gauges, _counters: counters, _resources: resources }
 }
 
 /// The container's CPU and memory, from the resource sampler's latest reading (`resources`):

@@ -14,7 +14,6 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
@@ -31,34 +30,9 @@ use str0m::rtp::Extension;
 use str0m::{Candidate, Event, Input, Output, RtcConfig};
 
 /// Builds the test core and returns the path of its shared library (see the RetroHost tests).
-fn test_core() -> PathBuf {
-    // Built once per test binary, before any test starts a worker with it: tests run in
-    // parallel, and a second `cargo build` (the workspace's build has other features) could
-    // rewrite the library under a worker that has it loaded.
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(build_test_core).clone()
-}
-
-fn build_test_core() -> PathBuf {
-    if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
-        return PathBuf::from(path);
-    }
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let status = Command::new(cargo)
-        .args(["build", "--quiet", "-p", "sovemu-test-core"])
-        .current_dir(&workspace)
-        .status()
-        .expect("failed to run cargo to build sovemu-test-core");
-    assert!(status.success(), "building sovemu-test-core failed");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map_or_else(|| workspace.join("target"), PathBuf::from);
-    target.join("debug").join(format!(
-        "{}sovemu_test_core{}",
-        std::env::consts::DLL_PREFIX,
-        std::env::consts::DLL_SUFFIX
-    ))
-}
+#[path = "../../SovEmu.TestCore/locate.rs"]
+mod locate;
+use locate::test_core;
 
 /// The worker process, killed when dropped.
 struct Worker {

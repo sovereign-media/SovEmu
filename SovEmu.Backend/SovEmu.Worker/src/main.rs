@@ -34,6 +34,7 @@ mod serve;
 mod session;
 mod standin;
 mod stream;
+mod stun;
 mod sysdir;
 mod video;
 mod watchdog;
@@ -131,6 +132,10 @@ struct ConnectionTestArgs {
     #[arg(long = "advertise-ip")]
     advertise: Option<IpAddr>,
 
+    /// A STUN server (`host:port`) to ask for the public address, once per server.
+    #[arg(long = "stun")]
+    stun: Vec<String>,
+
     /// Seconds before it gives up, connected or not.
     #[arg(long, default_value_t = 30)]
     timeout: u64,
@@ -175,6 +180,10 @@ struct SessionArgs {
     /// The IP address clients send media to, if not the bound one.
     #[arg(long = "advertise-ip")]
     advertise: Option<IpAddr>,
+
+    /// A STUN server (`host:port`) to ask for the public address, once per server.
+    #[arg(long = "stun")]
+    stun: Vec<String>,
 
     /// The system's BIOS folder.
     #[arg(long)]

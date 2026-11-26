@@ -32,6 +32,8 @@ The detail for each part loads from `.claude/rules/` when you work on its files 
 - **Every setting is an environment variable** (`SovEmu__<Area>__<Name>`); UI buttons are
   shortcuts, never the only way.
 - **One image** (`SovEmu.Backend/Dockerfile`), Debian x86_64, the same for every host.
+- **The logo comes from `brand/`.** `brand/generate.mjs` writes every client's icons, favicons,
+  banner and brand mark from one drawing; change it and run it, never edit an output.
 - **Long text goes through a file.** Commit messages and PR or issue bodies are written with the
   Write tool to `test-results/<task>.md` (named for the task) and passed with `-F` /
   `--body-file`, never a heredoc.
@@ -59,6 +61,7 @@ All Rust crates live under `SovEmu.Backend/`, one Cargo workspace.
 | `SovEmu.TestCore` | `sovemu-test-core` | A deterministic libretro core that tests load like a real one. Never shipped. |
 | `SovEmu.Media` | `sovemu-media` | Encoding: colour conversion, H.264 (libavcodec), VP8 (libvpx), Opus. Knows nothing about libretro. |
 | `SovEmu.Protocol` | `sovemu-protocol` | Wire formats: the input packets, signalling JSON, the worker IPC, the advertised address (`net.rs`). |
+| `SovEmu.Relay` | `sovemu-relay` | The built-in TURN relay (over `turn-server-proto`): per-player minted credentials, relaying only to the server's own sessions. |
 | `SovEmu.Assets` | `sovemu-assets` | Signed file URLs and the server's generated secrets. |
 | `SovEmu.Identity` | `sovemu-identity` | Accounts and sign-in: oauth-as with OpenID Connect over it. |
 | `SovEmu.Library` | `sovemu-library` | The ROM library without the database: systems, scanning, labels, BIOS, metadata providers, cores. |
@@ -74,8 +77,8 @@ LibretroFfi  (root — no workspace references)        Media     (no workspace r
             └── Worker ──► Media, Protocol
 Library   (no workspace references)                  Assets    (no workspace references)
 Sessions ──► Library, Protocol   (starts workers; never links a core or a codec)
-Identity  (no workspace references)
-Server ──► Library, Assets, Identity, Sessions, Protocol   (never links a core or a codec)
+Identity  (no workspace references)                  Relay     (no workspace references)
+Server ──► Library, Assets, Identity, Sessions, Protocol, Relay   (never links a core or a codec)
 ```
 
 ## Build and test
