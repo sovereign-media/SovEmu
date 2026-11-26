@@ -91,18 +91,6 @@ impl DataPaths {
         self.cache().join("games")
     }
 
-    /// The play cache's copies of the library's own artwork, from before artwork came only from
-    /// ScreenScraper: removed at startup.
-    pub fn removed_cache_artwork(&self) -> PathBuf {
-        self.cache_games().join("media")
-    }
-
-    /// Where copies were kept before they had a folder of their own (`cache/roms`,
-    /// `cache/media`), moved into [`Self::cache_games`] at startup.
-    pub fn legacy_cache_kinds(&self) -> [PathBuf; 2] {
-        [self.cache().join("roms"), self.cache().join("media")]
-    }
-
     /// Playlists generated for multi-disc games.
     pub fn disc_playlists(&self) -> PathBuf {
         self.cache().join("discs")
@@ -119,40 +107,9 @@ impl DataPaths {
         ArtworkDir::new(self.root.join("artwork"))
     }
 
-    /// Folders from before images had one of their own, and where each moved to: moved at
-    /// startup (`metadata::tidy`). The downloaded game art (`metadata/media`) is moved file by
-    /// file, renamed into a folder per game.
-    pub fn moved_artwork(&self) -> [(PathBuf, PathBuf); 3] {
-        let art = self.artwork();
-        [
-            (self.root.join("decorations"), art.decorations()),
-            (self.root.join("backgrounds"), art.backgrounds()),
-            (self.root.join("systems"), art.systems()),
-        ]
-    }
-
-    /// Where downloaded game art was kept, `<game id>-<box|shot|marquee|video>.<ext>`, before
-    /// `artwork/games/<game id>/`: moved at startup.
-    pub fn moved_game_art(&self) -> PathBuf {
-        self.metadata().join("media")
-    }
-
-    /// Caches from before the layout changed, deleted at startup: the built-in decorations
-    /// (now in [`Self::builtin_artwork`]) and the artwork copies (now in
-    /// [`Self::artwork_widths`]).
-    pub fn removed_caches(&self) -> [PathBuf; 2] {
-        [self.cache().join("decorations"), self.cache().join("artwork-widths")]
-    }
-
     /// Game information: the services' downloads.
     pub fn metadata(&self) -> PathBuf {
         self.root.join("metadata")
-    }
-
-    /// Where LaunchBox's database dump was kept before LaunchBox stopped being a source; deleted
-    /// at startup if it is still there.
-    pub fn removed_launchbox(&self) -> PathBuf {
-        self.metadata().join("launchbox")
     }
 
     /// FBNeo's DAT files (arcade names), one folder per pinned commit.
@@ -196,10 +153,8 @@ mod tests {
         assert_eq!(p.artwork_widths(), Path::new("/data/cache/artwork"));
         assert_eq!(p.saves(3, "snes"), Path::new("/data/saves/3/snes"));
         assert_eq!(p.disc_playlists(), Path::new("/data/cache/discs"));
-        assert_eq!(p.removed_launchbox(), Path::new("/data/metadata/launchbox"));
         assert_eq!(p.mirror(), Path::new("/data/library"));
         assert_eq!(p.cache_games(), Path::new("/data/cache/games"));
-        assert_eq!(p.removed_cache_artwork(), Path::new("/data/cache/games/media"));
     }
 
     #[test]

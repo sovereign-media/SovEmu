@@ -288,10 +288,10 @@ struct SessionArgs {
 #[derive(Debug, clap::Args)]
 struct ServeArgs {
     /// The libretro core library (.so / .dylib / .dll).
-    #[arg(long, env = "SOVEMU_CORE")]
+    #[arg(long)]
     core: PathBuf,
 
-    /// The content to load (or `SOVEMU_ROM`; empty means none). Omit for cores that run
+    /// The content to load. Omit for cores that run
     /// without content.
     #[arg(long)]
     rom: Option<PathBuf>,
@@ -305,7 +305,7 @@ struct ServeArgs {
     web_dir: Option<PathBuf>,
 
     /// UDP address for all WebRTC traffic (one port for everything). Port 0 picks one.
-    #[arg(long, default_value = "0.0.0.0:50000", env = "SOVEMU_UDP")]
+    #[arg(long, default_value = "0.0.0.0:50000")]
     udp: SocketAddr,
 
     /// The IP address clients should send media to, if not the bound one: in a container, the
@@ -496,14 +496,7 @@ fn main() -> ExitCode {
     let _session = span.as_ref().map(tracing::Span::enter);
     let result = match cli.command {
         Command::Session(args) => session::run(args),
-        Command::Serve(mut args) => {
-            // Read by hand so an empty value (compose's `${SOVEMU_ROM:-}`) means "no content".
-            if args.rom.is_none() {
-                args.rom =
-                    std::env::var_os("SOVEMU_ROM").filter(|v| !v.is_empty()).map(PathBuf::from);
-            }
-            serve::run(args)
-        }
+        Command::Serve(args) => serve::run(args),
         Command::Headless(args) => headless::run(args),
         Command::Probe(args) => probe::run(args),
         Command::Gpu => gpu::run(),
