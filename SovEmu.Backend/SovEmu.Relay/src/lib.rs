@@ -1,7 +1,7 @@
 //! SovEmu's built-in TURN relay, for the players no direct path reaches: behind a symmetric or
 //! carrier-grade NAT, or on a network that blocks UDP.
 //!
-//! It runs inside `sovemu-server`, off unless `SovEmu__Relay__Enabled` turns it on, and listens
+//! It runs inside `sovemu-server`, always on with nothing to configure, and listens
 //! on one port over UDP and TCP (3478 by default). [`turn-server-proto`] speaks the protocol; this
 //! crate is its sockets and its limits:
 //!

@@ -46,8 +46,7 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
-    /// STUN servers (`stun:host:port`) a session asks for its public address
-    /// (`SovEmu__Streaming__StunServers`).
+    /// STUN servers (`stun:host:port`) a session asks for its public address.
     pub stun_servers: Vec<String>,
     /// BIOS files, in any layout (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,

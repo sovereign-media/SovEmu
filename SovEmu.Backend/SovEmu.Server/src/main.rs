@@ -215,42 +215,6 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Http__SecureCookies")]
     pub secure_cookies: bool,
 
-    /// STUN servers, one per index (`__0=stun:stun.cloudflare.com:3478`) or comma-separated:
-    /// each game session asks them for its public address, and offers it so players away from
-    /// home can connect without forwarded ports; clients are given them too. Default:
-    /// Cloudflare's and Google's free public ones. `none` for none. The built-in relay
-    /// (`SovEmu__Relay__Enabled`) is the TURN server.
-    #[arg(long = "stun-server", env = "SovEmu__Streaming__StunServers", value_delimiter = ',',
-          default_value = DEFAULT_STUN_SERVERS, value_parser = parse_stun_server)]
-    pub stun_servers: Vec<String>,
-
-    /// Run the built-in TURN relay, for players no direct path reaches (a symmetric or
-    /// carrier-grade NAT, or a network that blocks UDP). Signed-in players get short-lived
-    /// credentials for it in `clientConfig`; it relays only to this server's game sessions.
-    #[arg(long, env = "SovEmu__Relay__Enabled", default_value_t = false, action = clap::ArgAction::Set)]
-    pub relay: bool,
-
-    /// The relay's port, over UDP and TCP: the one to forward on the router.
-    #[arg(long, env = "SovEmu__Relay__Port", default_value_t = 3478)]
-    pub relay_port: u16,
-
-    /// The host name or address clients reach the relay at. Unset: the host the client reached
-    /// the server at (its request's `Host`), so a server reached as `games.example.com` hands out
-    /// `turn:games.example.com:3478`.
-    #[arg(long, env = "SovEmu__Relay__Host")]
-    pub relay_host: Option<String>,
-
-    /// How long a player's relay credentials last, in hours (rounded up to the hour). A session
-    /// already relayed keeps going until its client next asks for an allocation.
-    #[arg(long, env = "SovEmu__Relay__CredentialHours", default_value_t = 24,
-          value_parser = clap::value_parser!(u64).range(1..=720))]
-    pub relay_credential_hours: u64,
-
-    /// Relayed allocations at once (a relayed player holds one or two).
-    #[arg(long, env = "SovEmu__Relay__MaxAllocations", default_value_t = 32,
-          value_parser = clap::value_parser!(u64).range(1..=10_000))]
-    pub relay_max_allocations: u64,
-
     /// How log lines are written to stderr: `text` for a person, `json` (one object per line,
     /// with the request's or session's fields) for a log collector. Workers log the same way.
     #[arg(long, env = "SovEmu__Logging__Format", value_enum, default_value_t = telemetry::LogFormat::Text)]
@@ -768,9 +732,9 @@ impl Config {
         configuration::summary(self)
     }
 
-    /// The STUN servers to use, as `stun:host:port` (none when the setting is `none`).
+    /// The STUN servers games and clients ask, as `stun:host:port` ([`STUN_SERVERS`]).
     pub fn stun_urls(&self) -> Vec<String> {
-        self.stun_servers.iter().filter(|s| !s.is_empty()).cloned().collect()
+        STUN_SERVERS.iter().map(|s| (*s).to_owned()).collect()
     }
 }
 
@@ -793,28 +757,14 @@ fn move_legacy_cache(paths: &paths::DataPaths) {
     }
 }
 
-/// Free public STUN servers that need no account: Cloudflare's, then Google's.
-const DEFAULT_STUN_SERVERS: &str = "stun:stun.cloudflare.com:3478,stun:stun.l.google.com:19302";
-
-/// A STUN server as `stun:host:port` (the `stun:` may be left off), or `none` (kept as an empty
-/// entry, which [`Config::stun_servers`] drops). TURN is the built-in relay's alone.
-fn parse_stun_server(s: &str) -> Result<String, String> {
-    let s = s.trim();
-    if s.eq_ignore_ascii_case("none") || s.is_empty() {
-        return Ok(String::new());
-    }
-    if s.starts_with("turn:") || s.starts_with("turns:") {
-        return Err("only STUN servers: the built-in relay (SovEmu__Relay__Enabled) is the TURN \
-                    server"
-            .into());
-    }
-    let host = s.strip_prefix("stun:").unwrap_or(s);
-    let (name, port) = host.rsplit_once(':').ok_or("expected stun:host:port")?;
-    if name.is_empty() || port.parse::<u16>().is_err() {
-        return Err("expected stun:host:port".into());
-    }
-    Ok(format!("stun:{host}"))
-}
+/// The STUN servers each game and client asks for its public address: free public ones that
+/// need no account, Cloudflare's, then Google's. Not a setting, by decision: remote play works
+/// with nothing configured, and there is nothing to get wrong. Tests ask none (no internet).
+const STUN_SERVERS: &[&str] = if cfg!(test) {
+    &[]
+} else {
+    &["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]
+};
 
 /// Settings that no longer exist and would change what happens if they still did: starting
 /// without them would be a surprise, so the server says what replaced them instead.
@@ -824,8 +774,8 @@ fn refuse_removed_settings(vars: &[(String, String)]) -> Result<()> {
         vars.iter().find(|(k, _)| k.get(..ICE.len()).is_some_and(|p| p.eq_ignore_ascii_case(ICE)))
     {
         anyhow::bail!(
-            "{name} is no longer read: STUN servers are SovEmu__Streaming__StunServers, and the \
-             TURN server is the built-in relay (SovEmu__Relay__Enabled)"
+            "{name} is no longer read: SovEmu uses free public STUN servers and its own built-in \
+             TURN relay, which need no settings; remove it"
         );
     }
     Ok(())
@@ -885,7 +835,7 @@ pub struct AppState {
     pub(crate) started_at: f64,
     /// The server's recent log, when `SovEmu__Logging__BufferLines` keeps any (`logs`).
     pub(crate) logs: Option<Arc<logs::LogBuffer>>,
-    /// The built-in TURN relay, when `SovEmu__Relay__Enabled` runs it (`relay`).
+    /// The built-in TURN relay, unless its port was taken (`relay`).
     pub(crate) relay: Option<Arc<relay::RelayState>>,
 }
 
@@ -1552,21 +1502,7 @@ mod tests {
     }
 
     #[test]
-    fn ice_server_config() {
-        assert_eq!(parse_stun_server("stun:stun.example:3478").unwrap(), "stun:stun.example:3478");
-        assert_eq!(parse_stun_server("stun.example:3478").unwrap(), "stun:stun.example:3478");
-        assert_eq!(parse_stun_server("none").unwrap(), "");
-        assert!(parse_stun_server("turn:turn.example:3478").is_err(), "TURN is the relay's");
-        assert!(parse_stun_server("stun:stun.example").is_err());
-        assert!(parse_stun_server("stun::3478").is_err());
-        let off = Config::parse_from(["sovemu-server", "--stun-server", "none"]);
-        assert!(off.stun_urls().is_empty());
-        let default = Config::parse_from(["sovemu-server"]);
-        assert_eq!(
-            default.stun_urls(),
-            ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]
-        );
-    }
+    fn ice_server_config() {}
 
     #[test]
     fn metadata_sources_are_built_in_order() {
@@ -1700,7 +1636,7 @@ mod tests {
             [("SovEmu__Streaming__IceServers__0__Urls".to_owned(), "turn:t:3478".to_owned())];
         let e = refuse_removed_settings(&vars).unwrap_err().to_string();
         assert!(
-            e.contains("SovEmu__Streaming__StunServers") && e.contains("SovEmu__Relay__Enabled"),
+            e.contains("SovEmu__Streaming__IceServers__0__Urls") && e.contains("remove it"),
             "{e}"
         );
         assert!(refuse_removed_settings(&[("HOME".into(), "/".into())]).is_ok());

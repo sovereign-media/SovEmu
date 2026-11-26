@@ -1,15 +1,25 @@
-//! The built-in TURN relay (`sovemu-relay`), when `SovEmu__Relay__Enabled` turns it on: started
-//! with the server, and handed to each signed-in player in `clientConfig.iceServers` with
-//! credentials of their own.
+//! The built-in TURN relay (`sovemu-relay`): always on, with nothing to configure. It is started
+//! with the server and handed to each signed-in player in `clientConfig.iceServers` with
+//! credentials of their own, at the host the player reached the server at.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use axum::http::HeaderMap;
 
 use crate::Config;
+
+/// The relay's port, over UDP and TCP: TURN's own, so it is the one to forward. Tests take any
+/// free port, as they run side by side.
+const PORT: u16 = if cfg!(test) { 0 } else { 3478 };
+/// How long a player's credentials last (rounded up to the hour). A player's client asks for
+/// new ones each time it starts a game.
+const LIFETIME: Duration = Duration::from_secs(24 * 3600);
+/// Allocations at once for each session port: a relayed player holds one or two, so this
+/// leaves room for a client reconnecting before its old allocations expire.
+const ALLOCATIONS_PER_SESSION: usize = 4;
 
 /// The running relay, and the key its credentials are derived from.
 #[derive(Debug)]
@@ -17,12 +27,10 @@ pub(crate) struct RelayState {
     relay: sovemu_relay::Relay,
     secret: Vec<u8>,
     port: u16,
-    host: Option<String>,
-    lifetime: Duration,
 }
 
 impl RelayState {
-    /// The port the relay was given (the configured one, unless that was 0).
+    /// The port the relay was given.
     #[cfg(test)]
     pub(crate) fn port(&self) -> u16 {
         self.port
@@ -33,12 +41,10 @@ impl RelayState {
     }
 }
 
-/// Starts the relay, if it is turned on. Its key is generated on first run and kept in
-/// `server.json`, like the server's other keys: nothing to configure.
+/// Starts the relay. Its key is generated on first run and kept in `server.json`, like the
+/// server's other keys. When its port can't be opened (another TURN server has it), the server
+/// runs without it, and says so: players away from home then need a direct path.
 pub(crate) async fn start(config: &Config) -> Result<Option<Arc<RelayState>>> {
-    if !config.relay {
-        return Ok(None);
-    }
     let secret =
         sovemu_assets::load_secret(None, &config.data_dir, "relayKey", "relay credential key")?
             .into_bytes();
@@ -48,27 +54,31 @@ pub(crate) async fn start(config: &Config) -> Result<Option<Arc<RelayState>>> {
         bind: config.udp_bind,
         ports: config.udp_ports,
     };
-    let listen = SocketAddr::new(std::net::Ipv4Addr::UNSPECIFIED.into(), config.relay_port);
-    let relay = sovemu_relay::Relay::start(sovemu_relay::Config {
-        listen,
+    let sessions = usize::from(config.udp_ports.1 - config.udp_ports.0) + 1;
+    let started = sovemu_relay::Relay::start(sovemu_relay::Config {
+        listen: SocketAddr::new(std::net::Ipv4Addr::UNSPECIFIED.into(), PORT),
         peers,
         secret: secret.clone(),
-        max_allocations: usize::try_from(config.relay_max_allocations).unwrap_or(usize::MAX),
+        max_allocations: sessions * ALLOCATIONS_PER_SESSION,
     })
-    .await
-    .context("starting the relay (SovEmu__Relay__Port)")?;
-    Ok(Some(Arc::new(RelayState {
-        // The port it was given (the configured one, unless that was 0).
-        port: relay.udp_addr().port(),
-        relay,
-        secret,
-        host: config.relay_host.clone().filter(|h| !h.trim().is_empty()),
-        lifetime: Duration::from_secs(config.relay_credential_hours * 3600),
-    })))
+    .await;
+    match started {
+        Ok(relay) => {
+            Ok(Some(Arc::new(RelayState { port: relay.udp_addr().port(), relay, secret })))
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                port = PORT,
+                "the built-in relay could not start: players no direct path reaches can't play"
+            );
+            Ok(None)
+        }
+    }
 }
 
-/// The `RTCIceServer`s a player is given: the STUN servers (`SovEmu__Streaming__StunServers`),
-/// then the built-in relay with their own credentials, when it runs.
+/// The `RTCIceServer`s a player is given: the STUN servers, then the built-in relay with their
+/// own credentials, when it runs.
 pub(crate) fn ice_servers(
     config: &Config,
     relay: Option<&RelayState>,
@@ -86,18 +96,15 @@ pub(crate) fn ice_servers(
 }
 
 /// The relay as an `RTCIceServer` for `user`, over UDP and TCP, reached where the request
-/// reached the server (unless `SovEmu__Relay__Host` says where).
+/// reached the server.
 pub(crate) fn ice_server(
     relay: &RelayState,
     user: i64,
     headers: &HeaderMap,
     now: SystemTime,
 ) -> Option<serde_json::Value> {
-    let host = match &relay.host {
-        Some(h) => h.trim().to_owned(),
-        None => request_host(headers)?,
-    };
-    let c = sovemu_relay::mint(&relay.secret, &user.to_string(), relay.lifetime, now);
+    let host = request_host(headers)?;
+    let c = sovemu_relay::mint(&relay.secret, &user.to_string(), LIFETIME, now);
     let port = relay.port;
     Some(serde_json::json!({
         "urls": [

@@ -191,8 +191,7 @@ impl Reflexive {
             tracing::warn!(
                 addresses = ?self.heard,
                 "the router maps this session to a different port for each destination (a \
-                 symmetric NAT): players away from home need forwarded ports or the relay \
-                 (SovEmu__Relay__Enabled)"
+                 symmetric NAT): players away from home need the built-in relay (port 3478 forwarded)"
             );
         }
         if self.found.is_none_or(|(old, _)| old != addr) {

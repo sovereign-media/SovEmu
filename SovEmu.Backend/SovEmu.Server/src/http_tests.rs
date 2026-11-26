@@ -514,8 +514,8 @@ async fn browses_the_library() {
     h.sign_up_admin().await;
     assert_eq!(
         h.ok("{ clientConfig { iceServers } }", json!({})).await["clientConfig"]["iceServers"],
-        json!([{"urls": ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"]}]),
-        "free public STUN by default, and no relay"
+        json!([]),
+        "tests ask no STUN servers, and the relay is handed out only at the host a request names"
     );
     let systems = h.systems().await;
     assert_eq!(system(&systems, "nes")["gameCount"], 1);
@@ -2370,23 +2370,9 @@ async fn search_spans_every_system() {
 
 #[tokio::test]
 async fn admins_see_how_the_server_is_reached() {
-    let mut h = Harness::new_with(
-        "network",
-        false,
-        vec![
-            "--advertise-ip".into(),
-            "192.0.2.10".into(),
-            "--stun-server".into(),
-            "stun:stun.example:3478".into(),
-            "--relay".into(),
-            "true".into(),
-            "--relay-port".into(),
-            "0".into(),
-            "--relay-host".into(),
-            "games.example.com".into(),
-        ],
-    )
-    .await;
+    let mut h =
+        Harness::new_with("network", false, vec!["--advertise-ip".into(), "192.0.2.10".into()])
+            .await;
     h.sign_up_admin().await;
     let q = "{ network { udpFirst udpLast portCount portsInUse sessions advertisedIp \
              advertisedIpDetected publicUrls publicUrlsConfigured signInAvailableHere \
@@ -2399,57 +2385,45 @@ async fn admins_see_how_the_server_is_reached() {
     assert_eq!(n["advertisedIpDetected"], false);
     assert_eq!(n["publicUrlsConfigured"], true, "the harness names its public URL");
     assert_eq!(n["signInAvailableHere"], false, "the harness's requests name no host");
-    assert_eq!(
-        n["iceServers"],
-        json!([
-            {"urls": ["stun:stun.example:3478"], "hasCredential": false},
-            {"urls": [
-                format!("turn:games.example.com:{}?transport=udp", h.relay_port()),
-                format!("turn:games.example.com:{}?transport=tcp", h.relay_port()),
-            ], "hasCredential": true},
-        ])
-    );
-    let names: Vec<_> =
-        n["settings"].as_array().unwrap().iter().map(|s| s["name"].clone()).collect();
-    assert!(names.contains(&json!("SovEmu__Streaming__StunServers")), "{names:?}");
-    assert!(names.contains(&json!("SovEmu__Relay__Enabled")), "{names:?}");
+    // No STUN servers in tests, and the harness's requests name no host to hand the relay out at
+    // (`players_get_relay_credentials_of_their_own`).
+    assert_eq!(n["iceServers"], json!([]));
 }
 
 #[tokio::test]
 async fn players_get_relay_credentials_of_their_own() {
-    let mut h = Harness::new_with(
-        "relay",
-        false,
-        vec![
-            "--relay".into(),
-            "true".into(),
-            "--relay-port".into(),
-            "0".into(),
-            "--relay-host".into(),
-            "games.example.com".into(),
-            "--stun-server".into(),
-            "none".into(),
-        ],
-    )
-    .await;
-    h.sign_up_admin().await;
-    let ice =
-        h.ok("{ clientConfig { iceServers } }", json!({})).await["clientConfig"]["iceServers"]
-            .clone();
+    let h = Harness::new("relay", false).await;
+    // Always on, with nothing configured.
+    let relay = h.state.relay.as_deref().expect("the relay runs");
+    assert_eq!(relay.stats().allocations(), 0);
+    // What `clientConfig` gives a player who reached the server at games.example.com.
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(header::HOST, "games.example.com:8080".parse().unwrap());
+    let servers = crate::relay::ice_servers(
+        &h.state.config,
+        Some(relay),
+        7,
+        &headers,
+        std::time::SystemTime::now(),
+    );
+    let ice = json!(servers);
     let servers = ice.as_array().unwrap();
     assert_eq!(servers.len(), 1, "{ice}");
-    let port = h.state.relay.as_ref().unwrap().stats();
-    assert_eq!(port.allocations(), 0);
-    let urls = servers[0]["urls"].as_array().unwrap();
-    assert!(urls[0].as_str().unwrap().starts_with("turn:games.example.com:"), "{ice}");
-    assert!(urls[0].as_str().unwrap().ends_with("?transport=udp"), "{ice}");
-    assert!(urls[1].as_str().unwrap().ends_with("?transport=tcp"), "{ice}");
+    let port = h.relay_port();
+    assert_eq!(
+        servers[0]["urls"],
+        json!([
+            format!("turn:games.example.com:{port}?transport=udp"),
+            format!("turn:games.example.com:{port}?transport=tcp"),
+        ]),
+        "at the request's host, without its HTTP port"
+    );
     // `<expiry>:<user id>`, a day ahead (rounded up to the hour).
     let username = servers[0]["username"].as_str().unwrap();
     let (expiry, user) = username.split_once(':').unwrap();
     let ahead = expiry.parse::<f64>().unwrap() - crate::client_events::now_unix() as f64;
     assert!((24.0 * 3600.0..25.0 * 3600.0).contains(&ahead), "{username}");
-    assert!(user.parse::<i64>().is_ok(), "{username}");
+    assert_eq!(user, "7", "{username}");
     assert!(!servers[0]["credential"].as_str().unwrap().is_empty());
     // The key is kept, so credentials survive a restart.
     let kept: serde_json::Value = serde_json::from_slice(

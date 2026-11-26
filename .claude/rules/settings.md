@@ -27,6 +27,9 @@ Nothing needs click-ops.
   never the only way.
 - **Where the UI stores a setting** (emulator settings, `system_settings`), the environment still
   wins: the UI shows it locked, and the page offers the stored values as environment lines.
-- **Tunables are settings, not constants.**
+- **Tunables are settings, not constants.** One deliberate exception: remote play (the STUN
+  servers and the built-in TURN relay: its port, credentials and capacity) has no settings, so
+  there is nothing to misconfigure. Don't add any; change the constants in `relay.rs` and
+  `STUN_SERVERS` in `main.rs`.
 - A setting that needs more than a variable (a secret, a volume, a port) also needs the cluster's
   Helm chart, kept outside this repository, to provide it.

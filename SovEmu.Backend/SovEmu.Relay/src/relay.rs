@@ -459,7 +459,7 @@ impl State {
             tracing::warn!(
                 client = %client,
                 open = self.allocations.len(),
-                "relay allocation refused (TCP, or at SovEmu__Relay__MaxAllocations)"
+                "relay allocation refused (TCP, or the relay is full)"
             );
             return Err(SocketAllocateError::InsufficientCapacity);
         }

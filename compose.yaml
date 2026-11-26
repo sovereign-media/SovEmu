@@ -34,10 +34,9 @@ services:
     ports:
       - "8080:8080/tcp"
       - "50000-50009:50000-50009/udp"
-      # The built-in relay, with SovEmu__Relay__Enabled=true (off by default, and the port may
-      # be another TURN server's already):
-      # - "3478:3478/udp"
-      # - "3478:3478/tcp"
+      # The built-in TURN relay, for players away from home that no direct path reaches.
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
     volumes:
       - ./data:/sov-data
       - ./data/roms:/sov-library:ro
