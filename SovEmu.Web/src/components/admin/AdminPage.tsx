@@ -13,7 +13,9 @@ import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 import { Pill, panel } from "../ui/primitives";
 
-export function ErrorNote({ error }: { error: Error | null }) {
+type ErrorNoteProps = { error: Error | null };
+
+export function ErrorNote({ error }: ErrorNoteProps) {
   if (!error) return null;
   return (
     <p role="alert" className="rounded-md bg-red-500/15 px-3 py-2 text-sm text-red-300">
@@ -22,15 +24,19 @@ export function ErrorNote({ error }: { error: Error | null }) {
   );
 }
 
+type EnvLineProps = { children: ReactNode };
+
 /** A setting as the line that sets it, for an admin to copy into the environment. */
-export function EnvLine({ children }: { children: ReactNode }) {
+export function EnvLine({ children }: EnvLineProps) {
   return (
     <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-xs break-all text-slate-200">{children}</code>
   );
 }
 
+type CopyButtonProps = { text: string; label?: string; disabled?: boolean };
+
 /** Copies `text`, saying so for a moment. */
-export function CopyButton({ text, label = "Copy", disabled }: { text: string; label?: string; disabled?: boolean }) {
+export function CopyButton({ text, label = "Copy", disabled }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await navigator.clipboard.writeText(text);
@@ -44,11 +50,13 @@ export function CopyButton({ text, label = "Copy", disabled }: { text: string; l
   );
 }
 
+type EnvironmentLinesProps = { lines: string[]; children: ReactNode };
+
 /**
  * What the admin set on a page, as environment lines to copy into `.env` or the Helm values:
  * nothing needs click-ops, so whatever the UI stores can also be configuration.
  */
-export function EnvironmentLines({ lines, children }: { lines: string[]; children: ReactNode }) {
+export function EnvironmentLines({ lines, children }: EnvironmentLinesProps) {
   if (lines.length === 0) return null;
   return (
     <section className={panel}>
@@ -64,30 +72,27 @@ export function EnvironmentLines({ lines, children }: { lines: string[]; childre
   );
 }
 
+type LicenceProps = { children: ReactNode; nonCommercial?: boolean };
+
 /** A licence's name, marked when it forbids commercial use. */
-export function Licence({ children, nonCommercial = false }: { children: ReactNode; nonCommercial?: boolean }) {
+export function Licence({ children, nonCommercial = false }: LicenceProps) {
   return <Pill tone={nonCommercial ? "warn" : "neutral"}>{children}</Pill>;
 }
 
-/**
- * One panel of an admin page: a region named by its heading, with an optional icon, a line on
- * what it shows, and actions beside the heading.
- */
-export function AdminSection({
-  title,
-  icon,
-  description,
-  actions,
-  className,
-  children,
-}: {
+type AdminSectionProps = {
   title: ReactNode;
   icon?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   className?: string;
   children?: ReactNode;
-}) {
+};
+
+/**
+ * One panel of an admin page: a region named by its heading, with an optional icon, a line on
+ * what it shows, and actions beside the heading.
+ */
+export function AdminSection({ title, icon, description, actions, className, children }: AdminSectionProps) {
   const id = useId();
   return (
     <section className={cn(panel, className)} aria-labelledby={id}>
@@ -104,16 +109,14 @@ export function AdminSection({
   );
 }
 
-export default function AdminPage({
-  description,
-  width = "max-w-4xl",
-  children,
-}: {
+type AdminPageProps = {
   /** One line under the heading: what the page is for. */
   description?: ReactNode;
   width?: string;
   children: ReactNode;
-}) {
+};
+
+export default function AdminPage({ description, width = "max-w-4xl", children }: AdminPageProps) {
   const viewer = useQuery(q.viewer());
   const item = findAdminNavItem(location.pathname);
   useEffect(() => {

@@ -16,7 +16,9 @@ import { cn } from "../ui/cn";
 import { panel, Select, Tooltip } from "../ui/primitives";
 import AdminPage, { EnvironmentLines } from "./AdminPage";
 
-function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, value: string | null) => void }) {
+type SettingRowProps = { s: CoreSetting; onChange: (key: string, value: string | null) => void };
+
+function SettingRow({ s, onChange }: SettingRowProps) {
   const badge = sourceBadge(s.source);
   const locked = s.source === "ENVIRONMENT";
   const choices = s.choices.includes(s.value) || !s.choices.length ? s.choices : [...s.choices, s.value];
@@ -76,14 +78,13 @@ function SettingRow({ s, onChange }: { s: CoreSetting; onChange: (key: string, v
   );
 }
 
-/** Run-ahead: SovEmu's own setting, not the core's, so it sits above the core's groups. */
-function RunAheadPanel({
-  setting,
-  onChange,
-}: {
+type RunAheadPanelProps = {
   setting: SystemSettings["runAhead"];
   onChange: (frames: number | null) => void;
-}) {
+};
+
+/** Run-ahead: SovEmu's own setting, not the core's, so it sits above the core's groups. */
+function RunAheadPanel({ setting, onChange }: RunAheadPanelProps) {
   const badge = setting.source === "SOVEMU" ? null : sourceBadge(setting.source);
   const locked = setting.source === "ENVIRONMENT";
   return (

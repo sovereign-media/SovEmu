@@ -11,7 +11,9 @@ export const CHIP = `${SHAPE} text-slate-400 hover:bg-white/10 hover:text-white 
 /** A chip whose action is in effect ("Filters active"). */
 export const CHIP_ON = `${SHAPE} bg-white/15 font-semibold text-white`;
 
-export function TabStrip({ children, label }: { children: ReactNode; label: string }) {
+type TabStripProps = { children: ReactNode; label: string };
+
+export function TabStrip({ children, label }: TabStripProps) {
   return (
     <div
       role="toolbar"

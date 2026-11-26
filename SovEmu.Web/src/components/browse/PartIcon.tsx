@@ -5,8 +5,10 @@ import type { Enum } from "../../lib/gql";
 
 type PartKind = Enum<"PartKind">;
 
+type PartIconProps = { kind: PartKind | null | undefined; className?: string };
+
 /** A disc, a floppy, a cassette or a stack. */
-export function PartIcon({ kind, className }: { kind: PartKind | null | undefined; className?: string }) {
+export function PartIcon({ kind, className }: PartIconProps) {
   switch (kind) {
     case "DISK":
     case "SIDE":

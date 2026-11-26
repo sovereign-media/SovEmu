@@ -12,7 +12,9 @@ const SOURCE_TONE: Record<ConfigSetting["source"], string> = {
   COMMAND_LINE: "bg-sky-500/20 text-sky-200",
 };
 
-function Value({ setting }: { setting: ConfigSetting }) {
+type ValueProps = { setting: ConfigSetting };
+
+function Value({ setting }: ValueProps) {
   const [open, setOpen] = useState(false);
   const value = setting.value;
   if (value === null) return <span className="text-slate-500 italic">unset</span>;
@@ -35,7 +37,9 @@ function Value({ setting }: { setting: ConfigSetting }) {
   );
 }
 
-export default function SettingRow({ setting }: { setting: ConfigSetting }) {
+type SettingRowProps = { setting: ConfigSetting };
+
+export default function SettingRow({ setting }: SettingRowProps) {
   return (
     <li className="grid gap-1 py-3 sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)_auto] sm:gap-4">
       <code className="font-mono text-xs break-all text-slate-300" title={setting.description || undefined}>

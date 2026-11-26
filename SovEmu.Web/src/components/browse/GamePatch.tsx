@@ -11,7 +11,9 @@ import { useToast } from "../ui/toast";
 
 const ORIGINAL = "";
 
-export function GamePatch({ game, onPatch }: { game: Game; onPatch: (name: string | null) => void }) {
+type GamePatchProps = { game: Game; onPatch: (name: string | null) => void };
+
+export function GamePatch({ game, onPatch }: GamePatchProps) {
   const toast = useToast();
   const patches: Patch[] = useQuery(q.patches(game.id)).data ?? [];
 

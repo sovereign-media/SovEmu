@@ -20,17 +20,7 @@ export const panel = "rounded-2xl border border-white/10 bg-panel/80 p-6";
 
 // --- Dialog ---------------------------------------------------------------------------------
 
-export function Dialog({
-  open,
-  onOpenChange,
-  title,
-  description,
-  children,
-  className,
-  dim = true,
-  closeButton = true,
-  contentProps,
-}: {
+type DialogProps = {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
   title: ReactNode;
@@ -41,7 +31,19 @@ export function Dialog({
   dim?: boolean;
   closeButton?: boolean;
   contentProps?: ComponentProps<typeof DialogPrimitive.Content>;
-}) {
+};
+
+export function Dialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  className,
+  dim = true,
+  closeButton = true,
+  contentProps,
+}: DialogProps) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -80,22 +82,17 @@ export function Dialog({
   );
 }
 
-/** A yes/no question (in place of `confirm()`). */
-export function Confirm({
-  open,
-  onOpenChange,
-  title,
-  description,
-  action,
-  onAction,
-}: {
+type ConfirmProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
   action: string;
   onAction: () => void;
-}) {
+};
+
+/** A yes/no question (in place of `confirm()`). */
+export function Confirm({ open, onOpenChange, title, description, action, onAction }: ConfirmProps) {
   return (
     <AlertPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertPrimitive.Portal>
@@ -154,21 +151,16 @@ export function Pill({ tone = "neutral", className, ...props }: ComponentProps<"
 const enc = (v: string) => `v:${v}`;
 const dec = (v: string) => v.slice(2);
 
-export function Select({
-  value,
-  options,
-  onChange,
-  disabled,
-  label,
-  className,
-}: {
+type SelectProps = {
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
   disabled?: boolean;
   label: string;
   className?: string;
-}) {
+};
+
+export function Select({ value, options, onChange, disabled, label, className }: SelectProps) {
   return (
     <SelectPrimitive.Root value={enc(value)} onValueChange={(v) => onChange(dec(v))} disabled={disabled}>
       <SelectPrimitive.Trigger
@@ -213,22 +205,18 @@ export function Select({
 
 // --- Multi-select ---------------------------------------------------------------------------
 
-/** Pick any number of `options`: a dropdown of checkboxes (Radix's dropdown menu), which stays
- *  open while they are ticked. The trigger says what is picked: "Any", the one value, or how many.
- *  An option's `count` (games with it, say) shows beside it. */
-export function MultiSelect<T extends string>({
-  label,
-  options,
-  selected,
-  onChange,
-  className,
-}: {
+type MultiSelectProps<T extends string> = {
   label: string;
   options: { value: T; label: string; count?: number }[];
   selected: T[];
   onChange: (selected: T[]) => void;
   className?: string;
-}) {
+};
+
+/** Pick any number of `options`: a dropdown of checkboxes (Radix's dropdown menu), which stays
+ *  open while they are ticked. The trigger says what is picked: "Any", the one value, or how many.
+ *  An option's `count` (games with it, say) shows beside it. */
+export function MultiSelect<T extends string>({ label, options, selected, onChange, className }: MultiSelectProps<T>) {
   const named = (v: T) => options.find((o) => o.value === v)?.label ?? v;
   const summary =
     selected.length === 0 ? "Any" : selected.length === 1 ? named(selected[0]) : `${selected.length} selected`;
@@ -291,18 +279,15 @@ export function MultiSelect<T extends string>({
 
 // --- Progress -------------------------------------------------------------------------------
 
-/** `value` is 0 to 100; `color` overrides the accent (a system's colour). */
-export function Progress({
-  value,
-  color,
-  className,
-  label,
-}: {
+type ProgressProps = {
   value: number;
   color?: string;
   className?: string;
   label?: string;
-}) {
+};
+
+/** `value` is 0 to 100; `color` overrides the accent (a system's colour). */
+export function Progress({ value, color, className, label }: ProgressProps) {
   return (
     <ProgressPrimitive.Root
       value={value}
@@ -319,18 +304,15 @@ export function Progress({
 
 // --- Segmented choice -----------------------------------------------------------------------
 
-/** One of a few options, side by side (a chart's time range). */
-export function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
+type SegmentedProps<T extends string> = {
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   label: string;
-}) {
+};
+
+/** One of a few options, side by side (a chart's time range). */
+export function Segmented<T extends string>({ value, options, onChange, label }: SegmentedProps<T>) {
   return (
     <TogglePrimitive.Root
       type="single"
@@ -357,7 +339,9 @@ export function Segmented<T extends string>({
 export const Menu = MenuPrimitive.Root;
 export const MenuTrigger = MenuPrimitive.Trigger;
 
-export function MenuContent({ children }: { children: ReactNode }) {
+type MenuContentProps = { children: ReactNode };
+
+export function MenuContent({ children }: MenuContentProps) {
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Content
@@ -383,7 +367,9 @@ export function MenuItem({ children, ...props }: ComponentProps<typeof MenuPrimi
   );
 }
 
-export const MenuLabel = ({ children }: { children: ReactNode }) => (
+type MenuLabelProps = { children: ReactNode };
+
+export const MenuLabel = ({ children }: MenuLabelProps) => (
   <MenuPrimitive.Label className="px-2 py-1.5 text-xs text-slate-500">{children}</MenuPrimitive.Label>
 );
 export const MenuSeparator = () => <MenuPrimitive.Separator className="my-1 h-px bg-white/10" />;
@@ -392,7 +378,9 @@ export const MenuSeparator = () => <MenuPrimitive.Separator className="my-1 h-px
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 
-export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
+type TooltipProps = { content: ReactNode; children: ReactNode };
+
+export function Tooltip({ content, children }: TooltipProps) {
   return (
     <TooltipPrimitive.Root delayDuration={300}>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
@@ -411,17 +399,14 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
 
 // --- Scroll area ----------------------------------------------------------------------------
 
-export function ScrollArea({
-  children,
-  className,
-  viewportRef,
-  orientation = "vertical",
-}: {
+type ScrollAreaProps = {
   children: ReactNode;
   className?: string;
   viewportRef?: React.Ref<HTMLDivElement>;
   orientation?: "vertical" | "horizontal";
-}) {
+};
+
+export function ScrollArea({ children, className, viewportRef, orientation = "vertical" }: ScrollAreaProps) {
   return (
     <ScrollPrimitive.Root type="hover" className={cn("relative overflow-hidden", className)}>
       <ScrollPrimitive.Viewport ref={viewportRef} className="size-full scroll-smooth">
@@ -439,7 +424,9 @@ export function ScrollArea({
 
 // --- Form fields ----------------------------------------------------------------------------
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+type FieldProps = { label: string; children: ReactNode };
+
+export function Field({ label, children }: FieldProps) {
   return (
     <LabelPrimitive.Root className="grid gap-1 text-sm">
       {label}

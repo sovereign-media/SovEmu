@@ -10,17 +10,7 @@ import { cn } from "../ui/cn";
 
 const ADVANCE_MS = 9000;
 
-export function Hero({
-  games,
-  index,
-  onIndex,
-  focused,
-  color,
-  short,
-  onPlay,
-  onBrowse,
-  empty,
-}: {
+type HeroProps = {
   games: Game[];
   index: number;
   onIndex: (i: number) => void;
@@ -31,7 +21,9 @@ export function Hero({
   onBrowse: (g: Game) => void;
   /** No games at all: say how to add some. */
   empty: boolean;
-}) {
+};
+
+export function Hero({ games, index, onIndex, focused, color, short, onPlay, onBrowse, empty }: HeroProps) {
   const [hovered, setHovered] = useState(false);
   const touch = useRef<number | null>(null);
   const n = games.length;

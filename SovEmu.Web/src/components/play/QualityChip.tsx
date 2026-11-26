@@ -6,8 +6,10 @@ import { Gauge } from "lucide-react";
 import type { ReactNode } from "react";
 import type { QualityNotice } from "../../lib/pipeline";
 
+type WifiGlyphProps = { children: ReactNode };
+
 /** Sovereign.Design's own `wifi-alert` and `wifi-up` (`icons/own/`), drawn in Lucide's style. */
-function WifiGlyph({ children }: { children: ReactNode }) {
+function WifiGlyph({ children }: WifiGlyphProps) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -45,8 +47,10 @@ const GLYPHS: Record<QualityNotice["icon"], ReactNode> = {
   gauge: <Gauge className="size-5 shrink-0" aria-hidden="true" />,
 };
 
+type QualityChipProps = { notice: QualityNotice };
+
 /** Inert, so it never takes a press meant for the game. */
-export function QualityChip({ notice }: { notice: QualityNotice }) {
+export function QualityChip({ notice }: QualityChipProps) {
   return (
     <div className="pointer-events-none absolute top-2 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2">
       <output className="flex h-10 min-w-0 items-center gap-2 rounded-full bg-gray-950/75 px-4 text-base text-white ring-2 ring-white/40 ring-inset">

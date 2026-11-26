@@ -7,7 +7,9 @@ import { systemBadge } from "../../lib/systems";
 import { agoFromSqlite } from "../../lib/time";
 import { cn } from "../ui/cn";
 
-export function Row({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+type RowProps = { title: string; icon: ReactNode; children: ReactNode };
+
+export function Row({ title, icon, children }: RowProps) {
   const strip = useRef<HTMLDivElement>(null);
   // Arrows only when the row is wider than the screen; measured on resize.
   const [overflows, setOverflows] = useState(false);
@@ -52,16 +54,7 @@ export function Row({ title, icon, children }: { title: string; icon: ReactNode;
 
 const ring = (focused: boolean) => (focused ? "scale-105 ring-4 ring-white/80" : "hover:scale-[1.03]");
 
-export function GameCard({
-  game,
-  row,
-  col,
-  wide,
-  focused,
-  color,
-  short,
-  onOpen,
-}: {
+type GameCardProps = {
   game: Game | RecentGame;
   row: number;
   col: number;
@@ -71,7 +64,9 @@ export function GameCard({
   color: string;
   short: string;
   onOpen: () => void;
-}) {
+};
+
+export function GameCard({ game, row, col, wide, focused, color, short, onOpen }: GameCardProps) {
   const art = cardArt(game);
   return (
     <button
@@ -122,19 +117,15 @@ export function GameCard({
 /** The short name is the card's graphic: as large as leaves it readable beside the photo. */
 const shortNameSize = (short: string) => (short.length <= 2 ? 78 : short.length === 3 ? 68 : 54);
 
-export function SystemCard({
-  system: s,
-  row,
-  col,
-  focused,
-  onOpen,
-}: {
+type SystemCardProps = {
   system: SystemSummary;
   row: number;
   col: number;
   focused: boolean;
   onOpen: () => void;
-}) {
+};
+
+export function SystemCard({ system: s, row, col, focused, onOpen }: SystemCardProps) {
   const badge = systemBadge(s);
   const photo = s.photoUrl;
   return (

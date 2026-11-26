@@ -26,7 +26,9 @@ function path(points: LatencyPoint[], key: keyof LatencyPoint, capacity: number,
   return d;
 }
 
-export function LatencyGraph({ points, capacity, max }: { points: LatencyPoint[]; capacity: number; max: number }) {
+type LatencyGraphProps = { points: LatencyPoint[]; capacity: number; max: number };
+
+export function LatencyGraph({ points, capacity, max }: LatencyGraphProps) {
   const latest = [...points].reverse().find((p) => Number.isFinite(p.measured))?.measured;
   const top = (v: number) => `${100 - (Math.min(v, max) / max) * 100}%`;
   return (

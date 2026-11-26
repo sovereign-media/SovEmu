@@ -9,7 +9,9 @@ import { Toasts } from "./ui/toast";
 // Every page has a shell, so every page reports its uncaught errors.
 reportUncaughtErrors();
 
-export default function Shell({ children }: { children: ReactNode }) {
+type ShellProps = { children: ReactNode };
+
+export default function Shell({ children }: ShellProps) {
   // The server's background (the admin's choice), once signed in: the sign-in screen has the
   // surface colour alone, as asking signed out would send it to sign in.
   const signedIn = !!useQuery(q.viewer()).data?.user;

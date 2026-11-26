@@ -11,7 +11,9 @@ import { Pill } from "../ui/primitives";
 import { AdminSection, ErrorNote } from "./AdminPage";
 import SignInsTable from "./SignInsTable";
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+type FactProps = { label: string; children: ReactNode };
+
+function Fact({ label, children }: FactProps) {
   return (
     <>
       <dt className="text-slate-400">{label}</dt>
@@ -20,7 +22,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export default function UserDetails({ id }: { id: number }) {
+type UserDetailsProps = { id: number };
+
+export default function UserDetails({ id }: UserDetailsProps) {
   const details = useQuery({ ...q.userDetails(id), refetchInterval: 30_000 });
   const d = details.data;
   return (

@@ -22,16 +22,14 @@ interface CollectionChoice {
 const ITEM =
   "relative flex cursor-pointer items-center gap-2 rounded-lg py-1.5 pr-3 pl-8 text-sm text-slate-200 outline-none select-none data-[highlighted]:bg-white/10 [&_svg]:size-3.5";
 
-/** One collection in the menu, ticked when the game is in it. */
-function Choice({
-  c,
-  checked,
-  onToggle,
-}: {
+type ChoiceProps = {
   c: CollectionChoice;
   checked: boolean;
   onToggle: (c: CollectionChoice) => void;
-}) {
+};
+
+/** One collection in the menu, ticked when the game is in it. */
+function Choice({ c, checked, onToggle }: ChoiceProps) {
   return (
     <DropdownMenu.CheckboxItem
       checked={checked}
@@ -49,7 +47,9 @@ function Choice({
   );
 }
 
-export function GameCollections({ game, onFavourite }: { game: Game; onFavourite: (favourite: boolean) => void }) {
+type GameCollectionsProps = { game: Game; onFavourite: (favourite: boolean) => void };
+
+export function GameCollections({ game, onFavourite }: GameCollectionsProps) {
   const toast = useToast();
   // Its collections are asked for when its panel opens (never for a whole list of games).
   const all = useQuery(q.collections());

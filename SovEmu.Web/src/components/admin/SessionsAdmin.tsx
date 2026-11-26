@@ -21,8 +21,10 @@ import { Button } from "../ui/button";
 import { Confirm, Pill, Tooltip } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
+type StreamPillProps = { p: NonNullable<ActiveSession["pipeline"]> };
+
 /** The encoder pill: green on a GPU, grey on the CPU, with a mark when it fell back. */
-function StreamPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
+function StreamPill({ p }: StreamPillProps) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <Pill tone={p.videoHardware ? "good" : "neutral"}>
@@ -37,7 +39,9 @@ function StreamPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
   );
 }
 
-function RenderPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
+type RenderPillProps = { p: NonNullable<ActiveSession["pipeline"]> };
+
+function RenderPill({ p }: RenderPillProps) {
   if (!p.renderer) return <span className="text-sm text-slate-400">CPU</span>;
   return (
     <Tooltip content={renderingLabel(p.renderer, p.rendererSoftware)}>
@@ -46,8 +50,10 @@ function RenderPill({ p }: { p: NonNullable<ActiveSession["pipeline"]> }) {
   );
 }
 
+type DetailsProps = { s: ActiveSession };
+
 /** Everything known about one session's stream, under its row. */
-function Details({ s }: { s: ActiveSession }) {
+function Details({ s }: DetailsProps) {
   const p = s.pipeline;
   const h = s.health;
   const rows: [string, string][] = [];
@@ -99,8 +105,10 @@ function Details({ s }: { s: ActiveSession }) {
   );
 }
 
+type FailureItemProps = { f: SessionFailure };
+
 /** One failed game: what happened, and the core's last words folded under it. */
-function FailureItem({ f }: { f: SessionFailure }) {
+function FailureItem({ f }: FailureItemProps) {
   const when = new Date(f.at * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   return (
     <li className="py-3">

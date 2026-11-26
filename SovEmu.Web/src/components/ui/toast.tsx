@@ -7,7 +7,9 @@ const Context = createContext<(text: string) => void>(() => {});
 
 export const useToast = () => useContext(Context);
 
-export function Toasts({ children }: { children: ReactNode }) {
+type ToastsProps = { children: ReactNode };
+
+export function Toasts({ children }: ToastsProps) {
   const [notes, setNotes] = useState<{ id: number; text: string }[]>([]);
   const show = useCallback(
     (text: string) => setNotes((n) => [...n.slice(-2), { id: Date.now() + Math.random(), text }]),

@@ -35,7 +35,9 @@ async function exportCsv(filter: ActivityFilter) {
   return entries.length;
 }
 
-function Subject({ e }: { e: ActivityEntry }) {
+type SubjectProps = { e: ActivityEntry };
+
+function Subject({ e }: SubjectProps) {
   if (e.kind === "JOB_RUN" && e.subject) {
     return (
       <a className="hover:underline" href="/admin/jobs/">

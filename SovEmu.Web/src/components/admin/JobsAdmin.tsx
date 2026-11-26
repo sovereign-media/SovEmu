@@ -10,7 +10,9 @@ import { lastRunText, scheduleText } from "../../lib/jobs";
 import { Button } from "../ui/button";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 
-function StatusIcon({ job }: { job: JobState }) {
+type StatusIconProps = { job: JobState };
+
+function StatusIcon({ job }: StatusIconProps) {
   if (job.running) return <LoaderCircle className="size-5 animate-spin text-sky-400" aria-label="Running" />;
   const outcome = job.lastRun?.outcome;
   if (outcome === "SUCCEEDED") return <CircleCheck className="size-5 text-emerald-400" aria-label="Succeeded" />;

@@ -15,7 +15,9 @@ import { Button } from "../ui/button";
 import { Segmented } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote, Licence } from "./AdminPage";
 
-function Link({ href, children }: { href: string; children: ReactNode }) {
+type LinkProps = { href: string; children: ReactNode };
+
+function Link({ href, children }: LinkProps) {
   return (
     <a
       href={href}
@@ -33,8 +35,10 @@ const SIDES = [
   { value: "web", label: "Web client" },
 ] as const;
 
+type NoticeListProps = { notices: Notice[] };
+
 /** The packages one side ships, by licence; each licence's texts open on request. */
-function NoticeList({ notices }: { notices: Notice[] }) {
+function NoticeList({ notices }: NoticeListProps) {
   if (notices.length === 0) {
     return <p className="mt-3 text-sm text-slate-400">None listed: this build was made without the list.</p>;
   }

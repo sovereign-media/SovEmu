@@ -30,7 +30,9 @@ import { GameCollections } from "./GameCollections";
 import { GamePatch } from "./GamePatch";
 import { SidePanel } from "./SidePanel";
 
-function Art({ game, color, short }: { game: Game; color: string; short: string }) {
+type ArtProps = { game: Game; color: string; short: string };
+
+function Art({ game, color, short }: ArtProps) {
   const [video, setVideo] = useState(false);
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
@@ -78,7 +80,9 @@ function Art({ game, color, short }: { game: Game; color: string; short: string 
   );
 }
 
-function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+type FactProps = { icon: ReactNode; children: ReactNode };
+
+function Fact({ icon, children }: FactProps) {
   return (
     <span className="flex items-center gap-1.5 text-sm text-slate-300 [&_svg]:size-4 [&_svg]:text-slate-500">
       {icon}
@@ -87,15 +91,7 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   );
 }
 
-export function GamePanel({
-  game,
-  system,
-  slots,
-  onClose,
-  onPlay,
-  onFavourite,
-  onPatch,
-}: {
+type GamePanelProps = {
   game: Game | null;
   system: SystemSummary;
   slots: SaveSlot[];
@@ -105,7 +101,9 @@ export function GamePanel({
   onFavourite: (favourite: boolean) => void;
   /** The patch it plays with changed (its saves are the patched game's own). */
   onPatch: (patch: string | null) => void;
-}) {
+};
+
+export function GamePanel({ game, system, slots, onClose, onPlay, onFavourite, onPatch }: GamePanelProps) {
   // The last game stays drawn while the panel slides out after closing.
   const [shown, setShown] = useState(game);
   useEffect(() => {

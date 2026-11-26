@@ -73,8 +73,8 @@ Forms are native `<form>`s read with `FormData` in `onSubmit`; there is no form 
 ## Types
 
 - A component's props, and any other object argument, are a named `type` (`type GameCardProps =
-  { … }`) above it, not an inline object type in the signature. Much existing code still has
-  inline types: move one over when you change its component.
+  { … }`) above it, not an inline object type in the signature; a generic component's are generic
+  too (`type SelectProps<T extends string>`).
 - Types used in one file are declared at its top; types shared across files are exported from the
   module that owns the concept (`lib/controllers.ts`, `lib/api.ts`). There is no `types/` folder.
   API types come from gql.tada (`ResultOf<typeof Doc>`), never re-declared by hand.

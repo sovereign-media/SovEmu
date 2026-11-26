@@ -12,7 +12,9 @@ import { SidePanel } from "../browse/SidePanel";
 import { Button } from "../ui/button";
 import { cn } from "../ui/cn";
 
-function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+type FactProps = { icon: ReactNode; children: ReactNode };
+
+function Fact({ icon, children }: FactProps) {
   return (
     <span className="flex items-center gap-1.5 text-sm text-slate-300 [&_svg]:size-4 [&_svg]:text-slate-500">
       {icon}
@@ -21,8 +23,10 @@ function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   );
 }
 
+type LeftOffProps = { game: RecentGame; color: string; short: string };
+
 /** The auto save's screenshot, whole and on black like a TV; the game's artwork if there is none. */
-function LeftOff({ game, color, short }: { game: RecentGame; color: string; short: string }) {
+function LeftOff({ game, color, short }: LeftOffProps) {
   const shot = game.autoSave?.screenshotUrl;
   if (shot) {
     return (
@@ -49,15 +53,7 @@ function LeftOff({ game, color, short }: { game: RecentGame; color: string; shor
   );
 }
 
-export function ContinuePanel({
-  game,
-  colorOf,
-  shortOf,
-  focused,
-  onClose,
-  onPlay,
-  onDetails,
-}: {
+type ContinuePanelProps = {
   game: RecentGame | null;
   /** A system's colour and short name, by its id. */
   colorOf: (system: string) => string;
@@ -68,7 +64,9 @@ export function ContinuePanel({
   /** Continue from the auto save, or Play from the start when there is none. */
   onPlay: (start: "continue" | "new") => void;
   onDetails: () => void;
-}) {
+};
+
+export function ContinuePanel({ game, colorOf, shortOf, focused, onClose, onPlay, onDetails }: ContinuePanelProps) {
   // The last game stays drawn while the panel slides out after closing.
   const [shown, setShown] = useState(game);
   useEffect(() => {

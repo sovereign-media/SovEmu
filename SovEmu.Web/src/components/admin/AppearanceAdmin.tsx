@@ -11,19 +11,15 @@ import { invalidate, q } from "../../lib/data";
 import { cn } from "../ui/cn";
 import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 
-function Choice({
-  label,
-  chosen,
-  locked,
-  onChoose,
-  children,
-}: {
+type ChoiceProps = {
   label: string;
   chosen: boolean;
   locked: boolean;
   onChoose: () => void;
   children: ReactNode;
-}) {
+};
+
+function Choice({ label, chosen, locked, onChoose, children }: ChoiceProps) {
   return (
     <button
       type="button"

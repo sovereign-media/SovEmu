@@ -11,7 +11,9 @@ import { panel } from "../ui/primitives";
 import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
 
-function Signal({ name, result }: { name: string; result: ExportResult }) {
+type SignalProps = { name: string; result: ExportResult };
+
+function Signal({ name, result }: SignalProps) {
   const { tone, text } = exportText(result);
   const Icon = tone === "good" ? CircleCheck : tone === "bad" ? CircleAlert : CircleDashed;
   return (

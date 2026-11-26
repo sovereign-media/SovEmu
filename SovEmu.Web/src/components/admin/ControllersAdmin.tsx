@@ -66,15 +66,7 @@ function useChoices(defaults: ControllerDefaults | null) {
   }, [connected, defaults]);
 }
 
-function ButtonRow({
-  button,
-  label,
-  mapping,
-  controller,
-  locked,
-  onBind,
-  onFocus,
-}: {
+type ButtonRowProps = {
   button: ButtonName;
   label: string;
   mapping: Mapping;
@@ -83,7 +75,9 @@ function ButtonRow({
   onBind: (input: string | null) => void;
   /** The row is being looked at: light its button on the diagrams. */
   onFocus: () => void;
-}) {
+};
+
+function ButtonRow({ button, label, mapping, controller, locked, onBind, onFocus }: ButtonRowProps) {
   const keyboard = controller === KEYBOARD;
   const family = familyOf(controller);
   const inputs = Object.entries(mapping)

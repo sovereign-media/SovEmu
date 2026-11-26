@@ -11,7 +11,9 @@ import { Button } from "../ui/button";
 import { Confirm } from "../ui/primitives";
 import { ErrorNote } from "./AdminPage";
 
-export default function SignInsTable({ signIns, showUser }: { signIns: SignIn[]; showUser: boolean }) {
+type SignInsTableProps = { signIns: SignIn[]; showUser: boolean };
+
+export default function SignInsTable({ signIns, showUser }: SignInsTableProps) {
   const [ending, setEnding] = useState<SignIn | null>(null);
   const end = useMutation({
     mutationFn: (id: string) => api.endSignIn(id),

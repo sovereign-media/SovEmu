@@ -16,7 +16,9 @@ import SettingRow from "./SettingRow";
 
 const ms = (x: number | null) => (x == null || !Number.isFinite(x) ? "–" : `${Math.round(x)} ms`);
 
-function Result({ result }: { result: ConnectionResult }) {
+type ResultProps = { result: ConnectionResult };
+
+function Result({ result }: ResultProps) {
   if (!result.ok) {
     return (
       <p role="alert" className="mt-4 flex items-start gap-2 text-sm text-amber-200">
@@ -49,7 +51,9 @@ function Result({ result }: { result: ConnectionResult }) {
   );
 }
 
-function ConnectionTest({ seconds }: { seconds: number }) {
+type ConnectionTestProps = { seconds: number };
+
+function ConnectionTest({ seconds }: ConnectionTestProps) {
   const test = useMutation({
     mutationFn: async () =>
       runConnectionTest({ iceServers: await queryClient.fetchQuery(q.iceServers()), answer: api.testConnection }),
@@ -77,8 +81,10 @@ type EncoderTest = ResultOf<typeof StreamingQuery>["streaming"]["encoderTest"];
 
 const CODEC_NAMES: Record<string, string> = { vp8: "VP8", h264: "H.264", vp9: "VP9", av1: "AV1", h265: "H.265" };
 
+type EncodersProps = { test: EncoderTest };
+
 /** What the startup encoder test found: each encoder as a session runs it, and a frame's cost. */
-function Encoders({ test }: { test: EncoderTest }) {
+function Encoders({ test }: EncodersProps) {
   // The sizes come from the encoders that finished; one that failed has no timings of its own.
   const sizes = [...new Set(test.encoders.flatMap((e) => e.timings.map((t) => `${t.width}×${t.height}`)))];
   const seconds = (test.tookMs / 1000).toFixed(1);

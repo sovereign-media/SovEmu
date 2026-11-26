@@ -8,9 +8,11 @@ import { cn } from "../ui/cn";
 import { Tooltip } from "../ui/primitives";
 import { CHIP } from "./TabStrip";
 
+type JumpButtonProps = { onClick: () => void; disabled?: boolean };
+
 /** Opens the jump strip. Letters only mean something in title order: with another sort the button
  *  stays where it is, disabled, and says why (`aria-disabled`, so its tooltip still shows). */
-export function JumpButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+export function JumpButton({ onClick, disabled }: JumpButtonProps) {
   const button = (
     <button
       type="button"
@@ -28,7 +30,9 @@ export function JumpButton({ onClick, disabled }: { onClick: () => void; disable
 // The outermost neighbours drop out on a phone, where seven discs do not fit.
 const DISTANCE = ["", "flex", "flex", "hidden sm:flex"];
 
-function Disc({ stop, distance, onClick }: { stop: string; distance: number; onClick: () => void }) {
+type DiscProps = { stop: string; distance: number; onClick: () => void };
+
+function Disc({ stop, distance, onClick }: DiscProps) {
   return (
     <button
       type="button"
@@ -45,19 +49,15 @@ function Disc({ stop, distance, onClick }: { stop: string; distance: number; onC
   );
 }
 
-export function JumpStrip({
-  stops,
-  index,
-  onIndex,
-  onCommit,
-  onCancel,
-}: {
+type JumpStripProps = {
   stops: string[];
   index: number;
   onIndex: (i: number) => void;
   onCommit: () => void;
   onCancel: () => void;
-}) {
+};
+
+export function JumpStrip({ stops, index, onIndex, onCommit, onCancel }: JumpStripProps) {
   const { before, current, after } = stripWindow(stops, index);
   const arrow = "grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-slate-400 hover:text-white";
   return (

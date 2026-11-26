@@ -12,7 +12,9 @@ import AdminPage, { AdminSection, EnvLine, ErrorNote } from "./AdminPage";
 
 type SystemDecoration = DecorationsReport["systems"][number];
 
-function Preview({ entry }: { entry: SystemDecoration }) {
+type PreviewProps = { entry: SystemDecoration };
+
+function Preview({ entry }: PreviewProps) {
   const d = entry.preview;
   if (!d) {
     return (
@@ -39,7 +41,9 @@ function Preview({ entry }: { entry: SystemDecoration }) {
   );
 }
 
-function SystemCard({ entry }: { entry: SystemDecoration }) {
+type SystemCardProps = { entry: SystemDecoration };
+
+function SystemCard({ entry }: SystemCardProps) {
   return (
     <li
       className={cn(
