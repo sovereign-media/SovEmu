@@ -13,6 +13,7 @@ import {
   AdminPatchesQuery,
   AdminStatusQuery as AdminStatusDocument,
   AppearanceQuery,
+  ApproveDeviceCodeMutation,
   AttentionCountsQuery,
   BackgroundQuery,
   BackupsQuery,
@@ -236,6 +237,8 @@ export const api = {
   userDetails: async (id: number) => (await request(UserDetailsQuery, { id })).user,
   /** Admin: signs one browser or app out. */
   endSignIn: (id: string) => request(EndSignInMutation, { id }),
+  /** Signs a TV in as you: the code its *Sign in with your phone* screen shows. */
+  approveDeviceCode: (userCode: string) => request(ApproveDeviceCodeMutation, { userCode }),
   /** Admin: adds an account. */
   addUser: (username: string, password: string, role: Role) =>
     request(AddUserMutation, { input: { username, password, role } }),

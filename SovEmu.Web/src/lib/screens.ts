@@ -6,6 +6,7 @@ export const SCREEN_PATHS = [
   "/",
   "/login/",
   "/auth/callback/",
+  "/link/",
   "/system/",
   "/play/",
   "/search/",

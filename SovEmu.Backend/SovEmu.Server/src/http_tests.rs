@@ -3412,12 +3412,12 @@ async fn the_web_client_signs_in_with_the_code_flow_and_pkce() {
 }
 
 #[tokio::test]
-async fn a_tv_signs_in_with_a_code_approved_in_a_browser() {
+async fn a_tv_sends_people_to_the_web_clients_page_to_approve_its_code() {
     let mut h = Harness::new("oidc-device", false).await;
     h.sign_up_admin().await;
     h.sign_out();
 
-    // The TV asks for a code.
+    // The TV asks for a code, and is told to send people to the web client's page.
     let (status, grant, _) = h
         .form(
             "/oauth/device_authorization",
@@ -3425,48 +3425,20 @@ async fn a_tv_signs_in_with_a_code_approved_in_a_browser() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{grant}");
-    assert_eq!(grant["verification_uri"], "http://sovemu.test/device");
-    let device_code = grant["device_code"].as_str().unwrap().to_owned();
-    let user_code = grant["user_code"].as_str().unwrap().to_owned();
-    let poll = [
-        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-        ("client_id", "sovemu-native"),
-        ("device_code", device_code.as_str()),
-    ];
+    assert_eq!(grant["verification_uri"], "http://sovemu.test/link");
+    // No address with the code in it: one someone else shows you is the RFC 8628 phishing risk.
+    assert!(grant.get("verification_uri_complete").is_none(), "{grant}");
 
-    // On a phone: the device page wants a signed-in browser first.
-    let (status, headers, _) = h.browse("GET", "/device", None).await;
+    // The old address, which a TV or a bookmark may still show, goes there too, code and all,
+    // signed in or not: the page signs in by itself, and approves with `approveDeviceCode`.
+    let (status, headers, _) = h.browse("GET", "/device?user_code=BCDF-GHJK", None).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(location(&headers).1["continue"], "/device");
-    let pairs = [("username", "admin"), ("password", "password123"), ("continue", "/device")];
-    h.browse("POST", "/oauth/signin", Some(&pairs)).await;
-    assert!(h.cookie.is_some());
-
-    // Enter the code, then approve it, each form carrying its CSRF token.
-    let csrf = |page: &str| {
-        let at = page.find("name=\"csrf_token\" value=\"").expect("a CSRF token") + 25;
-        page[at..].split('"').next().unwrap().to_owned()
-    };
-    let (status, _, page) = h.browse("GET", "/device", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let token = csrf(&page);
-    let entered = [("user_code", user_code.as_str()), ("csrf_token", token.as_str())];
-    let (status, _, page) = h.browse("POST", "/device", Some(&entered)).await;
-    assert_eq!(status, StatusCode::OK, "{page}");
-    let token = csrf(&page);
-    let approve =
-        [("user_code", user_code.as_str()), ("csrf_token", token.as_str()), ("action", "approve")];
-    let (status, _, page) = h.browse("POST", "/device", Some(&approve)).await;
-    assert_eq!(status, StatusCode::OK, "{page}");
-
-    // The TV's poll gets its tokens, as the admin. (Polling sooner than `interval` is answered
-    // `slow_down`, so this test polls once.)
-    let (status, body) = h.token(&poll).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(jwt_claims(body["id_token"].as_str().unwrap())["aud"], "sovemu-native");
-    h.cookie = None;
-    h.token = Some(body["access_token"].as_str().unwrap().to_owned());
-    assert_eq!(h.ok(VIEWER, json!({})).await["viewer"]["user"]["username"], "admin");
+    assert_eq!(headers[header::LOCATION], "/link/?user_code=BCDF-GHJK");
+    let (_, headers, _) = h.browse("GET", "/device", None).await;
+    assert_eq!(headers[header::LOCATION], "/link/");
+    // oauth-as's own form is not served.
+    let (status, _, _) = h.browse("POST", "/device", Some(&[("user_code", "BCDF-GHJK")])).await;
+    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
 }
 
 #[tokio::test]
@@ -3508,7 +3480,7 @@ async fn apps_learn_where_to_sign_in_from_the_api() {
             "tokenEndpoint": "http://sovemu.test/oauth/token",
             "revocationEndpoint": "http://sovemu.test/oauth/revoke",
             "deviceAuthorizationEndpoint": "http://sovemu.test/oauth/device_authorization",
-            "verificationUri": "http://sovemu.test/device",
+            "verificationUri": "http://sovemu.test/link",
             "passwordEndpoint": "http://sovemu.test/oauth/password",
         })
     );

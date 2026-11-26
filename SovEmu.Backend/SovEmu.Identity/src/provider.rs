@@ -74,6 +74,9 @@ pub(crate) const MOBILE_REDIRECT: &str = "media.sovereign.sovemu:/oauth2redirect
 const CALLBACK_PATH: &str = "/auth/callback/";
 /// The web client's sign-in page, which posts to `/oauth/signin`.
 const LOGIN_PAGE: &str = "/login/";
+/// The web client's page that signs a TV in: where a TV sends people to approve its code
+/// (`verification_uri`). oauth-as's own `/device` form is not used.
+const LINK_PAGE: &str = "/link";
 /// The redirect URI the password fallback's internal code exchange uses, the device client's
 /// only one. It is never followed (nothing redirects there): oauth-as needs a registered one for
 /// the exchange to be exact.
@@ -160,7 +163,7 @@ impl Provider {
         for url in urls {
             let url = url.trim_end_matches('/').to_owned();
             let authority = authority_of(&url)?;
-            let mut config = ServerConfig::new(url.clone(), format!("{url}/device"));
+            let mut config = ServerConfig::new(url.clone(), format!("{url}{LINK_PAGE}"));
             config.authorization_endpoint = Some(format!("{url}/oauth/authorize"));
             config.token_endpoint = Some(format!("{url}/oauth/token"));
             config.revocation_endpoint = Some(format!("{url}/oauth/revoke"));
@@ -327,10 +330,10 @@ pub(crate) fn router(identity: Identity) -> Router {
         .route("/oauth/signin", post(signin))
         .route("/oauth/password", post(password))
         .route("/oauth/token", post(token))
-        // Everything else oauth-as serves: authorize, revoke, introspect, device authorization,
-        // its metadata and the device verification page.
+        // Everything else oauth-as serves: authorize, revoke, introspect, device authorization
+        // and its metadata.
         .route("/oauth/{*rest}", get(forward).post(forward))
-        .route("/device", get(forward).post(forward))
+        .route("/device", get(device_page))
         .route("/.well-known/oauth-authorization-server", get(forward))
         .with_state(identity)
 }
@@ -359,12 +362,25 @@ fn to_login(next: &str, extra: &[(&str, &str)]) -> Response {
     redirect(&format!("{LOGIN_PAGE}?{}", query.finish()))
 }
 
-/// Where the sign-in form may continue to: the two interactive endpoints, on this server.
+/// Where the sign-in form may continue to: the authorization endpoint, on this server.
 fn safe_continue(next: &str) -> &str {
-    if next.starts_with("/oauth/authorize?") || next == "/device" || next.starts_with("/device?") {
-        next
-    } else {
-        "/"
+    if next.starts_with("/oauth/authorize?") { next } else { "/" }
+}
+
+/// The old verification address, which a TV or a bookmark may still show: the web client's page
+/// now, with the code the link carried.
+async fn device_page(request: Request) -> Response {
+    let code = url::form_urlencoded::parse(request.uri().query().unwrap_or("").as_bytes())
+        .find(|(k, _)| k == "user_code")
+        .map(|(_, v)| v.into_owned());
+    match code {
+        Some(code) => {
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("user_code", &code)
+                .finish();
+            redirect(&format!("{LINK_PAGE}/?{query}"))
+        }
+        None => redirect(&format!("{LINK_PAGE}/")),
     }
 }
 
@@ -383,7 +399,7 @@ async fn forward(State(identity): State<Identity>, request: Request) -> Response
     let (mut parts, body) = request.into_parts();
     parts.headers.remove(SUBJECT);
     let path = parts.uri.path().to_owned();
-    let interactive = path == "/oauth/authorize" || path == "/device";
+    let interactive = path == "/oauth/authorize";
     if interactive {
         let signed_in = match sessions::user(&identity.inner.db, &parts.headers).await {
             Ok(user) => user,
@@ -748,11 +764,10 @@ mod tests {
     #[test]
     fn the_sign_in_form_continues_only_to_this_servers_endpoints() {
         assert_eq!(safe_continue("/oauth/authorize?client_id=x"), "/oauth/authorize?client_id=x");
-        assert_eq!(safe_continue("/device"), "/device");
-        assert_eq!(safe_continue("/device?user_code=ABCD"), "/device?user_code=ABCD");
         assert_eq!(safe_continue("https://evil.test/"), "/");
         assert_eq!(safe_continue("//evil.test/oauth/authorize?"), "/");
-        assert_eq!(safe_continue("/devicex"), "/");
+        // The old device page is the web client's now, which signs in by itself.
+        assert_eq!(safe_continue("/device"), "/");
     }
 
     #[test]

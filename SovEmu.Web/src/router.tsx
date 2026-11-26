@@ -40,6 +40,7 @@ const root = createRootRoute({ component: Outlet });
 const Home = lazy(() => import("./components/home/Home"));
 const LoginPage = lazy(() => import("./components/LoginPage"));
 const AuthCallback = lazy(() => import("./components/AuthCallback"));
+const LinkPage = lazy(() => import("./components/LinkPage"));
 const SystemPage = lazy(() => import("./components/SystemPage"));
 const PlayPage = lazy(() => import("./components/play/PlayPage"));
 const Search = lazy(() => import("./components/search/Search"));
@@ -81,6 +82,7 @@ const SCREENS: Record<ScreenPath, [title: string, Screen: ComponentType, own: st
   "/": ["Home", Home, ["game"]],
   "/login/": ["Sign in", LoginPage, []],
   "/auth/callback/": ["Signing in", AuthCallback, []],
+  "/link/": ["Sign in a TV", LinkPage, []],
   "/system/": ["Games", SystemPage, ["game"]],
   "/play/": ["Playing", PlayPage, []],
   "/search/": ["Search", Search, ["q"]],

@@ -322,9 +322,9 @@ impl Identity {
         Ok(user)
     }
 
-    /// Signs a TV (or any device showing a code) in as `user`, from an app that is signed in
-    /// already: the user typed the code the device shows (*Sign in a TV*). The same approval the
-    /// `/device` page gives in a browser. The code is checked as typed, dash or not, in any
+    /// Signs a TV (or any device showing a code) in as `user`, from a client that is signed in
+    /// already: the user typed the code the device shows, in an app (*Sign in a TV*) or on the
+    /// web client's `/link/` page. The code is checked as typed, dash or not, in any
     /// letter case. A code no device is waiting with is [`Error::NotFound`]; wrong codes count
     /// against the user (and oauth-as's own limiter counts every attempt), so guessing them is
     /// [`Error::TooManyRequests`] soon.
@@ -349,7 +349,7 @@ impl Identity {
         match issuer.server.approve_device(&code, user.id.to_string()).await {
             Ok(()) => {
                 inner.throttle.succeeded(&key);
-                tracing::info!(user.name = %user.username, "approved a device's sign-in from an app");
+                tracing::info!(user.name = %user.username, "approved a device's sign-in");
                 Ok(())
             }
             Err(oauth_as::server::DeviceApprovalError::RateLimited) => {

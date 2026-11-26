@@ -257,6 +257,12 @@ export const UserDetailsQuery = graphql(
   [SignInFields],
 );
 
+export const ApproveDeviceCodeMutation = graphql(`
+  mutation ApproveDeviceCode($userCode: String!) {
+    approveDeviceCode(userCode: $userCode)
+  }
+`);
+
 export const EndSignInMutation = graphql(`
   mutation EndSignIn($id: ID!) {
     endSignIn(id: $id)
