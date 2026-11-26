@@ -98,11 +98,9 @@ RUN cd "ffmpeg-${FFMPEG_VERSION}" \
     && cp -a /opt/ffmpeg/lib/libavcodec.so.* /opt/ffmpeg/lib/libavutil.so.* /out/lib/ \
     && cp LICENSE.md COPYING.GPLv2 /out/doc/
 
-## ---- toolchain: Rust, the build dependencies and the sources --------------------------------------
-# `build` and `test` both start here and neither waits for the other, so BuildKit compiles the
-# release binaries and the test suite side by side. Each has its own `target/` cache (cargo locks
-# a target directory, so a shared one would make them take turns); CI keeps the caches between
-# runs (buildkit-cache-dance in .github/workflows/ci.yml).
+## ---- toolchain: Rust and the build dependencies ---------------------------------------------------
+# Everything the compiles need but SovEmu's sources, so the dependency stages below (`deps-release`,
+# `deps-test`) depend on it and on the cargo-chef recipe only, never on a source file (#245).
 FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS toolchain
 # libclang-dev: bindgen. cmake: aws-lc (str0m's DTLS). libvpx-dev, libopus-dev: the codecs
 # SovEmu.Media links. libx264-164, libva2, libva-drm2: what the `ffmpeg` stage's libavcodec links,
@@ -114,42 +112,67 @@ COPY --from=ffmpeg /opt/ffmpeg/ /opt/ffmpeg/
 RUN echo /opt/ffmpeg/lib > /etc/ld.so.conf.d/sovemu-ffmpeg.conf && ldconfig
 ENV PKG_CONFIG_PATH=/opt/ffmpeg/lib/pkgconfig
 # No incremental compilation (a one-off build gains nothing from it, and its files would bloat the
-# kept cache); tests keep line tables, enough for a backtrace, not full debug info.
+# cached layers); tests keep line tables, enough for a backtrace, not full debug info.
 ENV CARGO_TERM_COLOR=always \
     CARGO_INCREMENTAL=0 \
     CARGO_PROFILE_DEV_DEBUG=line-tables-only
-# cargo-about, which lists the licences of the crates the image is built from (`build` below):
-# its released binary, pinned and checked, before the sources so it is not fetched per commit.
+# cargo-about, which lists the licences of the crates the image is built from (`notices`), and
+# cargo-chef, which compiles the dependencies apart from SovEmu's own crates (`deps-*`): their
+# released binaries, pinned and checked.
 ARG CARGO_ABOUT_VERSION=0.9.3
 ARG CARGO_ABOUT_SHA256=3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4
+ARG CARGO_CHEF_VERSION=0.1.78
+ARG CARGO_CHEF_SHA256=aca691abfbfbbe00d482e0ed2249eec3091b65e96a0ce92947fb5b254d48b16d
 RUN curl -sSfL --retry 5 -o /tmp/cargo-about.tar.gz \
         "https://github.com/EmbarkStudios/cargo-about/releases/download/${CARGO_ABOUT_VERSION}/cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     && echo "${CARGO_ABOUT_SHA256}  /tmp/cargo-about.tar.gz" | sha256sum -c - \
     && tar xzf /tmp/cargo-about.tar.gz --strip-components=1 -C /usr/local/cargo/bin \
         "cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl/cargo-about" \
-    && rm /tmp/cargo-about.tar.gz
+    && rm /tmp/cargo-about.tar.gz \
+    && curl -sSfL --retry 5 -o /tmp/cargo-chef.tar.xz \
+        "https://github.com/LukeMathWalker/cargo-chef/releases/download/v${CARGO_CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-musl.tar.xz" \
+    && echo "${CARGO_CHEF_SHA256}  /tmp/cargo-chef.tar.xz" | sha256sum -c - \
+    && tar xJf /tmp/cargo-chef.tar.xz --strip-components=1 -C /usr/local/cargo/bin \
+        cargo-chef-x86_64-unknown-linux-musl/cargo-chef \
+    && rm /tmp/cargo-chef.tar.xz
 WORKDIR /src
+
+## ---- sources and the recipe ---------------------------------------------------------------------------
+FROM toolchain AS sources
 COPY SovEmu.Backend/ ./
+
+# The recipe: the workspace's manifests and lockfile, which is all the dependency stages see. It is
+# written again for every commit, but its content (and so the stages that copy it) only changes
+# with a Cargo.toml or Cargo.lock.
+FROM sources AS planner
+RUN cargo chef prepare --recipe-path /recipe.json
 
 ## ---- notices: the crates' licences, listed again from the lockfile --------------------------------
 # cargo-about (`about.toml`'s accepted licences: any other fails the build) writes the list the
 # runtime stage puts beside the server binary, which reads it there, so the image always ships the
 # current one; the committed copy, built in, is a local build's. Nothing compiles it in, so the
-# release build never waits for it. Its own stage and registry cache: its `cargo metadata` unpacks
-# crates for every platform, and sharing `build` and `test`'s cache while they compile raced them.
-FROM toolchain AS notices
+# release build never waits for it.
+FROM sources AS notices
 RUN --mount=type=cache,id=cargo-registry-notices,target=/usr/local/cargo/registry \
     mkdir -p /out \
     && cargo about generate --locked -c about.toml about.hbs -o /out/third-party-notices.json
 
-## ---- build: the release binaries ------------------------------------------------------------------
+## ---- deps-release and build: the release binaries -----------------------------------------------
+# The dependencies, compiled from the recipe alone, so this layer (and its registry) stays cached
+# until the lockfile or a manifest changes; CI keeps it in BuildKit's GitHub cache (the
+# `deps-release` bake target). Then `build` compiles only SovEmu's own crates on top of it.
+FROM toolchain AS deps-release
+# No debug info: the binaries are stripped of it in `build`, so generating the line tables
+# (`debug = "line-tables-only"` in the workspace's release profile, which local release builds
+# keep) cost about 7% of the compile for nothing (#245). Symbol names stay for backtraces.
+ENV CARGO_PROFILE_RELEASE_DEBUG=0
+COPY --from=planner /recipe.json /recipe.json
+RUN cargo chef cook --release --locked -p sovemu-worker -p sovemu-server --recipe-path /recipe.json
+
 # One compile for the test suite's wait and the image both: nothing here varies by target or by
 # commit (the build stamp is written by the runtime stage), so a bake of both runs it once.
-FROM toolchain AS build
-# No debug info: the binaries are stripped of it below, so generating the line tables
-# (`debug = "line-tables-only"` in the workspace's release profile, which local release builds
-# keep) cost about 7% of this compile for nothing (#245). Symbol names stay for backtraces.
-ENV CARGO_PROFILE_RELEASE_DEBUG=0
+FROM deps-release AS build
+COPY SovEmu.Backend/ ./
 # SovEmu's own ScreenScraper developer credentials, built into the server (`build.rs`) so a
 # released image needs only the admin's ScreenScraper account. BuildKit secrets, never build
 # arguments: they reach this one compile as variables and stay out of the image's history and
@@ -157,13 +180,14 @@ ENV CARGO_PROFILE_RELEASE_DEBUG=0
 # in, and SovEmu__Metadata__ScreenScraper__DevId/_DEVPASSWORD can still be set at run time.
 RUN --mount=type=secret,id=screenscraper_devid,env=SOVEMU_BUILD_SCREENSCRAPER_DEVID \
     --mount=type=secret,id=screenscraper_devpassword,env=SOVEMU_BUILD_SCREENSCRAPER_DEVPASSWORD \
-    --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=target-release,target=/src/target \
     cargo build --release --locked -p sovemu-worker -p sovemu-server \
     && install -D target/release/sovemu-worker /out/sovemu-worker \
     && install -D target/release/sovemu-server /out/sovemu-server \
     # Drop any debug info that still comes in (the standard library's) but keep symbol names.
-    && strip --strip-debug /out/sovemu-worker /out/sovemu-server
+    && strip --strip-debug /out/sovemu-worker /out/sovemu-server \
+    # Only the binaries leave this stage: without target/ its layer is small, and the image's
+    # cache export carries no compiled crates.
+    && rm -rf target
 
 ## ---- test: the full test suite (not part of the shipped image) ---------------------------------
 FROM toolchain AS test-base
@@ -178,8 +202,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 -o Acquire::http::Timeout=30 libegl1 libegl-mesa0 libgl1 libgles2 libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
 # cargo-nextest, the test runner (SovEmu.Backend/.config/nextest.toml): its released binary, pinned
-# and checked, rather than `cargo install`, which this stage (after the sources) would redo on
-# every commit.
+# and checked, rather than `cargo install`.
 ARG NEXTEST_VERSION=0.9.152
 ARG NEXTEST_SHA256=d039b43c3e0958441b6ad0a39c8884d018b3d2e8fb9928f209074b1100b5e17a
 RUN curl -sSfL --retry 5 -o /tmp/nextest.tar.gz \
@@ -188,7 +211,13 @@ RUN curl -sSfL --retry 5 -o /tmp/nextest.tar.gz \
     && tar xzf /tmp/nextest.tar.gz -C /usr/local/cargo/bin \
     && rm /tmp/nextest.tar.gz
 
-FROM test-base AS test
+# The test build's dependencies, from the recipe alone, as `deps-release` (bake target `deps-test`).
+FROM test-base AS deps-test
+COPY --from=planner /recipe.json /recipe.json
+RUN cargo chef cook --locked --workspace --all-targets --recipe-path /recipe.json
+
+FROM deps-test AS test
+COPY SovEmu.Backend/ ./
 # Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
 # must be several times faster than normal play), and a release link on the same cores would
 # slow them. Copying from `build` makes BuildKit wait for it before the tests run.
@@ -196,14 +225,10 @@ FROM test-base AS test
 # use, the same way, and every test that loads it waited on that compile while the suite ran
 # (half the suite's time: 39 s against 19 s with it built, #245). Built here, the tests find it
 # ready and locate.rs's own build has nothing to do.
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=target-test,target=/src/target \
-    cargo nextest run --workspace --locked --no-run \
+RUN cargo nextest run --workspace --locked --no-run \
     && cargo build --locked -p sovemu-test-core --features sovemu-libretro-ffi/frontend
 COPY --from=build /out/sovemu-server /tmp/release-built
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=target-test,target=/src/target \
-    rm /tmp/release-built && cargo nextest run --workspace --locked --profile ci
+RUN rm /tmp/release-built && cargo nextest run --workspace --locked --profile ci
 
 ## ---- coverage: the test suite's line coverage (CI's Coverage job; not part of the image) -------
 # The same tests as `test`, instrumented by cargo-llvm-cov, in a target cache of their own. It
@@ -214,6 +239,7 @@ ARG CARGO_LLVM_COV_VERSION=0.9.2
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     rustup component add llvm-tools-preview \
     && cargo install cargo-llvm-cov --locked --version "${CARGO_LLVM_COV_VERSION}"
+COPY SovEmu.Backend/ ./
 # The stand-in core the tests load (SovEmu.TestCore) is test equipment: left out of the reports.
 ENV COVERAGE_IGNORE='SovEmu\.TestCore/'
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \

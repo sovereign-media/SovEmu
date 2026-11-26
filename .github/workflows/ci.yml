@@ -197,31 +197,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The Cargo caches belong to what decides how the dependencies compile, never to a run: the
-      # lockfile, the workspace's profiles (Cargo.toml) and the build environment (the Dockerfile,
-      # Rust's version among it). A change to any of them would leave a cache that no longer
-      # matches, which nothing would replace. So a key is saved once, on main, the first time it is
-      # missing.
-      - name: Cargo cache key
+      # The dependency layers (Dockerfile `deps-release`, `deps-test`: cargo-chef) live in BuildKit's
+      # GitHub cache, and belong to what decides how the dependencies compile: the lockfile, the
+      # workspace's profiles (Cargo.toml) and the build environment (the Dockerfile, Rust's version
+      # among it). Only main's cache entries can be read by every branch, so main exports them, once
+      # per key, and marks that it did with a small entry of its own (`deps-exported-<key>`).
+      - name: Dependency cache key
         id: cache
         working-directory: .
         run: |
           rust=$(sed -n 's/^ARG RUST_VERSION=//p' SovEmu.Backend/Dockerfile)
-          echo "key=cargo-mounts-rust$rust-${{ hashFiles('SovEmu.Backend/Cargo.lock', 'SovEmu.Backend/Cargo.toml', 'SovEmu.Backend/Dockerfile') }}" >> "$GITHUB_OUTPUT"
+          echo "key=deps-exported-rust$rust-${{ hashFiles('SovEmu.Backend/Cargo.lock', 'SovEmu.Backend/**/Cargo.toml', 'SovEmu.Backend/Dockerfile') }}" >> "$GITHUB_OUTPUT"
 
-      # On main: is this key saved already? Looked up, not downloaded.
-      - name: Cargo caches saved for this lockfile?
+      # On main: has this key's dependency layers been exported? Looked up, not downloaded.
+      - name: Dependency layers exported for this key?
         id: saved
         if: env.MAIN == 'true'
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
-          path: cache-mount
+          path: deps-exported
           key: ${{ steps.cache.outputs.key }}
           lookup-only: true
 
-      # On main, with the caches saved: the merge queue's image for this very commit, if it
-      # published one. Then nothing is built.
+      # On main, with the dependency layers exported: the merge queue's image for this very commit,
+      # if it published one. Then nothing is built.
       - name: The merge queue's image
         id: queued
         if: env.MAIN == 'true' && steps.saved.outputs.cache-hit == 'true'
@@ -233,50 +233,6 @@ jobs:
           else
             echo "No \`sha-$GITHUB_SHA\` from the merge queue: building."
           fi
-
-      # Cargo's cache mounts (the registry and each target/) live in the builder and vanish with
-      # the runner; the Actions cache keeps them, so unchanged crates are not compiled again. Every
-      # build reads them; main saves a key it is missing. A cache problem costs time, never the
-      # build: the job still passes without one.
-      #
-      # The save has to come after the caches are taken back out of the builder, which happens in
-      # the next step's post step, at the end of the job. Post steps run in reverse order, so only
-      # a save in this step's own post (actions/cache, restore and save) comes after it. A save
-      # step of its own ran first and stored an empty folder (#245).
-      - name: Cargo caches (restore, and save on main)
-        if: steps.queued.outputs.found != 'true' && env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache@v6
-        with:
-          path: cache-mount
-          key: ${{ steps.cache.outputs.key }}
-          restore-keys: cargo-mounts-
-
-      - name: Cargo caches (restore)
-        if: steps.queued.outputs.found != 'true' && !(env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true')
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: cache-mount
-          key: ${{ steps.cache.outputs.key }}
-          restore-keys: cargo-mounts-
-
-      # Puts the restored caches into the builder's cache mounts, and takes them back out (in its
-      # post step) only when main is about to save them. The ids are the Dockerfile's.
-      - name: Cargo caches into the builder
-        if: steps.queued.outputs.found != 'true'
-        continue-on-error: true
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          skip-extraction: ${{ !(env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true') }}
-          cache-map: |
-            {
-              "cache-mount/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" },
-              "cache-mount/cargo-registry-notices": { "target": "/usr/local/cargo/registry", "id": "cargo-registry-notices" },
-              "cache-mount/target-release": { "target": "/src/target", "id": "target-release" },
-              "cache-mount/target-test": { "target": "/src/target", "id": "target-test" }
-            }
 
       # The commit's time, written beside the server (the admin About page) with its SHA.
       - name: Build stamp
@@ -294,7 +250,24 @@ jobs:
         with:
           source: .
           files: SovEmu.Backend/docker-bake.hcl
-          targets: ci
+          # main, the first time for this key: the dependency layers are exported too.
+          targets: ${{ (env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true') && 'ci-deps' || 'ci' }}
+
+      # Marks this key's dependency layers as exported (the lookup above), once the build has
+      # exported them.
+      - name: Mark the dependency layers exported (main)
+        if: env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
+        continue-on-error: true
+        working-directory: .
+        run: mkdir -p deps-exported && echo "$GITHUB_SHA" > deps-exported/commit
+
+      - name: Save the mark (main)
+        if: env.MAIN == 'true' && steps.saved.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: deps-exported
+          key: ${{ steps.cache.outputs.key }}
 
       - name: Smoke test
         if: steps.queued.outputs.found != 'true'
@@ -361,27 +334,6 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
         id: buildx
-
-      # The registry the image job saves (read only here: this job's instrumented target/ is
-      # its own, and not worth the cache's space).
-      - name: Cargo registry cache (restore)
-        continue-on-error: true
-        uses: actions/cache/restore@v6
-        with:
-          path: cache-mount
-          key: cargo-mounts-
-          restore-keys: cargo-mounts-
-
-      - name: Cargo registry into the builder
-        continue-on-error: true
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          skip-extraction: true
-          cache-map: |
-            {
-              "cache-mount/cargo-registry": { "target": "/usr/local/cargo/registry", "id": "cargo-registry" }
-            }
 
       - name: Test suite under coverage
         uses: docker/bake-action@v7
