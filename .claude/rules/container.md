@@ -29,8 +29,8 @@ pinned nextest and cargo-about); `notices` (cargo-about with `about.toml`/`about
 `third-party-notices.json`); `sources` and `planner` (cargo-chef's recipe: the manifests and the
 lockfile); `deps-release` and `build` (release binaries); `test-base`, `deps-test` and `test`
 (`cargo nextest run --workspace --profile ci` with Mesa's llvmpipe); `coverage-run` and
-`coverage`; and `runtime`. `build` and `test` compile side by side; CI builds both at once with
-`docker-bake.hcl`.
+`coverage`; and `runtime`. `build` and `test` compile and run side by side (the tests never wait
+for the release build); CI builds both at once with `docker-bake.hcl`.
 
 **Dependencies compile in layers of their own** (cargo-chef, #245). `deps-release` and
 `deps-test` cook the dependencies from the recipe alone, so they stay cached until a manifest or

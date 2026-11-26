@@ -218,17 +218,17 @@ RUN cargo chef cook --locked --workspace --all-targets --recipe-path /recipe.jso
 
 FROM deps-test AS test
 COPY SovEmu.Backend/ ./
-# Compiled beside the release build, but run after it: some tests time the emulator (fast-forward
-# must be several times faster than normal play), and a release link on the same cores would
-# slow them. Copying from `build` makes BuildKit wait for it before the tests run.
+# Compiled and run beside the release build, which by then is mostly the worker's single-threaded
+# optimise-and-link (one codegen unit, thin LTO). Waiting for it put the suite's ~2m 20s after
+# that ~4 minutes (#245). The tests that time the emulator compare ratios over several samples
+# (fast-forward against normal play), not rates, so a busy runner does not change their answer.
 # With the test core, the stand-in core the tests load: SovEmu.TestCore/locate.rs builds it on first
 # use, the same way, and every test that loads it waited on that compile while the suite ran
 # (half the suite's time: 39 s against 19 s with it built, #245). Built here, the tests find it
 # ready and locate.rs's own build has nothing to do.
 RUN cargo nextest run --workspace --locked --no-run \
     && cargo build --locked -p sovemu-test-core --features sovemu-libretro-ffi/frontend
-COPY --from=build /out/sovemu-server /tmp/release-built
-RUN rm /tmp/release-built && cargo nextest run --workspace --locked --profile ci
+RUN cargo nextest run --workspace --locked --profile ci
 
 ## ---- coverage: the test suite's line coverage (CI's Coverage job; not part of the image) -------
 # The same tests as `test`, instrumented by cargo-llvm-cov, in a target cache of their own. It
