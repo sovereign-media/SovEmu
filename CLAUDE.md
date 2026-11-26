@@ -10,8 +10,10 @@ The repository follows the layout of `sovereign-media/sovereign`: the backend li
 `SovEmu.Backend/`, and each client is a project at the root. The native clients are their own
 repositories, checked out as **unpinned submodules** (`branch = main`, `ignore = all`; update with
 `git submodule update --remote`): `SovEmu.Android` (Kotlin + Compose, phones and Android TV) and
-`SovEmu.iOS` (SwiftUI + XcodeGen, iPhone and iPad). Each has its own README, `.claude/rules/`, CI
-and PRs. `SovEmu.Web` (Vite + React + TanStack Router, Tailwind) stays in-tree because the image
+`SovEmu.iOS` (SwiftUI + XcodeGen, iPhone and iPad), and the documentation site, `SovEmu.Docs`
+(Starlight, built and written the way Sovereign's documentation is). Each has its own README,
+`.claude/rules/`, CI and PRs. A change here that changes what the docs say (a setting, a default,
+a screen) gets a PR in `SovEmu.Docs` too. `SovEmu.Web` (Vite + React + TanStack Router, Tailwind) stays in-tree because the image
 builds it from source.
 
 ## Rules that apply everywhere
