@@ -1,38 +1,11 @@
 //! Runs the `sovemu-worker headless` binary end to end against `SovEmu.TestCore`.
 
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// Builds the test core and returns the path of its shared library (see the RetroHost tests).
-fn test_core() -> PathBuf {
-    // Built once per test binary, before any test starts a worker with it: tests run in
-    // parallel, and a second `cargo build` (the workspace's build has other features) could
-    // rewrite the library under a worker that has it loaded.
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(build_test_core).clone()
-}
-
-fn build_test_core() -> PathBuf {
-    if let Some(path) = std::env::var_os("SOVEMU_TEST_CORE") {
-        return PathBuf::from(path);
-    }
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let status = Command::new(cargo)
-        .args(["build", "--quiet", "-p", "sovemu-test-core"])
-        .current_dir(&workspace)
-        .status()
-        .expect("failed to run cargo to build sovemu-test-core");
-    assert!(status.success(), "building sovemu-test-core failed");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map_or_else(|| workspace.join("target"), PathBuf::from);
-    target.join("debug").join(format!(
-        "{}sovemu_test_core{}",
-        std::env::consts::DLL_PREFIX,
-        std::env::consts::DLL_SUFFIX
-    ))
-}
+#[path = "../../SovEmu.TestCore/locate.rs"]
+mod locate;
+use locate::test_core;
 
 #[test]
 fn headless_run_writes_frames_audio_and_summary() {
@@ -135,7 +108,7 @@ fn probe_reports_cores_and_fails_on_a_bad_one() {
     let core = test_core();
     let output = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
         .arg("probe")
-        .arg(&core)
+        .arg(core)
         .output()
         .expect("run sovemu-worker probe");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -151,7 +124,7 @@ fn probe_reports_cores_and_fails_on_a_bad_one() {
     std::fs::write(&not_a_core, b"not a shared library").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
         .arg("probe")
-        .arg(&core)
+        .arg(core)
         .arg(&dir)
         .output()
         .expect("run sovemu-worker probe");
