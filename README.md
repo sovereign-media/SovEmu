@@ -16,6 +16,7 @@ licensed homebrew games to try it with.
 | Path | What |
 |---|---|
 | `SovEmu.Backend/` | The Rust workspace: libretro bindings, the frontend, the worker, the test core |
+| `brand/` | The logo: its sources and the generator that writes every client's icons ([brand/README.md](brand/README.md)) |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md) and [roadmap](docs/ROADMAP.md) |
 | `scripts/` | `fetch-cores.sh` downloads libretro cores for local testing |
 | `SovEmu.Web/` | The web client: Vite + React + TanStack Router, Tailwind, Radix UI and Lucide icons, served by the Rust server |

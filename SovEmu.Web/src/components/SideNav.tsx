@@ -341,7 +341,7 @@ export default function SideNav({ section }: SideNavProps) {
         aria-label="SovEmu home"
         className="fixed top-4 left-4 z-40 hidden items-center gap-2 text-lg font-black tracking-tight text-white drop-shadow md:flex"
       >
-        <Gamepad2 className="size-6 text-accent" aria-hidden />
+        <img src="/sovemu-mark.svg" alt="" className="h-7 w-auto" />
         <span>
           Sov<span className="text-accent">Emu</span>
         </span>

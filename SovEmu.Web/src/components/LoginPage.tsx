@@ -5,7 +5,7 @@
 // straight to the server (`POST /oauth/signin`, a plain form post, so password managers see
 // it), which signs the browser in and continues; a wrong password comes back here with `error`.
 // Opened directly, the page starts signing the web client in, which brings it back here.
-import { CircleAlert, Gamepad2, LogIn, UserPlus } from "lucide-react";
+import { CircleAlert, LogIn, UserPlus } from "lucide-react";
 import { type SubmitEvent, useEffect, useState } from "react";
 import { ApiError, api } from "../lib/api";
 import { signIn } from "../lib/auth";
@@ -59,7 +59,7 @@ export default function LoginPage() {
       >
         <div>
           <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight">
-            <Gamepad2 className="size-7 text-accent" aria-hidden />
+            <img src="/sovemu-mark.svg" alt="" className="h-9 w-auto" />
             <span>
               Sov<span className="text-accent">Emu</span>
             </span>

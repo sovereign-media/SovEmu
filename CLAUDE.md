@@ -32,6 +32,8 @@ The detail for each part loads from `.claude/rules/` when you work on its files 
 - **Every setting is an environment variable** (`SovEmu__<Area>__<Name>`); UI buttons are
   shortcuts, never the only way.
 - **One image** (`SovEmu.Backend/Dockerfile`), Debian x86_64, the same for every host.
+- **The logo comes from `brand/`.** `brand/generate.mjs` writes every client's icons, favicons,
+  banner and brand mark from one drawing; change it and run it, never edit an output.
 - **Long text goes through a file.** Commit messages and PR or issue bodies are written with the
   Write tool to `test-results/<task>.md` (named for the task) and passed with `-F` /
   `--body-file`, never a heredoc.
