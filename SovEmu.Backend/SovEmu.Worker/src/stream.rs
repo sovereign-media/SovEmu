@@ -639,6 +639,10 @@ pub(crate) fn run(
     watchdog::start();
     loop {
         watchdog::beat(watchdog::Phase::Network);
+        // Over the memory limit: end as a quit does, so the session's saves are written.
+        if crate::limits::over_memory() {
+            return Ok(ExitReason::MemoryLimit);
+        }
         // Commands: a new client replaces the current one; control requests run between frames.
         loop {
             match commands.try_recv() {

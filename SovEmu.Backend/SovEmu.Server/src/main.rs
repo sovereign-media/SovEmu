@@ -452,6 +452,38 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Sessions__Rewind__MaxMegabytes", default_value_t = 64)]
     pub rewind_max_mb: u32,
 
+    /// The most memory (resident and swapped out) one session's worker may hold, MiB, before it
+    /// saves and ends the session (0: no limit). Unset, each system has SovEmu's choice
+    /// (`System::default_memory_mb`); per system, `SovEmu__Systems__<id>__Limits__MemoryMegabytes`
+    /// wins over both.
+    #[arg(long, env = "SovEmu__Sessions__Limits__MemoryMegabytes")]
+    pub limit_memory_mb: Option<u64>,
+
+    /// The CPU time one session's worker may use, in CPUs (1.5 is a core and a half; 0: no
+    /// limit). Needs a delegated cgroup (`SovEmu__Sessions__Limits__Cgroups`). Unset, each system
+    /// has SovEmu's choice (`System::default_cpus`); per system, `…__Limits__Cpus`.
+    #[arg(long, env = "SovEmu__Sessions__Limits__Cpus")]
+    pub limit_cpus: Option<f64>,
+
+    /// The threads one session's worker may run (0: no limit). Needs a delegated cgroup. Unset,
+    /// each system has SovEmu's choice (`System::default_threads`); per system,
+    /// `…__Limits__Threads`.
+    #[arg(long, env = "SovEmu__Sessions__Limits__Threads")]
+    pub limit_threads: Option<u32>,
+
+    /// The files one session's worker may have open (0: as many as the server may). Per system,
+    /// `SovEmu__Systems__<id>__Limits__OpenFiles`.
+    #[arg(long, env = "SovEmu__Sessions__Limits__OpenFiles", default_value_t = DEFAULT_OPEN_FILES)]
+    pub limit_open_files: u64,
+
+    /// Give each session's worker a cgroup of its own, for its CPU, thread and memory limits,
+    /// when the server's cgroup is delegated to it (writable by its user: a systemd unit with
+    /// `Delegate=yes`, rootless Podman). A stock Docker or Kubernetes container has none; the
+    /// worker's own memory and open-file limits hold either way.
+    #[arg(long, env = "SovEmu__Sessions__Limits__Cgroups", default_value_t = true,
+          action = clap::ArgAction::Set)]
+    pub limit_cgroups: bool,
+
     /// Fast-forward speed (frames emulated per frame shown).
     #[arg(long, env = "SovEmu__Sessions__FastForward", default_value_t = 4)]
     pub fast_forward: u32,
@@ -703,6 +735,30 @@ impl Config {
             .and_then(|s| s.prescale)
             .or(self.video_prescale)
             .unwrap_or_else(|| system.default_prescale())
+    }
+
+    /// What a system's session workers may use: each limit the system's own setting, else the
+    /// sessions' one, else SovEmu's choice for the system.
+    pub fn limits_for(
+        &self,
+        system: &sovemu_library::systems::System,
+    ) -> sovemu_sessions::limits::Limits {
+        let own = self.systems.get(system.id).map(|s| &s.limits);
+        sovemu_sessions::limits::Limits {
+            memory_mb: own
+                .and_then(|l| l.memory_mb)
+                .or(self.limit_memory_mb)
+                .unwrap_or_else(|| system.default_memory_mb()),
+            cpus: own
+                .and_then(|l| l.cpus)
+                .or(self.limit_cpus)
+                .unwrap_or_else(|| system.default_cpus()),
+            threads: own
+                .and_then(|l| l.threads)
+                .or(self.limit_threads)
+                .unwrap_or_else(|| system.default_threads()),
+            open_files: own.and_then(|l| l.open_files).unwrap_or(self.limit_open_files),
+        }
     }
 
     /// Where everything lives in the data folder.
@@ -962,6 +1018,33 @@ async fn cache_headers(request: Request, next: Next) -> Response {
     response
 }
 
+/// `SovEmu__Sessions__Limits__OpenFiles`'s default: many times what a session opens (23 on
+/// the 2D systems, as measured in docs/research/worker-limits-2026-11.md), well under what a
+/// container allows (Docker's default is over a million).
+const DEFAULT_OPEN_FILES: u64 = 1024;
+
+/// The workers' cgroups, when `SovEmu__Sessions__Limits__Cgroups` is on and the server's cgroup
+/// is delegated to it; logged either way, since without one CPU and thread limits do nothing.
+fn worker_cgroups(enabled: bool) -> Option<sovemu_sessions::limits::Cgroups> {
+    if !enabled {
+        tracing::info!("session cgroups are off: CPU and thread limits are not applied");
+        return None;
+    }
+    match sovemu_sessions::limits::Cgroups::take() {
+        Ok(cgroups) => {
+            tracing::info!(controllers = ?cgroups.controllers(), "each session gets a cgroup");
+            Some(cgroups)
+        }
+        Err(e) => {
+            tracing::info!(
+                reason = %e,
+                "no session cgroups: memory and open-file limits only, no CPU or thread limits"
+            );
+            None
+        }
+    }
+}
+
 fn default_worker() -> PathBuf {
     let name = format!("sovemu-worker{}", std::env::consts::EXE_SUFFIX);
     std::env::current_exe()
@@ -1173,6 +1256,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         gpu: gpu.worker_arg.clone(),
         log_format: config.log_format.as_arg(),
         observer: Arc::new(sovemu_sessions::Observers(observers)),
+        cgroups: worker_cgroups(config.limit_cgroups),
     });
     let cache_dir = paths.cache_games();
     let cache_bytes = match config.library_mode {
@@ -1513,6 +1597,40 @@ mod tests {
         let config = Config::parse_from(["sovemu-server", "--metadata-sources", "launchbox"]);
         let err = metadata_providers(&config, &paths).err().unwrap().to_string();
         assert!(err.contains("launchbox") && err.contains("screenscraper"), "{err}");
+    }
+
+    #[test]
+    fn limits_are_the_system_s_then_the_sessions_then_sovemu_s_choice() {
+        use sovemu_library::systems::by_id;
+        let (nes, gamecube) = (by_id("nes").unwrap(), by_id("gamecube").unwrap());
+        let mut config = Config::parse_from(["sovemu-server"]);
+        let nes_default = config.limits_for(nes);
+        assert_eq!(nes_default.memory_mb, nes.default_memory_mb());
+        assert_eq!(nes_default.open_files, DEFAULT_OPEN_FILES);
+        assert!(
+            config.limits_for(gamecube).memory_mb > nes_default.memory_mb,
+            "3D systems get more memory than the NES"
+        );
+        config.limit_memory_mb = Some(0);
+        config.limit_cpus = Some(1.0);
+        assert_eq!(config.limits_for(gamecube).memory_mb, 0, "the sessions' setting: no limit");
+        assert_eq!(config.limits_for(nes).cpus, 1.0);
+        config.systems.insert(
+            "gamecube".into(),
+            structured::SystemSpec {
+                limits: structured::LimitsSpec {
+                    memory_mb: Some(6000),
+                    open_files: Some(4096),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let gc = config.limits_for(gamecube);
+        assert_eq!((gc.memory_mb, gc.open_files, gc.cpus), (6000, 4096, 1.0), "the system's wins");
+        assert_eq!(config.limits_for(nes).memory_mb, 0);
+        let config = Config::parse_from(["sovemu-server", "--limit-cgroups", "false"]);
+        assert!(!config.limit_cgroups);
     }
 
     #[test]

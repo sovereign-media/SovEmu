@@ -387,6 +387,7 @@ async fn launch(
             variables: crate::settings::for_launch(&state, system).await?,
             run_ahead: crate::settings::run_ahead_for_launch(&state, system).await?,
             prescale: state.config.prescale_for(system),
+            limits: state.config.limits_for(system),
             after_exit,
             start_id,
         })

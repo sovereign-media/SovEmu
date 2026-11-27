@@ -87,5 +87,7 @@ describe("sessions page", () => {
     );
     expect(failureLabel({ ...f, reason: "killed", signal: null })).toBe("Would not stop");
     expect(failureLabel({ ...f, whilePlaying: false, reason: "refused", signal: null })).toBe("Refused to start");
+    // The message says which limit; the signal adds nothing.
+    expect(failureLabel({ ...f, reason: "over_limit", signal: 6 })).toBe("Over its limit while playing");
   });
 });

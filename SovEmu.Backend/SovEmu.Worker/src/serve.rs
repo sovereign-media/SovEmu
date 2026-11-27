@@ -23,6 +23,8 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(args: ServeArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
+    // Before anything of the core's runs. With no server to tell, the log says why it aborted.
+    crate::limits::apply(args.memory_limit_mb, args.open_files_limit, || {});
     let session = Session::open(
         &SessionConfig {
             core: args.core.clone(),
@@ -82,7 +84,10 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     tracing::info!(url = %format!("http://{http_addr}/"), "open in a browser");
 
     let reflexive = crate::stun::Reflexive::new(&[], udp.primary());
-    stream::run(session, udp, reflexive, commands_rx, &mut |_| {}, None).map(drop)
+    let reason = stream::run(session, udp, reflexive, commands_rx, &mut |_| {}, None)?;
+    // The session is gone, its saves written: say why, for tests.
+    println!("exit={}", serde_json::to_value(reason)?.as_str().unwrap_or_default());
+    Ok(())
 }
 
 /// Serves the web client and `POST /api/offer` on a background thread.

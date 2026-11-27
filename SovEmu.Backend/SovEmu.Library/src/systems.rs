@@ -77,6 +77,37 @@ impl System {
     }
 }
 
+/// What a session's worker may use when neither the environment nor an admin says
+/// (`SovEmu__Systems__<id>__Limits__*`, `SovEmu__Sessions__Limits__*`; 0 is no limit): several
+/// times what each system's sessions were measured to use, in sovereign-media/SovEmu#282
+/// (docs/research/worker-limits-2026-11.md), so only a runaway core reaches them.
+impl System {
+    /// Memory held (resident and swapped out), MiB. The 2D systems and the PlayStation used
+    /// 80–145 MiB with rewind's history full; the Dreamcast 300 MiB and a GameCube booting 460
+    /// MiB, under Mesa's software renderer. The N64 and Dreamcast have a few MiB of RAM, so 2 GiB
+    /// is several times their games and still stops the N64 core that ran away to 2.4 GiB; the
+    /// GameCube and PlayStation 2 (unmeasured: no free BIOS or game) get 4 GiB.
+    pub fn default_memory_mb(&self) -> u64 {
+        match self.id {
+            "n64" | "dreamcast" => 2048,
+            _ if self.needs_gpu => 4096,
+            _ => 1024,
+        }
+    }
+
+    /// Threads: 12–16 measured on the 2D systems; 33–49 on the 3D ones on 12 CPUs, where
+    /// Mesa's software renderer starts one per CPU, so a bigger host needs more.
+    pub fn default_threads(&self) -> u32 {
+        if self.needs_gpu { 256 } else { 64 }
+    }
+
+    /// CPU time, in CPUs: the 2D systems used at most 0.7 of one; the 3D ones none, since
+    /// without a GPU they render on every CPU there is.
+    pub fn default_cpus(&self) -> f64 {
+        if self.needs_gpu { 0.0 } else { 2.0 }
+    }
+}
+
 /// Run-ahead's default on the systems that support it. One frame hides most of the games' own
 /// lag, and the worker runs fewer if a core cannot keep up (or none if it cannot save its state),
 /// so it is safe to have on. Two would hide more in some games but skips ahead visibly in others.
@@ -606,6 +637,23 @@ pub(crate) fn parse_title(stem: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_system_has_limits_and_3d_ones_more_memory() {
+        // Several times what was measured (#282): 145 MiB on the 2D systems, 460 on the 3D.
+        for s in SYSTEMS {
+            let (memory, threads) = (s.default_memory_mb(), s.default_threads());
+            assert!(memory >= 1024 && threads >= 64, "{}: {memory} MiB, {threads} threads", s.id);
+            if s.needs_gpu {
+                assert!(memory > 1024 && threads > 64, "{}: a 3D system gets more", s.id);
+                assert_eq!(s.default_cpus(), 0.0, "{}: renders on every CPU there is", s.id);
+            } else {
+                assert!(s.default_cpus() >= 1.0, "{}", s.id);
+            }
+        }
+        assert_eq!(by_id("nes").unwrap().default_memory_mb(), 1024);
+        assert_eq!(by_id("gamecube").unwrap().default_memory_mb(), 4096);
+    }
 
     #[test]
     fn every_system_has_a_box_shape() {

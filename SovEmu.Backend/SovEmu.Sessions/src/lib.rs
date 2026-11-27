@@ -15,6 +15,7 @@
 pub mod connection_test;
 pub mod encoders;
 pub mod gpu;
+pub mod limits;
 pub mod starts;
 pub mod workers;
 
@@ -88,6 +89,8 @@ pub struct Ended<'a> {
     pub last_lines: &'a [String],
     /// Why its start failed (the worker's message, or the server's timeout), if it did.
     pub start_error: Option<&'a str>,
+    /// Which of its limits ended it, in words, when one did ([`EndReason::OverLimit`]).
+    pub over_limit: Option<&'a str>,
 }
 
 impl Ended<'_> {
@@ -95,7 +98,10 @@ impl Ended<'_> {
     /// Quitting and idling out are not failures.
     pub fn failed(&self) -> bool {
         self.start_error.is_some()
-            || matches!(self.reason, EndReason::Error | EndReason::Crashed | EndReason::Killed)
+            || matches!(
+                self.reason,
+                EndReason::Error | EndReason::Crashed | EndReason::Killed | EndReason::OverLimit
+            )
     }
 }
 
@@ -114,6 +120,9 @@ pub enum EndReason {
     Crashed,
     /// Killed by the server: it did not stop when asked, or its start timed out.
     Killed,
+    /// Ended by one of its limits ([`limits`]): it went over its memory (it saved and left, or
+    /// was killed when it could not), or crashed when refused a thread over its cgroup's limit.
+    OverLimit,
     /// Exited cleanly without saying why.
     Exited,
 }
@@ -127,6 +136,7 @@ impl EndReason {
             Self::Error => "error",
             Self::Crashed => "crashed",
             Self::Killed => "killed",
+            Self::OverLimit => "over_limit",
             Self::Exited => "exited",
         }
     }

@@ -5,7 +5,9 @@
 //!   (`viewer`, the default, or `admin`; `__ADMIN=true` is the older spelling of `admin`).
 //! - Systems: `SovEmu__Systems__<id>__Core` (the core to use), `__ENABLED` (false hides it),
 //!   `__DECORATION` (the decoration set, or `none`), `__RUN_AHEAD` (frames), `__PRESCALE` (1 or 2),
-//!   and `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
+//!   `__LIMITS__MEMORY_MEGABYTES`, `__LIMITS__CPUS`, `__LIMITS__THREADS` and
+//!   `__LIMITS__OPEN_FILES` (what its sessions' workers may use, over the sessions' limits), and
+//!   `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
 //! - Controller defaults: `SovEmu__Controllers__<n>__Id` (a controller ID from
 //!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` (a
 //!   system id: the default for that system only) and `__NAME`.
@@ -31,8 +33,17 @@ pub struct UserSpec {
     pub(crate) role: Role,
 }
 
+/// What a system's session workers may use, where its settings say (0: no limit).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LimitsSpec {
+    pub memory_mb: Option<u64>,
+    pub cpus: Option<f64>,
+    pub threads: Option<u32>,
+    pub open_files: Option<u64>,
+}
+
 /// Per-system overrides.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SystemSpec {
     /// A core name (`snes9x`, …) to use instead of SovEmu's choice.
     pub core: Option<String>,
@@ -45,6 +56,8 @@ pub struct SystemSpec {
     pub run_ahead: Option<u32>,
     /// How many times its games' pictures are scaled up before they are encoded (1 or 2).
     pub prescale: Option<u32>,
+    /// What its sessions' workers may use.
+    pub limits: LimitsSpec,
 }
 
 /// A setting's field as written in messages: `RUN_AHEAD` → `RunAhead`, `CORE` → `Core`.
@@ -157,8 +170,11 @@ pub(crate) fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, Syst
                     }
                     "RUNAHEAD" => spec.run_ahead = Some(parse_run_ahead(&var, &id, &value)?),
                     "PRESCALE" => spec.prescale = Some(parse_prescale(&var, &value)?),
+                    limit if limit.starts_with("LIMITS") => {
+                        parse_limit(&id, &limit["LIMITS".len()..], &value, &mut spec.limits)?
+                    }
                     other => bail!(
-                        "{var}: unknown setting {other:?} (Core, Enabled, Decoration, RunAhead, Prescale or Options__<name>)"
+                        "{var}: unknown setting {other:?} (Core, Enabled, Decoration, RunAhead, Prescale, Limits__<limit> or Options__<name>)"
                     ),
                 }
             }
@@ -182,6 +198,39 @@ fn parse_run_ahead(var: &str, system: &str, value: &str) -> Result<u32> {
         bail!("{var}: run-ahead is for the 2D systems; {system} is too costly to run ahead");
     }
     Ok(frames)
+}
+
+/// One of `SovEmu__Systems__<id>__Limits__*` (`limit` upper-cased without underscores).
+fn parse_limit(id: &str, limit: &str, value: &str, limits: &mut LimitsSpec) -> Result<()> {
+    fn number<T: std::str::FromStr>(var: &str, value: &str, what: &str) -> Result<T>
+    where
+        T::Err: std::error::Error + Send + Sync + 'static,
+    {
+        value.trim().parse().with_context(|| format!("{var}: {what}, 0 for no limit"))
+    }
+    let var = |name: &str| format!("SovEmu__Systems__{id}__Limits__{name}");
+    match limit {
+        "MEMORYMEGABYTES" => {
+            limits.memory_mb = Some(number(&var("MemoryMegabytes"), value, "MiB")?);
+        }
+        "CPUS" => {
+            let var = var("Cpus");
+            let cpus: f64 = number(&var, value, "a number of CPUs (1.5 is a core and a half)")?;
+            if !cpus.is_finite() || cpus < 0.0 {
+                bail!("{var}: a number of CPUs, 0 for no limit (got {value:?})");
+            }
+            limits.cpus = Some(cpus);
+        }
+        "THREADS" => limits.threads = Some(number(&var("Threads"), value, "a number of threads")?),
+        "OPENFILES" => {
+            limits.open_files = Some(number(&var("OpenFiles"), value, "a number of files")?)
+        }
+        other => bail!(
+            "{}: unknown limit (MemoryMegabytes, Cpus, Threads or OpenFiles)",
+            var(&pascal(other.trim_start_matches('_')))
+        ),
+    }
+    Ok(())
 }
 
 /// A pre-scale: 1 (off) or 2, as `SovEmu__Streaming__Video__Prescale` takes.
@@ -398,6 +447,30 @@ mod tests {
             let err = systems(&vars(&[("SovEmu__Systems__nes__Prescale", bad)])).unwrap_err();
             assert!(format!("{err:#}").contains("SovEmu__Systems__nes__Prescale"), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn limits_per_system() {
+        let s = systems(&vars(&[
+            ("SovEmu__Systems__gamecube__Limits__MemoryMegabytes", "4096"),
+            ("SovEmu__Systems__gamecube__Limits__Cpus", "2.5"),
+            ("SovEmu__Systems__GAMECUBE__LIMITS__THREADS", "0"),
+            ("SovEmu__Systems__nes__Limits__Open_Files", "64"),
+        ]))
+        .unwrap();
+        let gc = &s["gamecube"].limits;
+        assert_eq!((gc.memory_mb, gc.cpus, gc.threads), (Some(4096), Some(2.5), Some(0)));
+        assert_eq!(s["nes"].limits.open_files, Some(64), "underscores ignored, as elsewhere");
+        for (var, bad) in [
+            ("SovEmu__Systems__nes__Limits__MemoryMegabytes", "lots"),
+            ("SovEmu__Systems__nes__Limits__Cpus", "-1"),
+            ("SovEmu__Systems__nes__Limits__Threads", "1.5"),
+        ] {
+            let err = systems(&vars(&[(var, bad)])).unwrap_err();
+            assert!(format!("{err:#}").contains(var), "{var}={bad}: {err:#}");
+        }
+        let err = systems(&vars(&[("SovEmu__Systems__nes__Limits__Disk", "1")])).unwrap_err();
+        assert!(format!("{err:#}").contains("unknown limit"), "{err:#}");
     }
 
     #[test]

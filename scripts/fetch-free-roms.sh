@@ -71,4 +71,8 @@ gba|240p Test Suite.gba|47844f7140738a06f8f3bc09780da3ab095539a250b870f614feed56
 megadrive|240p Test Suite.md|0db29b9739cc75c44dcbf2f3fa74608fff57cf05835e88cf28ffeb1faa4b7970|itch:artemiourbina/240p-test-suite/17035733|240pSuite-1.32.bin|GPL-2.0, ArtemioUrbina/240pTestSuite
 pcengine|240p Test Suite.pce|b772532fe00a03e338977b5ab539eff8ecb71b2fb084c771335104d537da08e7|itch:artemiourbina/240p-test-suite/9964366|240pSuite.pce|GPL-2.0, ArtemioUrbina/240pTestSuite
 psx|240p Test Suite.cue|63f64dcd61bd35d277f9164d17563afc2de8e1adcd316a8e0a45ea753bfbf542|https://github.com/filipalac/240pTestSuite-PS1/releases/download/19122020/240pTestSuitePS1-EMU.zip|240pTestSuitePS1-EMU.cue,240pTestSuitePS1-EMU.bin|GPL-2.0, filipalac/240pTestSuite-PS1
+snes|240p Test Suite.sfc|880696689fa9bfdf395cc47dd4be8a312192f63594f249382945e31f00db7b0c|itch:artemiourbina/240p-test-suite/19403154|240pSuite.sfc|GPL-2.0, ArtemioUrbina/240pTestSuite
+n64|240p Test Suite.z64|5b10602187a2c65f87cacbab7f2e70bde1240ee75792eb60ac3eaf8fe21665c0|itch:artemiourbina/240p-test-suite/17334416|240pSuite.z64|GPL-2.0, ArtemioUrbina/240pTestSuite
+dreamcast|240p Test Suite.cdi|630cd8aed3f0481ccc4c0351f9bddf53cb99ff360820c60427be3ebd30bde9f7|itch:artemiourbina/240p-test-suite/6581879|240pSuite.cdi|GPL-2.0, ArtemioUrbina/240pTestSuite
+gamecube|240p Test Suite.iso|c263a18be2250bebb839e9ca1fcd3e457c0fdd7144968f1f485c8d090d90eb38|itch:artemiourbina/240p-test-suite/17035732|GameCube-240pSuite-1.20.iso|GPL-2.0, ArtemioUrbina/240pTestSuite
 EOF

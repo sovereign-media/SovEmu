@@ -205,6 +205,9 @@ pub enum ExitReason {
     ControllerGone,
     /// The stream loop failed.
     Error,
+    /// It went over its memory limit (`--memory-limit-mb`): saved and left, or, when it could
+    /// not, aborted right after saying so.
+    MemoryLimit,
 }
 
 #[cfg(test)]

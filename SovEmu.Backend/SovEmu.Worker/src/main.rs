@@ -20,6 +20,7 @@ mod gpu;
 mod headless;
 mod health;
 mod keyframes;
+mod limits;
 mod link;
 mod loading;
 mod loss;
@@ -250,6 +251,15 @@ struct SessionArgs {
     #[arg(long, default_value_t = 300)]
     idle_timeout: u64,
 
+    /// The most memory (resident and swapped out) the session may hold, MiB, before it saves
+    /// and ends (0: no limit; see limits.rs).
+    #[arg(long, default_value_t = 0)]
+    memory_limit_mb: u64,
+
+    /// The most files the session may have open (0: what it inherits).
+    #[arg(long, default_value_t = 0)]
+    open_files_limit: u64,
+
     /// Seconds of rewind history (0 turns rewind off).
     #[arg(long, default_value_t = 60)]
     rewind_seconds: u32,
@@ -422,6 +432,14 @@ struct ServeArgs {
     /// At most this many MiB of rewind history.
     #[arg(long, default_value_t = 64)]
     rewind_max_mb: u32,
+
+    /// As `session`'s: MiB of memory held before the session saves and ends (0: no limit).
+    #[arg(long, default_value_t = 0)]
+    memory_limit_mb: u64,
+
+    /// As `session`'s: the most files it may have open (0: what it inherits).
+    #[arg(long, default_value_t = 0)]
+    open_files_limit: u64,
 
     /// Frames emulated per frame shown while fast-forwarding.
     #[arg(long, default_value_t = 4)]

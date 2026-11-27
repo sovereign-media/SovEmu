@@ -1,0 +1,19 @@
+| Case | Resident | cgroup | Private writable | Address space | Threads | Files | CPU playing | Frames received |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dreamcast-240p | 296 MiB | 265 MiB | 736 MiB | 3.6 GiB | 38 | 31 | 0.59 | 4642 |
+| gamecube-240p | 447 MiB | 372 MiB | 66711 MiB | 81.9 GiB | 44 | 33 | 0.00 | 0 |
+| gamecube-240p-interp | 447 MiB | 439 MiB | 66721 MiB | 68.0 GiB | 49 | 33 | 0.00 | 0 |
+| gb-240p | 101 MiB | 101 MiB | 423 MiB | 1.0 GiB | 14 | 23 | 0.12 | 5105 |
+| gba-240p | 106 MiB | 116 MiB | 429 MiB | 0.9 GiB | 13 | 23 | 0.34 | 4961 |
+| gbc-ucity | 105 MiB | 107 MiB | 425 MiB | 0.9 GiB | 13 | 23 | 0.27 | 5044 |
+| megadrive-240p | 126 MiB | 142 MiB | 475 MiB | 1.1 GiB | 14 | 23 | 0.44 | 4990 |
+| n64-240p | 303 MiB | 418 MiB | 1330 MiB | 4.5 GiB | 33 | 24 | 0.44 | 0 |
+| n64-240p-interp | 2370 MiB | 2318 MiB | 3430 MiB | 6.7 GiB | 35 | 24 | 1.00 | 0 |
+| nes-240p | 81 MiB | 78 MiB | 406 MiB | 0.9 GiB | 12 | 23 | 0.32 | 5073 |
+| nes-nova | 109 MiB | 116 MiB | 433 MiB | 0.9 GiB | 12 | 23 | 0.18 | 5090 |
+| pcengine-240p | 114 MiB | 125 MiB | 437 MiB | 0.9 GiB | 12 | 23 | 0.68 | 4866 |
+| psx-240p | 127 MiB | 131 MiB | 470 MiB | 1.1 GiB | 16 | 24 | 0.42 | 411 |
+| psx-240p-interp | 122 MiB | 124 MiB | 466 MiB | 1.1 GiB | 16 | 24 | 0.55 | 517 |
+| psx-240p-noahead | 127 MiB | 149 MiB | 468 MiB | 1.0 GiB | 15 | 24 | 0.39 | 5018 |
+| snes-240p | 125 MiB | 121 MiB | 448 MiB | 1.0 GiB | 13 | 23 | 0.24 | 4986 |
+| snes-castle | 125 MiB | 129 MiB | 446 MiB | 0.9 GiB | 12 | 23 | 0.20 | 5036 |

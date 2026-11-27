@@ -42,6 +42,9 @@ struct Worker {
     dir: PathBuf,
     /// The session cookie, when talking to sovemu-server.
     cookie: Option<String>,
+    /// What it prints on stdout after its addresses (`exit=<reason>` as it ends).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    stdout: Option<std::sync::mpsc::Receiver<String>>,
 }
 
 impl Worker {
@@ -57,12 +60,18 @@ impl Worker {
                 http: addr.parse().expect("SOVEMU_E2E_HTTP is host:port"),
                 dir: PathBuf::new(),
                 cookie: None,
+                stdout: None,
             },
             Err(_) => Self::start(),
         }
     }
 
     fn start_with(extra: &[&std::ffi::OsStr]) -> Self {
+        Self::start_with_env(extra, &[])
+    }
+
+    /// With `env` set for the worker (and so for its core) too.
+    fn start_with_env(extra: &[&std::ffi::OsStr], env: &[(&str, &str)]) -> Self {
         // A folder of its own: the tests run side by side, and each deletes its folder when done.
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -78,6 +87,7 @@ impl Worker {
             .arg("--save-dir")
             .arg(dir.join("saves"))
             .args(extra)
+            .envs(env.iter().copied())
             .env_remove("SovEmu__Streaming__AdvertiseAddress")
             .env_remove("SovEmu__Streaming__AdvertiseAddressV6")
             .env_remove("SovEmu__Paths__Web")
@@ -98,12 +108,18 @@ impl Worker {
                 break;
             }
         }
-        std::thread::spawn(move || lines.for_each(drop));
+        let (tx, stdout) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in lines.map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        });
         Self {
             child: Some(child),
             http: http.expect("worker printed its HTTP address"),
             dir,
             cookie: None,
+            stdout: Some(stdout),
         }
     }
 
@@ -552,6 +568,66 @@ fn streams_video_over_ipv6() {
         }
         rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
     }
+}
+
+/// A core that leaks (the test core's `SOVEMU_TEST_LEAK_MB`) is stopped by the session's memory
+/// limit as a player quitting would stop it: the stream ends and the auto state is written
+/// (sovereign-media/SovEmu#282). Linux only: resident memory is read from `/proc`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_leaking_core_is_stopped_by_its_memory_limit_and_its_saves_are_written() {
+    str0m::crypto::from_feature_flags().install_process_default();
+    let limit: &std::ffi::OsStr = "--memory-limit-mb".as_ref();
+    let mut worker =
+        Worker::start_with_env(&[limit, "256".as_ref()], &[("SOVEMU_TEST_LEAK_MB", "2")]);
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let local = socket.local_addr().unwrap();
+    let mut rtc = RtcConfig::new().build(Instant::now());
+    rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
+    let mut api = rtc.sdp_api();
+    api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+    let (offer, pending) = api.apply().expect("an offer");
+    let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+    let (status, body) =
+        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+    assert_eq!(status, 200, "{body}");
+    let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+    rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
+
+    // The game runs, and leaks, only while a client is connected: keep this one going until the
+    // worker says it has ended.
+    let stdout = worker.stdout.take().unwrap();
+    let started = Instant::now();
+    let mut buf = vec![0u8; 2048];
+    let exit = loop {
+        assert!(started.elapsed() < Duration::from_secs(90), "still running after 90 s");
+        if let Ok(line) = stdout.try_recv() {
+            if let Some(reason) = line.strip_prefix("exit=") {
+                break reason.to_owned();
+            }
+        }
+        let timeout = match rtc.poll_output().unwrap() {
+            Output::Transmit(t) => {
+                socket.send_to(&t.contents, t.destination).unwrap();
+                continue;
+            }
+            Output::Event(_) => continue,
+            Output::Timeout(t) => t,
+        };
+        let wait = timeout
+            .saturating_duration_since(Instant::now())
+            .clamp(Duration::from_millis(1), Duration::from_millis(10));
+        socket.set_read_timeout(Some(wait)).unwrap();
+        if let Ok((n, source)) = socket.recv_from(&mut buf) {
+            let contents = buf[..n].try_into().unwrap();
+            let receive = Receive { proto: Protocol::Udp, source, destination: local, contents };
+            rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
+        }
+        rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
+    };
+    assert_eq!(exit, "memory_limit");
+    let auto_state = worker.dir.join("saves/states/slot0.state");
+    assert!(auto_state.exists(), "no auto state at {}", auto_state.display());
 }
 
 /// The acks each ratio is measured over: the latest ones, normally and fast-forwarding.

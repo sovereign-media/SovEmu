@@ -38,6 +38,11 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
     str0m::crypto::from_feature_flags().install_process_default();
     let stdout = sovemu_retro_host::take_stdout().context("keeping stdout for replies")?;
     let out = Out(Arc::new(Mutex::new(stdout)));
+    // Before anything of the core's runs.
+    let abort_out = out.clone();
+    crate::limits::apply(args.memory_limit_mb, args.open_files_limit, move || {
+        abort_out.send(&Reply::Exiting { reason: ExitReason::MemoryLimit });
+    });
     let report_out = out.clone();
     let report = move |phase, read, total| {
         report_out.send(&Reply::Progress { phase, read, total });
