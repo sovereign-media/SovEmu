@@ -198,15 +198,19 @@ pub(crate) async fn admin_values(
 }
 
 /// The options a game of `system` starts with, beyond the core's own defaults, and where each
-/// comes from.
+/// comes from. SovEmu's own include its GPU enhancements (`System::gpu_options`) when
+/// `hardware`: the 3D systems render on a hardware GPU here.
 pub(crate) fn layered(
     system: &System,
+    hardware: bool,
     admin: &BTreeMap<String, String>,
     environment: &BTreeMap<String, String>,
 ) -> BTreeMap<String, (String, Source)> {
+    let gpu_options = if hardware { system.gpu_options } else { &[] };
     let mut out: BTreeMap<String, (String, Source)> = system
         .options
         .iter()
+        .chain(gpu_options)
         .map(|(k, v)| ((*k).to_owned(), ((*v).to_owned(), Source::Sovemu)))
         .collect();
     for (k, v) in admin {
@@ -224,7 +228,7 @@ pub(crate) async fn for_launch(
     system: &System,
 ) -> ApiResult<Vec<(String, String)>> {
     let admin = admin_values(&state.db, system.id).await?;
-    Ok(layered(system, &admin, &environment(state, system))
+    Ok(layered(system, state.gpu.renders_on_hardware(), &admin, &environment(state, system))
         .into_iter()
         .map(|(k, (v, _))| (k, v))
         .collect())
@@ -367,7 +371,8 @@ async fn describe(state: &AppState, system: &'static System) -> ApiResult<System
     let info = state.core_info.get(&worker, &core).await?;
     let (options, categories, needs_game) = offered(&info, remembered(&state.db, &core).await?);
     let admin = admin_values(&state.db, system.id).await?;
-    let mut layers = layered(system, &admin, &environment(state, system));
+    let mut layers =
+        layered(system, state.gpu.renders_on_hardware(), &admin, &environment(state, system));
     let mut settings: Vec<Setting> = options
         .iter()
         .map(|o| {
@@ -593,10 +598,25 @@ mod tests {
             ("pcsx_rearmed_frameskip".to_owned(), "1".to_owned()),
         ]);
         let env = BTreeMap::from([("pcsx_rearmed_frameskip".to_owned(), "2".to_owned())]);
-        let l = layered(psx, &BTreeMap::new(), &BTreeMap::new());
+        let l = layered(psx, false, &BTreeMap::new(), &BTreeMap::new());
         assert_eq!(l["pcsx_rearmed_cd_readahead"], ("256".into(), Source::Sovemu));
-        let l = layered(psx, &admin, &env);
+        let l = layered(psx, false, &admin, &env);
         assert_eq!(l["pcsx_rearmed_cd_readahead"], ("64".into(), Source::Admin));
         assert_eq!(l["pcsx_rearmed_frameskip"], ("2".into(), Source::Environment));
+    }
+
+    #[test]
+    fn the_gpu_enhancements_apply_only_on_a_hardware_gpu_and_still_give_way() {
+        let gamecube = sovemu_library::systems::by_id("gamecube").unwrap();
+        let none = BTreeMap::new();
+        let l = layered(gamecube, true, &none, &none);
+        assert_eq!(l["dolphin_efb_scale"], ("2".into(), Source::Sovemu));
+        let l = layered(gamecube, false, &none, &none);
+        assert!(!l.contains_key("dolphin_efb_scale"), "the core's own default in software");
+        let admin = BTreeMap::from([("dolphin_efb_scale".to_owned(), "3".to_owned())]);
+        let env = BTreeMap::from([("dolphin_max_anisotropy".to_owned(), "0".to_owned())]);
+        let l = layered(gamecube, true, &admin, &env);
+        assert_eq!(l["dolphin_efb_scale"], ("3".into(), Source::Admin));
+        assert_eq!(l["dolphin_max_anisotropy"], ("0".into(), Source::Environment));
     }
 }

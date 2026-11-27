@@ -99,6 +99,14 @@ impl GpuStatus {
         }
     }
 
+    /// Whether workers render on a hardware GPU, integrated or discrete: not on the software
+    /// renderer, and not on a hypervisor's adapter (`virtual`), which passes the work to its
+    /// host slowly. The 3D systems' enhancements (`System::gpu_options`) apply only then.
+    pub fn renders_on_hardware(&self) -> bool {
+        self.mode == Mode::Gpu
+            && self.devices.iter().any(|d| self.chosen(d) && d.kind == "hardware")
+    }
+
     /// One line per device and a verdict, for the startup log.
     pub fn summary(&self) -> String {
         let mut lines = Vec::new();
@@ -277,6 +285,26 @@ mod tests {
         assert_eq!(s.devices.iter().map(|d| s.chosen(d)).collect::<Vec<_>>(), [false, true]);
         let s = GpuStatus::off("off", None);
         assert!(!s.chosen(&gpu));
+    }
+
+    #[test]
+    fn only_a_hardware_gpu_counts_as_rendering_on_hardware() {
+        // An integrated GPU is a hardware device like any other (i915 on Intel).
+        let intel = device(Some("/dev/dri/renderD128"), "hardware", true);
+        let vm = device(Some("/dev/dri/renderD129"), "virtual", true);
+        let soft = device(None, "software", true);
+        let all = vec![intel, vm, soft.clone()];
+        let on = |setting, best| decide(setting, probe(all.clone(), best)).renders_on_hardware();
+        assert!(on("auto", Some("/dev/dri/renderD128")));
+        assert!(on("/dev/dri/renderD128", Some("/dev/dri/renderD128")));
+        assert!(!on("/dev/dri/renderD129", Some("/dev/dri/renderD128")), "a hypervisor's");
+        assert!(!on("software", Some("/dev/dri/renderD128")));
+        let nodeless = device(None, "hardware", true);
+        let s = decide("auto", probe(vec![soft.clone(), nodeless], Some("auto")));
+        assert!(s.renders_on_hardware(), "NVIDIA without nvidia-drm");
+        let s = decide("auto", probe(vec![soft], Some("software")));
+        assert!(!s.renders_on_hardware());
+        assert!(!GpuStatus::off("off", None).renders_on_hardware());
     }
 
     #[test]
