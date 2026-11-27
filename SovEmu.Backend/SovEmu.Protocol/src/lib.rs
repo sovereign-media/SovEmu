@@ -7,7 +7,7 @@
 //! - [`input`]: the binary messages on the `input` WebRTC DataChannel.
 //! - [`signal`]: the JSON session descriptions exchanged to set up the peer connection.
 //! - [`ipc`]: the JSON lines the server and a session's worker exchange over stdin/stdout.
-//! - [`net`]: the address clients send a session's media to.
+//! - [`net`]: the addresses clients send a session's media to (IPv4, and IPv6 where there is one).
 
 pub mod input;
 pub mod ipc;

@@ -79,6 +79,7 @@ impl Worker {
             .arg(dir.join("saves"))
             .args(extra)
             .env_remove("SovEmu__Streaming__AdvertiseAddress")
+            .env_remove("SovEmu__Streaming__AdvertiseAddressV6")
             .env_remove("SovEmu__Paths__Web")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -494,6 +495,63 @@ fn a_client_without_h264_gets_vp8() {
     assert!(answer.sdp.contains("VP8"), "answer negotiates VP8");
     assert!(!answer.sdp.contains("H264"), "and no H.264, which the client did not offer");
     assert!(!answer.sdp.contains("red/48000"), "nor redundant audio, which it did not offer");
+}
+
+/// A player with IPv6 alone reaches a game at its IPv6 address, on the session's port, and the
+/// picture comes back the same way: here loopback's, given as the setting would give a global
+/// address.
+#[test]
+fn streams_video_over_ipv6() {
+    let Ok(socket) = UdpSocket::bind("[::1]:0") else {
+        eprintln!("no IPv6 loopback here: skipped");
+        return;
+    };
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut worker = Worker::start_with(&["--advertise-ipv6".as_ref(), "::1".as_ref()]);
+    let local = socket.local_addr().unwrap();
+    let mut rtc = RtcConfig::new().build(Instant::now());
+    // Its only candidate is IPv6: nothing reaches it over IPv4.
+    rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
+    let mut api = rtc.sdp_api();
+    api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+    let (offer, pending) = api.apply().expect("an offer");
+    let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+    let (status, body) =
+        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+    assert_eq!(status, 200, "{body}");
+    let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+    assert!(answer.sdp.contains(" ::1 "), "an IPv6 host candidate:\n{}", answer.sdp);
+    rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
+
+    let started = Instant::now();
+    let mut buf = vec![0u8; 2048];
+    let mut frames = 0;
+    while frames < 10 {
+        assert!(started.elapsed() < Duration::from_secs(20), "{frames} video frames in 20 s");
+        let timeout = match rtc.poll_output().unwrap() {
+            Output::Transmit(t) => {
+                socket.send_to(&t.contents, t.destination).unwrap();
+                continue;
+            }
+            Output::Event(Event::MediaData(_)) => {
+                frames += 1;
+                continue;
+            }
+            Output::Event(_) => continue,
+            Output::Timeout(t) => t,
+        };
+        let wait = timeout
+            .saturating_duration_since(Instant::now())
+            .clamp(Duration::from_millis(1), Duration::from_millis(10));
+        socket.set_read_timeout(Some(wait)).unwrap();
+        if let Ok((n, source)) = socket.recv_from(&mut buf) {
+            assert!(source.is_ipv6(), "from {source}");
+            let contents = buf[..n].try_into().unwrap();
+            let receive = Receive { proto: Protocol::Udp, source, destination: local, contents };
+            rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
+        }
+        rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
+    }
 }
 
 /// The acks each ratio is measured over: the latest ones, normally and fast-forwarding.

@@ -38,6 +38,7 @@ mod standin;
 mod stream;
 mod stun;
 mod sysdir;
+mod udp;
 mod video;
 mod watchdog;
 mod web;
@@ -47,6 +48,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use sovemu_protocol::net::Ipv6Advertise;
 use tracing_subscriber::EnvFilter;
 
 use crate::schedule::InputHold;
@@ -134,6 +136,11 @@ struct ConnectionTestArgs {
     #[arg(long = "advertise-ip")]
     advertise: Option<IpAddr>,
 
+    /// The IPv6 address offered beside it: `auto` (the host's global address, if the port binds
+    /// every IPv4 address and there is one), `off`, or an address.
+    #[arg(long = "advertise-ipv6", default_value = "auto")]
+    advertise_ipv6: Ipv6Advertise,
+
     /// A STUN server (`host:port`) to ask for the public address, once per server.
     #[arg(long = "stun")]
     stun: Vec<String>,
@@ -182,6 +189,11 @@ struct SessionArgs {
     /// The IP address clients send media to, if not the bound one.
     #[arg(long = "advertise-ip")]
     advertise: Option<IpAddr>,
+
+    /// The IPv6 address offered beside it: `auto` (the host's global address, if the port binds
+    /// every IPv4 address and there is one), `off`, or an address.
+    #[arg(long = "advertise-ipv6", default_value = "auto")]
+    advertise_ipv6: Ipv6Advertise,
 
     /// A STUN server (`host:port`) to ask for the public address, once per server.
     #[arg(long = "stun")]
@@ -350,6 +362,15 @@ struct ServeArgs {
     /// host's address as browsers reach it.
     #[arg(long = "advertise-ip", env = "SovEmu__Streaming__AdvertiseAddress")]
     advertise: Option<IpAddr>,
+
+    /// The IPv6 address offered beside it: `auto` (the host's global address, if the port binds
+    /// every IPv4 address and there is one), `off`, or an address.
+    #[arg(
+        long = "advertise-ipv6",
+        default_value = "auto",
+        env = "SovEmu__Streaming__AdvertiseAddressV6"
+    )]
+    advertise_ipv6: Ipv6Advertise,
 
     /// Video bitrate a stream starts at, kbit/s; it then follows the connection and the client.
     #[arg(long, default_value_t = 5000)]

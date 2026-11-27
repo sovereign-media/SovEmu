@@ -46,6 +46,7 @@ The v1 design and the decisions behind it, agreed in sovereign-media/SovEmu#1 (2
 - Frames are encoded at native resolution (e.g. 256×224). Clients scale up with nearest-neighbor or a shader.
 - The run loop must not assume one emulated frame per tick, so that fast-forward (run N frames, encode the last) and rewind (ring buffer of compressed state deltas) can be added later.
 - NAT traversal: each worker asks STUN servers (Cloudflare's and Google's free ones) for its socket's public address and offers it as a server-reflexive candidate beside its host one. It runs full ICE, not ICE-lite, so it sends its own connectivity checks: with the client's, they open both routers (hole punching), so most players away from home connect with nothing forwarded. Clients get the same STUN servers. For the rest (symmetric or carrier-grade NAT, blocked UDP) a TURN relay is built into the server (`SovEmu.Relay`, always on, on port 3478), the only TURN server SovEmu uses. Neither has a setting, so there is nothing to misconfigure. It mints each signed-in player's short-lived credentials itself and relays only to the server's own game sessions, over loopback.
+- IPv6: where the host has a global IPv6 address, each worker also binds an IPv6 socket on its session port, to that one address, and offers it as a second host candidate. A player with IPv6 then connects to it directly: there is no NAT on the way, so no STUN and no port forwarding (a router's IPv6 firewall opens for it the same way, from the worker's own checks). str0m answers a check only when its destination is one of its candidates, and the IPv4 socket binds every address, so its datagrams are tagged with the one advertised IPv4 address; the IPv6 socket's are tagged with its own. Replies leave by the socket of their destination's family. With both sockets, each is read on its own thread into one queue (`SovEmu.Worker/src/udp.rs`); with IPv4 alone the stream's thread reads it as before. The address is found the way the IPv4 one is (the OS's route to a documentation address), only beside a wildcard IPv4 bind, and `SovEmu__Streaming__AdvertiseAddressV6` sets it or turns it off. A container on a bridge network usually has no global IPv6 address, so it offers IPv4 alone. STUN and the relay stay IPv4 only.
 
 ### Repository layout
 
@@ -196,7 +197,7 @@ process is `sovemu-server`; `sovemu-worker serve` does the same standalone for d
 Signalling is a single request. The browser gathers all its ICE candidates, then sends the
 complete offer's SDP with the `sessionOffer` mutation, which the server relays to that session's
 worker and which returns the answer. The answer carries the server's
-host candidates. The worker is ICE-lite and uses one UDP port for everything in its session. The client offers receive-only video and audio plus the `input` DataChannel
+candidates: its IPv4 address, its IPv6 one where it has one, and the public address STUN found. The worker runs full ICE and uses one UDP port number for everything in its session (on IPv4 and IPv6 alike). The client offers receive-only video and audio plus the `input` DataChannel
 (unordered, no retransmits).
 
 With the offer a client sends its **capabilities**: one complete, versioned document of what it

@@ -167,6 +167,7 @@ fn group(env: &str) -> Option<Group> {
         | "SovEmu__Streaming__Udp__Bind"
         | "SovEmu__Streaming__Udp__Dscp"
         | "SovEmu__Streaming__AdvertiseAddress"
+        | "SovEmu__Streaming__AdvertiseAddressV6"
         | "SovEmu__Streaming__Video__Kbps"
         | "SovEmu__Streaming__Video__MinKbps"
         | "SovEmu__Streaming__Video__MaxKbps"

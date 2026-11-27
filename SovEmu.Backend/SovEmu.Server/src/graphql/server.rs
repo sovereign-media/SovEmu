@@ -173,6 +173,7 @@ pub(super) const NETWORK_SETTINGS: &[&str] = &[
     "SovEmu__Streaming__Udp__Ports",
     "SovEmu__Streaming__Udp__Bind",
     "SovEmu__Streaming__AdvertiseAddress",
+    "SovEmu__Streaming__AdvertiseAddressV6",
     "SovEmu__Http__PublicUrl",
     "SovEmu__Network__TrustedProxyNetwork",
     "SovEmu__Http__SecureCookies",

@@ -20,7 +20,7 @@
 //! packets and can be compared.
 
 use std::collections::VecDeque;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 /// How often a burst of loss comes, when there is one.
@@ -196,7 +196,7 @@ impl Loss {
     }
 
     /// Sends every held packet that is due.
-    pub(crate) fn flush(&mut self, socket: &UdpSocket, now: Instant) {
+    pub(crate) fn flush(&mut self, socket: &crate::udp::Udp, now: Instant) {
         for (datagram, destination) in self.due(now).collect::<Vec<_>>() {
             let _ = socket.send_to(&datagram, destination);
         }

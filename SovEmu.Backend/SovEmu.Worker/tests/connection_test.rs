@@ -15,8 +15,14 @@ use str0m::{Candidate, Event, Input, Output, RtcConfig};
 
 /// Starts the test peer, sends it `offer` and returns its reply, with the process.
 fn start(offer: SessionDescription) -> (std::process::Child, Reply) {
+    start_with(offer, &[])
+}
+
+/// As [`start`], with more arguments.
+fn start_with(offer: SessionDescription, extra: &[&str]) -> (std::process::Child, Reply) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
         .args(["connection-test", "--udp", "127.0.0.1:0", "--timeout", "20"])
+        .args(extra)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -31,8 +37,31 @@ fn start(offer: SessionDescription) -> (std::process::Child, Reply) {
 
 #[test]
 fn echoes_a_browsers_data_channel_on_a_game_port() {
+    echoes_over(UdpSocket::bind("127.0.0.1:0").unwrap(), &[]);
+}
+
+/// A player with IPv6 only reaches the session at its IPv6 address, on the same port: here
+/// loopback's, given as the setting would give a global one.
+#[test]
+fn echoes_over_ipv6_on_the_same_port() {
+    let Ok(socket) = UdpSocket::bind("[::1]:0") else {
+        eprintln!("no IPv6 loopback here: skipped");
+        return;
+    };
+    let answer = echoes_over(socket, &["--advertise-ipv6", "::1"]);
+    let ports: Vec<&str> = answer
+        .lines()
+        .filter_map(|l| l.strip_prefix("a=candidate:"))
+        .filter_map(|c| c.split(' ').nth(5))
+        .collect();
+    assert!(answer.contains(" ::1 "), "an IPv6 host candidate:\n{answer}");
+    assert!(ports.len() >= 2 && ports.iter().all(|p| *p == ports[0]), "one port: {ports:?}");
+}
+
+/// Connects from `socket` (its address the only candidate offered), sends a message and gets it
+/// back; returns the answer's SDP.
+fn echoes_over(socket: UdpSocket, extra: &[&str]) -> String {
     str0m::crypto::from_feature_flags().install_process_default();
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let local = socket.local_addr().unwrap();
     let mut rtc = RtcConfig::new().build(Instant::now());
     rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
@@ -41,7 +70,7 @@ fn echoes_a_browsers_data_channel_on_a_game_port() {
     let (offer, pending) = api.apply().expect("an offer");
 
     let (mut child, reply) =
-        start(SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() });
+        start_with(SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() }, extra);
     let Reply::Answer { id: 7, answer } = reply else { panic!("expected an answer: {reply:?}") };
     assert_eq!(answer.kind, SdpKind::Answer);
     assert!(!answer.sdp.contains("m=video") && !answer.sdp.contains("m=audio"), "no media");
@@ -94,6 +123,7 @@ fn echoes_a_browsers_data_channel_on_a_game_port() {
         assert!(waited.elapsed() < Duration::from_secs(5), "still running after stdin closed");
         std::thread::sleep(Duration::from_millis(50));
     }
+    answer.sdp
 }
 
 #[test]
