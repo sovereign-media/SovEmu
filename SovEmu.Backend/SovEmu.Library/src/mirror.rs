@@ -180,8 +180,7 @@ pub fn sync(
         }
     });
 
-    // Remove what the source no longer has (only inside the mirrored folders), and the artwork
-    // folders earlier versions copied.
+    // Remove what the source no longer has, only inside the mirrored system folders.
     let keep: HashSet<&str> = wanted.iter().map(|(rel, _)| rel.as_str()).collect();
     let mut present = Vec::new();
     for folder in folders(dest, only) {

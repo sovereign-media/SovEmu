@@ -19,7 +19,8 @@ pub const MAX_RUN_AHEAD: u32 = 4;
 pub enum Request {
     /// A client's SDP offer; answered with [`Reply::Answer`]. `codec` is the video codec the
     /// server chose for this client (`vp8`, `h264`); absent, the worker keeps to its own
-    /// `--video-codec`.
+    /// `--video-codec`. Optional on purpose: the connection test's offer carries no media, so it
+    /// names none.
     Offer {
         id: u64,
         offer: SessionDescription,
@@ -222,7 +223,7 @@ mod tests {
             serde_json::to_string(&offer).unwrap(),
             r#"{"type":"offer","id":7,"offer":{"type":"offer","sdp":"v=0"}}"#
         );
-        // The server's choice of codec rides with the offer; an offer without one still reads.
+        // The server's choice of codec rides with a game's offer; the connection test's names none.
         let Request::Offer { offer: description, .. } = offer.clone() else { unreachable!() };
         let chosen = Request::Offer { id: 7, offer: description, codec: Some("h264".into()) };
         assert_eq!(
