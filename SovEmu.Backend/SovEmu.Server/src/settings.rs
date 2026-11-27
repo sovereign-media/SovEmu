@@ -610,13 +610,13 @@ mod tests {
         let gamecube = sovemu_library::systems::by_id("gamecube").unwrap();
         let none = BTreeMap::new();
         let l = layered(gamecube, true, &none, &none);
-        assert_eq!(l["dolphin_efb_scale"], ("2".into(), Source::Sovemu));
+        assert_eq!(l["dolphin_max_anisotropy"], ("2".into(), Source::Sovemu));
         let l = layered(gamecube, false, &none, &none);
-        assert!(!l.contains_key("dolphin_efb_scale"), "the core's own default in software");
-        let admin = BTreeMap::from([("dolphin_efb_scale".to_owned(), "3".to_owned())]);
-        let env = BTreeMap::from([("dolphin_max_anisotropy".to_owned(), "0".to_owned())]);
+        assert!(!l.contains_key("dolphin_max_anisotropy"), "the core's own default in software");
+        let admin = BTreeMap::from([("dolphin_max_anisotropy".to_owned(), "3".to_owned())]);
+        let env = BTreeMap::from([("dolphin_shader_compilation_mode".to_owned(), "0".to_owned())]);
         let l = layered(gamecube, true, &admin, &env);
-        assert_eq!(l["dolphin_efb_scale"], ("3".into(), Source::Admin));
-        assert_eq!(l["dolphin_max_anisotropy"], ("0".into(), Source::Environment));
+        assert_eq!(l["dolphin_max_anisotropy"], ("3".into(), Source::Admin));
+        assert_eq!(l["dolphin_shader_compilation_mode"], ("0".into(), Source::Environment));
     }
 }

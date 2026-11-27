@@ -28,9 +28,12 @@ pub struct System {
     #[serde(skip)]
     pub options: &'static [(&'static str, &'static str)],
     /// Core options SovEmu sets for it only while its games render on a hardware GPU, an
-    /// integrated one included: the enhancements (a higher internal resolution) that a GPU
-    /// draws easily and Mesa's software renderer, or a hypervisor's adapter, would draw too
-    /// slowly to play. They apply on top of `options`.
+    /// integrated one included: the enhancements (texture filtering, shaders compiled in the
+    /// background) that a GPU draws easily and Mesa's software renderer, or a hypervisor's
+    /// adapter, would draw too slowly to play. They apply on top of `options`. Never a higher
+    /// internal resolution: every one of its pixels is encoded, sent and decoded, and at 2× a
+    /// Fire TV could not decode the stream at 60 fps (18–26 ms a frame) while the server's read
+    /// back and encode outgrew the frame (sovereign-media/SovEmu#296).
     #[serde(skip)]
     pub gpu_options: &'static [(&'static str, &'static str)],
     /// A 3D system: its cores render with OpenGL, on a GPU or in software (`SovEmu__Rendering__Gpu`).
@@ -548,8 +551,8 @@ pub const SYSTEMS: &[System] = &[
             ("reicast_threaded_rendering", "disabled"),
             ("reicast_per_content_vmus", "All VMUs"),
         ],
-        // Twice the console's 640×480 (the release's Flycast still names its options reicast_).
-        gpu_options: &[("reicast_internal_resolution", "1280x960")],
+        // The console's own 640×480: at 2× a stream falls to 49 fps on the server alone.
+        gpu_options: &[],
         needs_gpu: true,
     },
     System {
@@ -563,15 +566,12 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["iso", "gcm", "gcz", "rvz", "ciso"],
         cores: &["dolphin"],
         options: &[],
-        // Twice the console's resolution (`2`: 1280×1056), 4× anisotropic filtering (`2`), and
-        // shaders compiled in the background, drawn with ubershaders meanwhile (`2`: "Async
-        // (UberShaders)") rather than stalling the frame for each new effect, which a stream
-        // shows as a dropped frame. Ubershaders are heavy, so not on the software renderer.
-        gpu_options: &[
-            ("dolphin_efb_scale", "2"),
-            ("dolphin_max_anisotropy", "2"),
-            ("dolphin_shader_compilation_mode", "2"),
-        ],
+        // The console's own resolution, with 4× anisotropic filtering (`2`), which sharpens
+        // textures without adding a pixel to the stream, and shaders compiled in the background,
+        // drawn with ubershaders meanwhile (`2`: "Async (UberShaders)") rather than stalling the
+        // frame for each new effect, which a stream shows as a dropped frame. Ubershaders are
+        // heavy, so not on the software renderer.
+        gpu_options: &[("dolphin_max_anisotropy", "2"), ("dolphin_shader_compilation_mode", "2")],
         needs_gpu: true,
     },
     System {
@@ -586,9 +586,8 @@ pub const SYSTEMS: &[System] = &[
         cores: &["pcsx2"],
         // Memory cards per game in the player's save folder, not shared under the BIOS folder.
         options: &[("pcsx2_shared_memory_cards", "disabled")],
-        // Twice the console's resolution. The core reads only the leading number, applies it at
-        // the game's start, and only on its hardware renderer (`pcsx2_renderer` Auto).
-        gpu_options: &[("pcsx2_upscale_multiplier", "2x Native (~720p)")],
+        // The console's own resolution (the core's default `pcsx2_upscale_multiplier`).
+        gpu_options: &[],
         needs_gpu: true,
     },
 ];
@@ -726,6 +725,19 @@ mod tests {
         }
         assert!(by_id("snes").unwrap().box_aspect() > 1.0, "SNES boxes are landscape");
         assert!(by_id("nes").unwrap().box_aspect() < 1.0, "NES boxes are portrait");
+    }
+
+    #[test]
+    fn the_3d_systems_stream_at_the_consoles_own_resolution() {
+        let scales =
+            ["reicast_internal_resolution", "dolphin_efb_scale", "pcsx2_upscale_multiplier"];
+        for s in SYSTEMS {
+            for (key, _) in s.options.iter().chain(s.gpu_options) {
+                assert!(!scales.contains(key), "{}: {key} adds pixels to every frame", s.id);
+            }
+        }
+        let gamecube = by_id("gamecube").unwrap();
+        assert!(gamecube.gpu_options.contains(&("dolphin_max_anisotropy", "2")));
     }
 
     #[test]

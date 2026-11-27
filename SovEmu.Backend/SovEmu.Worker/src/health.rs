@@ -35,6 +35,9 @@ pub(crate) struct Stats {
     pub(crate) keyframe_requests_ignored: u64,
     /// Times the client was heard again after a dropout (`keyframes.rs`).
     pub(crate) dropouts: u64,
+    /// Frames and sound packets left out because the connection's send queue was full: the
+    /// stream asked more of the link than it carried for seconds on end.
+    pub(crate) unsent: u64,
     /// Frames the core ran (run-ahead's and fast-forward's included), the time inside the core,
     /// and reading GPU frames back (which waits for the GPU to finish drawing).
     pub(crate) core_frames: u64,
@@ -66,6 +69,7 @@ impl Stats {
         self.keyframe_requests += other.keyframe_requests;
         self.keyframe_requests_ignored += other.keyframe_requests_ignored;
         self.dropouts += other.dropouts;
+        self.unsent += other.unsent;
         self.core_frames += other.core_frames;
         self.core_time += other.core_time;
         self.worst_core = self.worst_core.max(other.worst_core);
@@ -200,6 +204,11 @@ impl Health {
         self.window.dropouts += 1;
     }
 
+    /// A frame or sound packet was left out: the connection's send queue was full.
+    pub(crate) fn unsent(&mut self) {
+        self.window.unsent += 1;
+    }
+
     /// A client asked for a keyframe; `answered` is false for a request that was ignored.
     pub(crate) fn keyframe_requested(&mut self, answered: bool) {
         self.window.keyframe_requests += 1;
@@ -272,6 +281,7 @@ impl Health {
             keyframe_requests = t.keyframe_requests,
             keyframe_requests_ignored = t.keyframe_requests_ignored,
             dropouts = t.dropouts,
+            unsent = t.unsent,
             inputs = t.inputs,
             paused_ticks = t.paused,
             run_ahead = at.run_ahead,
@@ -329,6 +339,7 @@ fn log_health(w: &Stats, at: &Now) {
                 keyframe_requests = w.keyframe_requests,
                 keyframe_requests_ignored = w.keyframe_requests_ignored,
                 dropouts = w.dropouts,
+                unsent = w.unsent,
                 inputs = w.inputs,
                 paused_ticks = w.paused,
                 run_ahead = at.run_ahead,
