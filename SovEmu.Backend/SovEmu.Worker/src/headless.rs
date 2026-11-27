@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use sovemu_retro_host::{Core, CoreOptions};
+use sovemu_retro_host::{Core, CoreOptions, VideoFrame};
 
 use crate::HeadlessArgs;
 use crate::pacing::Pacer;
@@ -134,7 +134,8 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     let mut stereo_frames = 0u64;
     let mut duped = 0u64;
     let mut frames_run = 0u64;
-    let mut rgba = Vec::new();
+    // Always RGBA: headless never asks for a GPU core's frames as I420.
+    let mut kept = VideoFrame::default();
     // The picture in `rgba` that the last frame showed, by its size.
     let mut last_picture = None;
     let started = Instant::now();
@@ -172,15 +173,15 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         let last = n + 1 == args.frames;
         let mut picture = None;
         if (png || last) && out.video.width > 0 {
-            out.video.write_rgba8(&mut rgba);
+            crate::video::keep_picture(out.video, &mut kept);
             picture = Some((out.video.width, out.video.height));
         }
-        if let Some(ahead) = run_ahead.picture(&mut core, &[buttons], &mut rgba)? {
+        if let Some(ahead) = run_ahead.picture(&mut core, &[buttons], &mut kept)? {
             picture = Some(ahead);
         }
         timings.push(t.elapsed());
         if let (true, Some((width, height))) = (png, picture) {
-            write_png(&args.out.join(format!("frame_{n:06}.png")), width, height, &rgba)?;
+            write_png(&args.out.join(format!("frame_{n:06}.png")), width, height, &kept.data)?;
         }
         if last {
             last_picture = picture;
@@ -198,7 +199,7 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     wav.finalize()?;
 
     if let Some((width, height)) = last_picture {
-        write_png(&args.out.join("last.png"), width, height, &rgba)?;
+        write_png(&args.out.join("last.png"), width, height, &kept.data)?;
     }
 
     let summary = Summary {

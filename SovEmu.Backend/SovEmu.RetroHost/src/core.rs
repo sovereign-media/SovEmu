@@ -229,6 +229,8 @@ pub struct Core {
     gpu: Option<GpuChoice>,
     /// A GPU core's context and what it asked for.
     hw: Option<(GlContext, HwRequest)>,
+    /// A GPU core's frames are converted to I420 on the GPU ([`Core::set_gpu_i420`]).
+    gpu_i420: bool,
     /// Where frames' time went since it was last taken.
     timing: FrameTiming,
     /// Declared last so it is dropped last: every function pointer in `api` points into it.
@@ -324,6 +326,7 @@ impl Core {
             audio: Vec::new(),
             initialized: false,
             gpu: options.gpu,
+            gpu_i420: false,
             hw: None,
             timing: FrameTiming::default(),
             _library: library,
@@ -513,17 +516,31 @@ impl Core {
                 ctx.resize(av.max_width, av.max_height)?;
             }
             let started = std::time::Instant::now();
-            ctx.read(width, height, request.bottom_left_origin, &mut self.video.data);
+            let flip = request.bottom_left_origin;
+            // Asked for I420 and the GPU can convert: else RGBA, from then on.
+            self.gpu_i420 &= ctx.read_i420(width, height, flip, &mut self.video.data).is_ok();
+            self.video.format =
+                if self.gpu_i420 { PixelFormat::I420 } else { PixelFormat::Rgba8888 };
+            if !self.gpu_i420 {
+                ctx.read(width, height, flip, &mut self.video.data);
+            }
             let readback = started.elapsed();
             self.timing.readback += readback;
             self.timing.worst_readback = self.timing.worst_readback.max(readback);
             self.video.width = width;
             self.video.height = height;
-            self.video.format = PixelFormat::Rgba8888;
         }
 
         let av_changed = if av_changed { self.av_info } else { None };
         Ok(FrameOutput { video: &self.video, video_updated, audio: &self.audio, av_changed })
+    }
+
+    /// Asks for a GPU core's frames as [`PixelFormat::I420`], converted on the GPU, instead of
+    /// RGBA: what a video encoder takes, read back at 1.5 bytes a pixel instead of 4. If the GPU
+    /// cannot convert (the pass is checked on the first frame), frames stay RGBA, so a caller
+    /// takes either. No effect on a core that draws on the CPU.
+    pub fn set_gpu_i420(&mut self, on: bool) {
+        self.gpu_i420 = on;
     }
 
     /// Makes the core's GL context and calls its `context_reset`, if it asked for one.

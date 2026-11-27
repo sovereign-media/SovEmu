@@ -9,6 +9,19 @@
 
 use sovemu_media::{EncodedFrame, H264Config, H264Encoder, H264Preference, Vp8Config, Vp8Encoder};
 use sovemu_protocol::{Fallback, VideoPath};
+use sovemu_retro_host::{PixelFormat, VideoFrame};
+
+/// Keeps a frame the core drew as the picture to encode: I420 (a GPU core's, converted on the
+/// GPU) as it is, any other format as RGBA.
+pub(crate) fn keep_picture(frame: &VideoFrame, picture: &mut VideoFrame) {
+    if frame.format == PixelFormat::I420 {
+        picture.clone_from(frame);
+    } else {
+        frame.write_rgba8(&mut picture.data);
+        (picture.width, picture.height) = (frame.width, frame.height);
+        picture.format = PixelFormat::Rgba8888;
+    }
+}
 
 /// A video codec the worker can send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +118,8 @@ pub(crate) struct Video {
     logged: Option<&'static str>,
     /// The pre-scaled picture, kept between frames (empty at a prescale of 1).
     scaled: Vec<u8>,
+    /// An I420 picture as RGBA, for the pre-scale (empty unless one needed it).
+    unpacked: Vec<u8>,
 }
 
 impl Video {
@@ -114,7 +129,14 @@ impl Video {
             _ => VideoCodec::H264,
         };
         let encoder = Self::make(&settings, codec, settings.bitrate_kbps);
-        Self { client_codec: settings.codec, settings, encoder, logged: None, scaled: Vec::new() }
+        Self {
+            client_codec: settings.codec,
+            settings,
+            encoder,
+            logged: None,
+            scaled: Vec::new(),
+            unpacked: Vec::new(),
+        }
     }
 
     fn make(settings: &VideoSettings, codec: VideoCodec, bitrate_kbps: u32) -> Encoder {
@@ -234,6 +256,31 @@ impl Video {
         }
     }
 
+    /// Encodes a picture [`keep_picture`] kept: RGBA, or I420 straight into the encoder
+    /// (unless it is to be pre-scaled, which works on RGBA).
+    pub(crate) fn encode_picture(
+        &mut self,
+        picture: &VideoFrame,
+    ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
+        let (width, height) = (picture.width, picture.height);
+        if picture.format != PixelFormat::I420 {
+            return self.encode(&picture.data, width, height);
+        }
+        if self.scale(width, height) > 1 {
+            let mut rgba = std::mem::take(&mut self.unpacked);
+            picture.write_rgba8(&mut rgba);
+            let encoded = self.encode(&rgba, width, height);
+            self.unpacked = rgba;
+            return encoded;
+        }
+        let encoded = match &mut self.encoder {
+            Encoder::H264(e) => e.encode_i420(&picture.data, width, height),
+            Encoder::Vp8(e) => e.encode_i420(&picture.data, width, height),
+        }?;
+        self.log_encoder();
+        Ok(encoded)
+    }
+
     pub(crate) fn encode(
         &mut self,
         rgba: &[u8],
@@ -251,6 +298,12 @@ impl Video {
             Encoder::H264(e) => e.encode(rgba, width, height),
             Encoder::Vp8(e) => e.encode(rgba, width, height),
         }?;
+        self.log_encoder();
+        Ok(encoded)
+    }
+
+    /// Logs the encoder the first time it is used, and again when it changes (a fallback).
+    fn log_encoder(&mut self) {
         let name = self.encoder_name();
         if name.is_some() && name != self.logged {
             self.logged = name;
@@ -261,7 +314,6 @@ impl Video {
                 "video encoder"
             );
         }
-        Ok(encoded)
     }
 }
 
@@ -364,6 +416,60 @@ mod tests {
         assert_eq!((path.width, path.height), (512, 448), "hi-res keeps the 2× stream's size");
         let off = Video::new(settings(CodecSetting::Only(VideoCodec::Vp8)));
         assert_eq!(off.scale(160, 144), 1);
+    }
+
+    #[test]
+    fn an_i420_picture_encodes_as_its_rgba_does_prescaled_or_not() {
+        for prescale in [1, 2] {
+            let video = || {
+                // x264: libvpx on several threads does not make the same stream twice.
+                Video::new(VideoSettings {
+                    prescale,
+                    ..settings(CodecSetting::Only(VideoCodec::H264))
+                })
+            };
+            let (mut from_rgba, mut from_i420) = (video(), video());
+            // Flat colour in 2×2 blocks: I420 loses nothing, so the two pictures are the same.
+            let rgba: Vec<u8> = (0..32 * 24)
+                .flat_map(|i| {
+                    let (x, y) = ((i % 32) / 2, (i / 32) / 2);
+                    [(x * 16) as u8, (y * 20) as u8, 90, 255]
+                })
+                .collect();
+            let drawn = VideoFrame {
+                width: 32,
+                height: 24,
+                format: PixelFormat::Rgba8888,
+                data: rgba.clone(),
+            };
+            let i420 = VideoFrame {
+                width: 32,
+                height: 24,
+                format: PixelFormat::I420,
+                data: i420_of(&rgba, 32, 24),
+            };
+            let mut kept = VideoFrame::default();
+            keep_picture(&drawn, &mut kept);
+            assert_eq!((kept.format, &kept.data), (PixelFormat::Rgba8888, &rgba));
+            keep_picture(&i420, &mut kept);
+            assert_eq!(kept, i420, "I420 is kept as it is");
+            let a = from_rgba.encode(&rgba, 32, 24).unwrap();
+            let b = from_i420.encode_picture(&kept).unwrap();
+            assert_eq!(a.is_some(), b.is_some(), "prescale {prescale}");
+            if prescale == 1 {
+                assert_eq!(a, b, "the same stream from either");
+            }
+        }
+    }
+
+    fn i420_of(rgba: &[u8], w: usize, h: usize) -> Vec<u8> {
+        use sovemu_media::yuv::{I420Planes, chroma_len, rgba_to_i420};
+        let (cw, ch) = (chroma_len(w), chroma_len(h));
+        let (mut y, mut u, mut v) = (vec![0; w * h], vec![0; cw * ch], vec![0; cw * ch]);
+        let planes =
+            I420Planes { y: &mut y, y_stride: w, u: &mut u, u_stride: cw, v: &mut v, v_stride: cw };
+        rgba_to_i420(rgba, w, h, planes);
+        [y, u, v].concat()
     }
 
     #[test]

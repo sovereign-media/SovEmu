@@ -24,7 +24,7 @@ use std::ptr;
 
 use crate::ffi;
 use crate::vp8::{DecodedFrame, pack_plane};
-use crate::yuv::{I420Planes, chroma_len, rgba_to_i420, rgba_to_nv12};
+use crate::yuv::{I420Planes, Source, chroma_len};
 use crate::{EncodedFrame, Error};
 
 /// Threads x264 encodes a frame on.
@@ -379,11 +379,31 @@ impl H264Encoder {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, Error> {
-        let expected = width as usize * height as usize * 4;
-        if rgba.len() != expected {
-            return Err(Error::BadFrame { expected, actual: rgba.len() });
+        self.encode_source(Source::Rgba(rgba), width, height)
+    }
+
+    /// Encodes one frame already in I420 (packed planes, [`crate::yuv::i420_len`] bytes), as a
+    /// GPU converts it: copied (or, for VA-API, interleaved into NV12), not converted.
+    pub fn encode_i420(
+        &mut self,
+        i420: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        self.encode_source(Source::I420(i420), width, height)
+    }
+
+    fn encode_source(
+        &mut self,
+        source: Source<'_>,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        let (expected, actual) = source.sizes(width as usize, height as usize);
+        if actual != expected {
+            return Err(Error::BadFrame { expected, actual });
         }
-        match self.encode_once(rgba, width, height) {
+        match self.encode_once(source, width, height) {
             Err(e) if self.backend().is_some_and(H264Backend::is_hardware) => {
                 // A GPU encoder that fails mid-stream (a reset, a driver bug) or holds frames
                 // back is dropped for the next one rather than stopping or delaying the picture.
@@ -391,7 +411,7 @@ impl H264Encoder {
                 tracing::warn!(encoder = backend.name(), error = %e, "H.264 encoder failed; switching");
                 self.failed.push((backend, e.to_string()));
                 self.context = None;
-                self.encode_once(rgba, width, height)
+                self.encode_once(source, width, height)
             }
             other => other,
         }
@@ -399,7 +419,7 @@ impl H264Encoder {
 
     fn encode_once(
         &mut self,
-        rgba: &[u8],
+        source: Source<'_>,
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, Error> {
@@ -419,7 +439,7 @@ impl H264Encoder {
 
         // SAFETY: the context and frame were opened for `even_w`x`even_h`; `fill` checks the
         // planes' sizes against the frame's strides.
-        unsafe { fill(c, rgba)? };
+        unsafe { fill(c, source)? };
 
         let keyframe = std::mem::take(&mut self.force_keyframe);
         let pts = self.frames;
@@ -621,13 +641,13 @@ fn vaapi_frames(device: &BufferRef, width: u32, height: u32) -> Result<BufferRef
     Ok(frames)
 }
 
-/// Converts `rgba` (the context's source size) into the context's frame, repeating the last
+/// Writes `source` (the context's source size) into the context's frame, repeating the last
 /// column and row if the encoded size was rounded up.
 ///
 /// # Safety
 ///
 /// `c` must be an open context whose frame has buffers for its size and format.
-unsafe fn fill(c: &mut Context, rgba: &[u8]) -> Result<(), Error> {
+unsafe fn fill(c: &mut Context, source: Source<'_>) -> Result<(), Error> {
     // SAFETY: the frame is allocated; make_writable copies it if the encoder still holds it.
     check("frame writable", unsafe { ffi::av_frame_make_writable(c.frame) })?;
     // SAFETY: the frame's buffers were allocated for `c.width`x`c.height` of its format, so
@@ -644,12 +664,12 @@ unsafe fn fill(c: &mut Context, rgba: &[u8]) -> Result<(), Error> {
     if f.format == ffi::AVPixelFormat::AV_PIX_FMT_NV12 {
         let (y, ys) = plane(0, eh);
         let (uv, uvs) = plane(1, eh / 2);
-        rgba_to_nv12(rgba, w, h, y, ys, uv, uvs);
+        source.write_nv12(w, h, y, ys, uv, uvs);
     } else {
         let (y, ys) = plane(0, eh);
         let (u, us) = plane(1, eh / 2);
         let (v, vs) = plane(2, eh / 2);
-        rgba_to_i420(rgba, w, h, I420Planes { y, y_stride: ys, u, u_stride: us, v, v_stride: vs });
+        source.write_i420(w, h, I420Planes { y, y_stride: ys, u, u_stride: us, v, v_stride: vs });
     }
     // Odd sizes: chroma already covers the extra column and row (it rounds up); repeat luma's.
     let (y, ys) = plane(0, eh);
@@ -842,6 +862,19 @@ mod tests {
         }
         assert_eq!(enc.backend(), Some(H264Backend::Software));
         assert_eq!(enc.lag(), 0);
+    }
+
+    #[test]
+    fn an_i420_frame_encodes_as_its_rgba_does() {
+        // Odd: the encoded size is rounded up and the last column and row repeated, either way.
+        let (mut from_rgba, mut from_i420) = (software(), software());
+        for n in 0..3 {
+            let rgba = gradient(255, 223, n);
+            let i420 = crate::yuv::packed_i420(&rgba, 255, 223);
+            let a = from_rgba.encode(&rgba, 255, 223).unwrap();
+            let b = from_i420.encode_i420(&i420, 255, 223).unwrap();
+            assert_eq!(a, b, "frame {n}");
+        }
     }
 
     #[test]

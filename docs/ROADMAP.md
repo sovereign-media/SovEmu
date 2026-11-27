@@ -270,8 +270,10 @@ held 59.93 fps over 300 frames with no resyncs.
       `client_events` (pruned after `SovEmu__ClientErrors__RetentionDays`) and grouped by
       kind and by app and device, each group opening onto its events with the game they
       happened in
-- [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
-      reading it back with `glReadPixels`: #283
+- [x] A 3D core's frames converted to I420 on the GPU before they are read back (1.5 bytes a
+      pixel, no CPU conversion or flip), and the RGBA copy vectorised: 25.5 ms to 6.2 ms a frame
+      at GameCube 4× on llvmpipe ([research](research/gpu-frames-2026-11.md)), #283. Zero-copy
+      to VA-API was left: SovEmu streams VP8, which encodes on the CPU
 - [x] Android: ask the H.264 decoder for low-latency mode (Android 11+)
 - [ ] Worker resource limits (cgroups/rlimits per session): #282
 
