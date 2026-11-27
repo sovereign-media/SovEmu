@@ -14,8 +14,8 @@ pub(crate) enum Kind {
     /// No game information: never looked up, or looked up and not found.
     NoInformation,
     /// Queued to be looked up again (`game_metadata.status = 'refresh'`): it has information,
-    /// but a lookup is owed, after a source stopped before reaching it, or for fields added since
-    /// (migrations 0031, 0032, 0034). The lookup after each scan asks it.
+    /// but a lookup is owed, after a source stopped before reaching it. The lookup after each
+    /// scan asks it.
     AwaitingLookup,
     /// No box art: none beside it in the library, and none downloaded.
     NoBoxArt,
