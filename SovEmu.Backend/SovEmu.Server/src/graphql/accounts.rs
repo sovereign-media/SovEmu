@@ -174,7 +174,8 @@ pub(super) struct Viewer {
 
 #[derive(SimpleObject)]
 pub(super) struct ClientConfig {
-    /// `RTCIceServer` objects (STUN/TURN) for WebRTC, from `SovEmu__Streaming__IceServers`.
+    /// `RTCIceServer` objects for WebRTC: the STUN servers, then the built-in relay (TURN) with
+    /// this player's own credentials, when it runs.
     pub(super) ice_servers: Json<serde_json::Value>,
 }
 
