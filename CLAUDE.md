@@ -49,6 +49,7 @@ The detail for each part loads from `.claude/rules/` when you work on its files 
 | `container.md` | Dockerfile, bake, compose, CI, hooks, scripts |
 | `contracts.md` | schema, wire format, controllers, in every client |
 | `web.md`, `react.md`, `web-tests.md` | `SovEmu.Web/`: architecture, React/TS style, tests |
+| `test-roms.md` | the free ROMs, capture clips, the encoder bench and `docs/research/`: Artemio's 240p Test Suite first |
 
 ## Projects
 
@@ -102,7 +103,7 @@ Needs `brew install libvpx opus ffmpeg pkgconf` and Node 22.23.4+. From the repo
 
 ```bash
 scripts/fetch-cores.sh fceumm                         # → cores/fceumm_libretro.dylib
-scripts/fetch-free-roms.sh                            # → data/roms/{nes,snes,gb,gbc,gba}
+scripts/fetch-free-roms.sh                            # → data/roms/{nes,snes,gb,gbc,gba,…}
 (cd SovEmu.Web && npm ci && npm run build)            # → SovEmu.Web/dist
 cd SovEmu.Backend && cargo build --release -p sovemu-worker -p sovemu-server
 target/release/sovemu-server --data-dir ../data --cores-dir ../cores \
