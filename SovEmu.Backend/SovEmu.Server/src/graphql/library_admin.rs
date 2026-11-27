@@ -153,7 +153,7 @@ pub(super) struct MetadataStatus {
     pub(super) sources: Vec<String>,
     /// Why a source stopped early (bad credentials, quota) or is not used, if one did.
     pub(super) notes: Vec<String>,
-    /// The box art downloads that follow a lookup, in the background.
+    /// The artwork and video downloads that follow a lookup, in the background.
     pub(super) artwork: ArtworkStatus,
     /// The games being looked up now: several at once when a source's account allows it.
     pub(super) working: Vec<MetadataCurrent>,
@@ -321,8 +321,55 @@ pub(super) struct ArtworkStatus {
     pub(super) done: i64,
     pub(super) downloaded: i64,
     pub(super) failed: i64,
-    /// Of `downloaded`, the gameplay videos.
-    pub(super) videos: i64,
+    /// Each kind's share, box art first.
+    pub(super) kinds: Vec<ArtworkKindProgress>,
+    /// Why downloads failed in this job (or the last), in the order each reason first came
+    /// (at most 20 reasons). Older failures are in `gamesNeedingAttention(kind:
+    /// DOWNLOAD_GAVE_UP)`.
+    pub(super) failures: Vec<ArtworkFailure>,
+}
+
+/// What a download is.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ArtworkKind {
+    BoxArt,
+    Screenshot,
+    /// The game's logo.
+    Marquee,
+    /// A gameplay video.
+    Video,
+}
+
+impl From<crate::metadata::artwork::Kind> for ArtworkKind {
+    fn from(k: crate::metadata::artwork::Kind) -> Self {
+        use crate::metadata::artwork::Kind;
+        match k {
+            Kind::BoxArt => Self::BoxArt,
+            Kind::Screenshot => Self::Screenshot,
+            Kind::Marquee => Self::Marquee,
+            Kind::Video => Self::Video,
+        }
+    }
+}
+
+/// One kind's downloads in the current (or last) download job.
+#[derive(SimpleObject)]
+pub(super) struct ArtworkKindProgress {
+    pub(super) kind: ArtworkKind,
+    /// Queued since the job started (a retry counts again).
+    pub(super) total: i64,
+    pub(super) downloaded: i64,
+    pub(super) failed: i64,
+}
+
+/// A reason downloads failed, and how many did.
+#[derive(SimpleObject)]
+pub(super) struct ArtworkFailure {
+    pub(super) kind: ArtworkKind,
+    /// What went wrong, with what the source answered: "refused (HTTP 430): …", "not an MP4
+    /// video: …", "no answer (…)".
+    pub(super) reason: String,
+    pub(super) count: i64,
 }
 
 impl From<crate::metadata::JobStatus> for MetadataStatus {
@@ -344,7 +391,27 @@ impl From<crate::metadata::JobStatus> for MetadataStatus {
                 done: j.artwork.done as i64,
                 downloaded: j.artwork.downloaded as i64,
                 failed: j.artwork.failed as i64,
-                videos: j.artwork.videos as i64,
+                kinds: j
+                    .artwork
+                    .kinds
+                    .into_iter()
+                    .map(|k| ArtworkKindProgress {
+                        kind: k.kind.into(),
+                        total: k.total as i64,
+                        downloaded: k.downloaded as i64,
+                        failed: k.failed as i64,
+                    })
+                    .collect(),
+                failures: j
+                    .artwork
+                    .failures
+                    .into_iter()
+                    .map(|f| ArtworkFailure {
+                        kind: f.kind.into(),
+                        reason: f.reason,
+                        count: f.count as i64,
+                    })
+                    .collect(),
             },
             working: j
                 .working

@@ -124,7 +124,7 @@ pub struct JobStatus {
     pub sources: Vec<&'static str>,
     /// Why a source stopped early (bad credentials, quota) or is not used, if one did.
     pub notes: Vec<String>,
-    /// The box art downloads that follow a lookup.
+    /// The artwork and video downloads that follow a lookup.
     pub artwork: artwork::ArtworkStatus,
     /// The games being looked up now (several when a source takes lookups in parallel).
     pub working: Vec<Current>,
@@ -812,7 +812,7 @@ async fn look_up(
 }
 
 /// Writes `row` for `game_id`. A new picture or video URL is downloaded afresh: the old file is dropped
-/// and its attempts start again at 0.
+/// and its attempts (and last failure) start again.
 async fn store(
     state: &AppState,
     game_id: i64,
@@ -844,22 +844,30 @@ async fn store(
              THEN game_metadata.box_art ELSE NULL END,
            box_art_attempts = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
              THEN game_metadata.box_art_attempts ELSE 0 END,
+           box_art_error = CASE WHEN excluded.box_art_url IS game_metadata.box_art_url
+             THEN game_metadata.box_art_error ELSE NULL END,
            box_art_url = excluded.box_art_url, box_art_source = excluded.box_art_source,
            video = CASE WHEN excluded.video_url IS game_metadata.video_url
              THEN game_metadata.video ELSE NULL END,
            video_attempts = CASE WHEN excluded.video_url IS game_metadata.video_url
              THEN game_metadata.video_attempts ELSE 0 END,
+           video_error = CASE WHEN excluded.video_url IS game_metadata.video_url
+             THEN game_metadata.video_error ELSE NULL END,
            video_url = excluded.video_url, video_source = excluded.video_source,
            screenshot = CASE WHEN excluded.screenshot_url IS game_metadata.screenshot_url
              THEN game_metadata.screenshot ELSE NULL END,
            screenshot_attempts = CASE WHEN excluded.screenshot_url IS game_metadata.screenshot_url
              THEN game_metadata.screenshot_attempts ELSE 0 END,
+           screenshot_error = CASE WHEN excluded.screenshot_url IS game_metadata.screenshot_url
+             THEN game_metadata.screenshot_error ELSE NULL END,
            screenshot_url = excluded.screenshot_url,
            screenshot_source = excluded.screenshot_source,
            marquee = CASE WHEN excluded.marquee_url IS game_metadata.marquee_url
              THEN game_metadata.marquee ELSE NULL END,
            marquee_attempts = CASE WHEN excluded.marquee_url IS game_metadata.marquee_url
              THEN game_metadata.marquee_attempts ELSE 0 END,
+           marquee_error = CASE WHEN excluded.marquee_url IS game_metadata.marquee_url
+             THEN game_metadata.marquee_error ELSE NULL END,
            marquee_url = excluded.marquee_url, marquee_source = excluded.marquee_source,
            tried = excluded.tried, field_sources = excluded.field_sources,
            provider_ids = excluded.provider_ids, fetched_at = excluded.fetched_at",
@@ -952,40 +960,136 @@ fn image_extension(bytes: &[u8]) -> Option<&'static str> {
 /// Videos larger than this are not a preview anyone meant to send: refused.
 const MAX_VIDEO_BYTES: u64 = 200 << 20;
 
+/// The most of an answer kept to say why a download failed.
+const SAID_CHARS: usize = 160;
+
+/// Why a picture or video was not downloaded: logged, counted by the download job, and kept
+/// (`<kind>_error`) for Needs attention. Never carries the URL, which holds the source's
+/// credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DownloadError {
+    /// No answer: the connection failed or timed out.
+    Unreachable(String),
+    /// Answered with an error status, and what it said.
+    Refused {
+        status: u16,
+        said: String,
+    },
+    /// Answered with something else: a source often sends a refusal (a quota, an account
+    /// level) as text with a 200.
+    NotMedia {
+        video: bool,
+        said: String,
+    },
+    TooLarge {
+        video: bool,
+    },
+    /// A picture that could not be decoded or converted.
+    Unreadable(String),
+    /// The file could not be written.
+    Disk(String),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let with = |f: &mut std::fmt::Formatter<'_>, text: &str, said: &str| {
+            if said.is_empty() { write!(f, "{text}") } else { write!(f, "{text}: {said}") }
+        };
+        match self {
+            Self::Unreachable(e) => write!(f, "no answer ({e})"),
+            Self::Refused { status, said } => with(f, &format!("refused (HTTP {status})"), said),
+            Self::NotMedia { video: true, said } => with(f, "not an MP4 video", said),
+            Self::NotMedia { video: false, said } => with(f, "not a picture", said),
+            Self::TooLarge { video: true } => {
+                write!(f, "larger than {} MB", MAX_VIDEO_BYTES >> 20)
+            }
+            Self::TooLarge { video: false } => {
+                write!(f, "larger than {} MB", MAX_PICTURE_BYTES >> 20)
+            }
+            Self::Unreadable(e) => write!(f, "the picture could not be read ({e})"),
+            Self::Disk(e) => write!(f, "could not be saved ({e})"),
+        }
+    }
+}
+
+impl From<reqwest::Error> for DownloadError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Unreachable(e.without_url().to_string())
+    }
+}
+
+impl From<std::io::Error> for DownloadError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Disk(e.to_string())
+    }
+}
+
+/// What an answer said, if it is text: its start, on one line (an error page's or a refusal's
+/// words). Nothing for binary data.
+fn said(bytes: &[u8]) -> String {
+    let head = &bytes[..bytes.len().min(SAID_CHARS * 4)];
+    let text = String::from_utf8_lossy(head);
+    let printable = text.chars().filter(|c| !c.is_control() || c.is_whitespace()).count();
+    if text.is_empty() || text.contains('\u{FFFD}') || printable < text.chars().count() {
+        return String::new();
+    }
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    match line.char_indices().nth(SAID_CHARS) {
+        Some((i, _)) => format!("{}…", &line[..i]),
+        None => line,
+    }
+}
+
+/// Sends the request; an error status is a [`DownloadError::Refused`] with what it said.
+async fn get(meta: &Metadata, url: &str) -> Result<reqwest::Response, DownloadError> {
+    let response = meta.http.get(url).send().await?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let body = response.bytes().await.unwrap_or_default();
+    Err(DownloadError::Refused { status: status.as_u16(), said: said(&body) })
+}
+
 /// Downloads a video into the media directory, streamed to a temp file and renamed once whole;
 /// returns its file name. Only an MP4 (`ftyp` at its start), of a sane size.
-async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Option<String> {
+async fn download_video(meta: &Metadata, game_id: i64, url: &str) -> Result<String, DownloadError> {
     use tokio::io::AsyncWriteExt;
-    let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
+    let mut response = get(meta, url).await?;
     if response.content_length().is_some_and(|n| n > MAX_VIDEO_BYTES) {
-        return None;
+        return Err(DownloadError::TooLarge { video: true });
     }
     let name = format!("{game_id}/video.mp4");
-    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await.ok()?;
+    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await?;
     let temp = meta.media_dir.join(format!("{name}.part"));
     let written = async {
-        let mut file = tokio::fs::File::create(&temp).await.ok()?;
+        let mut file = tokio::fs::File::create(&temp).await?;
         let (mut size, mut head) = (0u64, Vec::new());
-        while let Some(chunk) = response.chunk().await.ok()? {
+        while let Some(chunk) = response.chunk().await? {
             size += chunk.len() as u64;
             if size > MAX_VIDEO_BYTES {
-                return None;
+                return Err(DownloadError::TooLarge { video: true });
             }
-            if head.len() < 8 {
-                head.extend_from_slice(&chunk[..chunk.len().min(8 - head.len())]);
+            // Enough of the start to tell an MP4, or to say what came instead.
+            if head.len() < SAID_CHARS * 4 {
+                head.extend_from_slice(&chunk[..chunk.len().min(SAID_CHARS * 4 - head.len())]);
             }
-            file.write_all(&chunk).await.ok()?;
+            file.write_all(&chunk).await?;
         }
-        file.flush().await.ok()?;
-        (head.get(4..8) == Some(b"ftyp".as_slice())).then_some(())
+        file.flush().await?;
+        if head.get(4..8) == Some(b"ftyp".as_slice()) {
+            Ok(())
+        } else {
+            Err(DownloadError::NotMedia { video: true, said: said(&head) })
+        }
     }
     .await;
-    if written.is_none() {
+    if let Err(e) = written {
         let _ = tokio::fs::remove_file(&temp).await;
-        return None;
+        return Err(e);
     }
-    tokio::fs::rename(&temp, meta.media_dir.join(&name)).await.ok()?;
-    Some(name)
+    tokio::fs::rename(&temp, meta.media_dir.join(&name)).await?;
+    Ok(name)
 }
 
 /// Downloads a picture into the media directory as lossy WebP, capped at `artwork_max_px` (the
@@ -996,39 +1100,42 @@ async fn download_picture(
     game_id: i64,
     picture: Picture,
     url: &str,
-) -> Option<String> {
-    let mut response = meta.http.get(url).send().await.ok()?.error_for_status().ok()?;
+) -> Result<String, DownloadError> {
+    let mut response = get(meta, url).await?;
     if response.content_length().is_some_and(|n| n > MAX_PICTURE_BYTES as u64) {
-        return None;
+        return Err(DownloadError::TooLarge { video: false });
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.ok()? {
+    while let Some(chunk) = response.chunk().await? {
         if bytes.len() + chunk.len() > MAX_PICTURE_BYTES {
-            return None;
+            return Err(DownloadError::TooLarge { video: false });
         }
         bytes.extend_from_slice(&chunk);
     }
-    image_extension(&bytes)?;
+    if image_extension(&bytes).is_none() {
+        return Err(DownloadError::NotMedia { video: false, said: said(&bytes) });
+    }
     let suffix = picture.suffix();
     let name = format!("{game_id}/{suffix}.webp");
     let path = meta.media_dir.join(&name);
-    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await.ok()?;
+    tokio::fs::create_dir_all(meta.media_dir.join(game_id.to_string())).await?;
     let (max, quality) = (meta.artwork_max_px, meta.artwork_quality);
-    let written = tokio::task::spawn_blocking(move || {
-        let webp = sovemu_library::artwork::to_webp(&bytes, max, max, quality)?;
-        sovemu_library::artwork::write_whole(&path, &webp)
+    let webp = tokio::task::spawn_blocking(move || {
+        sovemu_library::artwork::to_webp(&bytes, max, max, quality)
+            .map_err(|e| DownloadError::Unreadable(e.to_string()))
+            .and_then(|webp| {
+                sovemu_library::artwork::write_whole(&path, &webp)
+                    .map_err(|e| DownloadError::Disk(e.to_string()))
+            })
     })
     .await
-    .ok()?;
-    if let Err(e) = written {
-        tracing::debug!(game_id, picture = suffix, error = %e, "picture not kept");
-        return None;
-    }
+    .map_err(|e| DownloadError::Disk(e.to_string()))?;
+    webp?;
     for other in ["png", "jpg"] {
         let old = meta.media_dir.join(format!("{game_id}/{suffix}.{other}"));
         let _ = tokio::fs::remove_file(old).await;
     }
-    Some(name)
+    Ok(name)
 }
 
 /// Runs `f(value)` when dropped: on return, `?`, or a panic unwinding.
@@ -1047,6 +1154,29 @@ pub(crate) fn scopeguard<T, F: FnOnce(&T)>(value: T, f: F) -> impl Drop {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failure_says_what_the_answer_said_on_one_line() {
+        assert_eq!(said(b"API closed\n  for non-members\r\n"), "API closed for non-members");
+        assert_eq!(said(&[0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0xFF, 0x00]), "", "binary");
+        assert_eq!(said(b""), "");
+        let long = said("x".repeat(500).as_bytes());
+        assert_eq!(long.chars().count(), SAID_CHARS + 1, "cut, with an ellipsis");
+        let refused = DownloadError::Refused { status: 430, said: "Quota exceeded".into() };
+        assert_eq!(refused.to_string(), "refused (HTTP 430): Quota exceeded");
+        let silent = DownloadError::Refused { status: 404, said: String::new() };
+        assert_eq!(silent.to_string(), "refused (HTTP 404)");
+        assert_eq!(DownloadError::TooLarge { video: true }.to_string(), "larger than 200 MB");
+    }
+
+    #[tokio::test]
+    async fn a_failure_never_carries_the_url_and_its_credentials() {
+        // Nothing listens on port 1: the request fails, and its error would name the URL.
+        let url = "http://127.0.0.1:1/api2/mediaVideoJeu.php?devpassword=secret&sspassword=mine";
+        let e = DownloadError::from(reqwest::get(url).await.unwrap_err()).to_string();
+        assert!(e.starts_with("no answer ("), "{e}");
+        assert!(!e.contains("secret") && !e.contains("mine") && !e.contains("api2"), "{e}");
+    }
 
     #[test]
     fn box_art_is_told_by_its_bytes() {

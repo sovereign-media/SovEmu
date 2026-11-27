@@ -25,6 +25,8 @@ describe("attention", () => {
       NO_INFORMATION: 0,
       AWAITING_LOOKUP: 0,
       NO_BOX_ART: 1,
+      NO_VIDEO: 0,
+      DOWNLOAD_GAVE_UP: 0,
       DUPLICATE: 5,
       MISSING_PARTS: 0,
       UNRECOGNISED: 0,
@@ -46,12 +48,18 @@ describe("attention", () => {
     expect(detailText("DUPLICATE", item({ detail: "USA" }))).toBe("Tags: USA");
     expect(detailText("DUPLICATE", item({}))).toBe("No tags");
     expect(detailText("MISSING_PARTS", item({ detail: "disc 2" }))).toBe("Missing disc 2");
+    expect(detailText("NO_VIDEO", item({ detail: "gave up: refused (HTTP 430)" }))).toBe("Gave up: refused (HTTP 430)");
+    expect(
+      detailText("DOWNLOAD_GAVE_UP", item({ detail: "box art: no answer (timed out)\nvideo: not an MP4 video" })),
+    ).toBe("Box art: no answer (timed out)\nVideo: not an MP4 video");
   });
 
   it("offers a lookup only where one can help, and reads the kind from the URL", () => {
     expect(canLookUp("NO_BOX_ART")).toBe(true);
     expect(canLookUp("AWAITING_LOOKUP")).toBe(true);
     expect(canLookUp("DUPLICATE")).toBe(false);
+    expect(canLookUp("NO_VIDEO")).toBe(true);
+    expect(canLookUp("DOWNLOAD_GAVE_UP")).toBe(false);
     expect(kindFrom("MISSING_PARTS")).toBe("MISSING_PARTS");
     expect(kindFrom("nonsense")).toBe("NO_INFORMATION");
   });

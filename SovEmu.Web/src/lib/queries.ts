@@ -130,7 +130,17 @@ export const MetadataFields = graphql(`
       done
       downloaded
       failed
-      videos
+      kinds {
+        kind
+        total
+        downloaded
+        failed
+      }
+      failures {
+        kind
+        reason
+        count
+      }
     }
     working {
       gameId
@@ -1433,6 +1443,12 @@ export const AttentionCountsQuery = graphql(`
       system
       count
     }
+  }
+`);
+
+export const RetryArtworkDownloadsMutation = graphql(`
+  mutation RetryArtworkDownloads($system: ID) {
+    retryArtworkDownloads(system: $system)
   }
 `);
 

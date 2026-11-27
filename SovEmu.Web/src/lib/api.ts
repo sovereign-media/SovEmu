@@ -62,6 +62,7 @@ import {
   ResetControllerMappingMutation,
   ResetSessionMutation,
   ResourceHistoryQuery,
+  RetryArtworkDownloadsMutation,
   RunJobMutation,
   SaveControllerDefaultMutation,
   SaveControllerMappingMutation,
@@ -324,6 +325,8 @@ export const api = {
   attentionCounts: async () => (await request(AttentionCountsQuery)).attentionCounts,
   /** Admin: looks one game up again, in the background. */
   lookUpGame: async (gameId: number) => (await request(LookUpGameMutation, { gameId })).lookUpGame,
+  retryArtworkDownloads: async (system: string | null) =>
+    (await request(RetryArtworkDownloadsMutation, { system })).retryArtworkDownloads,
   /** Admin: the open-source packages the server and the web client ship, by licence. */
   thirdPartyNotices: async () => (await request(ThirdPartyNoticesQuery)).thirdPartyNotices,
   /** Admin: the backups kept, newest first, and how they are made. */

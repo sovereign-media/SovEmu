@@ -358,7 +358,8 @@ const START: &str =
 const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
 const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
-                        artwork { running total done downloaded failed videos } \
+                        artwork { running total done downloaded failed \
+                          kinds { kind total downloaded failed } failures { kind reason count } } \
                         working { title } finishedAt systems { system total done } \
                         providers { id asked found notFound errors quota { requestsToday } \
                         threads account { level maxThreads maxRequestsPerMinute } } \
@@ -880,6 +881,11 @@ async fn mock_services(
                 )
             }),
         )
+        // A refusal sent as text with a 200, as ScreenScraper sends some.
+        .route(
+            "/api2/refused.mp4",
+            get(|| async { (StatusCode::OK, "API closed for non-members\n") }),
+        )
         .route(
             "/api2/mediaVideoJeu.php",
             get(|Query(q): Query<HashMap<String, String>>| async move {
@@ -993,6 +999,72 @@ async fn asks_again_about_games_not_found_once_a_service_is_added() {
 }
 
 #[tokio::test]
+async fn a_failing_video_download_says_why_and_gives_up_until_retried() {
+    let (base, _) = mock_services(false).await;
+    let mut h = Harness::new_with("artwork-failures", false, metadata_args(&base)).await;
+    h.sign_up_admin().await;
+    h.ok(FETCH, json!({})).await;
+    wait_for_job(&mut h).await;
+
+    // The GBA game's video now comes from a source that answers with a refusal, as text.
+    sqlx::query(
+        "UPDATE game_metadata SET video = NULL, video_url = ?, video_source = NULL
+         WHERE video IS NOT NULL",
+    )
+    .bind(format!("{base}/api2/refused.mp4"))
+    .execute(&h.state.db)
+    .await
+    .unwrap();
+    let reason = "not an MP4 video: API closed for non-members";
+
+    // The next lookup's downloads try it until it gives up, and say why.
+    let status = fetch_and_wait(&mut h, FETCH).await;
+    let artwork = &status["artwork"];
+    assert_eq!(
+        artwork["kinds"][3],
+        json!({"kind": "VIDEO", "total": 3, "downloaded": 0, "failed": 3}),
+        "{artwork}"
+    );
+    assert_eq!(artwork["failures"], json!([{"kind": "VIDEO", "reason": reason, "count": 3}]));
+
+    // Needs attention keeps it, and why, from the table (a restart keeps it too).
+    let of = "query ($kind: AttentionKind!) {
+        gamesNeedingAttention(kind: $kind) { title detail } }";
+    let items = h.ok(of, json!({"kind": "NO_VIDEO"})).await["gamesNeedingAttention"].clone();
+    let detail = format!("gave up: {reason}");
+    assert!(
+        items.as_array().unwrap().contains(&json!({"title": "Other", "detail": detail})),
+        "{items}"
+    );
+    assert_eq!(
+        h.ok(of, json!({"kind": "DOWNLOAD_GAVE_UP"})).await["gamesNeedingAttention"],
+        json!([{"title": "Other", "detail": format!("video: {reason}")}])
+    );
+    let counts = h.ok("{ attentionCounts { kind count } }", json!({})).await;
+    assert!(
+        counts["attentionCounts"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"kind": "DOWNLOAD_GAVE_UP", "count": 1})),
+        "{counts}"
+    );
+
+    // Retried: its attempts start again, and the downloads with them.
+    let retry = "mutation ($s: ID) { retryArtworkDownloads(system: $s) }";
+    assert_eq!(h.ok(retry, json!({"s": "nes"})).await["retryArtworkDownloads"], 0, "not NES");
+    assert_eq!(h.ok(retry, json!({})).await["retryArtworkDownloads"], 1);
+    for _ in 0..200 {
+        let a = h.ok(METADATA, json!({})).await["metadataStatus"]["artwork"].clone();
+        if a["running"] == false && a["done"] == 3 {
+            assert_eq!(a["failures"][0]["reason"], reason);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the retried downloads did not run");
+}
+
+#[tokio::test]
 async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     let (base, _) = mock_services(false).await;
     let mut h = Harness::new_with("metadata", false, metadata_args(&base)).await;
@@ -1013,7 +1085,14 @@ async fn fetches_metadata_from_screenscraper_with_detailed_progress() {
     // game's own artwork beside the ROM is not read.
     assert_eq!(
         status["artwork"],
-        json!({"running": false, "total": 7, "done": 7, "downloaded": 7, "failed": 0, "videos": 1})
+        json!({"running": false, "total": 7, "done": 7, "downloaded": 7, "failed": 0,
+               "kinds": [
+                   {"kind": "BOX_ART", "total": 2, "downloaded": 2, "failed": 0},
+                   {"kind": "SCREENSHOT", "total": 2, "downloaded": 2, "failed": 0},
+                   {"kind": "MARQUEE", "total": 2, "downloaded": 2, "failed": 0},
+                   {"kind": "VIDEO", "total": 1, "downloaded": 1, "failed": 0},
+               ],
+               "failures": []})
     );
     let stored: String =
         sqlx::query_scalar("SELECT box_art_url FROM game_metadata WHERE box_art_url IS NOT NULL")
@@ -2864,6 +2943,7 @@ const ADMIN_ONLY: &[&str] = &[
     "{ gamesNeedingAttention(kind: DUPLICATE) { path } }",
     "{ attentionCounts { count } }",
     "mutation { lookUpGame(gameId: 1) { running } }",
+    "mutation { retryArtworkDownloads }",
     "{ backups { dir } }",
     "{ thirdPartyNotices { server { id } } }",
     "mutation { deleteBackup(name: \"x\") }",
