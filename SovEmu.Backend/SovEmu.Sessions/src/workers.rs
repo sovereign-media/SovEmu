@@ -96,6 +96,9 @@ pub struct WorkerConfig {
     /// `…__LanMilliseconds`); 0 for no check.
     pub probe_ms: u32,
     pub probe_lan_ms: u32,
+    /// How long a worker keeps held buttons and sticks held once the client stops refreshing
+    /// them, in milliseconds (`SovEmu__Streaming__Input__LapseMilliseconds`).
+    pub input_lapse_ms: u32,
     /// The DSCP value workers mark the stream's packets with (`SovEmu__Streaming__Udp__Dscp`); 0 for none.
     pub udp_dscp: u8,
     /// Seconds between a worker's `session health` log lines (0: none).
@@ -798,6 +801,8 @@ impl Workers {
             .arg(self.config.probe_ms.to_string())
             .arg("--probe-lan-ms")
             .arg(self.config.probe_lan_ms.to_string())
+            .arg("--input-lapse-ms")
+            .arg(self.config.input_lapse_ms.to_string())
             .arg("--udp-dscp")
             .arg(self.config.udp_dscp.to_string())
             .arg("--gpu")
@@ -1213,6 +1218,7 @@ done
             dropout_keyframe_ms: 700,
             probe_ms: 2000,
             probe_lan_ms: 750,
+            input_lapse_ms: 500,
             udp_dscp: 0,
             health_interval_secs: 10,
             gpu: "off".into(),

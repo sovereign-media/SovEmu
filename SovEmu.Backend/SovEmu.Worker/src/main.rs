@@ -284,6 +284,10 @@ struct SessionArgs {
     /// The same on the server's own network, where the link is rarely what limits it.
     #[arg(long, default_value_t = 750)]
     probe_lan_ms: u32,
+    /// How long held buttons and sticks stay held once the client stops refreshing them, in
+    /// milliseconds (clients refresh every 100 ms). Hotkeys always lapse after 500 ms.
+    #[arg(long, default_value_t = 500)]
+    input_lapse_ms: u32,
     /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
     /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
     #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]
@@ -436,6 +440,10 @@ struct ServeArgs {
     /// The same on the server's own network, where the link is rarely what limits it.
     #[arg(long, default_value_t = 750)]
     probe_lan_ms: u32,
+    /// How long held buttons and sticks stay held once the client stops refreshing them, in
+    /// milliseconds (clients refresh every 100 ms). Hotkeys always lapse after 500 ms.
+    #[arg(long, default_value_t = 500)]
+    input_lapse_ms: u32,
     /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
     /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
     #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]

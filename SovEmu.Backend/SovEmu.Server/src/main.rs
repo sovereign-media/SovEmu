@@ -509,6 +509,19 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Streaming__Probe__LanMilliseconds", default_value_t = 750)]
     pub probe_lan_ms: u32,
 
+    /// How long a game keeps a player's held buttons and sticks held once their client stops
+    /// refreshing them, in milliseconds: raise it for a lossy remote link, where a burst of
+    /// lost packets would otherwise let go of a held button. Clients refresh held input every
+    /// 100 ms over a channel that does not resend, so 300 is the least (a lost refresh plus
+    /// jitter); 5000 the most, the longest a client that went quiet can leave a button held.
+    #[arg(
+        long,
+        env = "SovEmu__Streaming__Input__LapseMilliseconds",
+        default_value_t = 500,
+        value_parser = clap::value_parser!(u32).range(300..=5000)
+    )]
+    pub input_lapse_ms: u32,
+
     /// Seconds between each game's `session health` log line while someone is playing (frame
     /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
     /// logs a `session summary` when it ends.
@@ -1135,6 +1148,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         dropout_keyframe_ms: config.dropout_keyframe_ms,
         probe_ms: config.probe_ms,
         probe_lan_ms: config.probe_lan_ms,
+        input_lapse_ms: config.input_lapse_ms,
         udp_dscp: config.udp_dscp,
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),
@@ -1656,6 +1670,23 @@ mod tests {
             assert!(!summary.contains(secret), "{secret} in {summary}");
         }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
+    }
+
+    #[test]
+    fn input_lapse_is_bounded() {
+        assert_eq!(Config::parse_from(["sovemu-server"]).input_lapse_ms, 500);
+        let lapse = |ms: &str| {
+            Config::try_parse_from(["sovemu-server", "--input-lapse-ms", ms])
+                .map(|c| c.input_lapse_ms)
+        };
+        assert_eq!(lapse("2000").unwrap(), 2000);
+        assert_eq!(lapse("300").unwrap(), 300);
+        assert_eq!(lapse("5000").unwrap(), 5000);
+        // Below 300 an ordinary lost refresh would let go of a held button; above 5000 a client
+        // that went quiet would hold one too long.
+        assert!(lapse("299").is_err());
+        assert!(lapse("5001").is_err());
+        assert!(lapse("0").is_err());
     }
 
     #[test]
