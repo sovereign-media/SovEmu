@@ -69,6 +69,7 @@ import {
   newStartId,
   type StartStatus,
 } from "../../lib/launch";
+import { networkLabel } from "../../lib/link";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
 import type { QualityNotice } from "../../lib/pipeline";
@@ -129,7 +130,7 @@ const HANDHELDS = new Set([
 ]);
 const FILTER_KEY = "sovemu.filter";
 /** How to leave a start that is slow, stuck or failed: the Android app's hint, for a browser. */
-const MENU_HINT = "To quit, open the menu: Escape, or Home (or Select + Start) on a controller.";
+const MENU_HINT = "Menu: Esc / Select+Start";
 const player = (port: number) => `Player ${port + 1}`;
 
 interface Loaded {
@@ -167,6 +168,8 @@ function Player() {
   const [streamInfo, setStreamInfo] = useState("");
   /** The screenshot of the save being continued, behind the loading screen. */
   const [saveShot, setSaveShot] = useState<string | null>(null);
+  /** Where the player is, once the worker has checked the connection: the loading screen's chip. */
+  const [network, setNetwork] = useState<string | null>(null);
   const [splash, setSplash] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [aspect, setAspect] = useState("4 / 3");
@@ -342,7 +345,7 @@ function Player() {
               ? describeLink(link)
               : !link
                 ? describeConnecting(performance.now() - waitingFrom)
-                : describeFirstPicture(performance.now() - waitingFrom, link);
+                : describeFirstPicture(performance.now() - waitingFrom);
           setProgress({
             label: view.label,
             detail: view.detail,
@@ -382,6 +385,7 @@ function Player() {
             },
             onLink: (l) => {
               link = l;
+              setNetwork(networkLabel(l.path));
               showWaiting();
             },
             onQuality: (notice) => {
@@ -950,6 +954,7 @@ function Player() {
           error={status}
           status={streamInfo}
           hint={MENU_HINT}
+          network={network}
         />
       )}
 

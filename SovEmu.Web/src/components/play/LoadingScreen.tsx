@@ -1,8 +1,8 @@
 // The screen while a game starts (#243), the same in the Android and iOS apps: a darkened
 // picture behind (the save being continued, the game, its box blurred, or the system's colour),
-// the bar centred with what the start is doing, the game bottom left, and a spinner bottom
-// right, which a failure replaces with the alert. The Continue / Start over choice is the
-// player's menu, drawn over this.
+// the bar dead centre with what the start is doing, where the player is in a chip top right,
+// the game bottom left, and a spinner bottom right, which a failure replaces with the alert.
+// The Continue / Start over choice is the player's menu, drawn over this.
 
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import type { LoadingBackground } from "../../lib/launch";
@@ -31,9 +31,21 @@ type LoadingScreenProps = {
   status: string;
   /** How to leave a start that is slow, stuck or failed. */
   hint: string;
+  /** `Home network` or `Remote`, once the worker has checked the connection. */
+  network: string | null;
 };
 
-export function LoadingScreen({ title, short, color, background, progress, error, status, hint }: LoadingScreenProps) {
+export function LoadingScreen({
+  title,
+  short,
+  color,
+  background,
+  progress,
+  error,
+  status,
+  hint,
+  network,
+}: LoadingScreenProps) {
   const failed = progress?.failed || error !== "";
   const label = progress?.label ?? (error || `Starting ${title || "the game"}…`);
   return (
@@ -58,7 +70,13 @@ export function LoadingScreen({ title, short, color, background, progress, error
       <div className="absolute inset-0 bg-black/55" />
       <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/55 to-transparent" />
 
-      <div className="absolute inset-x-0 bottom-36 grid justify-items-center gap-3 px-6 text-center sm:bottom-40">
+      {network && (
+        <span className="absolute top-6 right-6 rounded-full bg-black/60 px-4 py-1.5 text-sm font-semibold text-slate-100 ring-1 ring-white/20 backdrop-blur sm:top-10 sm:right-10">
+          {network}
+        </span>
+      )}
+
+      <div className="absolute inset-0 grid place-content-center justify-items-center gap-3 px-6 text-center">
         {progress && (
           <Progress
             value={progress.percent}

@@ -89,11 +89,10 @@ describe("checking the connection", () => {
     expect(describeConnecting(4200).detail).toBe("4 s");
   });
 
-  it("says where the player is once the path is known", () => {
-    expect(describeLink(link({ path: "lan" })).detail).toBe("Home network");
-    expect(describeLink(link({ path: "relay-tcp" })).detail).toBe("Remote");
-    expect(describeLink(link()).detail).toBe("");
-    expect(describeFirstPicture(4000, link({ state: "done", path: "direct" })).detail).toBe("Remote · 4 s");
+  it("leaves where the player is to the network chip", () => {
+    // The chip in the corner says Home network or Remote; the bar's detail stays free for the wait.
+    expect(describeLink(link({ path: "lan" })).detail).toBe("");
+    expect(describeFirstPicture(4000).detail).toBe("4 s");
   });
 });
 

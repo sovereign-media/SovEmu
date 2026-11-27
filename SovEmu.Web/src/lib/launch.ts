@@ -6,7 +6,6 @@
 // that phase instead (always moving, never arriving) while the megabytes read count up.
 
 import type { Enum } from "./gql";
-import { networkLabel } from "./link";
 import type { Link } from "./protocol";
 
 type StartPhase = Enum<"StartPhase">;
@@ -77,13 +76,14 @@ export function describeConnecting(waitedMs: number): LaunchView {
 /**
  * The check of the player's connection before the stream starts (`0x83`, #243): the worker
  * sends no video meanwhile, so it runs between the session being ready and the first picture.
- * The bar follows its time against its budget; the detail says where the player is.
+ * The bar follows its time against its budget. Where the player is shows in a chip of its own
+ * (`networkLabel`).
  */
 export function describeLink(link: Link): LaunchView {
   const within = link.budgetMs > 0 ? Math.min(1, link.elapsedMs / link.budgetMs) : 1;
   return {
     label: "Checking your connection",
-    detail: networkLabel(link.path) ?? "",
+    detail: "",
     fraction: NETWORK.from + (NETWORK.to - NETWORK.from) * within,
   };
 }
@@ -91,14 +91,11 @@ export function describeLink(link: Link): LaunchView {
 /**
  * The last stretch of a start, which the server cannot see: the session is ready (and the
  * connection checked), and the game has yet to draw its first picture (a console's BIOS boots
- * for seconds; a save is loaded once the game is up). The detail says where the player is, once
- * known, and counts the wait.
+ * for seconds; a save is loaded once the game is up). The detail counts the wait.
  */
-export function describeFirstPicture(waitedMs: number, link: Link | null = null): LaunchView {
+export function describeFirstPicture(waitedMs: number): LaunchView {
   const seconds = Math.floor(waitedMs / 1000);
   const parts: string[] = [];
-  const network = networkLabel(link?.path ?? "");
-  if (network) parts.push(network);
   if (seconds >= 3) parts.push(`${seconds} s`);
   if (waitedMs >= NO_PICTURE_HINT_MS) parts.push("still no picture: Escape opens the menu");
   return { label: "Starting the game", detail: parts.join(" · "), fraction: NETWORK.to };
