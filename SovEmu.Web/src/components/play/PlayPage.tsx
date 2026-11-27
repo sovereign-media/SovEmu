@@ -26,7 +26,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { type SubmitEvent, useEffect, useReducer, useRef, useState } from "react";
+import { type SubmitEvent, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   AUTO_SLOT,
   api,
@@ -57,7 +57,7 @@ import { invalidate, q, queryClient } from "../../lib/data";
 import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../lib/decoration";
 import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
-import { captureInput, InputState } from "../../lib/input";
+import { captureInput, InputState, touchControlsWanted } from "../../lib/input";
 import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
 import { describeFirstPicture, describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
@@ -75,6 +75,7 @@ import { Dialog, Field, inputClass, Progress } from "../ui/primitives";
 import { useToast } from "../ui/toast";
 import { LatencyGraph } from "./LatencyGraph";
 import { QualityChip } from "./QualityChip";
+import { TouchController } from "./TouchController";
 
 const ICONS: Record<string, LucideIcon> = {
   play: Play,
@@ -117,6 +118,8 @@ const HANDHELDS = new Set([
   "vectrex",
 ]);
 const FILTER_KEY = "sovemu.filter";
+/** How to leave a start that is slow, stuck or failed: the Android app's hint, for a browser. */
+const MENU_HINT = "To quit, open the menu: Escape, or Home (or Select + Start) on a controller.";
 const player = (port: number) => `Player ${port + 1}`;
 
 interface Loaded {
@@ -147,7 +150,8 @@ function Player() {
   menus.current ??= new MenuStack(rerender);
 
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [status, setStatus] = useState("Starting…");
+  /** Why the game could not start, when it failed before the server reported a phase. */
+  const [status, setStatus] = useState("");
   const [progress, setProgress] = useState<{ label: string; detail: string; percent: number; failed: boolean } | null>(
     null,
   );
@@ -165,6 +169,11 @@ function Player() {
   const [cheatForm, setCheatForm] = useState<null | ((code: string, description: string) => void)>(null);
   const formOpen = useRef(false);
   formOpen.current = cheatForm !== null;
+  // On-screen controls: wanted on a touch screen with no pad or keyboard (the Android app's rule).
+  const [touch, setTouch] = useState(false);
+  const inputs = useRef<InputState | null>(null);
+  const openMenu = useRef<() => void>(() => {});
+  const onTouch = useCallback((button: ButtonName, down: boolean) => inputs.current?.touch(button, down), []);
 
   useEffect(() => {
     const stack = menus.current!;
@@ -178,6 +187,24 @@ function Player() {
     let lastFrames = 0;
     let stalledFor = 0;
     const input = new InputState();
+    inputs.current = input;
+    // Whether the on-screen controls are wanted, again whenever a pad comes or goes or a key that
+    // plays the game is pressed.
+    const touchscreen = matchMedia("(pointer: coarse)");
+    const watching = new AbortController();
+    const wantTouch = () =>
+      setTouch(
+        touchControlsWanted(
+          touchscreen.matches,
+          [...(navigator.getGamepads?.() ?? [])].filter(Boolean).length,
+          input.keyboardUsed,
+        ),
+      );
+    wantTouch();
+    for (const event of ["gamepadconnected", "gamepaddisconnected", "keydown"]) {
+      addEventListener(event, wantTouch, { signal: watching.signal });
+    }
+    touchscreen.addEventListener("change", wantTouch, { signal: watching.signal });
     const sampler = new StatsSampler();
     const history = new LatencyHistory();
     const filter = new VideoFilter(video.current!, canvas.current!);
@@ -269,7 +296,6 @@ function Player() {
         // The player left while the game was loading: it is not wanted any more.
         if (stopped) end();
         setAspect(HANDHELDS.has(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
-        setStatus(`${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`);
         return s;
       });
       starting.catch((e) => {
@@ -342,7 +368,6 @@ function Player() {
         session?.close();
         if (info && !ended) {
           ended = true;
-          setStatus("Saving…");
           await api.stopSession(info.id).catch(() => {});
           void played();
         }
@@ -740,6 +765,10 @@ function Player() {
         }
       };
       addEventListener("keydown", onKey);
+      // The on-screen controls' menu button: the way out of a game on a phone.
+      openMenu.current = () => {
+        if (session && !stack.open) stack.push(gameMenu());
+      };
       let comboHeld = false;
       const watchPads = () => {
         if (stopped) return;
@@ -808,6 +837,7 @@ function Player() {
       cleanup();
       session?.close();
       filter.stop();
+      watching.abort();
       input.dispose();
       end();
     };
@@ -815,6 +845,7 @@ function Player() {
 
   const stack = menus.current;
   const top = stack.current;
+  const failed = status !== "";
   const diagrams =
     top?.menu.diagrams && (top.menu.diagrams.system || top.menu.diagrams.controller) ? top.menu.diagrams : null;
   const lit = top?.menu.items[top.index]?.highlight;
@@ -873,45 +904,50 @@ function Player() {
         )}
       </div>
 
+      {/* The start, laid out as the Android app's (Player.kt's Splash): one column over the
+          system's colour and the game's art, the bar above what the start is doing, and how to
+          leave a start that is slow, stuck or failed. */}
       {splash && (
-        <section
-          className="absolute inset-0 grid content-start justify-items-center bg-surface pt-[12vh]"
-          style={{
-            background: `radial-gradient(ellipse at 50% 40%, color-mix(in srgb, ${color} 40%, transparent), #0b0d12 70%)`,
-          }}
-        >
-          <div className="grid justify-items-center gap-3 text-center">
+        <section className="absolute inset-0 grid place-items-center overflow-hidden bg-surface">
+          <div
+            className="absolute inset-0 opacity-35"
+            style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 25%, black))` }}
+          />
+          {(loaded?.game.image ?? loaded?.game.thumb) && (
+            <img
+              src={(loaded?.game.image ?? loaded?.game.thumb) || undefined}
+              alt=""
+              // Box art alone is blurred, as Android draws it from a 32 px copy.
+              className={cn("absolute inset-0 size-full object-cover opacity-25", !loaded?.game.image && "blur-2xl")}
+            />
+          )}
+          <div className="relative grid w-full max-w-[35rem] justify-items-center gap-4 p-8 text-center">
             {loaded && (
               <span className="rounded-lg px-3 py-1 text-sm font-black" style={{ background: color }}>
                 {loaded.system?.short ?? loaded.game.system}
               </span>
             )}
-            <h1 className="max-w-3xl text-4xl font-black md:text-5xl">{loaded?.game.title}</h1>
-            <p className="text-slate-400">{status}</p>
-          </div>
-          {/* The loading bar: what the start is doing, how far it has got, and for how long. */}
-          {progress && (
-            <div className="absolute inset-x-0 bottom-10 mx-auto grid w-[28rem] max-w-[86vw] gap-2">
-              <div className="flex items-baseline justify-between gap-4 text-sm">
-                <span
-                  className={cn(
-                    "flex items-center gap-1.5 font-semibold",
-                    progress.failed ? "text-red-300" : "text-slate-200",
-                  )}
-                >
-                  {progress.failed && <CircleAlert className="size-4" />}
-                  {progress.label}
-                </span>
-                <span className="text-xs text-slate-500 tabular-nums">{progress.detail}</span>
-              </div>
+            <h1 className="text-[2rem] leading-tight font-black">{loaded?.game.title}</h1>
+            {progress && (
               <Progress
                 value={progress.percent}
                 color="var(--color-accent)"
-                className="h-1.5 bg-white/15"
+                className="h-1.5 w-[25rem] max-w-full bg-white/15"
                 label={progress.label}
               />
-            </div>
-          )}
+            )}
+            <p
+              className={cn(
+                "flex items-center gap-2 text-xl font-semibold",
+                progress?.failed || failed ? "text-red-300" : "text-slate-100",
+              )}
+            >
+              {(progress?.failed || failed) && <CircleAlert className="size-5" />}
+              {progress?.label ?? (failed ? status : `Starting ${loaded?.game.title ?? "the game"}…`)}
+            </p>
+            {progress?.detail && <p className="text-base text-slate-400 tabular-nums">{progress.detail}</p>}
+            <p className="pt-2 text-[13px] text-slate-400">{MENU_HINT}</p>
+          </div>
         </section>
       )}
 
@@ -1036,6 +1072,9 @@ function Player() {
           </div>
         </form>
       </Dialog>
+
+      {/* Hidden while a menu is open: the menu is touched directly, and a held button is let go. */}
+      {touch && playing && !splash && !top && <TouchController onButton={onTouch} onMenu={() => openMenu.current()} />}
 
       {quality && <QualityChip notice={quality} />}
 
