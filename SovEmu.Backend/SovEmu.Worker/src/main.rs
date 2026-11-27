@@ -20,6 +20,7 @@ mod gpu;
 mod headless;
 mod health;
 mod keyframes;
+mod link;
 mod loading;
 mod loss;
 mod pacing;
@@ -276,6 +277,13 @@ struct SessionArgs {
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]
     dropout_keyframe_ms: u32,
+    /// How long a new client's link is checked before the stream starts, so it starts at a
+    /// rate the link carries, in milliseconds (0: not checked; it starts at `--video-kbps`).
+    #[arg(long, default_value_t = 2000)]
+    probe_ms: u32,
+    /// The same on the server's own network, where the link is rarely what limits it.
+    #[arg(long, default_value_t = 750)]
+    probe_lan_ms: u32,
     /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
     /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
     #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]
@@ -420,6 +428,13 @@ struct ServeArgs {
     /// once: it was cut off, and would otherwise stall until it asked for one (0: never).
     #[arg(long, default_value_t = 700)]
     dropout_keyframe_ms: u32,
+    /// How long a new client's link is checked before the stream starts, so it starts at a
+    /// rate the link carries, in milliseconds (0: not checked; it starts at `--video-kbps`).
+    #[arg(long, default_value_t = 2000)]
+    probe_ms: u32,
+    /// The same on the server's own network, where the link is rarely what limits it.
+    #[arg(long, default_value_t = 750)]
+    probe_lan_ms: u32,
     /// The DSCP value the stream's packets are marked with, for priority on Wi-Fi and through
     /// routers that honour it: 34 (AF41, interactive video) by default, 0 for none.
     #[arg(long, default_value_t = 34, value_parser = clap::value_parser!(u8).range(0..=63))]

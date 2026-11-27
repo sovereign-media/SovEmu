@@ -93,6 +93,11 @@ pub struct WorkerConfig {
     /// Milliseconds a client is silent before its return is answered with a keyframe
     /// (`SovEmu__Streaming__Video__DropoutKeyframeMilliseconds`); 0 for never.
     pub dropout_keyframe_ms: u32,
+    /// How long a new player's link is checked before the stream starts, and on the server's
+    /// own network, in milliseconds (`SovEmu__Streaming__Probe__Milliseconds`,
+    /// `…__LanMilliseconds`); 0 for no check.
+    pub probe_ms: u32,
+    pub probe_lan_ms: u32,
     /// The DSCP value workers mark the stream's packets with (`SovEmu__Streaming__Udp__Dscp`); 0 for none.
     pub udp_dscp: u8,
     /// Seconds between a worker's `session health` log lines (0: none).
@@ -787,6 +792,10 @@ impl Workers {
             .arg(self.config.jitter_video_ms.to_string())
             .arg("--dropout-keyframe-ms")
             .arg(self.config.dropout_keyframe_ms.to_string())
+            .arg("--probe-ms")
+            .arg(self.config.probe_ms.to_string())
+            .arg("--probe-lan-ms")
+            .arg(self.config.probe_lan_ms.to_string())
             .arg("--udp-dscp")
             .arg(self.config.udp_dscp.to_string())
             .arg("--gpu")
@@ -1201,6 +1210,8 @@ done
             limit_video_kbps: 0,
             jitter_video_ms: 0,
             dropout_keyframe_ms: 700,
+            probe_ms: 2000,
+            probe_lan_ms: 750,
             udp_dscp: 0,
             health_interval_secs: 10,
             gpu: "off".into(),

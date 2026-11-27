@@ -234,6 +234,21 @@ answers with that codec alone. The prices are logged (`video codec chosen`) and 
 session (`codecChoice`). A measurement changes the codec at the device's next start, never in
 the middle of a session.
 
+**Starting rate** (`SovEmu.Worker/src/link.rs`, `SovEmu__Streaming__Probe__Milliseconds`, #243).
+Before a new client's stream starts, the worker checks its link. The game waits and no video is
+sent, while str0m pads the link toward the stream's ceiling and its send-bandwidth estimate finds
+what the link carries. The check ends when the estimate reaches the ceiling, holds steady for
+500 ms (from half the budget on), the client reports loss or a rising round trip, or the budget
+(2 s; 750 ms on the server's own network, where the estimator starts near the ceiling) runs out.
+The stream then starts at what `adapt.rs` would leave for video from that estimate (85%, less
+the audio, within the floor and ceiling; over TCP to the relay, 60% of that), and the estimator
+starts from the measured value. Without it every stream started at `SovEmu__Streaming__Video__Kbps`:
+on a slow link several cuts followed, each a stall, and on a fast one ten seconds of a softer
+picture. The client is told how the check goes in `0x83` messages (its loading bar's "Checking
+your connection") and the result again in the pipeline. The path is classed as it goes: `lan`
+(a private address), `direct`, or relayed (the relay forwards over loopback), with the relay's
+transport, `relay-udp`, `relay-tcp` or `relay-tls`, from the client's stats.
+
 **Keyframe requests** (`SovEmu.Worker/src/keyframes.rs`). A client that loses packets it cannot
 get resent asks for a keyframe, and in a burst of loss it asks several times within a round trip.
 Each keyframe is several times an ordinary frame, so the worker answers a burst with one, and

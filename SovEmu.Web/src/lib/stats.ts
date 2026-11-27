@@ -1,5 +1,7 @@
 // Latency and stream health from RTCPeerConnection.getStats(), sampled once a second.
 
+import { selectedPair } from "./connectionTest";
+import { clientPath, networkItems } from "./link";
 import { median } from "./numbers";
 import { decoderLabel, pipelineItems } from "./pipeline";
 import type { ClientStats } from "./protocol";
@@ -33,17 +35,27 @@ export class StatsSampler {
   async sample(session: Session): Promise<StatsSample> {
     const report = await session.pc.getStats();
     const now: Sample = { t: performance.now() };
-    let pair: RTCIceCandidatePairStats | undefined;
     report.forEach((s) => {
       if (s.type === "inbound-rtp" && s.kind === "video") now.video = s;
       if (s.type === "inbound-rtp" && s.kind === "audio") now.audio = s;
-      if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded") pair = s;
     });
+    const chosen = selectedPair(report.values());
+    const pair = chosen?.pair as RTCIceCandidatePairStats | undefined;
     const prev = this.last;
     this.last = now;
     const v = now.video as (RTCInboundRtpStreamStats & Record<string, number>) | undefined;
     const pv = prev?.video as (RTCInboundRtpStreamStats & Record<string, number>) | undefined;
-    if (!v) return { items: [], numbers: {} };
+    const netRtt = pair?.currentRoundTripTime !== undefined ? pair.currentRoundTripTime * 1000 : NaN;
+    const path = clientPath(chosen?.local);
+    const network = networkItems(
+      chosen?.local,
+      chosen?.remote,
+      session.link,
+      session.pipeline?.video.estimateKbps ?? 0,
+    );
+    // Before the first frame (the worker checking the connection): the path and the round
+    // trip already go to the worker, which needs them to judge the link.
+    if (!v) return { items: network, numbers: { net_rtt_ms: netRtt, path } };
 
     const delta = (key: string) => (pv ? (v[key] ?? 0) - (pv[key] ?? 0) : 0);
     const dt = prev ? (now.t - prev.t) / 1000 : 0;
@@ -52,7 +64,6 @@ export class StatsSampler {
     const jitterMs = emitted ? (delta("jitterBufferDelay") / emitted) * 1000 : NaN;
     const decoded = delta("framesDecoded");
     const decodeMs = decoded ? (delta("totalDecodeTime") / decoded) * 1000 : NaN;
-    const netRtt = pair?.currentRoundTripTime !== undefined ? pair.currentRoundTripTime * 1000 : NaN;
     const inputRtt = median(session.inputRtts);
     // Button to pixel, roughly: the input round trip (input reaches the core and the frame
     // comes back), plus half a frame of alignment, ~2 ms encode, jitter buffer, decode and
@@ -76,6 +87,7 @@ export class StatsSampler {
       packets_lost: lost,
       frames_dropped: v.framesDropped,
       decoder: typeof v.decoderImplementation === "string" ? v.decoderImplementation : undefined,
+      path,
     };
     const items = [
       { label: "Estimated button→pixel", value: fmt(estimate, " ms") },
@@ -95,6 +107,7 @@ export class StatsSampler {
     if (decoder) items.push({ label: "Decoder", value: decoder });
     // The server's side, as its worker last said.
     if (session.pipeline) items.push(...pipelineItems(session.pipeline));
+    items.push(...network);
     return { items, numbers };
   }
 }

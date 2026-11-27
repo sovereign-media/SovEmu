@@ -496,6 +496,17 @@ pub struct Config {
     )]
     pub dropout_keyframe_ms: u32,
 
+    /// How long a new player's connection is checked before their game starts, in
+    /// milliseconds: the stream then starts at a rate the link was seen to carry, instead of
+    /// at `SovEmu__Streaming__Video__Kbps` and adapting from there. 0 turns the check off.
+    #[arg(long, env = "SovEmu__Streaming__Probe__Milliseconds", default_value_t = 2000)]
+    pub probe_ms: u32,
+
+    /// The same, for a player on the server's own network, where the link is rarely what
+    /// limits the stream.
+    #[arg(long, env = "SovEmu__Streaming__Probe__LanMilliseconds", default_value_t = 750)]
+    pub probe_lan_ms: u32,
+
     /// Seconds between each game's `session health` log line while someone is playing (frame
     /// rate, overrun ticks, encode time, bitrate, input); 0 turns them off. Every game still
     /// logs a `session summary` when it ends.
@@ -1111,6 +1122,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         limit_video_kbps: config.debug_limit_video_kbps,
         jitter_video_ms: config.debug_jitter_video_ms,
         dropout_keyframe_ms: config.dropout_keyframe_ms,
+        probe_ms: config.probe_ms,
+        probe_lan_ms: config.probe_lan_ms,
         udp_dscp: config.udp_dscp,
         health_interval_secs: config.session_health_secs,
         gpu: gpu.worker_arg.clone(),

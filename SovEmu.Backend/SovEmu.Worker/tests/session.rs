@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use sovemu_media::{H264Decoder, OpusDecoder};
 use sovemu_protocol::{
-    Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, Pipeline, SdpKind, SessionDescription,
+    Hotkeys, INPUT_CHANNEL, InputAck, InputPacket, Link, Pipeline, SdpKind, SessionDescription,
 };
 use str0m::change::SdpAnswer;
 use str0m::channel::{ChannelConfig, Reliability};
@@ -243,6 +243,10 @@ fn streams_video_and_audio_and_acknowledges_input() {
     let mut zero_delay_frames = 0;
     let mut picture_size = None;
     let mut pipeline = None;
+    // The check of the connection before the stream starts (#243): its result, and the video
+    // frames received by the time it was done.
+    let mut link: Option<Link> = None;
+    let mut video_before_link = None;
     let mut channel_open = false;
     let mut acks: Vec<InputAck> = Vec::new();
     // Video frames received when each ack arrived: with the ack's emulated frame, how many frames
@@ -372,6 +376,12 @@ fn streams_video_and_audio_and_acknowledges_input() {
                         if data.data.first() == Some(&0x82) {
                             pipeline =
                                 Some(Pipeline::decode(&data.data).expect("a valid pipeline"));
+                        } else if data.data.first() == Some(&0x83) {
+                            let l = Link::decode(&data.data).expect("a valid link message");
+                            if l.state == Link::DONE && link.is_none() {
+                                video_before_link = Some(video_frames);
+                                link = Some(l);
+                            }
                         } else {
                             acks.push(InputAck::decode(&data.data).expect("a valid ack"));
                             acks_video.push(video_frames);
@@ -427,7 +437,13 @@ fn streams_video_and_audio_and_acknowledges_input() {
     if std::env::var_os("SOVEMU_E2E_HTTP").is_none() {
         assert_eq!((w, h), (256, 224), "the test core's native resolution");
     }
+    // No picture before the connection was checked: the client's loading screen stays up
+    // while it is, and the stream starts at the rate it found.
+    let link = link.expect("the worker said when the connection check was done");
+    assert_eq!(video_before_link, Some(0), "video sent while checking the connection: {link:?}");
+    assert!(!link.stopped_by.is_empty() && link.start_kbps > 0, "{link:?}");
     let pipeline = pipeline.expect("the worker said how it makes the stream");
+    assert_eq!(pipeline.link.as_ref(), Some(&link), "the pipeline carries the result again");
     assert_eq!(pipeline.video.codec, "h264");
     assert!(!pipeline.video.encoder.is_empty(), "{pipeline:?}");
     assert_eq!((pipeline.video.width, pipeline.video.height), (w, h));

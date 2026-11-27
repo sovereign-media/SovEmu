@@ -11,6 +11,7 @@ const TYPE_ANALOG = 0x03;
 const TYPE_STATS = 0x04;
 const TYPE_ACK = 0x81;
 const TYPE_PIPELINE = 0x82;
+const TYPE_LINK = 0x83;
 
 /** RetroPad button ids (libretro RETRO_DEVICE_ID_JOYPAD_*): bit n of a port's state. */
 export const Button = {
@@ -137,6 +138,12 @@ export interface ClientStats {
   low_latency_decode?: boolean;
   /** The video decoder (getStats' `decoderImplementation`). */
   decoder?: string;
+  /**
+   * How this client reaches the worker, from its selected candidate pair (`linkPath` in
+   * `stats.ts`): `direct`, or through the relay over `relay-udp`, `relay-tcp` or `relay-tls`.
+   * Only the client can tell the relay's transports apart.
+   */
+  path?: string;
 }
 
 const STATS_KEYS: (keyof ClientStats)[] = [
@@ -158,6 +165,7 @@ const STATS_KEYS: (keyof ClientStats)[] = [
   "wifi_lock",
   "low_latency_decode",
   "decoder",
+  "path",
 ];
 
 /** `0x04`, the version, then the known values as a JSON object (unknown and non-finite ones left out). */
@@ -213,15 +221,65 @@ export interface Pipeline {
     kbps: number;
     /** What held it down when it last fell: `connection`, `client`, or empty. */
     limitedBy: string;
+    /** The send-bandwidth estimate now, kbit/s, video and audio (0: unknown, an older server). */
+    estimateKbps: number;
   };
   audio: { codec: string; sourceHz: number; kbps: number };
   runAhead: number;
+  /** The check of the connection before the stream started, once done; null without one. */
+  link: Link | null;
+}
+
+/**
+ * The check of the player's connection before a game starts (`0x83`, then the version, then
+ * JSON; `Link` in SovEmu.Protocol, #243): while `state` is `probing` no video is sent and the
+ * loading bar shows "Checking your connection"; once `done` the stream starts at `startKbps`.
+ */
+export interface Link {
+  state: "probing" | "done" | "";
+  elapsedMs: number;
+  budgetMs: number;
+  /** `lan`, `direct`, `relay`, `relay-udp`, `relay-tcp` or `relay-tls`; empty while unknown. */
+  path: string;
+  estimateKbps: number;
+  startKbps: number;
+  rttMs: number | null;
+  /** `ceiling`, `steady`, `trouble`, `budget`, `unavailable` or `off`; empty while probing. */
+  stoppedBy: string;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+function toLink(json: unknown): Link | null {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const l = json as Record<string, unknown>;
+  const state = str(l.state);
+  return {
+    state: state === "probing" || state === "done" ? state : "",
+    elapsedMs: num(l.elapsed_ms),
+    budgetMs: num(l.budget_ms),
+    path: str(l.path),
+    estimateKbps: num(l.estimate_kbps),
+    startKbps: num(l.start_kbps),
+    rttMs: typeof l.rtt_ms === "number" && Number.isFinite(l.rtt_ms) ? l.rtt_ms : null,
+    stoppedBy: str(l.stopped_by),
+  };
+}
+
+/** Decodes a link message, or returns null for anything else. */
+export function decodeLink(data: ArrayBuffer): Link | null {
+  if (data.byteLength < 3 || data.byteLength > 1024) return null;
+  const bytes = new Uint8Array(data);
+  if (bytes[0] !== TYPE_LINK || bytes[1] !== INPUT_VERSION) return null;
+  try {
+    return toLink(JSON.parse(new TextDecoder().decode(bytes.subarray(2))));
+  } catch {
+    return null;
+  }
+}
 
 /** Decodes a pipeline message, or returns null for anything else. */
 export function decodePipeline(data: ArrayBuffer): Pipeline | null {
@@ -254,8 +312,10 @@ export function decodePipeline(data: ArrayBuffer): Pipeline | null {
       fps: num(video.fps),
       kbps: num(video.kbps),
       limitedBy: str(video.limited_by),
+      estimateKbps: num(video.estimate_kbps),
     },
     audio: { codec: str(audio.codec), sourceHz: num(audio.source_hz), kbps: num(audio.kbps) },
     runAhead: num(p.run_ahead),
+    link: p.link === undefined ? null : toLink(p.link),
   };
 }

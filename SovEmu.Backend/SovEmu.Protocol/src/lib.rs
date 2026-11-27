@@ -16,7 +16,7 @@ pub mod signal;
 
 pub use input::{
     Analog, AnalogPacket, AudioPath, ClientMessage, ClientStats, DecodeError, Fallback, Hotkeys,
-    InputAck, InputPacket, MAX_PORTS, Pipeline, VideoPath,
+    InputAck, InputPacket, Link, MAX_PORTS, Pipeline, VideoPath,
 };
 pub use signal::{SdpKind, SessionDescription};
 

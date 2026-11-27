@@ -189,6 +189,8 @@ fn group(env: &str) -> Option<Group> {
         | "SovEmu__Streaming__Debug__ReplayFrames"
         | "SovEmu__Streaming__Debug__VideoJitterMilliseconds"
         | "SovEmu__Streaming__Video__DropoutKeyframeMilliseconds"
+        | "SovEmu__Streaming__Probe__Milliseconds"
+        | "SovEmu__Streaming__Probe__LanMilliseconds"
         | "SovEmu__Sessions__HealthSeconds"
         | "SovEmu__Sessions__FailuresKept"
         | "SovEmu__Home__FeaturedCount"

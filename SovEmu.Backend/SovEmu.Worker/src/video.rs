@@ -193,6 +193,7 @@ impl Video {
             // The session's, which knows what the player was last told.
             kbps: 0,
             limited_by: String::new(),
+            estimate_kbps: 0,
         }
     }
 

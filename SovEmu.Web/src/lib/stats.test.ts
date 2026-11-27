@@ -37,8 +37,24 @@ describe("StatsSampler", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("shows nothing until the video has a report", async () => {
-    expect(await new StatsSampler().sample(session([[]]))).toEqual({ items: [], numbers: {} });
+  it("before the first frame, sends the worker the path and round trip it checks the link with", async () => {
+    // #243: the worker sends no video while it checks the connection, and needs to know the
+    // relay's transport (only this browser can tell) and whether the round trip rises.
+    const pair = [
+      { id: "t", type: "transport", selectedCandidatePairId: "p" },
+      { id: "p", type: "candidate-pair", localCandidateId: "l", remoteCandidateId: "r", currentRoundTripTime: 0.024 },
+      { id: "l", type: "local-candidate", candidateType: "relay", protocol: "udp", relayProtocol: "tcp" },
+      { id: "r", type: "remote-candidate", candidateType: "host" },
+    ];
+    const { items, numbers } = await new StatsSampler().sample(session([pair]));
+    expect(numbers).toEqual({ net_rtt_ms: 24, path: "relay-tcp" });
+    expect(items.map((i) => i.label)).toEqual(["TURN server", "Transport", "Path", "Measured at start"]);
+  });
+
+  it("has nothing to say before ICE has chosen a pair", async () => {
+    const { items, numbers } = await new StatsSampler().sample(session([[]]));
+    expect(numbers.path).toBeUndefined();
+    expect(items).toEqual([{ label: "Measured at start", value: "not measured" }]);
   });
 
   it("works rates out between two samples, not from the first alone", async () => {

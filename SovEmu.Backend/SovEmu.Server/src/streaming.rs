@@ -22,6 +22,8 @@ const STREAMING_SETTINGS: &[&str] = &[
     "SovEmu__Streaming__Audio__Kbps",
     "SovEmu__Streaming__Video__KeyframeInterval",
     "SovEmu__Streaming__Video__DropoutKeyframeMilliseconds",
+    "SovEmu__Streaming__Probe__Milliseconds",
+    "SovEmu__Streaming__Probe__LanMilliseconds",
     "SovEmu__Sessions__FastForward",
     "SovEmu__Sessions__Rewind__Seconds",
     "SovEmu__Sessions__Rewind__MaxMegabytes",
