@@ -302,12 +302,33 @@ write(
   }),
 );
 
-// iOS: the app icon (one 1024 image, opaque; iOS applies the corners) and the mark as a template
+// The Apple apps' icons and the Top Shelf draw the apps' own background (the server's built-in
+// Screens, from its SVG source) over the blue, behind the mark: the screens the apps open on.
+const APP_BACKGROUND = 'screens';
+const backgroundShapes = readFileSync(
+  join(repo, 'SovEmu.Backend', 'SovEmu.Server', 'assets', 'backgrounds', `${APP_BACKGROUND}.svg`),
+  'utf8',
+)
+  .replace(/^[\s\S]*?<svg[^>]*>/, '')
+  .replace(/<\/svg>\s*$/, '')
+  .replace(/<title>[\s\S]*?<\/title>/, '');
+/** The blue with the background over it, covering `w` by `h` (its 1920 by 1080 cropped to the middle). */
+function tvBlue(w, h) {
+  const k = Math.max(w / 1920, h / 1080);
+  return (
+    `<rect width="${w}" height="${h}" fill="${BLUE}"/>` +
+    `<g transform="translate(${n((w - 1920 * k) / 2)} ${n((h - 1080 * k) / 2)}) scale(${n(k)})" fill="none">${backgroundShapes}</g>`
+  );
+}
+// iOS: the app icon (one 1024 image, opaque; iOS applies the corners; the mark over the background) and the mark as a template
 // image, tinted where it is drawn.
 const assets = join(clients, 'SovEmu.iOS', 'Apps', 'Mobile', 'Assets.xcassets');
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 write(join(assets, 'Contents.json'), json({ info: { author: 'xcode', version: 1 } }));
-write(join(assets, 'AppIcon.appiconset', 'AppIcon.png'), png(squareIcon, 1024, true));
+write(
+  join(assets, 'AppIcon.appiconset', 'AppIcon.png'),
+  png(svg(512, 512, tvBlue(512, 512) + `<g transform="translate(${(512 - W) / 2} ${(512 - H) / 2})">${markShapes(WHITE)}</g>`, 'SovEmu'), 1024, true),
+);
 write(
   join(assets, 'AppIcon.appiconset', 'Contents.json'),
   json({
@@ -331,8 +352,8 @@ write(
 // TV's catalogue has the mark as on iOS.
 const tvAssets = join(clients, 'SovEmu.iOS', 'Apps', 'TV', 'Assets.xcassets');
 const brand = join(tvAssets, 'App Icon & Top Shelf Image.brandassets');
-/** The blue, `w` by `h`. */
-const tvBack = (w, h) => svg(w, h, `<rect width="${w}" height="${h}" fill="${BLUE}"/>`, 'SovEmu');
+/** The blue and the background, `w` by `h`. */
+const tvBack = (w, h) => svg(w, h, tvBlue(w, h), 'SovEmu');
 /** The mark, 60% of the height, centred on a clear `w` by `h` layer. */
 function tvFront(w, h) {
   const scale = (0.6 * h) / H;
@@ -355,7 +376,7 @@ function tvShelf(w, h) {
   return svg(
     w,
     h,
-    `<rect width="${w}" height="${h}" fill="${BLUE}"/>` +
+    tvBlue(w, h) +
       `<g transform="translate(${n(left)} ${n((h - markH) / 2)}) scale(${n(scale)})">${markShapes(WHITE)}</g>` +
       `<path fill="${WHITE}" d="${sov}"/><path fill="${PALE}" d="${emu}"/>`,
     'SovEmu',
