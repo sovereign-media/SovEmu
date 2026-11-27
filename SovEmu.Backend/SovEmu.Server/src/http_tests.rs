@@ -310,19 +310,40 @@ impl Drop for Harness {
     }
 }
 
-/// A pair of UDP ports no other harness in this run uses.
-/// Two free UDP ports in a row, for this test's worker pool. Under nextest every test is its
-/// own process, all at once, so a range worked out from the process id could be another test's
-/// at the same moment (their workers then failed to bind, now and then); a pair is taken only
-/// once both ports bind here.
+/// Where test worker pools take their UDP ports: below the ranges the OS hands out for port 0
+/// (Linux from 32768, macOS from 49152), so no socket another test binds to port 0 can land on
+/// one.
+const TEST_UDP_PORTS: std::ops::Range<u16> = 20000..30000;
+
+/// Two UDP ports in a row that no other harness in this run uses, for this test's worker pool.
+///
+/// Under nextest every test is its own process, all at once. Checking a pair by binding it and
+/// letting go did not hold it: before the worker bound it seconds later, another test's port-0
+/// socket could be given the same port ("Address already in use", now and then in CI). So pairs
+/// come from [`TEST_UDP_PORTS`], and each is claimed with a lock file held until this process
+/// exits; the OS lets the lock go however the test ends.
 fn udp_ports() -> String {
-    loop {
-        let first = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-        let base = first.local_addr().unwrap().port();
-        if base < u16::MAX && std::net::UdpSocket::bind(("127.0.0.1", base + 1)).is_ok() {
+    static HELD: std::sync::Mutex<Vec<std::fs::File>> = std::sync::Mutex::new(Vec::new());
+    let dir = std::env::temp_dir().join("sovemu-test-udp-ports");
+    std::fs::create_dir_all(&dir).unwrap();
+    let pairs = (TEST_UDP_PORTS.end - TEST_UDP_PORTS.start) / 2;
+    // Start where this process's id points, so harnesses rarely try the same pairs first.
+    let start = (std::process::id() % u32::from(pairs)) as u16;
+    for i in 0..pairs {
+        let base = TEST_UDP_PORTS.start + (start + i) % pairs * 2;
+        let lock = std::fs::File::create(dir.join(format!("{base}.lock"))).unwrap();
+        if lock.try_lock().is_err() {
+            continue;
+        }
+        // Free of other harnesses; check nothing else on the machine has either port.
+        let bound = std::net::UdpSocket::bind(("127.0.0.1", base)).is_ok()
+            && std::net::UdpSocket::bind(("127.0.0.1", base + 1)).is_ok();
+        if bound {
+            HELD.lock().unwrap().push(lock);
             return format!("{base}-{}", base + 1);
         }
     }
+    panic!("no free pair of UDP ports in {TEST_UDP_PORTS:?}");
 }
 
 const SETUP: &str = "mutation($u: String!, $p: String!) { setup(username: $u, password: $p) { id username isAdmin } }";
