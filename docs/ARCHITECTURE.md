@@ -332,5 +332,5 @@ The target is under ~80 ms from button press to photon on a good network. The la
 
 - Which libretro core should be the reference for each system? Proposed: fceumm or Mesen (NES), snes9x (SNES), mGBA (GB/GBA), genesis_plus_gx (Genesis).
 - How should workers communicate with the server over IPC: framed messages over a Unix socket, or over the worker's stdin/stdout?
-- What sandboxing should workers get: systemd-run scopes, seccomp, or neither?
+- What sandboxing should workers get: systemd-run scopes, seccomp, or neither? (#282)
 

@@ -4,7 +4,7 @@ A self-hosted console emulation server: a Rust backend runs libretro cores (thro
 and streams them to web, Android and iOS clients over WebRTC. Personal/family scale, a single
 Linux box (a GPU is optional: 3D systems render on it when present, else in software), SQLite
 for storage. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the design and the decisions behind
-it; [docs/ROADMAP.md](docs/ROADMAP.md) the phases; the tracking issue is sovereign-media/SovEmu#1.
+it; [docs/ROADMAP.md](docs/ROADMAP.md) the phases; open items there link their own issues.
 
 The repository follows the layout of `sovereign-media/sovereign`: the backend lives in-tree under
 `SovEmu.Backend/`, and each client is a project at the root. The native clients are their own

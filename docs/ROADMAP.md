@@ -1,6 +1,7 @@
 # SovEmu roadmap
 
-Tracked in sovereign-media/SovEmu#1. The design is in [ARCHITECTURE.md](ARCHITECTURE.md).
+Planned in sovereign-media/SovEmu#1 (closed 2026-11-27); each open item below links its own issue. The
+design is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Phase 0: headless spike (done)
 
@@ -43,7 +44,7 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] Image: web client built in a Node stage; libvpx and opus in the runtime; ports 8080/tcp and
       50000/udp
 - [ ] Measure button-to-photon latency in a real browser against a real core (needs a person and
-      a camera, or a photodiode)
+      a camera, or a photodiode): #278
 
 ## Phase 2: server and library
 
@@ -131,7 +132,7 @@ held 59.93 fps over 300 frames with no resyncs.
       and a Top rated row on Home
 - [ ] Live-test the ScreenScraper client once credentials exist (tested against a mock service
       built from ES-DE's parsing code): status codes, quota fields, the GameCube and PS2 system
-      ids, whether stored box art URLs expire
+      ids, whether stored box art URLs expire: #279
 - [x] Group multi-disc games (`(Disc N)`) into one entry: the scanner folds them (`game_discs`),
       the worker plays an `.m3u` of the discs and changes disc through libretro's disk control
       (`setDisc`), and the in-game menus offer Change disc
@@ -152,7 +153,7 @@ held 59.93 fps over 300 frames with no resyncs.
       `data/decorations` and the built-in `sovemu` set (drawn by the server's code), merged;
       chosen with `SovEmu__Decorations__Set` / `SovEmu__Systems__<id>__Decoration`; `Game.decoration`
 - [x] Decorations drawn by the web player (framed only when the screen is wider than the picture)
-- [ ] Decorations drawn by the Android and iOS players
+- [x] Decorations drawn by the Android and iOS players
 
 ## Phase 3: persistence
 
@@ -174,9 +175,9 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] `SovEmu.iOS` (sovereign-media/SovEmu.iOS, submodule): SwiftUI + XcodeGen; `SovEmuKit` package
       (Swift 6) with the protocol and API (shared byte vectors); the same screens and player
       (stasel/WebRTC, GameController); CI runs the package tests and a simulator build
-- [ ] Run both on devices against a real server (not yet: no device or emulator on the build machine)
-- [ ] Parity with the web player: save-slot pickers with thumbnails, cheats, remapping, filters
-- [ ] Move `SovEmu.Web` to its own repository once the image takes a released web build
+- [ ] Run both on devices against a real server: Android is played on Android TV; iOS is #286
+- [x] Parity with the web player: save-slot pickers with thumbnails, cheats, remapping, filters
+- [ ] Move `SovEmu.Web` to its own repository once the image takes a released web build: #285
 
 ## Phase 5: features
 
@@ -196,7 +197,7 @@ held 59.93 fps over 300 frames with no resyncs.
 - [x] The web client on React islands with Radix UI primitives and Lucide icons
 - [x] Verified: fast-forward over WebRTC ran 216 emulated frames/s against 61 normally
 - [ ] RetroAchievements (rcheevos in the worker, an RA account per user). Memory-region access
-      (`Core::system_ram`) is in place for it
+      (`Core::system_ram`) is in place for it: #280
 
 ## Phase 6: hardening
 
@@ -245,8 +246,9 @@ held 59.93 fps over 300 frames with no resyncs.
       PKCE, no password grant), device (the device grant, or the password fallback,
       `SovEmu__Authentication__PasswordSignIn`) and mobile (the system browser's code flow). Bearer tokens for the
       API; roles `viewer` and `admin`
-- [ ] The apps show a sign-in code (the device grant; the server side is done)
-- [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts
+- [x] The apps show a sign-in code (the device grant)
+- [ ] Signing in with another provider (Google, Authentik, …) as well as local accounts: #281,
+      and #238 for what Sovereign's apps expect of sign-in
 - [x] H.264, preferred when the client offers it (VP8 otherwise; `SovEmu__Streaming__Video__Codec`): libavcodec
       over VA-API, NVENC or x264 (`SovEmu__Streaming__Video__Encoder`), falling back to x264 when a GPU
       encoder does not open, fails, or holds frames back. VP8 stayed the default
@@ -269,9 +271,9 @@ held 59.93 fps over 300 frames with no resyncs.
       kind and by app and device, each group opening onto its events with the game they
       happened in
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
-      reading it back with `glReadPixels`
-- [ ] Android: ask the H.264 decoder for low-latency mode (Android 11+)
-- [ ] Worker resource limits (cgroups/rlimits per session)
+      reading it back with `glReadPixels`: #283
+- [x] Android: ask the H.264 decoder for low-latency mode (Android 11+)
+- [ ] Worker resource limits (cgroups/rlimits per session): #282
 
 ## Phase 7: 3D systems
 
@@ -309,9 +311,10 @@ held 59.93 fps over 300 frames with no resyncs.
       by codegen, now gql.tada; Android and iOS moved to it); files stay plain HTTP under `/media/`
 - [x] Games as a grid of covers in Sovereign's style: Sort, Filters (a drawer) and Jump (a letter
       carousel) in a chip strip, and a side panel per game with its own URL (`?game=`)
-- [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend)
-- [ ] Hardware video encoding (VA-API) when a GPU is present
+- [ ] Vulkan cores (paraLLEl-RDP, Dolphin's Vulkan backend): #284
+- [x] Hardware video encoding (VA-API) when a GPU is present: H.264 through libavcodec (Phase 6);
+      without reading frames back is #283
 
 ## Later
 
-- Multiplayer and spectators; optional pixel-perfect raw-frame DataChannel mode for LAN
+- Multiplayer and spectators; optional pixel-perfect raw-frame DataChannel mode for LAN: #287
