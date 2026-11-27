@@ -76,11 +76,18 @@ pub(crate) struct VideoSettings {
     pub(crate) fps: u32,
     pub(crate) keyframe_interval: u32,
     /// Pictures are scaled up this many times (1 or 2) by repeating pixels before encoding
-    /// (`SovEmu__Streaming__Video__Prescale`).
+    /// (`SovEmu__Systems__<id>__Prescale`), while the result fits [`PRESCALE_MAX`].
     pub(crate) prescale: u32,
     /// VP8's screen-content mode, 0 to 2 (`SovEmu__Streaming__Video__ScreenContent`).
     pub(crate) screen_content: u8,
 }
+
+/// The largest picture a pre-scale makes, width by height. A frame larger than half of it (a
+/// SNES game's 512×448 hi-res screens, a PlayStation's 640×480) is encoded at its own size: four
+/// times its pixels were never measured (sovereign-media/SovEmu#263 measured up to 512×480), and
+/// such a frame already has a pixel per chroma sample's worth of detail to spare. A SNES game
+/// switching to hi-res then keeps its stream's size, 512×448 either way.
+const PRESCALE_MAX: (u32, u32) = (640, 480);
 
 enum Encoder {
     H264(H264Encoder),
@@ -171,6 +178,12 @@ impl Video {
         }
     }
 
+    /// How many times a `width`×`height` picture is scaled up before it is encoded.
+    fn scale(&self, width: u32, height: u32) -> u32 {
+        let p = self.settings.prescale.max(1);
+        if p > 1 && width * p <= PRESCALE_MAX.0 && height * p <= PRESCALE_MAX.1 { p } else { 1 }
+    }
+
     /// The video half of the pipeline the client and the server are told about.
     pub(crate) fn path(&self, width: u32, height: u32, fps: f64) -> VideoPath {
         let (hardware, fallbacks) = match &self.encoder {
@@ -187,8 +200,8 @@ impl Video {
             encoder: self.encoder_name().unwrap_or_default().into(),
             hardware,
             fallbacks,
-            width: width * self.settings.prescale,
-            height: height * self.settings.prescale,
+            width: width * self.scale(width, height),
+            height: height * self.scale(width, height),
             fps: (fps * 100.0).round() / 100.0,
             // The session's, which knows what the player was last told.
             kbps: 0,
@@ -226,7 +239,7 @@ impl Video {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
-        let (rgba, width, height) = match self.settings.prescale {
+        let (rgba, width, height) = match self.scale(width, height) {
             2 => {
                 prescale_2x(rgba, width as usize, height as usize, &mut self.scaled);
                 (self.scaled.as_slice(), width * 2, height * 2)
@@ -327,6 +340,25 @@ mod tests {
             let path = video.path(64, 48, 60.0);
             assert_eq!((path.width, path.height), (128, 96), "{codec:?}");
         }
+    }
+
+    #[test]
+    fn only_frames_that_fit_once_doubled_are_prescaled() {
+        let video = Video::new(VideoSettings {
+            prescale: 2,
+            ..settings(CodecSetting::Only(VideoCodec::Vp8))
+        });
+        for (w, h) in [(256, 240), (256, 224), (240, 160), (160, 144), (320, 240)] {
+            assert_eq!(video.scale(w, h), 2, "{w}×{h}");
+        }
+        // SNES hi-res, and its interlaced-only and wide-only modes; a PlayStation's 640×480.
+        for (w, h) in [(512, 448), (256, 448), (512, 224), (640, 480)] {
+            assert_eq!(video.scale(w, h), 1, "{w}×{h}");
+        }
+        let path = video.path(512, 448, 60.0);
+        assert_eq!((path.width, path.height), (512, 448), "hi-res keeps the 2× stream's size");
+        let off = Video::new(settings(CodecSetting::Only(VideoCodec::Vp8)));
+        assert_eq!(off.scale(160, 144), 1);
     }
 
     #[test]
