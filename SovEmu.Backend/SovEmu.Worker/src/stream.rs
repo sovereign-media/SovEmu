@@ -34,6 +34,7 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig}
 
 use crate::adapt::{Adaptation, ClientSample, LimitChange, Limits};
 use crate::health::{self, Health};
+use crate::link::{PathClass, Probe, Stop};
 use crate::pacing::{MediaClock, Pacer};
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
@@ -41,7 +42,7 @@ use crate::runahead::RunAhead;
 use crate::video::{CodecSetting, Video, VideoCodec, VideoSettings};
 use crate::watchdog;
 use sovemu_protocol::ipc::SessionHealth;
-use sovemu_protocol::{AudioPath, Pipeline, VideoPath};
+use sovemu_protocol::{AudioPath, Link, Pipeline, VideoPath};
 
 /// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
 /// Every client resends what is held at least every 100 ms, so a release that never arrives (the
@@ -135,6 +136,10 @@ pub(crate) struct SessionConfig {
     /// How long a client must be silent before its return is taken as the end of a dropout
     /// and answered with a keyframe, in milliseconds (0: never).
     pub dropout_keyframe_ms: u32,
+    /// How long a new client's link is checked before the stream starts (`link.rs`), in
+    /// milliseconds (0: not checked), and on the same network.
+    pub probe_ms: u32,
+    pub probe_lan_ms: u32,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -148,6 +153,9 @@ struct Peer {
     audio: Option<(Mid, Pt)>,
     input: Option<ChannelId>,
     connected: bool,
+    /// Where the client's packets last came from: its end of the selected pair (the relay's
+    /// loopback address when it is relayed).
+    remote: Option<SocketAddr>,
 }
 
 /// The emulation and encoding state, kept across clients.
@@ -205,6 +213,21 @@ pub(crate) struct Session {
     pipeline_to_client_at: Option<Instant>,
     /// The video bitrate, through the stream.
     adaptation: Adaptation,
+    /// The check of a new client's link before its stream starts, while it runs; its budget
+    /// (zero: no check), and its budget on the same network.
+    probe: Option<Probe>,
+    probe_budget: Duration,
+    probe_lan_budget: Duration,
+    /// What the client had lost, and its best round trip, as the check started: more loss or
+    /// a round trip well up on it during the check means the link is full.
+    probe_lost: Option<u64>,
+    probe_rtt_ms: Option<f64>,
+    /// Where the client's link goes: as the worker saw it, refined by what the client says.
+    path: Option<PathClass>,
+    client_path: Option<String>,
+    /// The check's result once done (for the pipeline), and when a `0x83` last went out.
+    link: Option<Link>,
+    link_sent_at: Option<Instant>,
     audio_kbps: u32,
     hotkeys: Hotkeys,
     hotkeys_at: Instant,
@@ -330,6 +353,15 @@ impl Session {
             pipeline: None,
             pipeline_to_client_at: None,
             adaptation: Adaptation::new(limits, config.audio_kbps),
+            probe: None,
+            probe_budget: Duration::from_millis(u64::from(config.probe_ms)),
+            probe_lan_budget: Duration::from_millis(u64::from(config.probe_lan_ms)),
+            probe_lost: None,
+            probe_rtt_ms: None,
+            path: None,
+            client_path: None,
+            link: None,
+            link_sent_at: None,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
             last_analog_seq: None,
@@ -500,7 +532,7 @@ fn accept_offer(
     );
     add_candidates(&mut rtc, advertised, reflexive)?;
     let answer = rtc.sdp_api().accept_offer(offer)?;
-    let peer = Peer { rtc, video: None, audio: None, input: None, connected: false };
+    let peer = Peer { rtc, video: None, audio: None, input: None, connected: false, remote: None };
     Ok((peer, SessionDescription { kind: SdpKind::Answer, sdp: answer.to_sdp_string() }))
 }
 
@@ -652,14 +684,22 @@ pub(crate) fn run(
                 return Ok(ExitReason::Idle);
             }
         }
-        if running && pacer.is_none() {
+        // While a new client's link is checked the game waits: no video goes out to show a
+        // picture early, and the player misses nothing.
+        if let Some(p) = &mut peer
+            && p.connected
+        {
+            session.poll_probe(p, Instant::now());
+        }
+        let emulating = running && !session.probing();
+        if emulating && pacer.is_none() {
             let now = Instant::now();
             pacer = Some(Pacer::new(session.fps, now));
             next_frame = now;
             session.health.resume(now);
             session.video.request_keyframe();
         }
-        let mut deadline = if running { rtc_deadline.min(next_frame) } else { rtc_deadline };
+        let mut deadline = if emulating { rtc_deadline.min(next_frame) } else { rtc_deadline };
         // Simulated delay (testing only): packets whose wait is over go now, and the loop
         // wakes for the next.
         session.loss.flush(&socket, Instant::now());
@@ -693,6 +733,7 @@ pub(crate) fn run(
                                 // start it again from where it was before the dropout.
                                 p.rtc.bwe().reset(Bitrate::kbps(kbps));
                             }
+                            p.remote = Some(source);
                             p.rtc.handle_input(input)?;
                         }
                     }
@@ -709,6 +750,7 @@ pub(crate) fn run(
         // Emulate a frame if one is due.
         if let (Some(p), Some(pacer)) = (&mut peer, &mut pacer)
             && p.connected
+            && !session.probing()
             && Instant::now() >= next_frame
         {
             let behind = Instant::now().saturating_duration_since(next_frame);
@@ -750,6 +792,8 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 Event::Connected => {
                     tracing::info!("client connected");
                     p.connected = true;
+                    let remote = p.remote;
+                    session.start_probe(p, remote, Instant::now());
                 }
                 Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
                     return Ok(None);
@@ -780,6 +824,11 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 Event::ChannelOpen(id, label) if label == INPUT_CHANNEL => {
                     p.input = Some(id);
                     session.pipeline_to_client_at = None;
+                    // A check already done (or turned off) before the channel opened: the client
+                    // waits on it to say what comes next.
+                    if let Some(link) = &session.link {
+                        send_link(p, link);
+                    }
                 }
                 Event::ChannelClose(id) if Some(id) == p.input => {
                     tracing::warn!("input channel closed: releasing held input");
@@ -798,6 +847,18 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                     session.health.keyframe_requested(answered);
                     if answered {
                         session.video.request_keyframe();
+                    }
+                }
+                // While the client's link is checked, its estimates are the check's.
+                Event::EgressBitrateEstimate(kind) if session.probing() => {
+                    let now = Instant::now();
+                    let probe = session.probe.as_mut().expect("probing");
+                    match kind {
+                        BweKind::Twcc { estimate, can_probe: true } => {
+                            probe.estimate(estimate.as_u64(), now);
+                        }
+                        // No transport-wide feedback: nothing to probe with.
+                        _ => probe.unavailable(now),
                     }
                 }
                 Event::EgressBitrateEstimate(
@@ -863,6 +924,10 @@ impl Session {
                 if let Some(rtt_ms) = stats.net_rtt_ms {
                     self.keyframes.round_trip(rtt_ms);
                 }
+                if stats.path.is_some() {
+                    self.client_path.clone_from(&stats.path);
+                }
+                self.probe_stats(&stats, now);
                 let sample = ClientSample {
                     fps: stats.fps,
                     decode_ms: stats.decode_ms,
@@ -1009,9 +1074,149 @@ impl Session {
         }
     }
 
+    /// The client's link is being checked: the game waits and no video is sent (`link.rs`).
+    fn probing(&self) -> bool {
+        self.probe.is_some()
+    }
+
+    /// The client has connected from `remote`: check its link before the stream starts, unless
+    /// checks are off. The estimator pads toward the most the stream may use; on the same
+    /// network it starts there too, with a shorter budget.
+    fn start_probe(&mut self, p: &mut Peer, remote: Option<SocketAddr>, now: Instant) {
+        self.path = remote.map(|r| PathClass::of(r.ip()));
+        let limits = self.adaptation.limits();
+        if !Probe::wanted(self.probe_budget) {
+            self.link = Some(Link {
+                state: Link::DONE.into(),
+                path: self.path.map(|c| c.name().into()).unwrap_or_default(),
+                start_kbps: limits.start_kbps,
+                stopped_by: "off".into(),
+                ..Link::default()
+            });
+            return;
+        }
+        let ceiling = u64::from(limits.max_kbps + self.audio_kbps);
+        let mut probe = Probe::new(self.probe_budget, ceiling, now);
+        if self.path == Some(PathClass::Lan) {
+            probe.shorten(self.probe_lan_budget);
+            p.rtc.bwe().reset(Bitrate::kbps(ceiling * 9 / 10));
+        }
+        p.rtc.bwe().set_bitrate(Bitrate::kbps(u64::from(limits.min_kbps)), Bitrate::kbps(ceiling));
+        tracing::info!(
+            path = self.path.map(PathClass::name),
+            budget_ms = probe.budget().as_millis() as u64,
+            ceiling_kbps = ceiling,
+            "checking the client's connection"
+        );
+        self.probe = Some(probe);
+        self.link_sent_at = None;
+    }
+
+    /// The client's stats while its link is checked: packets lost since the check began, or a
+    /// round trip well up on the best it has reported, mean the link is full.
+    fn probe_stats(&mut self, stats: &ClientStats, now: Instant) {
+        let Some(probe) = &mut self.probe else { return };
+        let lost = stats.packets_lost.unwrap_or(0);
+        let baseline = *self.probe_lost.get_or_insert(lost);
+        let rtt = stats.net_rtt_ms;
+        let best = match (self.probe_rtt_ms, rtt) {
+            (Some(best), Some(rtt)) => best.min(rtt),
+            (best, rtt) => best.or(rtt).unwrap_or(f64::MAX),
+        };
+        self.probe_rtt_ms = Some(best);
+        let rtt_rose = rtt.is_some_and(|rtt| rtt > best * 1.5 + 20.0);
+        if lost > baseline || rtt_rose {
+            tracing::debug!(
+                lost,
+                baseline,
+                rtt_ms = rtt,
+                best_rtt_ms = best,
+                "trouble while checking the connection"
+            );
+            probe.trouble(now);
+        }
+    }
+
+    /// While the client's link is checked: tells the client how far it has got, a few times
+    /// a second, and once the check is done starts the stream from what it found.
+    fn poll_probe(&mut self, p: &mut Peer, now: Instant) {
+        let Some(probe) = &mut self.probe else { return };
+        let done = probe.done(now);
+        let path = self.path.map(|c| c.with_client(self.client_path.as_deref()));
+        let report = Link {
+            state: Link::PROBING.into(),
+            elapsed_ms: probe.elapsed(now).as_millis() as u32,
+            budget_ms: probe.budget().as_millis() as u32,
+            path: path.map(|c| c.name().into()).unwrap_or_default(),
+            estimate_kbps: probe.estimate_kbps().unwrap_or(0) as u32,
+            ..Link::default()
+        };
+        match done {
+            None => {
+                if self.link_sent_at.is_none_or(|at| now.duration_since(at) >= LINK_REPORT) {
+                    send_link(p, &report);
+                    self.link_sent_at = Some(now);
+                }
+            }
+            Some(why) => self.finish_probe(p, why, report, now),
+        }
+    }
+
+    /// The check is done: the stream starts at what the link was seen to carry, and the
+    /// estimator goes back to its usual ceiling, started from the measured estimate.
+    fn finish_probe(&mut self, p: &mut Peer, why: Stop, report: Link, now: Instant) {
+        let Some(probe) = self.probe.take() else { return };
+        let limits = self.adaptation.limits();
+        let path = self.path.map(|c| c.with_client(self.client_path.as_deref()));
+        let measured = probe.estimate_kbps().filter(|_| why != Stop::Unavailable);
+        let start = measured.map_or(limits.start_kbps, |kbps| {
+            crate::link::start_kbps(
+                kbps,
+                self.audio_kbps,
+                limits,
+                path.unwrap_or(PathClass::Direct),
+            )
+        });
+        self.adaptation.start_at(start);
+        if let Some(kbps) = measured {
+            p.rtc.bwe().reset(Bitrate::kbps(kbps));
+        }
+        p.rtc.bwe().set_bitrate(
+            Bitrate::kbps(u64::from(limits.min_kbps)),
+            Bitrate::kbps(u64::from(limits.max_kbps)),
+        );
+        self.apply_bitrate(now);
+        let link = Link {
+            state: Link::DONE.into(),
+            start_kbps: self.video.bitrate_kbps(),
+            rtt_ms: self.probe_rtt_ms.filter(|rtt| *rtt < f64::MAX),
+            stopped_by: why.name().into(),
+            ..report
+        };
+        tracing::info!(
+            path = %link.path,
+            stopped_by = %link.stopped_by,
+            elapsed_ms = link.elapsed_ms,
+            estimate_kbps = link.estimate_kbps,
+            start_kbps = link.start_kbps,
+            "connection checked: the stream starts"
+        );
+        send_link(p, &link);
+        self.link = Some(link);
+        self.link_sent_at = Some(now);
+        self.pipeline_to_client_at = None;
+    }
+
     /// A new client: its connection and its decoder are unknown, so the stream starts over
     /// at the starting rate.
     fn new_client(&mut self) {
+        self.probe = None;
+        self.probe_lost = None;
+        self.probe_rtt_ms = None;
+        self.path = None;
+        self.client_path = None;
+        self.link = None;
+        self.link_sent_at = None;
         self.send_rate.clear();
         self.keyframes.new_client();
         self.adaptation.reset();
@@ -1188,7 +1393,12 @@ impl Session {
             video: {
                 let (kbps, by) = self.adaptation.told();
                 let path = self.video.path(width, height, self.fps);
-                VideoPath { kbps, limited_by: by.name().into(), ..path }
+                VideoPath {
+                    kbps,
+                    limited_by: by.name().into(),
+                    estimate_kbps: self.estimate_kbps.unwrap_or(0) as u32,
+                    ..path
+                }
             },
             audio: AudioPath {
                 codec: "opus".into(),
@@ -1196,6 +1406,7 @@ impl Session {
                 kbps: self.audio_kbps,
             },
             run_ahead: self.run_ahead.frames(),
+            link: self.link.clone(),
         }
     }
 
@@ -1236,6 +1447,19 @@ const PENDING_LOAD_FRAMES: u64 = 600;
 /// How often the pipeline goes to the client even when it has not changed: the input channel
 /// does not retransmit, so a lost one is replaced soon.
 const PIPELINE_RESEND: Duration = Duration::from_secs(2);
+
+/// How often a client is told how far the check of its link has got.
+const LINK_REPORT: Duration = Duration::from_millis(200);
+
+/// Sends a `0x83` to the client, if its input channel is open (the pipeline carries the
+/// result again later, so a lost one is not missed).
+fn send_link(p: &mut Peer, link: &Link) {
+    if let Some(id) = p.input
+        && let Some(mut channel) = p.rtc.channel(id)
+    {
+        let _ = channel.write(true, &link.encode());
+    }
+}
 
 /// Clients send their stats once a second; any faster is dropped.
 const STATS_SPACING: Duration = Duration::from_millis(900);

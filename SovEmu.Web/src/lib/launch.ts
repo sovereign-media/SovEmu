@@ -6,6 +6,8 @@
 // that phase instead (always moving, never arriving) while the megabytes read count up.
 
 import type { Enum } from "./gql";
+import { networkLabel } from "./link";
+import type { Link } from "./protocol";
 
 type StartPhase = Enum<"StartPhase">;
 
@@ -26,8 +28,8 @@ const PHASES: Record<StartPhase, { from: number; to: number; label: string; ease
   STOPPING: { from: 0, to: 0.08, label: "Saving your last game", ease: 3000 },
   LAUNCHING: { from: 0.08, to: 0.12, label: "Starting the emulator", ease: 1000 },
   CORE: { from: 0.12, to: 0.18, label: "Loading the emulator", ease: 1500 },
-  CONTENT: { from: 0.18, to: 0.97, label: "Loading the game", ease: 15000 },
-  READY: { from: 1, to: 1, label: "Ready", ease: 1 },
+  CONTENT: { from: 0.18, to: 0.85, label: "Loading the game", ease: 15000 },
+  READY: { from: 0.85, to: 0.85, label: "Ready", ease: 1 },
   FAILED: { from: 0, to: 0, label: "Could not start", ease: 1 },
 };
 
@@ -60,17 +62,71 @@ export function describeStart(s: StartStatus): LaunchView {
 /** After this long without a picture the wait says how to get out of it. */
 const NO_PICTURE_HINT_MS = 20_000;
 
+/** Where the check of the connection takes the bar: from the session being ready to almost full. */
+const NETWORK = { from: 0.85, to: 0.97 };
+
 /**
- * The last stretch of a start, which the server cannot see: the session is ready, and the game
- * has yet to draw its first picture (a console's BIOS boots for seconds; a save is loaded once
- * the game is up). The bar is full; the detail counts the wait.
+ * The session is ready and this client is reaching it (ICE, then DTLS): nothing to show of
+ * the game yet, and the worker's check of the connection comes once connected.
  */
-export function describeFirstPicture(waitedMs: number): LaunchView {
+export function describeConnecting(waitedMs: number): LaunchView {
+  const seconds = Math.floor(waitedMs / 1000);
+  return { label: "Connecting", detail: seconds >= 3 ? `${seconds} s` : "", fraction: NETWORK.from };
+}
+
+/**
+ * The check of the player's connection before the stream starts (`0x83`, #243): the worker
+ * sends no video meanwhile, so it runs between the session being ready and the first picture.
+ * The bar follows its time against its budget; the detail says where the player is.
+ */
+export function describeLink(link: Link): LaunchView {
+  const within = link.budgetMs > 0 ? Math.min(1, link.elapsedMs / link.budgetMs) : 1;
+  return {
+    label: "Checking your connection",
+    detail: networkLabel(link.path) ?? "",
+    fraction: NETWORK.from + (NETWORK.to - NETWORK.from) * within,
+  };
+}
+
+/**
+ * The last stretch of a start, which the server cannot see: the session is ready (and the
+ * connection checked), and the game has yet to draw its first picture (a console's BIOS boots
+ * for seconds; a save is loaded once the game is up). The detail says where the player is, once
+ * known, and counts the wait.
+ */
+export function describeFirstPicture(waitedMs: number, link: Link | null = null): LaunchView {
   const seconds = Math.floor(waitedMs / 1000);
   const parts: string[] = [];
+  const network = networkLabel(link?.path ?? "");
+  if (network) parts.push(network);
   if (seconds >= 3) parts.push(`${seconds} s`);
   if (waitedMs >= NO_PICTURE_HINT_MS) parts.push("still no picture: Escape opens the menu");
-  return { label: "Starting the game", detail: parts.join(" · "), fraction: 1 };
+  return { label: "Starting the game", detail: parts.join(" · "), fraction: NETWORK.to };
+}
+
+/** The loading screen's background: a picture, and how it is drawn. */
+export interface LoadingBackground {
+  url: string;
+  /** A save's screenshot, at the console's own resolution: drawn with sharp pixels. */
+  pixelated: boolean;
+  /** Box art, which is not a picture of the game being played: blurred into a backdrop. */
+  blurred: boolean;
+}
+
+/**
+ * What the loading screen shows behind the start (#243), first found of: the screenshot of the
+ * save being continued, the game's own screenshot, its box art (blurred). Null leaves the
+ * system's colour.
+ */
+export function loadingBackground(
+  saveShot: string | null | undefined,
+  image: string | null | undefined,
+  boxArt: string | null | undefined,
+): LoadingBackground | null {
+  if (saveShot) return { url: saveShot, pixelated: true, blurred: false };
+  if (image) return { url: image, pixelated: false, blurred: false };
+  if (boxArt) return { url: boxArt, pixelated: false, blurred: true };
+  return null;
 }
 
 /** Keeps a bar from ever moving backwards (a phase can report less than the one before). */

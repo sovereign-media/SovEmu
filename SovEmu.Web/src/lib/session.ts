@@ -11,6 +11,7 @@ import {
   CENTRED,
   type ClientStats,
   decodeAck,
+  decodeLink,
   decodePipeline,
   encodeAnalog,
   encodeHotkeys,
@@ -18,6 +19,7 @@ import {
   encodeStats,
   hotkeyBits,
   INPUT_CHANNEL,
+  type Link,
   type Pipeline,
 } from "./protocol";
 
@@ -45,6 +47,8 @@ export interface SessionEvents {
   onState?: (state: SessionState) => void;
   /** The worker changed the stream's quality: the notice to show (`qualityNotice`). */
   onQuality?: (notice: QualityNotice) => void;
+  /** How the check of the connection before the stream starts goes (`0x83`, #243). */
+  onLink?: (link: Link) => void;
 }
 
 export interface SessionOptions {
@@ -60,6 +64,9 @@ export class Session {
   readonly latency = new LatencyMeter();
   /** How the worker makes the stream, as it last said (null until it has). */
   pipeline: Pipeline | null = null;
+  /** The check of the connection before the stream starts, as the worker last said (null
+   *  until it has: an older worker never does). */
+  link: Link | null = null;
   private channel: RTCDataChannel;
   private seq = 0;
   /** The last sent buttons, every player's, as a comparable key. */
@@ -178,12 +185,24 @@ export class Session {
     this.raf = requestAnimationFrame(this.pump);
   };
 
+  private setLink(link: Link) {
+    this.link = link;
+    this.events.onLink?.(link);
+  }
+
   private onMessage(data: ArrayBuffer) {
     const pipeline = decodePipeline(data);
     if (pipeline) {
       const notice = qualityNotice(this.pipeline, pipeline);
       this.pipeline = pipeline;
       if (notice) this.events.onQuality?.(notice);
+      // The check's result comes again with the pipeline: a lost `0x83` is not missed.
+      if (pipeline.link && this.link?.state !== "done") this.setLink(pipeline.link);
+      return;
+    }
+    const link = decodeLink(data);
+    if (link) {
+      this.setLink(link);
       return;
     }
     const ack = decodeAck(data);

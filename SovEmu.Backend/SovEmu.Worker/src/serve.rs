@@ -47,6 +47,8 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             limit_video_kbps: args.limit_video_kbps,
             jitter_video_ms: args.jitter_video_ms,
             dropout_keyframe_ms: args.dropout_keyframe_ms,
+            probe_ms: args.probe_ms,
+            probe_lan_ms: args.probe_lan_ms,
             gpu: args.gpu.0.clone(),
             video_codec: args.video_codec,
             video_encoder: args.video_encoder,

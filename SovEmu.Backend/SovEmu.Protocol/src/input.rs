@@ -93,6 +93,22 @@
 //! at the top of the screen (quality raised, or lowered and why, from `video.limited_by`). JSON, like
 //! [`ClientStats`]: unknown keys are ignored. Added after version 1 without bumping it:
 //! clients that predate it drop the type.
+//!
+//! ## Worker → client: [`Link`]
+//!
+//! | Offset | Size | Field |
+//! |---|---|---|
+//! | 0 | 1 | message type, `0x83` |
+//! | 1 | 1 | version |
+//! | 2 | rest | a UTF-8 JSON object, at most [`MAX_LINK_LEN`] bytes in all |
+//!
+//! The check of the player's connection before a game starts (#243): while `state` is
+//! `probing` the worker sends no video and measures the link, and the client's loading bar
+//! shows "Checking your connection" from `elapsed_ms` of `budget_ms`; once `done`, the stream
+//! starts at `start_kbps` and the client shows the first picture. Sent as the channel opens, a
+//! few times a second while probing, and once when done. JSON, like [`Pipeline`]: unknown keys
+//! are ignored. Added after version 1 without bumping it: clients that predate it drop the
+//! type, and only keep their loading screen up while the worker probes.
 
 use std::fmt;
 
@@ -111,6 +127,7 @@ const ANALOG_HEADER: usize = 7;
 const ANALOG_PORT: usize = 12;
 const TYPE_ACK: u8 = 0x81;
 const TYPE_PIPELINE: u8 = 0x82;
+const TYPE_LINK: u8 = 0x83;
 const INPUT_HEADER: usize = 11;
 const ACK_LEN: usize = 14;
 
@@ -125,6 +142,8 @@ pub enum DecodeError {
     BadStats(String),
     /// A pipeline message whose body is not a JSON object of the expected shape, or too long.
     BadPipeline(String),
+    /// A link message whose body is not a JSON object of the expected shape, or too long.
+    BadLink(String),
 }
 
 impl fmt::Display for DecodeError {
@@ -136,6 +155,7 @@ impl fmt::Display for DecodeError {
             Self::BadPortCount(n) => write!(f, "invalid port count {n}"),
             Self::BadStats(e) => write!(f, "invalid stats message: {e}"),
             Self::BadPipeline(e) => write!(f, "invalid pipeline message: {e}"),
+            Self::BadLink(e) => write!(f, "invalid link message: {e}"),
         }
     }
 }
@@ -332,6 +352,12 @@ pub struct ClientStats {
     /// The client's video decoder (`c2.amlogic.avc.decoder`, a browser's `ExternalDecoder`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decoder: Option<String>,
+    /// How the client reaches the worker, from its selected candidate pair: `direct` (its own
+    /// address, or one a STUN server saw), or through the relay over `relay-udp`, `relay-tcp`
+    /// or `relay-tls`. Only the client can tell the relay's transports apart: the relay
+    /// forwards UDP to the worker whichever the client used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 /// The longest [`Pipeline`] message, header included.
@@ -351,6 +377,10 @@ pub struct Pipeline {
     pub audio: AudioPath,
     /// Frames the picture runs ahead of the game (0: off).
     pub run_ahead: u32,
+    /// The check of the connection before the stream started, once done: what the stats panel
+    /// shows as measured at start. None while it runs, or when there was none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<Link>,
 }
 
 /// The video half of a [`Pipeline`].
@@ -377,6 +407,57 @@ pub struct VideoPath {
     /// What held the bitrate down when it last fell: `connection` (the send-bandwidth
     /// estimate) or `client` (its decoder was falling behind); empty when it has not fallen.
     pub limited_by: String,
+    /// The send-bandwidth estimate now, kbit/s, video and audio together (0: not known).
+    pub estimate_kbps: u32,
+}
+
+/// The longest [`Link`] message, header included.
+pub const MAX_LINK_LEN: usize = 1024;
+
+/// The check of the player's connection before a game starts: a `0x83` message.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Link {
+    /// `probing`, then `done`.
+    pub state: String,
+    /// How long the check has run, and may run, milliseconds.
+    pub elapsed_ms: u32,
+    pub budget_ms: u32,
+    /// Where the link goes: `lan` (the same network), `direct` (from elsewhere, straight to
+    /// the server), or through the relay, `relay-udp`, `relay-tcp` or `relay-tls` (just `relay`
+    /// until the client has said which). Empty while not known.
+    pub path: String,
+    /// The send-bandwidth estimate, kbit/s, video and audio together.
+    pub estimate_kbps: u32,
+    /// The video rate the stream starts at, kbit/s, once done.
+    pub start_kbps: u32,
+    /// The round trip the worker measures, milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtt_ms: Option<f64>,
+    /// Why the check ended: `ceiling` (the estimate reached the most the stream may use),
+    /// `steady` (it stopped rising), `trouble` (loss or a rising round trip), `budget` (out of
+    /// time), `unavailable` (the link cannot be probed) or `off` (turned off). Empty while
+    /// probing.
+    pub stopped_by: String,
+}
+
+impl Link {
+    pub const PROBING: &str = "probing";
+    pub const DONE: &str = "done";
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = vec![TYPE_LINK, INPUT_VERSION];
+        serde_json::to_writer(&mut out, self).expect("link serializes");
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        check_header(bytes, TYPE_LINK, 2)?;
+        if bytes.len() > MAX_LINK_LEN {
+            return Err(DecodeError::BadLink(format!("{} bytes", bytes.len())));
+        }
+        serde_json::from_slice(&bytes[2..]).map_err(|e| DecodeError::BadLink(e.to_string()))
+    }
 }
 
 /// An encoder given up, and why.
@@ -623,7 +704,7 @@ mod tests {
     }
 
     /// The same bytes as `protocol.test.ts` (and the apps' protocol tests decode them too).
-    pub(crate) const PIPELINE_VECTOR: &[u8] = br#"{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client"},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}"#;
+    pub(crate) const PIPELINE_VECTOR: &[u8] = br#"{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client","estimate_kbps":4200},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}"#;
 
     #[test]
     fn the_pipeline_is_json_after_the_header() {
@@ -640,9 +721,11 @@ mod tests {
                 fps: 60.0,
                 kbps: 3500,
                 limited_by: "client".into(),
+                estimate_kbps: 4200,
             },
             audio: AudioPath { codec: "opus".into(), source_hz: 32040.0, kbps: 128 },
             run_ahead: 1,
+            link: None,
         };
         let mut expected = vec![0x82, 1];
         expected.extend_from_slice(PIPELINE_VECTOR);
@@ -658,5 +741,42 @@ mod tests {
         assert_eq!((decoded.video.codec.as_str(), decoded.renderer), ("vp8", None));
         assert!(matches!(Pipeline::decode(b"\x82\x01\"fast\""), Err(DecodeError::BadPipeline(_))));
         assert!(matches!(Pipeline::decode(b"\x04\x01{}"), Err(DecodeError::WrongType(0x04))));
+    }
+
+    /// The same bytes as `protocol.test.ts` (and the apps' protocol tests decode them too).
+    pub(crate) const LINK_VECTOR: &[u8] = br#"{"state":"done","elapsed_ms":640,"budget_ms":2000,"path":"relay-udp","estimate_kbps":18200,"start_kbps":12000,"rtt_ms":24.5,"stopped_by":"ceiling"}"#;
+
+    #[test]
+    fn the_link_is_json_after_the_header() {
+        let link = Link {
+            state: Link::DONE.into(),
+            elapsed_ms: 640,
+            budget_ms: 2000,
+            path: "relay-udp".into(),
+            estimate_kbps: 18200,
+            start_kbps: 12000,
+            rtt_ms: Some(24.5),
+            stopped_by: "ceiling".into(),
+        };
+        let mut expected = vec![0x83, 1];
+        expected.extend_from_slice(LINK_VECTOR);
+        assert_eq!(link.encode(), expected);
+        assert_eq!(Link::decode(&expected), Ok(link));
+    }
+
+    #[test]
+    fn a_link_tolerates_missing_and_unknown_keys_and_refuses_the_wrong_type() {
+        // Probing, before the path is known: most fields still at their defaults.
+        let mut sparse = vec![0x83, 1];
+        sparse.extend_from_slice(br#"{"state":"probing","elapsed_ms":100,"newer":1}"#);
+        let decoded = Link::decode(&sparse).unwrap();
+        assert_eq!(
+            (decoded.state.as_str(), decoded.path.as_str(), decoded.rtt_ms),
+            ("probing", "", None)
+        );
+        assert!(matches!(Link::decode(b"\x83\x01[1]"), Err(DecodeError::BadLink(_))));
+        assert!(matches!(Link::decode(b"\x82\x01{}"), Err(DecodeError::WrongType(0x82))));
+        let long = [&[0x83, 1][..], &vec![b' '; MAX_LINK_LEN]].concat();
+        assert!(matches!(Link::decode(&long), Err(DecodeError::BadLink(_))));
     }
 }

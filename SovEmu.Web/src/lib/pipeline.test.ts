@@ -15,9 +15,11 @@ const pipeline = (over: Partial<Pipeline> = {}): Pipeline => ({
     fps: 60,
     kbps: 5000,
     limitedBy: "",
+    estimateKbps: 0,
   },
   audio: { codec: "opus", sourceHz: 32040.5, kbps: 128 },
   runAhead: 1,
+  link: null,
   ...over,
 });
 

@@ -59,11 +59,20 @@ import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
 import { captureInput, InputState, touchControlsWanted } from "../../lib/input";
 import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
-import { describeFirstPicture, describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
+import {
+  describeConnecting,
+  describeFirstPicture,
+  describeLink,
+  describeStart,
+  ForwardOnly,
+  loadingBackground,
+  newStartId,
+  type StartStatus,
+} from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
 import { listenNav } from "../../lib/nav";
 import type { QualityNotice } from "../../lib/pipeline";
-import { type ButtonName, MAX_PORTS } from "../../lib/protocol";
+import { type ButtonName, type Link, MAX_PORTS } from "../../lib/protocol";
 import { Session } from "../../lib/session";
 import { type StatItem, StatsSampler } from "../../lib/stats";
 import { ago } from "../../lib/time";
@@ -74,6 +83,7 @@ import { cn } from "../ui/cn";
 import { Dialog, Field, inputClass, Progress } from "../ui/primitives";
 import { useToast } from "../ui/toast";
 import { LatencyGraph } from "./LatencyGraph";
+import { type LoadingProgress, LoadingScreen } from "./LoadingScreen";
 import { QualityChip } from "./QualityChip";
 import { TouchController } from "./TouchController";
 
@@ -152,9 +162,11 @@ function Player() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   /** Why the game could not start, when it failed before the server reported a phase. */
   const [status, setStatus] = useState("");
-  const [progress, setProgress] = useState<{ label: string; detail: string; percent: number; failed: boolean } | null>(
-    null,
-  );
+  const [progress, setProgress] = useState<LoadingProgress | null>(null);
+  /** `FCEUmm · 256×224 @ 60.10 fps`, once the emulator is up: the loading screen's status line. */
+  const [streamInfo, setStreamInfo] = useState("");
+  /** The screenshot of the save being continued, behind the loading screen. */
+  const [saveShot, setSaveShot] = useState<string | null>(null);
   const [splash, setSplash] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [aspect, setAspect] = useState("4 / 3");
@@ -296,6 +308,7 @@ function Player() {
         // The player left while the game was loading: it is not wanted any more.
         if (stopped) end();
         setAspect(HANDHELDS.has(game.system) ? `${s.width} / ${s.height}` : "4 / 3");
+        setStreamInfo(`${s.core} · ${s.width}×${s.height} @ ${s.fps.toFixed(2)} fps`);
         return s;
       });
       starting.catch((e) => {
@@ -305,6 +318,7 @@ function Player() {
       });
 
       async function begin(slot: number | null) {
+        if (slot !== null) setSaveShot(initialSlots.find((x) => x.slot === slot)?.screenshotUrl ?? null);
         let s: SessionInfo;
         try {
           s = await starting;
@@ -318,9 +332,23 @@ function Player() {
         // The splash stays until the game has drawn: a console's BIOS can boot for seconds, and
         // a save is only loaded once the game is up. The bar counts the wait meanwhile.
         const waitingFrom = performance.now();
+        // The worker checks the connection before it sends a picture (`0x83`, #243): the bar
+        // follows the check, then the wait for the first picture. An older worker sends none,
+        // and its picture comes at once.
+        let link: Link | null = null;
         const showWaiting = () => {
-          const view = describeFirstPicture(performance.now() - waitingFrom);
-          setProgress({ label: view.label, detail: view.detail, percent: 100, failed: false });
+          const view =
+            link?.state === "probing"
+              ? describeLink(link)
+              : !link
+                ? describeConnecting(performance.now() - waitingFrom)
+                : describeFirstPicture(performance.now() - waitingFrom, link);
+          setProgress({
+            label: view.label,
+            detail: view.detail,
+            percent: Math.round(bar.next(view.fraction) * 100),
+            failed: false,
+          });
         };
         showWaiting();
         const waiting = window.setInterval(showWaiting, 500);
@@ -329,6 +357,8 @@ function Player() {
           window.clearInterval(waiting);
           setProgress(null);
           setSplash(false);
+          // Once there is a game to play: over the loading screen it would sit on its text.
+          toast("Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind");
         };
         const v = video.current!;
         if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(firstPicture);
@@ -346,11 +376,13 @@ function Player() {
               if (state === "connected") {
                 everConnected = true;
                 filter.start();
-                toast(
-                  "Menu: Escape or Select+Start · Hold Tab / Select+R to fast-forward, Backspace / Select+L to rewind",
-                );
+                showWaiting();
               }
               if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
+            },
+            onLink: (l) => {
+              link = l;
+              showWaiting();
             },
             onQuality: (notice) => {
               setQuality(notice);
@@ -789,7 +821,8 @@ function Player() {
           if (!session) return;
           // A picture that stops while playing (not paused in the menu) is worth a report.
           const frames = video.current?.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
-          const stalled = everConnected && !stack.open && frames === lastFrames;
+          // Not before the first picture: the worker checks the connection first, sending none.
+          const stalled = everConnected && frames > 0 && !stack.open && frames === lastFrames;
           stalledFor = stalled ? stalledFor + 1 : 0;
           lastFrames = frames;
           if (stalledFor === STALL_SECONDS && info) {
@@ -908,47 +941,16 @@ function Player() {
           system's colour and the game's art, the bar above what the start is doing, and how to
           leave a start that is slow, stuck or failed. */}
       {splash && (
-        <section className="absolute inset-0 grid place-items-center overflow-hidden bg-surface">
-          <div
-            className="absolute inset-0 opacity-35"
-            style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 25%, black))` }}
-          />
-          {(loaded?.game.image ?? loaded?.game.thumb) && (
-            <img
-              src={(loaded?.game.image ?? loaded?.game.thumb) || undefined}
-              alt=""
-              // Box art alone is blurred, as Android draws it from a 32 px copy.
-              className={cn("absolute inset-0 size-full object-cover opacity-25", !loaded?.game.image && "blur-2xl")}
-            />
-          )}
-          <div className="relative grid w-full max-w-[35rem] justify-items-center gap-4 p-8 text-center">
-            {loaded && (
-              <span className="rounded-lg px-3 py-1 text-sm font-black" style={{ background: color }}>
-                {loaded.system?.short ?? loaded.game.system}
-              </span>
-            )}
-            <h1 className="text-[2rem] leading-tight font-black">{loaded?.game.title}</h1>
-            {progress && (
-              <Progress
-                value={progress.percent}
-                color="var(--color-accent)"
-                className="h-1.5 w-[25rem] max-w-full bg-white/15"
-                label={progress.label}
-              />
-            )}
-            <p
-              className={cn(
-                "flex items-center gap-2 text-xl font-semibold",
-                progress?.failed || failed ? "text-red-300" : "text-slate-100",
-              )}
-            >
-              {(progress?.failed || failed) && <CircleAlert className="size-5" />}
-              {progress?.label ?? (failed ? status : `Starting ${loaded?.game.title ?? "the game"}…`)}
-            </p>
-            {progress?.detail && <p className="text-base text-slate-400 tabular-nums">{progress.detail}</p>}
-            <p className="pt-2 text-[13px] text-slate-400">{MENU_HINT}</p>
-          </div>
-        </section>
+        <LoadingScreen
+          title={loaded?.game.title ?? ""}
+          short={loaded?.system?.short ?? loaded?.game.system ?? ""}
+          color={color}
+          background={loadingBackground(saveShot, loaded?.game.image, loaded?.game.cover ?? loaded?.game.thumb)}
+          progress={progress}
+          error={status}
+          status={streamInfo}
+          hint={MENU_HINT}
+        />
       )}
 
       {/* The menu stack: splash choices, in-game menu, slot pickers. Navigation is the stack's

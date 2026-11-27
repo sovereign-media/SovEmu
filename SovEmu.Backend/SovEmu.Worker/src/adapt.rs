@@ -258,6 +258,9 @@ pub(crate) enum LimitChange {
 
 pub(crate) struct Adaptation {
     limits: Limits,
+    /// The limits as configured: a new client starts from these again, whatever the last one
+    /// was measured to carry ([`Adaptation::start_at`]).
+    configured: Limits,
     audio_kbps: u32,
     /// What the estimate leaves for video; none before the first one.
     network_kbps: Option<u32>,
@@ -322,6 +325,7 @@ impl Adaptation {
     pub(crate) fn new(limits: Limits, audio_kbps: u32) -> Self {
         Self {
             limits,
+            configured: limits,
             audio_kbps,
             network_kbps: None,
             sending_kbps: None,
@@ -371,7 +375,16 @@ impl Adaptation {
 
     /// A new client: nothing is known about its connection or its decoder.
     pub(crate) fn reset(&mut self) {
-        *self = Self::new(self.limits, self.audio_kbps);
+        *self = Self::new(self.configured, self.audio_kbps);
+    }
+
+    /// This client's link was measured before the stream started (`link.rs`): it starts at
+    /// `start_kbps` instead of the configured rate, within the floor and ceiling. Before the
+    /// first estimate the target is the starting rate, taken at once.
+    pub(crate) fn start_at(&mut self, start_kbps: u32) {
+        let Limits { min_kbps, max_kbps, .. } = self.configured;
+        let start = start_kbps.clamp(min_kbps, max_kbps);
+        self.limits = Limits { min_kbps, start_kbps: start, max_kbps };
     }
 
     /// The limit the client's stats have put on the bitrate, if any.
@@ -774,6 +787,23 @@ mod tests {
 
     fn adaptation() -> Adaptation {
         Adaptation::new(LIMITS, 128)
+    }
+
+    #[test]
+    fn starts_a_measured_client_at_its_own_rate_and_the_next_at_the_configured_one() {
+        // #243: a link measured at 1500 kbit/s starts there at once, not at 5000 and cut by
+        // cut down to it (each cut a stall the player sees).
+        let now = Instant::now();
+        let mut a = adaptation();
+        a.start_at(1147);
+        assert_eq!(a.decide(5000, false, now), Some(1147));
+        assert_eq!(a.told().0, 1147, "the player is told the rate it starts at");
+        // Never past the floor or ceiling.
+        a.start_at(50_000);
+        assert_eq!(a.limits().start_kbps, LIMITS.max_kbps);
+        // The next client is unknown again.
+        a.reset();
+        assert_eq!(a.limits(), LIMITS);
     }
 
     /// An estimate on its own: each well after the last, beyond the window, so it alone counts.

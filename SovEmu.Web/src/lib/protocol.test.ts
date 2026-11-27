@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { bit, decodeAck, decodePipeline, encodeAnalog, encodeHotkeys, encodeInput, encodeStats } from "./protocol";
+import {
+  bit,
+  decodeAck,
+  decodeLink,
+  decodePipeline,
+  encodeAnalog,
+  encodeHotkeys,
+  encodeInput,
+  encodeStats,
+} from "./protocol";
 
 // The same vectors as `input_layout_is_stable` in SovEmu.Protocol/src/input.rs.
 describe("input protocol", () => {
@@ -67,7 +76,7 @@ describe("input protocol", () => {
 describe("pipeline messages", () => {
   // `PIPELINE_VECTOR` in SovEmu.Protocol/src/input.rs.
   const VECTOR =
-    '{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client"},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}';
+    '{"renderer":"llvmpipe","renderer_software":true,"video":{"codec":"h264","encoder":"x264","hardware":false,"fallbacks":[{"encoder":"vaapi","reason":"no device"}],"width":256,"height":224,"fps":60.0,"kbps":3500,"limited_by":"client","estimate_kbps":4200},"audio":{"codec":"opus","source_hz":32040.0,"kbps":128},"run_ahead":1}';
   const message = (type: number, body: string) => {
     const json = new TextEncoder().encode(body);
     const out = new Uint8Array(2 + json.length);
@@ -90,9 +99,11 @@ describe("pipeline messages", () => {
         fps: 60,
         kbps: 3500,
         limitedBy: "client",
+        estimateKbps: 4200,
       },
       audio: { codec: "opus", sourceHz: 32040, kbps: 128 },
       runAhead: 1,
+      link: null,
     });
   });
 
@@ -104,5 +115,39 @@ describe("pipeline messages", () => {
     expect(decodePipeline(message(0x82, '"fast"'))).toBeNull();
     expect(decodePipeline(message(0x82, "{not json"))).toBeNull();
     expect(decodePipeline(message(0x04, "{}"))).toBeNull();
+  });
+});
+
+describe("link messages", () => {
+  // `LINK_VECTOR` in SovEmu.Protocol/src/input.rs.
+  const VECTOR =
+    '{"state":"done","elapsed_ms":640,"budget_ms":2000,"path":"relay-udp","estimate_kbps":18200,"start_kbps":12000,"rtt_ms":24.5,"stopped_by":"ceiling"}';
+  const message = (type: number, body: string) => {
+    const json = new TextEncoder().encode(body);
+    const out = new Uint8Array(2 + json.length);
+    out.set([type, 1]);
+    out.set(json, 2);
+    return out.buffer;
+  };
+
+  it("decodes the Rust reference", () => {
+    expect(decodeLink(message(0x83, VECTOR))).toEqual({
+      state: "done",
+      elapsedMs: 640,
+      budgetMs: 2000,
+      path: "relay-udp",
+      estimateKbps: 18200,
+      startKbps: 12000,
+      rttMs: 24.5,
+      stoppedBy: "ceiling",
+    });
+  });
+
+  it("reads a check still running, and refuses anything else", () => {
+    // While probing the worker has no result yet: the client must still read the progress.
+    const probing = decodeLink(message(0x83, '{"state":"probing","elapsed_ms":100,"newer":1}'));
+    expect(probing).toMatchObject({ state: "probing", elapsedMs: 100, path: "", rttMs: null });
+    expect(decodeLink(message(0x83, "[1]"))).toBeNull();
+    expect(decodeLink(message(0x82, "{}"))).toBeNull();
   });
 });
