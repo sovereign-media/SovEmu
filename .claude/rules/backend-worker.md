@@ -60,7 +60,8 @@ with its own HTTP, for development and tests), `headless` (PNG frames, a WAV, a 
 `probe` (cores' info as JSON), `gpu`, `encoders` (times every video encoder, the server's startup
 test) and `connection-test` (answers one browser's offer and echoes its data channel).
 
-The main loop is `stream.rs`; `video.rs` the codec per client; `session.rs` the IPC; `persist.rs`
+The main loop is `stream.rs`; `udp.rs` the session's sockets (IPv4, and IPv6 on the same port
+where the host has a global address); `video.rs` the codec per client; `session.rs` the IPC; `persist.rs`
 saves; `patch.rs` soft patches; `rewind.rs`, `runahead.rs`, `pacing.rs`, `schedule.rs`,
 `adapt.rs`, `loss.rs` and `keyframes.rs` timing and adaptation; `watchdog.rs` and `health.rs`
 liveness; `standin.rs` the stand-in games that make option-on-load cores declare their options.

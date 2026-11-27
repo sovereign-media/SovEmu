@@ -42,15 +42,20 @@ pub(crate) enum PathClass {
 impl PathClass {
     /// How the worker sees the link: the relay forwards to its sessions over loopback, so a
     /// relayed client comes from a loopback address; a private address is the server's own
-    /// network; anything else is direct.
-    pub(crate) fn of(remote: IpAddr) -> Self {
+    /// network, and so is a global IPv6 address in the same /64 as the session's own (`local`,
+    /// the address the client sent to): one home network's prefix. Anything else is direct.
+    pub(crate) fn of(remote: IpAddr, local: Option<IpAddr>) -> Self {
         if remote.is_loopback() {
             return Self::Relay;
         }
         let private = match remote {
             // Not 100.64.0.0/10: that is a carrier's NAT or a VPN, not the server's network.
             IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
-            IpAddr::V6(v6) => v6.is_unique_local() || v6.is_unicast_link_local(),
+            IpAddr::V6(v6) => {
+                v6.is_unique_local()
+                    || v6.is_unicast_link_local()
+                    || matches!(local, Some(IpAddr::V6(ours)) if same_64(v6, ours))
+            }
         };
         if private { Self::Lan } else { Self::Direct }
     }
@@ -89,6 +94,11 @@ impl PathClass {
     fn over_tcp(self) -> bool {
         matches!(self, Self::RelayTcp | Self::RelayTls)
     }
+}
+
+/// Two IPv6 addresses on the same network: the first 64 bits, the prefix a router hands out.
+fn same_64(a: std::net::Ipv6Addr, b: std::net::Ipv6Addr) -> bool {
+    a.segments()[..4] == b.segments()[..4]
 }
 
 /// Why a check ended.
@@ -246,12 +256,23 @@ mod tests {
     fn classes_a_path_by_where_the_client_comes_from() {
         // The relay hands its traffic to sessions over loopback: that is how a relayed client
         // is known without asking it.
-        assert_eq!(PathClass::of("127.0.0.1".parse().unwrap()), PathClass::Relay);
-        assert_eq!(PathClass::of("::1".parse().unwrap()), PathClass::Relay);
-        assert_eq!(PathClass::of("192.168.2.79".parse().unwrap()), PathClass::Lan);
-        assert_eq!(PathClass::of("10.0.2.16".parse().unwrap()), PathClass::Lan);
-        assert_eq!(PathClass::of("fd12::5".parse().unwrap()), PathClass::Lan);
-        assert_eq!(PathClass::of("99.69.84.25".parse().unwrap()), PathClass::Direct);
+        let of = |remote: &str| PathClass::of(remote.parse().unwrap(), None);
+        assert_eq!(of("127.0.0.1"), PathClass::Relay);
+        assert_eq!(of("::1"), PathClass::Relay);
+        assert_eq!(of("192.168.2.79"), PathClass::Lan);
+        assert_eq!(of("10.0.2.16"), PathClass::Lan);
+        assert_eq!(of("fd12::5"), PathClass::Lan);
+        assert_eq!(of("fe80::1c2b:3aff:fe4d:5e6f"), PathClass::Lan);
+        assert_eq!(of("99.69.84.25"), PathClass::Direct);
+        assert_eq!(of("2a02:8071:5e1:1::7"), PathClass::Direct);
+        // Over IPv6 a player at home sends to the session's global address from one of the
+        // same network: the same /64.
+        let ours = Some("2a02:8071:5e1:1:2c3:4dff:fe5e:6f70".parse().unwrap());
+        let from = |remote: &str| PathClass::of(remote.parse().unwrap(), ours);
+        assert_eq!(from("2a02:8071:5e1:1::7"), PathClass::Lan);
+        assert_eq!(from("2a02:8071:5e1:2::7"), PathClass::Direct, "another /64");
+        assert_eq!(from("2600::7"), PathClass::Direct);
+        assert_eq!(from("99.69.84.25"), PathClass::Direct);
     }
 
     #[test]

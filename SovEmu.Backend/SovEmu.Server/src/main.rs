@@ -159,6 +159,12 @@ pub struct Config {
     #[arg(long, env = "SovEmu__Streaming__AdvertiseAddress")]
     pub advertise_ip: Option<IpAddr>,
 
+    /// Games are offered over IPv6 too, so a player with IPv6 connects straight to them: `auto`
+    /// (the host's global IPv6 address, when the session ports bind every address and there is
+    /// one), `off`, or the address to offer.
+    #[arg(long, env = "SovEmu__Streaming__AdvertiseAddressV6", default_value = "auto")]
+    pub advertise_ipv6: sovemu_protocol::net::Ipv6Advertise,
+
     /// How to use the library: `direct` (play from it as is: local disk or a share on the LAN),
     /// `cache` (a slow, remote share: keep what is played on local disk) or `mirror` (keep a
     /// full local copy, synced in the background, and play from that).
@@ -1110,6 +1116,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         ports: config.udp_ports,
         bind_ip: config.udp_bind,
         advertise_ip: config.advertise_ip,
+        advertise_ipv6: config.advertise_ipv6,
         stun_servers: config.stun_urls(),
         bios_dir: config.bios_dir(),
         idle_timeout_secs: config.idle_timeout,

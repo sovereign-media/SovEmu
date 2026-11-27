@@ -1,20 +1,21 @@
 //! The streaming loop shared by `serve` (standalone) and `session` (driven by the server).
 //!
 //! Everything media-related runs on one thread: the core, the encoders and the str0m peer
-//! (sans-IO) sharing one UDP socket. Each turn of the loop takes any pending command (a client's
-//! offer, a control request), drives the peer until it has nothing to send, waits on the socket
+//! (sans-IO) sharing the session's UDP port (`udp.rs`: IPv4, and IPv6 where the host has it).
+//! Each turn of the loop takes any pending command (a client's offer, a control request), drives
+//! the peer until it has nothing to send, waits on the port
 //! until whichever comes first of the peer's next timer and the next frame's deadline, then runs
 //! a frame if one is due. Emulation runs only while a client is connected, so the game pauses
 //! when nobody is watching.
 
-use std::io::ErrorKind;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use crate::loading::{self, Report};
 use crate::sysdir::SystemDir;
+use crate::udp::Udp;
 use anyhow::{Context, Result, anyhow};
 use sovemu_media::{AudioEncoder, H264Preference};
 use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
@@ -162,6 +163,8 @@ struct Peer {
     /// Where the client's packets last came from: its end of the selected pair (the relay's
     /// loopback address when it is relayed).
     remote: Option<SocketAddr>,
+    /// The session's address they were sent to: its end of the pair.
+    local: Option<SocketAddr>,
 }
 
 /// The emulation and encoding state, kept across clients.
@@ -497,7 +500,7 @@ pub(crate) use sovemu_protocol::net::advertised_addr;
 /// Builds a peer for a client's offer and returns it with the SDP answer.
 fn accept_offer(
     offer: &SessionDescription,
-    advertised: SocketAddr,
+    hosts: Hosts,
     reflexive: Option<SocketAddr>,
     video: Limits,
     starting_estimate_kbps: u64,
@@ -541,22 +544,47 @@ fn accept_offer(
         Bitrate::kbps(u64::from(video.min_kbps)),
         Bitrate::kbps(u64::from(video.max_kbps)),
     );
-    add_candidates(&mut rtc, advertised, reflexive)?;
+    add_candidates(&mut rtc, hosts, reflexive)?;
     let answer = rtc.sdp_api().accept_offer(offer)?;
-    let peer = Peer { rtc, video: None, audio: None, input: None, connected: false, remote: None };
+    let peer = Peer {
+        rtc,
+        video: None,
+        audio: None,
+        input: None,
+        connected: false,
+        remote: None,
+        local: None,
+    };
     Ok((peer, SessionDescription { kind: SdpKind::Answer, sdp: answer.to_sdp_string() }))
 }
 
-/// The session's own address, and the one the STUN servers see it at (`stun.rs`) when that is
-/// another: behind a router, the address a player away from home reaches it at.
+/// The session's own addresses: IPv4, and IPv6 where it has one (`udp.rs`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Hosts {
+    pub(crate) v4: SocketAddr,
+    pub(crate) v6: Option<SocketAddr>,
+}
+
+impl Hosts {
+    pub(crate) fn of(udp: &Udp) -> Self {
+        Self { v4: udp.advertised(), v6: udp.advertised_v6() }
+    }
+}
+
+/// The session's own addresses, and the one the STUN servers see it at (`stun.rs`) when that is
+/// another: behind a router, the address a player away from home reaches it at. A global IPv6
+/// address needs no such help: players with IPv6 send to it as it is.
 pub(crate) fn add_candidates(
     rtc: &mut Rtc,
-    advertised: SocketAddr,
+    hosts: Hosts,
     reflexive: Option<SocketAddr>,
 ) -> Result<()> {
-    rtc.add_local_candidate(Candidate::host(advertised, "udp")?);
-    if let Some(public) = reflexive.filter(|r| *r != advertised) {
-        rtc.add_local_candidate(Candidate::server_reflexive(public, advertised, "udp")?);
+    rtc.add_local_candidate(Candidate::host(hosts.v4, "udp")?);
+    if let Some(v6) = hosts.v6 {
+        rtc.add_local_candidate(Candidate::host(v6, "udp")?);
+    }
+    if let Some(public) = reflexive.filter(|r| *r != hosts.v4) {
+        rtc.add_local_candidate(Candidate::server_reflexive(public, hosts.v4, "udp")?);
     }
     Ok(())
 }
@@ -571,17 +599,15 @@ fn payload_type(rtc: &mut Rtc, mid: Mid, codec: Codec) -> Option<Pt> {
 /// connected for `idle_timeout`, and says which.
 pub(crate) fn run(
     mut session: Session,
-    socket: UdpSocket,
-    advertised: SocketAddr,
+    udp: Udp,
     mut reflexive: crate::stun::Reflexive,
     commands: Receiver<Command>,
     on_event: &mut dyn FnMut(StreamEvent),
     idle_timeout: Option<Duration>,
 ) -> Result<ExitReason> {
-    // Tag every datagram with the advertised address; see `advertised_addr`.
-    let local = advertised;
+    let hosts = Hosts::of(&udp);
     // The public address, asked for now so the first client's answer needn't wait for it.
-    reflexive.ask(&socket);
+    reflexive.ask(udp.primary());
     let mut buf = vec![0u8; 2048];
     let mut peer: Option<Peer> = None;
     let mut pacer: Option<Pacer> = None;
@@ -604,10 +630,10 @@ pub(crate) fn run(
                         }
                         None => session.video.codec_setting(),
                     };
-                    let public = reflexive.current(&socket);
+                    let public = reflexive.current(&udp);
                     let result = accept_offer(
                         &offer,
-                        advertised,
+                        hosts,
                         public,
                         session.adaptation.limits(),
                         session.adaptation.starting_estimate_kbps(),
@@ -654,7 +680,7 @@ pub(crate) fn run(
         let mut rtc_deadline = Instant::now() + IDLE_WAIT;
         if let Some(p) = &mut peer {
             let was_connected = p.connected;
-            match drive(p, &socket, &mut session) {
+            match drive(p, &udp, &mut session) {
                 Ok(Some(deadline)) => {
                     rtc_deadline = rtc_deadline.min(deadline);
                     if p.connected && !was_connected {
@@ -713,17 +739,18 @@ pub(crate) fn run(
         let mut deadline = if emulating { rtc_deadline.min(next_frame) } else { rtc_deadline };
         // Simulated delay (testing only): packets whose wait is over go now, and the loop
         // wakes for the next.
-        session.loss.flush(&socket, Instant::now());
+        session.loss.flush(&udp, Instant::now());
         if let Some(due) = session.loss.next_due() {
             deadline = deadline.min(due);
         }
 
-        // Wait for a datagram or the deadline.
+        // Wait for a datagram or the deadline. Each comes tagged with the address it was sent
+        // to: str0m answers only checks to one of its candidates.
         let wait = deadline.saturating_duration_since(Instant::now());
         if !wait.is_zero() {
-            socket.set_read_timeout(Some(wait))?;
-            match socket.recv_from(&mut buf) {
-                Ok((n, source)) => {
+            match udp.recv(&mut buf, wait) {
+                Ok(None) => {}
+                Ok(Some((n, source, local))) => {
                     // A STUN server's answer is the session's, never the peer's.
                     if reflexive.handle(&buf[..n]) {
                     } else if let Some(p) = &mut peer
@@ -745,11 +772,11 @@ pub(crate) fn run(
                                 p.rtc.bwe().reset(Bitrate::kbps(kbps));
                             }
                             p.remote = Some(source);
+                            p.local = Some(local);
                             p.rtc.handle_input(input)?;
                         }
                     }
                 }
-                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
                 // An ICMP error from an earlier send to a client that went away.
                 Err(e) => tracing::debug!(error = %e, "UDP receive failed"),
             }
@@ -779,7 +806,7 @@ pub(crate) fn run(
 }
 
 /// Polls the peer until it wants to wait. Returns its next deadline, or `None` if it is gone.
-fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Option<Instant>> {
+fn drive(p: &mut Peer, socket: &Udp, session: &mut Session) -> Result<Option<Instant>> {
     loop {
         if !p.rtc.is_alive() {
             return Ok(None);
@@ -803,8 +830,8 @@ fn drive(p: &mut Peer, socket: &UdpSocket, session: &mut Session) -> Result<Opti
                 Event::Connected => {
                     tracing::info!("client connected");
                     p.connected = true;
-                    let remote = p.remote;
-                    session.start_probe(p, remote, Instant::now());
+                    let (remote, local) = (p.remote, p.local);
+                    session.start_probe(p, remote, local, Instant::now());
                 }
                 Event::IceConnectionStateChange(IceConnectionState::Disconnected) => {
                     return Ok(None);
@@ -1093,8 +1120,14 @@ impl Session {
     /// The client has connected from `remote`: check its link before the stream starts, unless
     /// checks are off. The estimator pads toward the most the stream may use; on the same
     /// network it starts there too, with a shorter budget.
-    fn start_probe(&mut self, p: &mut Peer, remote: Option<SocketAddr>, now: Instant) {
-        self.path = remote.map(|r| PathClass::of(r.ip()));
+    fn start_probe(
+        &mut self,
+        p: &mut Peer,
+        remote: Option<SocketAddr>,
+        local: Option<SocketAddr>,
+        now: Instant,
+    ) {
+        self.path = remote.map(|r| PathClass::of(r.ip(), local.map(|l| l.ip())));
         let limits = self.adaptation.limits();
         if !Probe::wanted(self.probe_budget) {
             self.link = Some(Link {
@@ -1533,6 +1566,38 @@ pub(crate) fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The candidates `add_candidates` gives a peer, as its offer lists them.
+    fn offered(hosts: Hosts, reflexive: Option<SocketAddr>) -> Vec<String> {
+        str0m::crypto::from_feature_flags().install_process_default();
+        let mut rtc = RtcConfig::new().build(Instant::now());
+        add_candidates(&mut rtc, hosts, reflexive).unwrap();
+        let mut api = rtc.sdp_api();
+        api.add_channel("input".into());
+        let (offer, _) = api.apply().unwrap();
+        let sdp = offer.to_sdp_string();
+        // `a=candidate:<foundation> 1 udp <priority> <address> <port> typ <kind> ...`
+        sdp.lines()
+            .filter_map(|l| l.strip_prefix("a=candidate:"))
+            .map(|c| c.split(' ').skip(4).take(4).collect::<Vec<_>>().join(" "))
+            .collect()
+    }
+
+    #[test]
+    fn a_session_offers_its_ipv6_address_beside_ipv4_and_the_public_one() {
+        let v4: SocketAddr = "192.168.1.10:50000".parse().unwrap();
+        let v6: SocketAddr = "[2600::5]:50000".parse().unwrap();
+        let public: SocketAddr = "203.0.113.9:41000".parse().unwrap();
+        let candidates = offered(Hosts { v4, v6: Some(v6) }, Some(public));
+        assert!(candidates.contains(&"192.168.1.10 50000 typ host".into()), "{candidates:?}");
+        assert!(candidates.contains(&"2600::5 50000 typ host".into()), "{candidates:?}");
+        assert!(candidates.contains(&"203.0.113.9 41000 typ srflx".into()), "{candidates:?}");
+        assert_eq!(candidates.len(), 3, "{candidates:?}");
+
+        // No IPv6 address: IPv4 alone, as before.
+        let candidates = offered(Hosts { v4, v6: None }, None);
+        assert_eq!(candidates, vec!["192.168.1.10 50000 typ host".to_string()]);
+    }
 
     #[test]
     fn held_input_lets_go_once_the_client_stops_refreshing_it() {

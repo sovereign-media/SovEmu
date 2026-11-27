@@ -46,6 +46,8 @@ pub struct WorkerConfig {
     pub ports: (u16, u16),
     pub bind_ip: IpAddr,
     pub advertise_ip: Option<IpAddr>,
+    /// The IPv6 address sessions are offered at too (`SovEmu__Streaming__AdvertiseAddressV6`).
+    pub advertise_ipv6: sovemu_protocol::net::Ipv6Advertise,
     /// STUN servers (`stun:host:port`) a session asks for its public address.
     pub stun_servers: Vec<String>,
     /// BIOS files, in any layout (see [`sovemu_library::bios`]).
@@ -1050,6 +1052,9 @@ impl Workers {
         if let Some(ip) = self.config.advertise_ip {
             command.arg("--advertise-ip").arg(ip.to_string());
         }
+        if self.config.advertise_ipv6 != sovemu_protocol::net::Ipv6Advertise::Auto {
+            command.arg("--advertise-ipv6").arg(self.config.advertise_ipv6.to_string());
+        }
         for server in &self.config.stun_servers {
             command.arg("--stun").arg(server.strip_prefix("stun:").unwrap_or(server));
         }
@@ -1188,6 +1193,7 @@ done
             ports: (40000, 40001),
             bind_ip: "127.0.0.1".parse().unwrap(),
             advertise_ip: None,
+            advertise_ipv6: sovemu_protocol::net::Ipv6Advertise::Auto,
             stun_servers: Vec::new(),
             bios_dir: dir.join("bios"),
             idle_timeout_secs: 0,
@@ -1301,6 +1307,30 @@ sleep 0.3
         assert_eq!(workers.ports_in_use(), 1, "held while the worker runs");
         settle(&workers, 2).await;
         assert_eq!(workers.count(), 0, "a test is not a session");
+    }
+
+    #[tokio::test]
+    async fn workers_are_told_the_ipv6_setting_only_when_it_is_not_auto() {
+        let dir = dir("ipv6-arg");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let args = |workers: &Workers| -> Vec<String> {
+            let command = workers.worker_command("session", 4000);
+            command.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+        };
+        assert!(
+            !args(&workers).contains(&"--advertise-ipv6".to_string()),
+            "auto is the worker's own default"
+        );
+        for (setting, arg) in [
+            (sovemu_protocol::net::Ipv6Advertise::Off, "off"),
+            (sovemu_protocol::net::Ipv6Advertise::Address("2600::5".parse().unwrap()), "2600::5"),
+        ] {
+            let set =
+                Workers::new(WorkerConfig { advertise_ipv6: setting, ..workers.config.clone() });
+            let args = args(&set);
+            let at = args.iter().position(|a| a == "--advertise-ipv6").expect("passed");
+            assert_eq!(args[at + 1], arg);
+        }
     }
 
     #[tokio::test]

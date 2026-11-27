@@ -19,6 +19,7 @@ use sovemu_protocol::ipc::{ExitReason, Reply, Request};
 
 use crate::SessionArgs;
 use crate::stream::{self, Command, Session, SessionConfig, StreamEvent};
+use crate::udp::Udp;
 
 /// Writes one reply as a JSON line. Shared by the stream thread and the reply threads.
 #[derive(Clone)]
@@ -101,7 +102,16 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
     crate::priority::mark(&socket, args.udp_dscp);
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
-    tracing::info!(udp = %udp_addr, advertised = %advertised, "session ready");
+    let udp = Udp::new(socket, advertised)
+        .with_ipv6(args.advertise_ipv6, args.udp_dscp)
+        .context("opening the IPv6 socket")
+        .map_err(failed)?;
+    tracing::info!(
+        udp = %udp_addr,
+        advertised = %advertised,
+        ipv6 = ?udp.advertised_v6(),
+        "session ready"
+    );
 
     out.send(&Reply::Options { options, categories });
     out.send(&Reply::Ready {
@@ -136,11 +146,10 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
 
     let event_out = out.clone();
     let idle = (args.idle_timeout > 0).then(|| Duration::from_secs(args.idle_timeout));
-    let reflexive = crate::stun::Reflexive::new(&args.stun, &socket);
+    let reflexive = crate::stun::Reflexive::new(&args.stun, udp.primary());
     let result = stream::run(
         session,
-        socket,
-        advertised,
+        udp,
         reflexive,
         commands_rx,
         &mut |event| {

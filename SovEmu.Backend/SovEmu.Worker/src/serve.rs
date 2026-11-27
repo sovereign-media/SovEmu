@@ -64,7 +64,14 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     crate::priority::mark(&socket, args.udp_dscp);
     let udp_addr = socket.local_addr()?;
     let advertised = stream::advertised_addr(args.advertise, udp_addr);
-    tracing::info!(udp = %udp_addr, advertised = %advertised, "WebRTC listening");
+    let udp =
+        crate::udp::Udp::new(socket, advertised).with_ipv6(args.advertise_ipv6, args.udp_dscp)?;
+    tracing::info!(
+        udp = %udp_addr,
+        advertised = %advertised,
+        ipv6 = ?udp.advertised_v6(),
+        "WebRTC listening"
+    );
 
     let (commands_tx, commands_rx) = mpsc::channel();
     let http_addr = spawn_http(args.http, args.web_dir.clone(), commands_tx)?;
@@ -73,8 +80,8 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
     println!("udp={udp_addr}");
     tracing::info!(url = %format!("http://{http_addr}/"), "open in a browser");
 
-    let reflexive = crate::stun::Reflexive::new(&[], &socket);
-    stream::run(session, socket, advertised, reflexive, commands_rx, &mut |_| {}, None).map(drop)
+    let reflexive = crate::stun::Reflexive::new(&[], udp.primary());
+    stream::run(session, udp, reflexive, commands_rx, &mut |_| {}, None).map(drop)
 }
 
 /// Serves the web client and `POST /api/offer` on a background thread.

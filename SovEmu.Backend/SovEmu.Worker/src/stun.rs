@@ -204,10 +204,11 @@ impl Reflexive {
     /// The address to offer a new client: asked again first if the last answer is old, and
     /// waited for (up to a second from the ask) if it hasn't come yet. Datagrams that arrive
     /// meanwhile and aren't answers are dropped: a client being replaced loses a moment.
-    pub(crate) fn current(&mut self, socket: &UdpSocket) -> Option<SocketAddr> {
+    pub(crate) fn current(&mut self, udp: &crate::udp::Udp) -> Option<SocketAddr> {
         if self.servers.is_empty() {
             return None;
         }
+        let socket = udp.primary();
         let fresh = self.found.is_some_and(|(_, at)| at.elapsed() < STALE);
         if !fresh && self.asked.is_none_or(|at| at.elapsed() >= WAIT) {
             self.ask(socket);
@@ -226,11 +227,12 @@ impl Reflexive {
                 self.send(socket);
             }
             let wait = until.min(self.sent.map_or(until, |at| at + RETRY)) - now;
-            if socket.set_read_timeout(Some(wait.max(Duration::from_millis(1)))).is_err() {
-                break;
-            }
-            if let Ok((n, _)) = socket.recv_from(&mut buf) {
-                self.handle(&buf[..n]);
+            match udp.recv(&mut buf, wait) {
+                Ok(Some((n, _, _))) => {
+                    self.handle(&buf[..n]);
+                }
+                Ok(None) => {}
+                Err(_) => break,
             }
         }
         let found = self.found.map(|(addr, _)| addr);
@@ -295,6 +297,13 @@ mod tests {
         assert_eq!(&r[8..], &ID);
     }
 
+    /// A session's socket alone.
+    fn udp(bind: &str) -> crate::udp::Udp {
+        let socket = UdpSocket::bind(bind).unwrap();
+        let local = socket.local_addr().unwrap();
+        crate::udp::Udp::new(socket, local)
+    }
+
     /// A STUN server on loopback that answers every request with `mapped`.
     fn server(mapped: SocketAddr) -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -327,22 +336,22 @@ mod tests {
     fn learns_the_address_from_a_server_and_leaves_other_traffic() {
         let mapped: SocketAddr = "203.0.113.9:41000".parse().unwrap();
         let stun = server(mapped);
-        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let mut r = Reflexive::new(&[stun.to_string()], &socket);
-        assert_eq!(r.current(&socket), Some(mapped));
+        let udp = udp("127.0.0.1:0");
+        let mut r = Reflexive::new(&[stun.to_string()], udp.primary());
+        assert_eq!(r.current(&udp), Some(mapped));
         assert!(!r.handle(&RFC5769_IPV4), "an answer to a request it never sent");
         assert!(!r.handle(&[0x80, 0x60, 0, 0]), "RTP is the peer's");
     }
 
     #[test]
     fn no_servers_or_no_answer_offers_nothing() {
-        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-        assert_eq!(Reflexive::new(&[], &socket).current(&socket), None);
+        let udp = udp("127.0.0.1:0");
+        assert_eq!(Reflexive::new(&[], udp.primary()).current(&udp), None);
         // A port nothing answers on.
         let silent = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let mut r = Reflexive::new(&[silent.local_addr().unwrap().to_string()], &socket);
+        let mut r = Reflexive::new(&[silent.local_addr().unwrap().to_string()], udp.primary());
         let started = Instant::now();
-        assert_eq!(r.current(&socket), None);
+        assert_eq!(r.current(&udp), None);
         assert!(started.elapsed() < WAIT * 3, "gives up after about a second");
     }
 }
