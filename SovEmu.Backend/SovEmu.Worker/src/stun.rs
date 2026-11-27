@@ -110,6 +110,9 @@ pub(crate) struct Reflexive {
     heard: Vec<SocketAddr>,
     found: Option<(SocketAddr, Instant)>,
     warned: bool,
+    /// The address the home router forwards to this session's port, when the server asked it
+    /// to (UPnP or NAT-PMP, `--public`).
+    forwarded: Option<SocketAddr>,
 }
 
 impl Reflexive {
@@ -148,7 +151,28 @@ impl Reflexive {
             heard: Vec::new(),
             found: None,
             warned: false,
+            forwarded: None,
         }
+    }
+
+    /// With the address the home router forwards to this session's port (`--public`).
+    pub(crate) fn with_forwarded(mut self, forwarded: Option<SocketAddr>) -> Self {
+        if let Some(addr) = forwarded {
+            tracing::info!(address = %addr, "public address the router forwards (UPnP or NAT-PMP)");
+        }
+        self.forwarded = forwarded;
+        self
+    }
+
+    /// The public addresses to offer a new client: STUN's ([`Self::current`]), then the one
+    /// the router forwards when that is another (behind a symmetric NAT, or when the router
+    /// gave the session another port).
+    pub(crate) fn addresses(&mut self, udp: &crate::udp::Udp) -> Vec<SocketAddr> {
+        let mut found: Vec<SocketAddr> = self.current(udp).into_iter().collect();
+        if let Some(forwarded) = self.forwarded.filter(|f| !found.contains(f)) {
+            found.push(forwarded);
+        }
+        found
     }
 
     /// Asks every server again.
@@ -353,5 +377,25 @@ mod tests {
         let started = Instant::now();
         assert_eq!(r.current(&udp), None);
         assert!(started.elapsed() < WAIT * 3, "gives up after about a second");
+    }
+
+    #[test]
+    fn the_forwarded_address_is_offered_beside_stun_s_once() {
+        let udp = udp("127.0.0.1:0");
+        let forwarded: SocketAddr = "203.0.113.9:51000".parse().unwrap();
+        let mut r = Reflexive::new(&[], udp.primary()).with_forwarded(Some(forwarded));
+        assert_eq!(r.addresses(&udp), [forwarded], "the router's, with no STUN");
+
+        // STUN sees another port (a symmetric NAT, or the router chose another): both.
+        let stun = server("203.0.113.9:41000".parse().unwrap());
+        let mut r =
+            Reflexive::new(&[stun.to_string()], udp.primary()).with_forwarded(Some(forwarded));
+        assert_eq!(r.addresses(&udp), ["203.0.113.9:41000".parse().unwrap(), forwarded]);
+
+        // STUN sees the forwarded port: once.
+        let stun = server(forwarded);
+        let mut r =
+            Reflexive::new(&[stun.to_string()], udp.primary()).with_forwarded(Some(forwarded));
+        assert_eq!(r.addresses(&udp), [forwarded]);
     }
 }

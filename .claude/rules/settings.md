@@ -30,6 +30,8 @@ Nothing needs click-ops.
 - **Tunables are settings, not constants.** One deliberate exception: remote play (the STUN
   servers and the built-in TURN relay: its port, credentials and capacity) has no settings, so
   there is nothing to misconfigure. Don't add any; change the constants in `relay.rs` and
-  `STUN_SERVERS` in `main.rs`.
+  `STUN_SERVERS` in `main.rs`. Its one switch is `SovEmu__Network__PortMapping` (on), because
+  asking the router to forward ports changes another device, which some networks forbid; the
+  port mapper's timings stay constants (`SovEmu.PortMapping`).
 - A setting that needs more than a variable (a secret, a volume, a port) also needs the cluster's
   Helm chart, kept outside this repository, to provide it.

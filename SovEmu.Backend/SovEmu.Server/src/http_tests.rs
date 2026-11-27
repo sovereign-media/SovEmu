@@ -2353,7 +2353,9 @@ async fn admins_see_how_the_server_is_reached() {
     h.sign_up_admin().await;
     let q = "{ network { udpFirst udpLast portCount portsInUse sessions advertisedIp \
              advertisedIpDetected publicUrls publicUrlsConfigured signInAvailableHere \
-             iceServers { urls hasCredential } settings { name value } } }";
+             iceServers { urls hasCredential } \
+             portMapping { state protocol externalAddress externalAddressPrivate ports { internal } } \
+             settings { name value } } }";
     let n = h.ok(q, json!({})).await["network"].clone();
     let (first, last) = (n["udpFirst"].as_i64().unwrap(), n["udpLast"].as_i64().unwrap());
     assert_eq!(n["portCount"].as_i64(), Some(last - first + 1));
@@ -2365,6 +2367,18 @@ async fn admins_see_how_the_server_is_reached() {
     // No STUN servers in tests, and the harness's requests name no host to hand the relay out at
     // (`players_get_relay_credentials_of_their_own`).
     assert_eq!(n["iceServers"], json!([]));
+    // Tests never ask the router; the setting is on, and listed.
+    assert_eq!(
+        n["portMapping"],
+        json!({"state": "OFF", "protocol": null, "externalAddress": null,
+               "externalAddressPrivate": false, "ports": []})
+    );
+    let setting = n["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "SovEmu__Network__PortMapping");
+    assert_eq!(setting.unwrap()["value"], "true");
 }
 
 #[tokio::test]

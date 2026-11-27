@@ -30,7 +30,45 @@ export function networkWarnings(n: NetworkReport): NetworkWarning[] {
       detail: `All ${n.portCount} UDP ports are held, so no one else can start a game. Widen SovEmu__Streaming__Udp__Ports (and publish the range).`,
     });
   }
+  const pm = n.portMapping;
+  if (pm.state === "ACTIVE" && pm.externalAddressPrivate) {
+    warnings.push({
+      title: `The router's own internet address, ${pm.externalAddress ?? ""}, is a private one`,
+      detail:
+        "Another router, or the internet provider's carrier-grade NAT, is in front of it, so the ports it forwards can't be reached from the internet. Players away from home connect through STUN or the built-in relay, if anything.",
+    });
+  }
   return warnings;
+}
+
+type PortMapping = NetworkReport["portMapping"];
+
+/** One line on asking the router to forward ports: whether it was asked, and how it went. */
+export function portMappingSummary(pm: PortMapping): string {
+  switch (pm.state) {
+    case "OFF":
+      return "Not asked: SovEmu__Network__PortMapping is off. Forward the ports by hand if players away from home need them.";
+    case "SEARCHING":
+      return "Looking for the router (UPnP and NAT-PMP).";
+    case "NO_ROUTER":
+      return "No router answered UPnP or NAT-PMP: it has them turned off, or the server is in a container on a bridge network, where the search can't reach it. Searched again every ten minutes.";
+    case "STOPPED":
+      return "Stopped: the server is shutting down, and the router's forwards were removed.";
+    case "ACTIVE": {
+      const forwarded = pm.ports.filter((p) => p.external != null).length;
+      return `The router (${pm.protocol ?? "unknown"}, at ${pm.router ?? "?"}) forwards ${forwarded} of ${pm.ports.length} ports to ${pm.localAddress ?? "this server"}.`;
+    }
+    default:
+      // A state from a newer server.
+      return `${String(pm.state).toLowerCase()}.`;
+  }
+}
+
+/** "50000/udp → 51000", or why the router doesn't forward it. */
+export function forwardedPort(p: PortMapping["ports"][number]): string {
+  const name = `${p.internal}/${p.transport}`;
+  if (p.external == null) return `${name}: ${p.error ?? "not forwarded yet"}`;
+  return p.external === p.internal ? `${name}: forwarded` : `${name}: forwarded from ${p.external}`;
 }
 
 /** "50000-50009" or "50000" for a single port. */

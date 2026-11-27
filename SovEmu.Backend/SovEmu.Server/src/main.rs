@@ -40,6 +40,7 @@ mod ops;
 mod patches;
 mod paths;
 mod play_stats;
+mod port_mapping;
 #[cfg(test)]
 mod query_plans;
 mod redact;
@@ -164,6 +165,11 @@ pub struct Config {
     /// one), `off`, or the address to offer.
     #[arg(long, env = "SovEmu__Streaming__AdvertiseAddressV6", default_value = "auto")]
     pub advertise_ipv6: sovemu_protocol::net::Ipv6Advertise,
+
+    /// Ask the home router (UPnP or NAT-PMP) to forward the session ports and the relay's port
+    /// to this server, so players away from home reach it with nothing set up on the router.
+    #[arg(long, env = "SovEmu__Network__PortMapping", default_value_t = true, action = clap::ArgAction::Set)]
+    pub port_mapping: bool,
 
     /// How to use the library: `direct` (play from it as is: local disk or a share on the LAN),
     /// `cache` (a slow, remote share: keep what is played on local disk) or `mirror` (keep a
@@ -864,6 +870,9 @@ pub struct AppState {
     pub(crate) logs: Option<Arc<logs::LogBuffer>>,
     /// The built-in TURN relay, unless its port was taken (`relay`).
     pub(crate) relay: Option<Arc<relay::RelayState>>,
+    /// Asking the home router to forward ports, unless `SovEmu__Network__PortMapping` is off
+    /// (`port_mapping`).
+    pub(crate) port_mapping: Option<Arc<sovemu_port_mapping::PortMapper>>,
 }
 
 impl AppState {
@@ -1113,6 +1122,8 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         "encoder test"
     );
     let session_failures = Arc::new(failures::Failures::new(config.session_failures));
+    // Filled in by the port mapper once the router forwards the session ports.
+    let forwarded = workers::ForwardedPorts::default();
     // Told as sessions start and end, and of each worker's log lines.
     let mut observers: Vec<Arc<dyn sovemu_sessions::Observer>> = vec![
         Arc::new(telemetry::SessionMetrics),
@@ -1131,6 +1142,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         advertise_ip: config.advertise_ip,
         advertise_ipv6: config.advertise_ipv6,
         stun_servers: config.stun_urls(),
+        forwarded: forwarded.clone(),
         bios_dir: config.bios_dir(),
         idle_timeout_secs: config.idle_timeout,
         video_kbps: config.video_kbps,
@@ -1246,6 +1258,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
     let core_info = Arc::new(settings::CoreInfoCache::from_manifest(&config.cores_dir));
     let game_counts = Arc::new(library::GameCounts::load(&db).await?);
     let relay = relay::start(&config).await?;
+    let port_mapping = port_mapping::start(&config, relay.as_deref().map(|r| r.port()), forwarded);
     Ok(AppState {
         db,
         config: Arc::new(config),
@@ -1271,6 +1284,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         jobs,
         resources,
         relay,
+        port_mapping,
     })
 }
 
@@ -1455,6 +1469,7 @@ async fn run(mut config: Config) -> Result<()> {
     // scan's games are already in the database meanwhile.
     jobs::spawn(&state);
     let (workers, jobs) = (state.workers.clone(), state.jobs.clone());
+    let port_mapping = state.port_mapping.clone();
     if state.config.web_dir.is_none() {
         tracing::warn!("no --web-dir: serving the API only");
     }
@@ -1469,7 +1484,12 @@ async fn run(mut config: Config) -> Result<()> {
     axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
     // Both at once: the workers write their players' saves while the jobs record that they
     // were cancelled.
-    tokio::join!(workers.stop_all(), jobs.shutdown(JOBS_SHUTDOWN_GRACE));
+    // And the router's port forwards are taken back.
+    tokio::join!(workers.stop_all(), jobs.shutdown(JOBS_SHUTDOWN_GRACE), async {
+        if let Some(mapper) = &port_mapping {
+            mapper.stop().await;
+        }
+    });
     Ok(())
 }
 

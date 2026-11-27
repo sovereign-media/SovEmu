@@ -31,7 +31,6 @@ pub(crate) struct RelayState {
 
 impl RelayState {
     /// The port the relay was given.
-    #[cfg(test)]
     pub(crate) fn port(&self) -> u16 {
         self.port
     }

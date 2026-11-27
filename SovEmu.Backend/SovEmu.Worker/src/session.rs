@@ -147,7 +147,8 @@ pub(crate) fn run(args: SessionArgs) -> Result<()> {
 
     let event_out = out.clone();
     let idle = (args.idle_timeout > 0).then(|| Duration::from_secs(args.idle_timeout));
-    let reflexive = crate::stun::Reflexive::new(&args.stun, udp.primary());
+    let reflexive =
+        crate::stun::Reflexive::new(&args.stun, udp.primary()).with_forwarded(args.public);
     let result = stream::run(
         session,
         udp,

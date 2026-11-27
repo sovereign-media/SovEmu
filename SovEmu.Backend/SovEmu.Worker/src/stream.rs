@@ -521,7 +521,7 @@ pub(crate) use sovemu_protocol::net::advertised_addr;
 fn accept_offer(
     offer: &SessionDescription,
     hosts: Hosts,
-    reflexive: Option<SocketAddr>,
+    public: &[SocketAddr],
     video: Limits,
     starting_estimate_kbps: u64,
     codecs: CodecSetting,
@@ -564,7 +564,7 @@ fn accept_offer(
         Bitrate::kbps(u64::from(video.min_kbps)),
         Bitrate::kbps(u64::from(video.max_kbps)),
     );
-    add_candidates(&mut rtc, hosts, reflexive)?;
+    add_candidates(&mut rtc, hosts, public)?;
     let answer = rtc.sdp_api().accept_offer(offer)?;
     let peer = Peer {
         rtc,
@@ -591,20 +591,22 @@ impl Hosts {
     }
 }
 
-/// The session's own addresses, and the one the STUN servers see it at (`stun.rs`) when that is
-/// another: behind a router, the address a player away from home reaches it at. A global IPv6
-/// address needs no such help: players with IPv6 send to it as it is.
-pub(crate) fn add_candidates(
-    rtc: &mut Rtc,
-    hosts: Hosts,
-    reflexive: Option<SocketAddr>,
-) -> Result<()> {
+/// The session's own addresses, and its public ones (`stun.rs`): the address the STUN servers see
+/// it at, and the one the home router forwards to it (UPnP or NAT-PMP), each once and only when
+/// it is another. Behind a router, those are where a player away from home reaches it. A global
+/// IPv6 address needs no such help: players with IPv6 send to it as it is.
+pub(crate) fn add_candidates(rtc: &mut Rtc, hosts: Hosts, public: &[SocketAddr]) -> Result<()> {
     rtc.add_local_candidate(Candidate::host(hosts.v4, "udp")?);
     if let Some(v6) = hosts.v6 {
         rtc.add_local_candidate(Candidate::host(v6, "udp")?);
     }
-    if let Some(public) = reflexive.filter(|r| *r != hosts.v4) {
-        rtc.add_local_candidate(Candidate::server_reflexive(public, hosts.v4, "udp")?);
+    let mut offered = vec![hosts.v4];
+    for &addr in public {
+        if offered.contains(&addr) || !addr.is_ipv4() {
+            continue;
+        }
+        rtc.add_local_candidate(Candidate::server_reflexive(addr, hosts.v4, "udp")?);
+        offered.push(addr);
     }
     Ok(())
 }
@@ -650,11 +652,11 @@ pub(crate) fn run(
                         }
                         None => session.video.codec_setting(),
                     };
-                    let public = reflexive.current(&udp);
+                    let public = reflexive.addresses(&udp);
                     let result = accept_offer(
                         &offer,
                         hosts,
-                        public,
+                        &public,
                         session.adaptation.limits(),
                         session.adaptation.starting_estimate_kbps(),
                         codecs,
@@ -1588,10 +1590,10 @@ mod tests {
     use super::*;
 
     /// The candidates `add_candidates` gives a peer, as its offer lists them.
-    fn offered(hosts: Hosts, reflexive: Option<SocketAddr>) -> Vec<String> {
+    fn offered(hosts: Hosts, public: &[SocketAddr]) -> Vec<String> {
         str0m::crypto::from_feature_flags().install_process_default();
         let mut rtc = RtcConfig::new().build(Instant::now());
-        add_candidates(&mut rtc, hosts, reflexive).unwrap();
+        add_candidates(&mut rtc, hosts, public).unwrap();
         let mut api = rtc.sdp_api();
         api.add_channel("input".into());
         let (offer, _) = api.apply().unwrap();
@@ -1608,15 +1610,30 @@ mod tests {
         let v4: SocketAddr = "192.168.1.10:50000".parse().unwrap();
         let v6: SocketAddr = "[2600::5]:50000".parse().unwrap();
         let public: SocketAddr = "203.0.113.9:41000".parse().unwrap();
-        let candidates = offered(Hosts { v4, v6: Some(v6) }, Some(public));
+        let candidates = offered(Hosts { v4, v6: Some(v6) }, &[public]);
         assert!(candidates.contains(&"192.168.1.10 50000 typ host".into()), "{candidates:?}");
         assert!(candidates.contains(&"2600::5 50000 typ host".into()), "{candidates:?}");
         assert!(candidates.contains(&"203.0.113.9 41000 typ srflx".into()), "{candidates:?}");
         assert_eq!(candidates.len(), 3, "{candidates:?}");
 
         // No IPv6 address: IPv4 alone, as before.
-        let candidates = offered(Hosts { v4, v6: None }, None);
+        let candidates = offered(Hosts { v4, v6: None }, &[]);
         assert_eq!(candidates, vec!["192.168.1.10 50000 typ host".to_string()]);
+    }
+
+    #[test]
+    fn the_address_the_router_forwards_is_offered_once_beside_stun_s() {
+        let v4: SocketAddr = "192.168.1.10:50000".parse().unwrap();
+        let stun: SocketAddr = "203.0.113.9:41000".parse().unwrap();
+        let forwarded: SocketAddr = "203.0.113.9:50000".parse().unwrap();
+        // STUN saw another port than the router forwards (a symmetric NAT): both are offered.
+        let candidates = offered(Hosts { v4, v6: None }, &[stun, forwarded]);
+        assert!(candidates.contains(&"203.0.113.9 41000 typ srflx".into()), "{candidates:?}");
+        assert!(candidates.contains(&"203.0.113.9 50000 typ srflx".into()), "{candidates:?}");
+        assert_eq!(candidates.len(), 3, "{candidates:?}");
+        // The same address twice, or the host's own, is offered once.
+        let candidates = offered(Hosts { v4, v6: None }, &[forwarded, forwarded, v4]);
+        assert_eq!(candidates.len(), 2, "{candidates:?}");
     }
 
     #[test]

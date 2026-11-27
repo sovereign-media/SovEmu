@@ -12,7 +12,7 @@
 //! waits) is left to the reaper instead of blocking the next start.
 
 use std::collections::{BTreeSet, HashMap};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -50,6 +50,9 @@ pub struct WorkerConfig {
     pub advertise_ipv6: sovemu_protocol::net::Ipv6Advertise,
     /// STUN servers (`stun:host:port`) a session asks for its public address.
     pub stun_servers: Vec<String>,
+    /// The public address the home router forwards to each session port, as the server last
+    /// heard (UPnP or NAT-PMP): a worker offers its port's beside STUN's (`--public`).
+    pub forwarded: ForwardedPorts,
     /// BIOS files, in any layout (see [`sovemu_library::bios`]).
     pub bios_dir: PathBuf,
     pub idle_timeout_secs: u64,
@@ -112,6 +115,23 @@ pub struct WorkerConfig {
     pub log_format: &'static str,
     /// Told when sessions start and end (the server records metrics).
     pub observer: Arc<dyn Observer>,
+}
+
+/// The public address the home router forwards to each session port (UPnP or NAT-PMP), shared
+/// between the server, which asks the router, and the workers it starts.
+#[derive(Debug, Clone, Default)]
+pub struct ForwardedPorts(Arc<Mutex<HashMap<u16, SocketAddr>>>);
+
+impl ForwardedPorts {
+    /// Replaces what the router forwards: session port → public address.
+    pub fn set(&self, forwarded: HashMap<u16, SocketAddr>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = forwarded;
+    }
+
+    /// The public address the router forwards to `port`, if it does.
+    pub fn get(&self, port: u16) -> Option<SocketAddr> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).get(&port).copied()
+    }
 }
 
 /// The only environment a worker inherits. Cores are third-party code: they get no credentials
@@ -1063,6 +1083,9 @@ impl Workers {
         for server in &self.config.stun_servers {
             command.arg("--stun").arg(server.strip_prefix("stun:").unwrap_or(server));
         }
+        if let Some(public) = self.config.forwarded.get(port) {
+            command.arg("--public").arg(public.to_string());
+        }
         command
     }
 
@@ -1200,6 +1223,7 @@ done
             advertise_ip: None,
             advertise_ipv6: sovemu_protocol::net::Ipv6Advertise::Auto,
             stun_servers: Vec::new(),
+            forwarded: ForwardedPorts::default(),
             bios_dir: dir.join("bios"),
             idle_timeout_secs: 0,
             video_kbps: 1000,
@@ -1628,5 +1652,20 @@ exit 0
         // It finishes loading, finds its stdin closed, and exits on its own.
         settle(&workers, 2).await;
         assert_eq!((workers.ports_in_use(), workers.port_count()), (0, 2));
+    }
+
+    #[tokio::test]
+    async fn a_worker_is_told_the_address_the_router_forwards_to_its_port() {
+        let dir = dir("forwarded");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let public: SocketAddr = "203.0.113.7:51000".parse().unwrap();
+        workers.config.forwarded.set(HashMap::from([(40000, public)]));
+        let args = |port| -> Vec<String> {
+            let command = workers.worker_command("session", port);
+            command.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+        };
+        let first = args(40000);
+        assert!(first.windows(2).any(|w| w == ["--public", "203.0.113.7:51000"]), "{first:?}");
+        assert!(!args(40001).contains(&"--public".to_owned()), "that port isn't forwarded");
     }
 }
