@@ -16,6 +16,13 @@ pub(super) enum AttentionKind {
     AwaitingLookup,
     /// No box art, beside it or downloaded.
     NoBoxArt,
+    /// No gameplay video downloaded: none found, not downloaded yet, failing, or given up (the
+    /// detail says which, and why). Listed only while `SovEmu__Metadata__Videos` is on.
+    NoVideo,
+    /// A picture or video whose download failed 3 times and is no longer tried: the detail
+    /// names each, with the reason its last attempt failed. `retryArtworkDownloads` tries
+    /// them again.
+    DownloadGaveUp,
     /// The same title and tags in two or more files of a system.
     Duplicate,
     /// A multi-part game with a part missing.
@@ -30,6 +37,8 @@ impl From<AttentionKind> for Kind {
             AttentionKind::NoInformation => Self::NoInformation,
             AttentionKind::AwaitingLookup => Self::AwaitingLookup,
             AttentionKind::NoBoxArt => Self::NoBoxArt,
+            AttentionKind::NoVideo => Self::NoVideo,
+            AttentionKind::DownloadGaveUp => Self::DownloadGaveUp,
             AttentionKind::Duplicate => Self::Duplicate,
             AttentionKind::MissingParts => Self::MissingParts,
             AttentionKind::Unrecognised => Self::Unrecognised,
@@ -43,6 +52,8 @@ impl From<Kind> for AttentionKind {
             Kind::NoInformation => Self::NoInformation,
             Kind::AwaitingLookup => Self::AwaitingLookup,
             Kind::NoBoxArt => Self::NoBoxArt,
+            Kind::NoVideo => Self::NoVideo,
+            Kind::DownloadGaveUp => Self::DownloadGaveUp,
             Kind::Duplicate => Self::Duplicate,
             Kind::MissingParts => Self::MissingParts,
             Kind::Unrecognised => Self::Unrecognised,
@@ -61,8 +72,8 @@ pub(super) struct AttentionItem {
     pub(super) title: String,
     /// Relative to the library.
     pub(super) path: String,
-    /// Why it has no information, the tags it shares, the parts missing, or why a file was
-    /// skipped.
+    /// Why it has no information, the tags it shares, the parts missing, why a file was
+    /// skipped, or where its video or a download stands and why (a line per download).
     pub(super) detail: String,
 }
 
@@ -98,6 +109,7 @@ impl AttentionQuery {
             kind.into(),
             system.as_ref().map(|s| s.as_str()),
             limit,
+            state(ctx).metadata.videos,
         )
         .await
         .map_err(ApiError::from)
@@ -117,8 +129,10 @@ impl AttentionQuery {
     /// Admins: how many games (or files) of each kind need attention, per system.
     async fn attention_counts(&self, ctx: &Context<'_>) -> Result<Vec<AttentionCount>> {
         admin(ctx).await?;
-        let counts =
-            crate::attention::counts(&state(ctx).db).await.map_err(ApiError::from).api()?;
+        let counts = crate::attention::counts(&state(ctx).db, state(ctx).metadata.videos)
+            .await
+            .map_err(ApiError::from)
+            .api()?;
         Ok(counts
             .into_iter()
             .map(|(kind, system, count)| AttentionCount {
@@ -159,5 +173,25 @@ impl AttentionMutation {
             .detail(title.unwrap_or_else(|| format!("game {game_id}")));
         record(ctx, &me, entry);
         Ok(status.into())
+    }
+
+    /// Admins: tries again the pictures and videos whose downloads gave up
+    /// (`DOWNLOAD_GAVE_UP`), one system's or all: their attempts start again and the
+    /// downloads start in the background, unless they are running (the next round takes
+    /// them). Returns how many downloads were queued again.
+    async fn retry_artwork_downloads(&self, ctx: &Context<'_>, system: Option<ID>) -> Result<i32> {
+        let me = admin(ctx).await?;
+        let state = state(ctx);
+        let system = system.as_ref().map(|s| s.as_str());
+        let queued = crate::admin::retry_downloads(state, system).await.api()?;
+        let entry = Entry::new(Activity::JobRun).about("Artwork downloads").detail(format!(
+            "{queued} given up, tried again{}",
+            match system {
+                Some(s) => format!(" ({s})"),
+                None => String::new(),
+            }
+        ));
+        record(ctx, &me, entry);
+        Ok(queued as i32)
     }
 }

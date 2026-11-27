@@ -18,7 +18,16 @@ import {
 import { useCallback, useState } from "react";
 import { api, type LibraryStatus, type MetadataField, type MetadataStatus } from "../../lib/api";
 import { invalidate, q } from "../../lib/data";
-import { accountText, progressText, quotaPercent, quotaText, recentText, workingText } from "../../lib/lookup";
+import {
+  accountText,
+  artworkText,
+  failureText,
+  progressText,
+  quotaPercent,
+  quotaText,
+  recentText,
+  workingText,
+} from "../../lib/lookup";
 import { formatBytes } from "../../lib/numbers";
 import { Button } from "../ui/button";
 import { Confirm, Progress } from "../ui/primitives";
@@ -72,6 +81,7 @@ function Library() {
   const metaPct = metadata.total ? (100 * metadata.done) / metadata.total : 0;
   const art = metadata.artwork;
   const artPct = art.total ? (100 * art.done) / art.total : 0;
+  const artText = artworkText(art);
   const working = workingText(metadata);
   return (
     <>
@@ -229,12 +239,24 @@ function Library() {
 
         {art.total > 0 && (
           <>
-            <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Box art and videos" />
-            <p className="mt-2 text-sm text-slate-300">
-              {art.running
-                ? `Downloading box art and videos in the background: ${art.done.toLocaleString()} of ${art.total.toLocaleString()}, for games without their own…`
-                : `Box art and videos: ${art.downloaded.toLocaleString()} downloaded${art.videos ? ` (${art.videos.toLocaleString()} videos)` : ""}${art.failed ? `, ${art.failed.toLocaleString()} failed` : ""}.`}
-            </p>
+            <Progress className="mt-4" value={artPct} color="#0ea5e9" label="Artwork and videos" />
+            <p className="mt-2 text-sm text-slate-300">{artText.summary}</p>
+            {artText.kinds.length > 0 && (
+              <ul aria-label="Each kind" className="mt-1 grid gap-0.5 text-sm text-slate-400">
+                {artText.kinds.map((k) => (
+                  <li key={k}>{k}</li>
+                ))}
+              </ul>
+            )}
+            {art.failures.length > 0 && (
+              <ul aria-label="Why downloads failed" className="mt-2 grid gap-1 text-sm text-amber-300">
+                {art.failures.map((f) => (
+                  <li key={`${f.kind}${f.reason}`} className="flex items-start gap-2">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {failureText(f)}
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
         {metadata.notes.length > 0 && (

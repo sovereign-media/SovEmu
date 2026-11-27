@@ -101,6 +101,33 @@ fn download_missing(state: &AppState) {
     }
 }
 
+/// Tries again the downloads that gave up (`system`: one system's only): their attempts and
+/// last failure are cleared, and the downloads start unless they are running (each round asks
+/// the table again, so a running job takes them too). Returns how many were queued again.
+pub(crate) async fn retry_downloads(state: &AppState, system: Option<&str>) -> ApiResult<u64> {
+    use metadata::artwork::{Kind, MAX_ATTEMPTS};
+    let mut tx = state.db.begin().await?;
+    let mut queued = 0;
+    for kind in Kind::ALL {
+        let c = kind.column();
+        queued += sqlx::query(&format!(
+            "UPDATE game_metadata SET {c}_attempts = 0, {c}_error = NULL
+             WHERE {c} IS NULL AND {c}_url IS NOT NULL AND {c}_attempts >= ?1
+               AND (?2 IS NULL OR game_id IN (SELECT id FROM games WHERE system = ?2))"
+        ))
+        .bind(MAX_ATTEMPTS)
+        .bind(system)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    }
+    tx.commit().await?;
+    if queued > 0 {
+        download_missing(state);
+    }
+    Ok(queued)
+}
+
 /// Looks up game information ([`Job::Metadata`]'s work) for the games `scope` covers.
 pub(crate) async fn lookup(state: AppState, scope: metadata::Scope) -> anyhow::Result<String> {
     metadata::run_job(state.clone(), scope).await;

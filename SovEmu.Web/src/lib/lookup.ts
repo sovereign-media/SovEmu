@@ -100,3 +100,41 @@ export function recentText(s: Pick<MetadataStatus, "providers">, r: Recent): str
       return r.detail ? `to retry: ${r.detail}` : "to retry";
   }
 }
+
+type Artwork = MetadataStatus["artwork"];
+
+const ARTWORK_NAMES: Record<Artwork["kinds"][number]["kind"], [string, string]> = {
+  BOX_ART: ["box art", "box art"],
+  SCREENSHOT: ["screenshot", "screenshots"],
+  MARQUEE: ["logo", "logos"],
+  VIDEO: ["video", "videos"],
+};
+
+/** A kind of artwork's name, singular or plural. */
+export function artworkName(kind: Artwork["kinds"][number]["kind"], count = 2): string {
+  return ARTWORK_NAMES[kind][count === 1 ? 0 : 1];
+}
+
+/**
+ * The artwork downloads in words: the job's progress, then each kind it queued ("Videos: 0 of
+ * 412 downloaded, 412 failed").
+ */
+export function artworkText(art: Artwork): { summary: string; kinds: string[] } {
+  const summary = art.running
+    ? `Downloading artwork and videos in the background: ${art.done.toLocaleString()} of ${art.total.toLocaleString()}…`
+    : `Artwork and videos: ${art.downloaded.toLocaleString()} downloaded${art.failed ? `, ${art.failed.toLocaleString()} failed` : ""}.`;
+  const kinds = art.kinds
+    .filter((k) => k.total > 0)
+    .map((k) => {
+      const name = artworkName(k.kind);
+      const failed = k.failed ? `, ${k.failed.toLocaleString()} failed` : "";
+      return `${name[0].toUpperCase()}${name.slice(1)}: ${k.downloaded.toLocaleString()} of ${k.total.toLocaleString()} downloaded${failed}`;
+    });
+  return { summary, kinds };
+}
+
+/** Why downloads failed, as "Video: not an MP4 video: … (×412)". */
+export function failureText(f: Artwork["failures"][number]): string {
+  const name = artworkName(f.kind, 1);
+  return `${name[0].toUpperCase()}${name.slice(1)}: ${f.reason}${f.count > 1 ? ` (×${f.count.toLocaleString()})` : ""}`;
+}

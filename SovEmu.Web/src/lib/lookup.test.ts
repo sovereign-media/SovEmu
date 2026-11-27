@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { MetadataStatus } from "./api";
-import { accountText, etaText, progressText, quotaPercent, quotaText, recentText, workingText } from "./lookup";
+import {
+  accountText,
+  artworkText,
+  etaText,
+  failureText,
+  progressText,
+  quotaPercent,
+  quotaText,
+  recentText,
+  workingText,
+} from "./lookup";
 
 const ss = {
   id: "screenscraper",
@@ -32,7 +42,7 @@ const status = (over: Partial<MetadataStatus>): MetadataStatus => ({
   failed: 5,
   sources: ["fbneo", "screenscraper"],
   notes: [],
-  artwork: { running: false, total: 0, done: 0, downloaded: 0, failed: 0, videos: 0 },
+  artwork: { running: false, total: 0, done: 0, downloaded: 0, failed: 0, kinds: [], failures: [] },
   working: [{ gameId: 1, title: "Castlevania", system: "nes", provider: "screenscraper", step: "ASKING" }],
   startedAt: 1_700_000_000,
   finishedAt: null,
@@ -102,6 +112,35 @@ describe("a game-information lookup", () => {
     expect(recentText(s, { ...r, outcome: "NOT_FOUND", sources: [] })).toBe("not found");
     expect(recentText(s, { ...r, outcome: "FAILED", sources: [], detail: "quota exhausted" })).toBe(
       "to retry: quota exhausted",
+    );
+  });
+});
+
+describe("artwork downloads", () => {
+  const kinds = [
+    { kind: "BOX_ART" as const, total: 400, downloaded: 400, failed: 0 },
+    { kind: "SCREENSHOT" as const, total: 0, downloaded: 0, failed: 0 },
+    { kind: "MARQUEE" as const, total: 0, downloaded: 0, failed: 0 },
+    { kind: "VIDEO" as const, total: 412, downloaded: 0, failed: 412 },
+  ];
+  const art = { running: false, total: 812, done: 812, downloaded: 400, failed: 412, kinds, failures: [] };
+
+  it("says each kind it queued, and what failed", () => {
+    expect(artworkText(art)).toEqual({
+      summary: "Artwork and videos: 400 downloaded, 412 failed.",
+      kinds: ["Box art: 400 of 400 downloaded", "Videos: 0 of 412 downloaded, 412 failed"],
+    });
+    expect(artworkText({ ...art, running: true, done: 10 }).summary).toBe(
+      "Downloading artwork and videos in the background: 10 of 812…",
+    );
+  });
+
+  it("says why downloads failed, and how often", () => {
+    expect(failureText({ kind: "VIDEO", reason: "not an MP4 video: API closed", count: 412 })).toBe(
+      "Video: not an MP4 video: API closed (×412)",
+    );
+    expect(failureText({ kind: "BOX_ART", reason: "no answer (timed out)", count: 1 })).toBe(
+      "Box art: no answer (timed out)",
     );
   });
 });
