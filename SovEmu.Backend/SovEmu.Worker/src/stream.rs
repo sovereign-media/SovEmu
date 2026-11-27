@@ -237,6 +237,12 @@ pub(crate) struct Session {
     drawn: bool,
     /// A state asked for before that, loaded once it has (its slot and bytes).
     pending_load: Option<(u32, Vec<u8>)>,
+    /// Buttons held as a continued game's play started, per port: ignored until let go, so
+    /// what was pressed at the loading screen does not act on the first frames ([`unheld`]).
+    held_at_start: Vec<u16>,
+    /// Until when the client's stats are logged as they come, not once per health line: the
+    /// first seconds of play, where a slow start shows.
+    stats_detail_until: Option<Instant>,
     /// Events for the front end, handed over by the loop after each turn.
     events: Vec<StreamEvent>,
     /// The pipeline last reported, and when it last went to the client (`None`: it must go
@@ -391,6 +397,8 @@ impl Session {
             video_gap: false,
             drawn: false,
             pending_load: None,
+            held_at_start: Vec::new(),
+            stats_detail_until: None,
             events: Vec::new(),
             pipeline: None,
             pipeline_to_client_at: None,
@@ -1045,7 +1053,11 @@ impl Session {
                 // Every sample goes to the server (the admin's sessions page); the log gets
                 // one as often as it gets a health line.
                 let due = |every| self.stats_logged_at.is_none_or(|at| now - at >= every);
-                if self.stats_log_interval.is_some_and(due) {
+                let starting = self.stats_detail_until.is_some_and(|until| now < until);
+                let every = self
+                    .stats_log_interval
+                    .map(|every| if starting { every.min(STATS_SPACING) } else { every });
+                if every.is_some_and(due) {
                     self.stats_logged_at = Some(now);
                     log_client_stats(&stats);
                 }
@@ -1061,7 +1073,7 @@ impl Session {
             return;
         }
         self.last_seq = Some(packet.seq);
-        self.buttons = packet.ports.iter().map(|&b| JoypadButtons(b)).collect();
+        self.buttons = unheld(&mut self.held_at_start, &packet.ports);
         self.buttons_at = Instant::now();
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
         self.health.input();
@@ -1295,6 +1307,7 @@ impl Session {
             start_kbps = link.start_kbps,
             "connection checked: the stream starts"
         );
+        self.stats_detail_until = Some(now + STARTING_STATS);
         send_link(p, &link);
         self.link = Some(link);
         self.link_sent_at = Some(now);
@@ -1353,7 +1366,10 @@ impl Session {
             }
         }
 
-        let out = self.core.run_frame(&self.buttons)?;
+        // A held state's boot is never seen, so it gets no input: a button pressed at the
+        // loading screen must not reach a BIOS menu, or be held into the game.
+        let input: &[JoypadButtons] = if self.pending_load.is_some() { &[] } else { &self.buttons };
+        let out = self.core.run_frame(input)?;
         let frame = self.frame;
         self.frame += 1;
         let tick = self.ticks;
@@ -1381,11 +1397,22 @@ impl Session {
             if drew || self.frame >= PENDING_LOAD_FRAMES {
                 let (slot, bytes) = self.pending_load.take().expect("checked above");
                 self.drawn = true;
+                let settling = Instant::now();
                 if let Err(e) = Persist::apply_state(&mut self.core, slot, &bytes) {
                     tracing::warn!(slot, error = %format!("{e:#}"), "held state could not be loaded");
                 }
                 self.rewind.clear();
-                self.video.request_keyframe();
+                // Still behind the loading screen: what costs time once is paid here, not
+                // on the first frames the player sees and plays.
+                let core = &mut self.core;
+                self.rewind.trial(|| core.serialize());
+                self.start_continued_play(p);
+                tracing::info!(
+                    slot,
+                    booted_frames = self.frame,
+                    settle_ms = settling.elapsed().as_secs_f64() * 1000.0,
+                    "continuing from the save: play starts"
+                );
             }
             self.health.ticked(behind, now.elapsed());
             self.health.core(self.core.take_timing());
@@ -1495,6 +1522,21 @@ impl Session {
         Ok(())
     }
 
+    /// A continued game's play starts, from its save, on the next frame. The loading screen
+    /// sent no video: the estimator watched seconds of nothing and would pace the first
+    /// keyframe out slowly, a backlog the player then sees played out fast with their input
+    /// in it. It starts again from what the connection check measured, as after a dropout.
+    fn start_continued_play(&mut self, p: &mut Peer) {
+        let measured = self.link.as_ref().map(|l| u64::from(l.estimate_kbps)).filter(|k| *k > 0);
+        let kbps = measured.unwrap_or(u64::from(self.video.bitrate_kbps()));
+        p.rtc.bwe().reset(Bitrate::kbps(kbps));
+        self.video.request_keyframe();
+        self.held_at_start = self.buttons.iter().map(|b| b.0).collect();
+        self.buttons = vec![JoypadButtons::NONE; self.buttons.len()];
+        self.stats_detail_until = Some(Instant::now() + STARTING_STATS);
+        self.stats_logged_at = None;
+    }
+
     /// How the stream is made right now.
     fn pipeline(&self) -> Pipeline {
         let (width, height) = self.shot_size;
@@ -1575,6 +1617,23 @@ fn send_link(p: &mut Peer, link: &Link) {
 
 /// Clients send their stats once a second; any faster is dropped.
 const STATS_SPACING: Duration = Duration::from_millis(900);
+
+/// How long after play starts every client stats sample is logged.
+const STARTING_STATS: Duration = Duration::from_secs(15);
+
+/// The buttons that act, of those a client holds (`ports`): one held since play started
+/// (`held_at_start`, which forgets each button as it is let go) acts once pressed again.
+fn unheld(held_at_start: &mut Vec<u16>, ports: &[u16]) -> Vec<JoypadButtons> {
+    held_at_start.truncate(ports.len());
+    for (held, &now) in held_at_start.iter_mut().zip(ports) {
+        *held &= now;
+    }
+    ports
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| JoypadButtons(b & !held_at_start.get(i).copied().unwrap_or(0)))
+        .collect()
+}
 
 /// The client's view of the stream, beside the worker's own `session health` lines.
 fn log_client_stats(s: &ClientStats) {
@@ -1726,6 +1785,26 @@ mod tests {
         // A stick pushed over, its heartbeat stopped: released too; a centred one sends none.
         assert!(input_lapsed(lapse, false, t, Some(t), late));
         assert!(!input_lapsed(lapse, false, t, Some(soon), soon + Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn a_button_held_as_play_starts_acts_once_let_go_and_pressed_again() {
+        const A: u16 = 1 << 8;
+        const RIGHT: u16 = 1 << 7;
+        let bits = |b: Vec<JoypadButtons>| b.iter().map(|b| b.0).collect::<Vec<_>>();
+        // Port 0 held A through the loading screen; port 1 held nothing.
+        let mut held = vec![A, 0];
+        assert_eq!(bits(unheld(&mut held, &[A, 0])), [0, 0], "still the same press");
+        // A new button acts at once, the held one still does not.
+        assert_eq!(bits(unheld(&mut held, &[A | RIGHT, RIGHT])), [RIGHT, RIGHT]);
+        // Let go, then pressed again: now it is the player's.
+        assert_eq!(bits(unheld(&mut held, &[0, 0])), [0, 0]);
+        assert_eq!(bits(unheld(&mut held, &[A, 0])), [A, 0]);
+        assert_eq!(held, [0, 0]);
+        // A packet with fewer ports forgets the ports it left out.
+        let mut held = vec![A, A];
+        assert_eq!(bits(unheld(&mut held, &[A])), [0]);
+        assert_eq!(bits(unheld(&mut held, &[A, A])), [0, A]);
     }
 
     #[test]
