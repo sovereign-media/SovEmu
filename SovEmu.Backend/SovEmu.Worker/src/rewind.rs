@@ -66,6 +66,29 @@ impl Rewind {
             return;
         }
         self.counter = 0;
+        self.snapshot(serialize);
+    }
+
+    /// Settles now, before play, whether this core's states are affordable: snapshots until one
+    /// fits the budget (kept as the first of the history) or rewind turns itself off. A game
+    /// continued from a save does this out of sight, where `record` would decide it over the
+    /// first frames the player sees: on a PS2 that was three stalls of 50 ms or more.
+    pub(crate) fn trial<E>(&mut self, mut serialize: impl FnMut() -> Result<Vec<u8>, E>) {
+        for _ in 0..SLOW_SNAPSHOTS {
+            if self.unsupported || self.max_states == 0 || self.max_bytes == 0 {
+                return;
+            }
+            self.snapshot(&mut serialize);
+            if self.slow == 0 {
+                break;
+            }
+        }
+        self.counter = 0;
+    }
+
+    /// Takes one snapshot, timing it: turns rewind off if this one, or the run it ends,
+    /// costs too much.
+    fn snapshot<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
         let started = Instant::now();
         let state = serialize();
         let took = started.elapsed();
@@ -176,6 +199,36 @@ mod tests {
             });
         }
         assert_eq!((calls, r.len()), (3, 0));
+    }
+
+    #[test]
+    fn a_trial_settles_a_slow_core_before_play() {
+        let mut r = Rewind::new(1 << 20, 100, 60.0);
+        let mut calls = 0;
+        r.trial(|| {
+            calls += 1;
+            std::thread::sleep(Duration::from_millis(6));
+            Ok::<_, ()>(vec![0; 4])
+        });
+        assert_eq!((calls, r.len()), (SLOW_SNAPSHOTS, 0), "off before the first frame");
+        r.record(|| -> Result<Vec<u8>, ()> { panic!("rewind is off: no more snapshots") });
+        r.record(|| -> Result<Vec<u8>, ()> { panic!("rewind is off: no more snapshots") });
+    }
+
+    #[test]
+    fn a_trial_keeps_the_first_snapshot_that_fits() {
+        let mut r = Rewind::new(1 << 20, 100, 60.0);
+        let mut calls = 0;
+        r.trial(|| {
+            calls += 1;
+            Ok::<_, ()>(vec![7; 4])
+        });
+        assert_eq!((calls, r.len()), (1, 1));
+        // The history goes on from there at the usual interval.
+        r.record(|| Ok::<_, ()>(vec![8; 4]));
+        assert_eq!(r.len(), 1);
+        r.record(|| Ok::<_, ()>(vec![9; 4]));
+        assert_eq!(r.len(), 2);
     }
 
     #[test]
