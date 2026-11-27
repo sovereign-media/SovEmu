@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/mednafen_pce_fast_libretro.dylib --rom "data/roms/pcengine/240p Test Suite.pce" --frames 2200 --png-every 1 --hold 450-454:down --hold 490-494:a --hold 530-534:down --hold 550-554:down --hold 570-574:down --hold 590-594:down --hold 620-624:a --hold 660-664:a
+# kept frames 400-2199 as frame_000000-frame_001799

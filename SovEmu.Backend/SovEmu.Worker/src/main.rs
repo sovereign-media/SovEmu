@@ -304,7 +304,7 @@ struct SessionArgs {
 
     /// Scale each picture up this many times (1 or 2) by repeating pixels before it is encoded:
     /// at 2 each pixel is a 2×2 block, so 4:2:0 chroma keeps every pixel's colour. Only frames
-    /// that still fit 640×480 are scaled.
+    /// that still fit 704×480 are scaled.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=2))]
     video_prescale: u32,
 
@@ -456,7 +456,7 @@ struct ServeArgs {
 
     /// Scale each picture up this many times (1 or 2) by repeating pixels before it is encoded:
     /// at 2 each pixel is a 2×2 block, so 4:2:0 chroma keeps every pixel's colour. Only frames
-    /// that still fit 640×480 are scaled.
+    /// that still fit 704×480 are scaled.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=2))]
     video_prescale: u32,
 
