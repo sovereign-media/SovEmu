@@ -302,21 +302,25 @@ write(
   }),
 );
 
-// The Apple apps' icons and the Top Shelf draw the apps' own background (the server's built-in
-// Screens, from its SVG source) over the blue, behind the mark: the screens the apps open on.
+// The Apple apps' icons and the Top Shelf are the apps' own look behind the mark: their dark
+// surface with the server's built-in Screens background (from its SVG source) over it, its lines
+// 1.6 times as strong as on a full screen so they show at icon sizes.
 const APP_BACKGROUND = 'screens';
+const SURFACE = '#0B0D12';
+const BACKGROUND_STRENGTH = 1.6;
 const backgroundShapes = readFileSync(
   join(repo, 'SovEmu.Backend', 'SovEmu.Server', 'assets', 'backgrounds', `${APP_BACKGROUND}.svg`),
   'utf8',
 )
   .replace(/^[\s\S]*?<svg[^>]*>/, '')
   .replace(/<\/svg>\s*$/, '')
-  .replace(/<title>[\s\S]*?<\/title>/, '');
-/** The blue with the background over it, covering `w` by `h` (its 1920 by 1080 cropped to the middle). */
-function tvBlue(w, h) {
+  .replace(/<title>[\s\S]*?<\/title>/, '')
+  .replace(/(stroke-opacity|fill-opacity)="([\d.]+)"/g, (_, key, v) => `${key}="${n(Math.min(1, v * BACKGROUND_STRENGTH))}"`);
+/** The surface with the background over it, covering `w` by `h` (its 1920 by 1080 cropped to the middle). */
+function appBackdrop(w, h) {
   const k = Math.max(w / 1920, h / 1080);
   return (
-    `<rect width="${w}" height="${h}" fill="${BLUE}"/>` +
+    `<rect width="${w}" height="${h}" fill="${SURFACE}"/>` +
     `<g transform="translate(${n((w - 1920 * k) / 2)} ${n((h - 1080 * k) / 2)}) scale(${n(k)})" fill="none">${backgroundShapes}</g>`
   );
 }
@@ -327,7 +331,7 @@ const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 write(join(assets, 'Contents.json'), json({ info: { author: 'xcode', version: 1 } }));
 write(
   join(assets, 'AppIcon.appiconset', 'AppIcon.png'),
-  png(svg(512, 512, tvBlue(512, 512) + `<g transform="translate(${(512 - W) / 2} ${(512 - H) / 2})">${markShapes(WHITE)}</g>`, 'SovEmu'), 1024, true),
+  png(svg(512, 512, appBackdrop(512, 512) + `<g transform="translate(${(512 - W) / 2} ${(512 - H) / 2})">${markShapes(WHITE)}</g>`, 'SovEmu'), 1024, true),
 );
 write(
   join(assets, 'AppIcon.appiconset', 'Contents.json'),
@@ -346,14 +350,14 @@ write(
   }),
 );
 
-// tvOS: the app icon is a layered stack (the blue behind, the mark in front, so the home screen's
+// tvOS: the app icon is a layered stack (the backdrop behind, the mark in front, so the home screen's
 // parallax lifts the mark), at 400 by 240 points (@1x and @2x) and 1280 by 768 for the App Store;
-// the Top Shelf images show the mark and the name on the blue, as Android TV's banner does. The
+// the Top Shelf images show the mark and the name on the backdrop, laid out as Android TV's banner. The
 // TV's catalogue has the mark as on iOS.
 const tvAssets = join(clients, 'SovEmu.iOS', 'Apps', 'TV', 'Assets.xcassets');
 const brand = join(tvAssets, 'App Icon & Top Shelf Image.brandassets');
-/** The blue and the background, `w` by `h`. */
-const tvBack = (w, h) => svg(w, h, tvBlue(w, h), 'SovEmu');
+/** The surface and the background, `w` by `h`. */
+const tvBack = (w, h) => svg(w, h, appBackdrop(w, h), 'SovEmu');
 /** The mark, 60% of the height, centred on a clear `w` by `h` layer. */
 function tvFront(w, h) {
   const scale = (0.6 * h) / H;
@@ -364,7 +368,7 @@ function tvFront(w, h) {
     'SovEmu',
   );
 }
-/** The mark and the name on the blue, centred together, laid out as Android TV's 320×180 banner. */
+/** The mark and the name on the backdrop ("Emu" in the accent, as the wordmark on dark), centred together, laid out as Android TV's 320×180 banner. */
 function tvShelf(w, h) {
   const k = h / 180;
   const markH = 100 * k;
@@ -376,9 +380,9 @@ function tvShelf(w, h) {
   return svg(
     w,
     h,
-    tvBlue(w, h) +
+    appBackdrop(w, h) +
       `<g transform="translate(${n(left)} ${n((h - markH) / 2)}) scale(${n(scale)})">${markShapes(WHITE)}</g>` +
-      `<path fill="${WHITE}" d="${sov}"/><path fill="${PALE}" d="${emu}"/>`,
+      `<path fill="${WHITE}" d="${sov}"/><path fill="${BLUE}" d="${emu}"/>`,
     'SovEmu',
   );
 }
