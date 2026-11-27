@@ -21,6 +21,7 @@
  *   SovEmu.Android/common/...      the launcher icon's foreground (and themed layer), the TV
  *                                  banner (mark and name), and the design system's mark
  *   SovEmu.iOS/Apps/Mobile/Assets.xcassets   the app icon and the mark
+ *   SovEmu.iOS/Apps/TV/Assets.xcassets       the Apple TV icon (layered), the Top Shelf images and the mark
  * Every output is generated: change this file or sovereign-shield.svg, never an output.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -321,5 +322,86 @@ write(
     images: [{ filename: 'SovEmuMark.svg', idiom: 'universal' }],
     info: { author: 'xcode', version: 1 },
     properties: { 'preserves-vector-representation': true, 'template-rendering-intent': 'template' },
+  }),
+);
+
+// tvOS: the app icon is a layered stack (the blue behind, the mark in front, so the home screen's
+// parallax lifts the mark), at 400 by 240 points (@1x and @2x) and 1280 by 768 for the App Store;
+// the Top Shelf images show the mark and the name on the blue, as Android TV's banner does. The
+// TV's catalogue has the mark as on iOS.
+const tvAssets = join(clients, 'SovEmu.iOS', 'Apps', 'TV', 'Assets.xcassets');
+const brand = join(tvAssets, 'App Icon & Top Shelf Image.brandassets');
+/** The blue, `w` by `h`. */
+const tvBack = (w, h) => svg(w, h, `<rect width="${w}" height="${h}" fill="${BLUE}"/>`, 'SovEmu');
+/** The mark, 60% of the height, centred on a clear `w` by `h` layer. */
+function tvFront(w, h) {
+  const scale = (0.6 * h) / H;
+  return svg(
+    w,
+    h,
+    `<g transform="translate(${n((w - W * scale) / 2)} ${n((0.4 * h) / 2)}) scale(${n(scale)})">${markShapes(WHITE)}</g>`,
+    'SovEmu',
+  );
+}
+/** The mark and the name on the blue, centred together, laid out as Android TV's 320×180 banner. */
+function tvShelf(w, h) {
+  const k = h / 180;
+  const markH = 100 * k;
+  const scale = markH / H;
+  const gap = 14 * k;
+  const textSize = 48 * k;
+  const left = (w - (W * scale + gap + name(0, 0, textSize).width)) / 2;
+  const { sov, emu } = name(left + W * scale + gap, h / 2 + (textSize * CAP) / 2, textSize);
+  return svg(
+    w,
+    h,
+    `<rect width="${w}" height="${h}" fill="${BLUE}"/>` +
+      `<g transform="translate(${n(left)} ${n((h - markH) / 2)}) scale(${n(scale)})">${markShapes(WHITE)}</g>` +
+      `<path fill="${WHITE}" d="${sov}"/><path fill="${PALE}" d="${emu}"/>`,
+    'SovEmu',
+  );
+}
+const xcode = { author: 'xcode', version: 1 };
+write(join(tvAssets, 'Contents.json'), json({ info: xcode }));
+write(join(tvAssets, 'SovEmuMark.imageset', 'SovEmuMark.svg'), mark('#000000'));
+write(
+  join(tvAssets, 'SovEmuMark.imageset', 'Contents.json'),
+  json({
+    images: [{ filename: 'SovEmuMark.svg', idiom: 'universal' }],
+    info: xcode,
+    properties: { 'preserves-vector-representation': true, 'template-rendering-intent': 'template' },
+  }),
+);
+/** An image set of `draw(w, h)` at each of `scales` (1 or 2) of a `w` by `h` point image. */
+function tvImageSet(dir, w, h, scales, draw, opaque) {
+  const images = scales.map((s) => {
+    const filename = `${s}x.png`;
+    write(join(dir, filename), png(draw(w * s, h * s), w * s, opaque));
+    return { filename, idiom: 'tv', scale: `${s}x` };
+  });
+  write(join(dir, 'Contents.json'), json({ images, info: xcode }));
+}
+/** A layered icon of `w` by `h` points: the mark in front, the blue behind. */
+function tvStack(dir, w, h, scales) {
+  write(join(dir, 'Contents.json'), json({ info: xcode, layers: [{ filename: 'Front.imagestacklayer' }, { filename: 'Back.imagestacklayer' }] }));
+  for (const [layer, draw, opaque] of [['Front', tvFront, false], ['Back', tvBack, true]]) {
+    write(join(dir, `${layer}.imagestacklayer`, 'Contents.json'), json({ info: xcode }));
+    tvImageSet(join(dir, `${layer}.imagestacklayer`, 'Content.imageset'), w, h, scales, draw, opaque);
+  }
+}
+tvStack(join(brand, 'App Icon.imagestack'), 400, 240, [1, 2]);
+tvStack(join(brand, 'App Icon - App Store.imagestack'), 1280, 768, [1]);
+tvImageSet(join(brand, 'Top Shelf Image.imageset'), 1920, 720, [1, 2], tvShelf, true);
+tvImageSet(join(brand, 'Top Shelf Image Wide.imageset'), 2320, 720, [1, 2], tvShelf, true);
+write(
+  join(brand, 'Contents.json'),
+  json({
+    assets: [
+      { filename: 'App Icon - App Store.imagestack', idiom: 'tv', role: 'primary-app-icon', size: '1280x768' },
+      { filename: 'App Icon.imagestack', idiom: 'tv', role: 'primary-app-icon', size: '400x240' },
+      { filename: 'Top Shelf Image Wide.imageset', idiom: 'tv', role: 'top-shelf-image-wide', size: '2320x720' },
+      { filename: 'Top Shelf Image.imageset', idiom: 'tv', role: 'top-shelf-image', size: '1920x720' },
+    ],
+    info: xcode,
   }),
 );
