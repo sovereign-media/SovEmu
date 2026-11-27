@@ -28,6 +28,10 @@
 //! - **Battery save:** [`SAVE_RAM_SIZE`] bytes of `RETRO_MEMORY_SAVE_RAM`. Each frame writes the
 //!   frame counter into its first 8 bytes (little-endian), so a frontend's `.srm` persistence
 //!   can be checked; the rest is left alone.
+//! - **A leak:** with [`LEAK_VAR`] set to a number of MiB, each frame allocates that much,
+//!   touches every page and never frees it, as a runaway core does, for the frontend's memory
+//!   limit. An environment variable rather than a core option, so the options the core declares
+//!   stay the same.
 
 use std::ffi::{CStr, c_char, c_uint, c_void};
 use std::sync::Mutex;
@@ -43,6 +47,17 @@ pub const SAMPLE_RATE: f64 = 48_000.0;
 pub const SAMPLES_PER_FRAME: usize = 800;
 pub const SOLID_COLOUR: u32 = 0x00_20_40_80;
 pub const SAVE_RAM_SIZE: usize = 8 * 1024;
+/// MiB to leak each frame (see the module's docs).
+pub const LEAK_VAR: &str = "SOVEMU_TEST_LEAK_MB";
+
+/// What the leak has taken, kept so it is never freed.
+static LEAKED: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+
+/// [`LEAK_VAR`]'s MiB per frame, read once.
+fn leak_mb() -> usize {
+    static MB: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *MB.get_or_init(|| std::env::var(LEAK_VAR).ok().and_then(|v| v.parse().ok()).unwrap_or(0))
+}
 
 /// Battery RAM. A raw static so its address stays fixed for the frontend, as in a real core.
 static SAVE_RAM: Mutex<[u8; SAVE_RAM_SIZE]> = Mutex::new([0; SAVE_RAM_SIZE]);
@@ -499,6 +514,12 @@ pub extern "C" fn retro_run() {
     }
     s.frame += 1;
     SAVE_RAM.lock().unwrap()[..8].copy_from_slice(&s.frame.to_le_bytes());
+    if leak_mb() > 0 {
+        let mut leak = vec![0u8; leak_mb() << 20];
+        // Every page written, so it is resident.
+        leak.iter_mut().step_by(4096).for_each(|b| *b = 1);
+        LEAKED.lock().unwrap().push(leak);
+    }
 
     // Copy out what the callbacks need, then release the lock before calling the frontend.
     let pixels = if dupe { None } else { Some(s.pixels.clone()) };

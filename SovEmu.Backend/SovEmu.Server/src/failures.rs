@@ -45,7 +45,7 @@ impl Failure {
             core: Some(ended.core.to_owned()),
             loaded: ended.loaded,
             reason: Some(ended.reason),
-            message: ended.start_error.map(str::to_owned),
+            message: ended.start_error.or(ended.over_limit).map(str::to_owned),
             code: ended.code,
             signal: ended.signal,
             last_lines: ended.last_lines.to_vec(),
@@ -161,6 +161,7 @@ mod tests {
             signal: None,
             last_lines: lines,
             start_error: None,
+            over_limit: None,
         }
     }
 

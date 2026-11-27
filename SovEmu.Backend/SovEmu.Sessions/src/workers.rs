@@ -29,6 +29,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, watch};
 use tracing::Instrument;
 
+use crate::limits::{Cgroup, Cgroups, Limits};
 use crate::starts::{Phase, Starts};
 use crate::{EndReason, Ended, Error, Observer};
 
@@ -115,6 +116,8 @@ pub struct WorkerConfig {
     pub log_format: &'static str,
     /// Told when sessions start and end (the server records metrics).
     pub observer: Arc<dyn Observer>,
+    /// A cgroup per worker, where the server's is delegated to it (see [`crate::limits`]).
+    pub cgroups: Option<Cgroups>,
 }
 
 /// The public address the home router forwards to each session port (UPnP or NAT-PMP), shared
@@ -206,6 +209,9 @@ pub struct Launch {
     /// Times the picture is scaled up before it is encoded, 1 or 2 (`--video-prescale`: the
     /// system's `SovEmu__Systems__<id>__Prescale`, as the server resolved it).
     pub prescale: u32,
+    /// What its worker may use (the system's `SovEmu__Systems__<id>__Limits__*`, as the server
+    /// resolved them).
+    pub limits: Limits,
     /// Run once the worker has exited (for example, to cache a large disc image only after the
     /// session that streamed it, so the copy does not compete with the game for the network).
     pub after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
@@ -310,6 +316,9 @@ struct Exit {
     /// went: the worker's exit and the start's outcome reach the server in either order.
     settled: oneshot::Receiver<()>,
     last_words: LastWords,
+    /// Its cgroup, removed once it has exited.
+    cgroup: Option<Cgroup>,
+    limits: Limits,
 }
 
 /// What the server learnt from a worker while it ran, for its reaper.
@@ -329,10 +338,12 @@ impl Told {
     }
 }
 
-/// Why a worker ended: the server's own kill first, then what the worker said, then how the
-/// process ended.
+/// Why a worker ended: the server's own kill first, then its cgroup's memory kill, then what
+/// the worker said, then how the process ended. A worker refused a thread over its cgroup's
+/// limit that then crashed or failed was ended by that limit.
 fn end_reason(
     we_killed: bool,
+    events: crate::limits::Events,
     reported: Option<ExitReason>,
     signal: Option<i32>,
     code: Option<i32>,
@@ -340,14 +351,31 @@ fn end_reason(
     if we_killed {
         return EndReason::Killed;
     }
-    match reported {
+    if events.oom_killed {
+        return EndReason::OverLimit;
+    }
+    let reason = match reported {
         Some(ExitReason::Stopped) => EndReason::Stopped,
         Some(ExitReason::Idle) => EndReason::Idle,
         Some(ExitReason::ControllerGone) => EndReason::ControllerGone,
         Some(ExitReason::Error) => EndReason::Error,
+        Some(ExitReason::MemoryLimit) => EndReason::OverLimit,
         None if signal.is_some() => EndReason::Crashed,
         None if code.is_some_and(|c| c != 0) => EndReason::Error,
         None => EndReason::Exited,
+    };
+    match reason {
+        EndReason::Crashed | EndReason::Error if events.threads_refused => EndReason::OverLimit,
+        reason => reason,
+    }
+}
+
+/// Which limit ended a worker, in words, for the failures list.
+fn over_limit(events: crate::limits::Events, limits: &Limits) -> String {
+    if events.threads_refused && !events.oom_killed {
+        format!("it needed more than its {} threads", limits.threads)
+    } else {
+        format!("it used more than its {} MiB of memory", limits.memory_mb)
     }
 }
 
@@ -447,6 +475,10 @@ impl Process {
                     }
                 };
                 let ran = started.elapsed();
+                let events = exit.cgroup.as_ref().map(Cgroup::events).unwrap_or_default();
+                if let Some(cgroup) = exit.cgroup {
+                    cgroup.remove();
+                }
                 // Its last lines (on stderr, after its exit) come in a moment after the exit.
                 let last_words = exit.last_words.finish().await;
                 let _ = exit.settled.await;
@@ -454,10 +486,13 @@ impl Process {
                     std::mem::take(&mut *exit.told.lock().unwrap_or_else(|e| e.into_inner()));
                 let signal = status.as_ref().ok().and_then(signal_of);
                 let code = status.as_ref().ok().and_then(std::process::ExitStatus::code);
-                let reason = end_reason(we_killed, told.exiting, signal, code);
-                if matches!(reason, EndReason::Crashed | EndReason::Killed) {
+                let reason = end_reason(we_killed, events, told.exiting, signal, code);
+                let over_limit =
+                    (reason == EndReason::OverLimit).then(|| over_limit(events, &exit.limits));
+                if matches!(reason, EndReason::Crashed | EndReason::Killed | EndReason::OverLimit) {
                     tracing::warn!(
                         reason = reason.as_str(),
+                        over_limit,
                         signal,
                         code,
                         core = %exit.core,
@@ -484,6 +519,7 @@ impl Process {
                     ran,
                     loaded: told.loaded,
                     start_error: told.start_error.as_deref(),
+                    over_limit: over_limit.as_deref(),
                     code,
                     signal,
                     last_lines: &last_words,
@@ -757,6 +793,7 @@ impl Workers {
             options = launch.variables.len(),
             run_ahead = launch.run_ahead,
             prescale = launch.prescale,
+            memory_limit_mb = launch.limits.memory_mb,
             udp.port = port,
             "session starting"
         );
@@ -834,7 +871,11 @@ impl Workers {
             .arg("--session-id")
             .arg(&id)
             .arg("--system")
-            .arg(&launch.system);
+            .arg(&launch.system)
+            .arg("--memory-limit-mb")
+            .arg(launch.limits.memory_mb.to_string())
+            .arg("--open-files-limit")
+            .arg(launch.limits.open_files.to_string());
         if let Some((patch, name)) = &launch.patch {
             command.arg("--patch").arg(patch).arg("--patch-name").arg(name);
         }
@@ -847,6 +888,15 @@ impl Workers {
         if let Some(frames) = &self.config.replay_frames {
             command.arg("--replay-frames").arg(frames);
         }
+        // Made before the worker starts, so a cgroup that cannot be made is only a warning.
+        let cgroup = self.config.cgroups.as_ref().and_then(|cgroups| {
+            cgroups
+                .create(&id, &launch.limits)
+                .inspect_err(|e| {
+                    tracing::warn!(parent: &span, error = %e, "cannot make the session's cgroup")
+                })
+                .ok()
+        });
         let spawned = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -858,9 +908,24 @@ impl Workers {
             Err(e) => {
                 self.release_port(port);
                 let _ = std::fs::remove_dir_all(&bios);
+                if let Some(cgroup) = cgroup {
+                    cgroup.remove();
+                }
                 return Err(e);
             }
         };
+        // At once: the worker applies its own limits and only then loads the core.
+        let cgroup = cgroup.and_then(|cgroup| {
+            match child.id().map(|pid| cgroup.add(pid)) {
+                Some(Ok(())) => return Some(cgroup),
+                Some(Err(e)) => {
+                    tracing::warn!(parent: &span, error = %e, "cannot move the worker into its cgroup")
+                }
+                None => {}
+            }
+            cgroup.remove();
+            None
+        });
         let stdin = child.stdin.take().expect("piped");
         let mut lines = BufReader::new(child.stdout.take().expect("piped")).lines();
         let told = Arc::new(Mutex::new(Told::default()));
@@ -887,6 +952,8 @@ impl Workers {
                 told: told.clone(),
                 settled,
                 last_words,
+                cgroup,
+                limits: launch.limits,
             },
         );
 
@@ -1254,6 +1321,7 @@ done
             gpu: "off".into(),
             log_format: "text",
             observer,
+            cgroups: None,
         })
     }
 
@@ -1271,6 +1339,7 @@ done
             variables: Vec::new(),
             run_ahead: 0,
             prescale: 1,
+            limits: Limits::default(),
             after_exit: None,
             start_id: None,
         }
@@ -1402,6 +1471,18 @@ sleep 0.3
     }
 
     #[tokio::test]
+    async fn the_launch_s_limits_reach_the_worker() {
+        let dir = dir("limits");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        let limits = Limits { memory_mb: 768, open_files: 99, ..Limits::default() };
+        workers.start(Launch { limits, ..launch(&dir, 1, 1) }).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains("--memory-limit-mb 768 --open-files-limit 99"), "{args}");
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
     async fn the_launch_s_prescale_reaches_the_worker() {
         let dir = dir("prescale");
         let workers = workers(&dir, "exit 0", Duration::from_secs(5));
@@ -1418,12 +1499,38 @@ sleep 0.3
     #[test]
     fn why_a_worker_ended() {
         use EndReason as R;
-        assert_eq!(end_reason(true, Some(ExitReason::Stopped), None, Some(0)), R::Killed);
-        assert_eq!(end_reason(false, Some(ExitReason::Idle), None, Some(0)), R::Idle);
-        assert_eq!(end_reason(false, Some(ExitReason::Error), None, Some(1)), R::Error);
-        assert_eq!(end_reason(false, None, Some(11), None), R::Crashed, "a segfault");
-        assert_eq!(end_reason(false, None, None, Some(1)), R::Error, "a failed load");
-        assert_eq!(end_reason(false, None, None, Some(0)), R::Exited);
+        let none = crate::limits::Events::default();
+        assert_eq!(end_reason(true, none, Some(ExitReason::Stopped), None, Some(0)), R::Killed);
+        assert_eq!(end_reason(false, none, Some(ExitReason::Idle), None, Some(0)), R::Idle);
+        assert_eq!(end_reason(false, none, Some(ExitReason::Error), None, Some(1)), R::Error);
+        assert_eq!(end_reason(false, none, None, Some(11), None), R::Crashed, "a segfault");
+        assert_eq!(end_reason(false, none, None, None, Some(1)), R::Error, "a failed load");
+        assert_eq!(end_reason(false, none, None, None, Some(0)), R::Exited);
+        let memory = Some(ExitReason::MemoryLimit);
+        assert_eq!(end_reason(false, none, memory, Some(6), None), R::OverLimit, "it said so");
+    }
+
+    #[test]
+    fn a_cgroup_s_kills_are_the_limits_and_say_which() {
+        use crate::limits::Events;
+        use EndReason as R;
+        let oom = Events { oom_killed: true, threads_refused: false };
+        let threads = Events { oom_killed: false, threads_refused: true };
+        assert_eq!(end_reason(false, oom, None, Some(9), None), R::OverLimit);
+        assert_eq!(end_reason(true, oom, None, Some(9), None), R::Killed, "the server's own kill");
+        assert_eq!(end_reason(false, threads, None, Some(6), None), R::OverLimit);
+        assert_eq!(
+            end_reason(false, threads, Some(ExitReason::Stopped), None, Some(0)),
+            R::Stopped,
+            "a refused thread it lived through"
+        );
+        let limits = Limits { memory_mb: 512, threads: 64, ..Limits::default() };
+        assert_eq!(over_limit(oom, &limits), "it used more than its 512 MiB of memory");
+        assert_eq!(over_limit(threads, &limits), "it needed more than its 64 threads");
+        assert_eq!(
+            over_limit(Events::default(), &limits),
+            "it used more than its 512 MiB of memory"
+        );
     }
 
     #[tokio::test]
@@ -1551,11 +1658,14 @@ exit 2
             signal: None,
             last_lines: &[],
             start_error,
+            over_limit: None,
         };
         for reason in [EndReason::Stopped, EndReason::Idle, EndReason::ControllerGone] {
             assert!(!ended(reason, None).failed(), "{reason:?}");
         }
-        for reason in [EndReason::Error, EndReason::Crashed, EndReason::Killed] {
+        for reason in
+            [EndReason::Error, EndReason::Crashed, EndReason::Killed, EndReason::OverLimit]
+        {
             assert!(ended(reason, None).failed(), "{reason:?}");
         }
         assert!(ended(EndReason::Exited, Some("exited while loading")).failed());

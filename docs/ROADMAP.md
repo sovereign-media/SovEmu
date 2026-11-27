@@ -273,7 +273,11 @@ held 59.93 fps over 300 frames with no resyncs.
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
       reading it back with `glReadPixels`: #283
 - [x] Android: ask the H.264 decoder for low-latency mode (Android 11+)
-- [ ] Worker resource limits (cgroups/rlimits per session): #282
+- [x] Worker resource limits: each worker's memory (it saves and ends over it) and open files,
+      the kernel killing a worker before the server, and CPU, threads and memory through a
+      cgroup per worker where the server's is delegated; defaults per system from measurements
+      (docs/research/worker-limits-2026-11.md), `SovEmu__Sessions__Limits__*` and
+      `SovEmu__Systems__<id>__Limits__*`: #282
 
 ## Phase 7: 3D systems
 

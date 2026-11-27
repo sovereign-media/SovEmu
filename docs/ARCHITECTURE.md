@@ -168,6 +168,40 @@ few MB/s. Three things keep the slowness away from playing:
 A copy counts as current when its size matches the original's and its modification time is within
 2 s. Filesystems store these times at different precisions.
 
+### What a worker may use
+
+A core that leaks or spins must end its own session, never the server or another player's
+(#282). Every worker gets its limits as arguments (`SovEmu.Sessions/src/limits.rs`, per system:
+`SovEmu__Systems__<id>__Limits__*` over `SovEmu__Sessions__Limits__*` over SovEmu's defaults)
+and applies them to itself before it loads the core (`SovEmu.Worker/src/limits.rs`), so nothing
+the core runs is ever without them:
+
+- **Memory** is what the worker holds, resident and swapped out, watched by the worker four
+  times a second. Over the limit, the
+  stream loop ends the session as a quit does, so the battery save and the auto state are
+  written, and the server records it as `over_limit`. A worker that cannot leave (stuck
+  allocating inside a frame) aborts at 125% of the limit, or 10 s after going over, telling the
+  server first; the battery save is then at most 10 s old and the auto state the previous
+  session's. Address-space limits (`RLIMIT_AS`, `RLIMIT_DATA`) are not used: every session
+  reserves several times what it uses (a 2D game 1 GiB of address space for 110 MiB resident).
+- **Open files**: `RLIMIT_NOFILE`, soft and hard. **Core dumps** are off.
+- **The kernel kills a worker first**: `oom_score_adj` 1000, so when the machine runs out of
+  memory the server survives.
+- **CPU and threads only through a cgroup.** `RLIMIT_NPROC` counts every process of the user,
+  the server's too, and `RLIMIT_CPU` caps CPU seconds, which a long evening's session uses
+  legitimately. Where the server's cgroup (v2) is delegated to its user (a systemd unit with
+  `Delegate=yes`, rootless Podman), it moves itself into `sovemu-server/` and gives each worker
+  `sovemu-workers/<session>/` with `memory.max` (at the hard limit, no swap, `memory.oom.group`),
+  `pids.max` and `cpu.max`; the kernel's kill shows as `over_limit` too. A stock Docker or
+  Kubernetes container mounts the cgroup tree read-only, or writable only by root (Docker's
+  `--security-opt writable-cgroups=true`), so there it has none, and says so at startup.
+
+The defaults are several times what each system's sessions were measured to use, with rewind,
+run-ahead and the encoder running ([docs/research/worker-limits-2026-11.md](research/worker-limits-2026-11.md)):
+1 GiB, 2 CPUs and 64 threads for the 2D systems and the PlayStation; for the 3D ones 2 GiB (N64,
+Dreamcast) or 4 GiB (GameCube, PS2), no CPU limit (they render on the CPU without a GPU) and 256
+threads; 1,024 open files for all.
+
 ### Saves
 
 Saves belong to a user and live under `/sov-data/saves/<user id>/<system>/`.
@@ -332,5 +366,17 @@ The target is under ~80 ms from button press to photon on a good network. The la
 
 - Which libretro core should be the reference for each system? Proposed: fceumm or Mesen (NES), snes9x (SNES), mGBA (GB/GBA), genesis_plus_gx (Genesis).
 - How should workers communicate with the server over IPC: framed messages over a Unix socket, or over the worker's stdin/stdout?
-- What sandboxing should workers get: systemd-run scopes, seccomp, or neither? (#282)
+- ~~What sandboxing should workers get: systemd-run scopes, seccomp, or neither?~~ (#282)
+  Resource limits, not a syscall sandbox: see [What a worker may use](#what-a-worker-may-use).
+  systemd-run scopes would need systemd and its bus inside the container; a cgroup the
+  container delegates gives the same limits without either. **No seccomp filter of SovEmu's
+  own**: the container runtime's default profile (Docker's, Kubernetes' `RuntimeDefault`)
+  already blocks what a game has no business doing, and a stricter per-worker allow-list would
+  have to admit what the cores legitimately need (JITs mapping executable memory, GPU drivers'
+  `ioctl`s on DRM nodes, NVIDIA's injected driver, Mesa's threads) across 22 cores, Mesa and
+  NVIDIA releases, where a missed call kills a game at random. What a compromised core could
+  actually reach is files, not syscalls: a worker has no secrets in its environment, but runs as
+  the server's user and could read `/sov-data`. If that needs closing, the tool is Landlock
+  (read the cores, the library and the BIOS folder; write only the player's save folder), not
+  seccomp.
 

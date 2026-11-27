@@ -3108,6 +3108,7 @@ async fn admins_see_the_games_that_failed_with_their_last_lines() {
         signal: None,
         last_lines: &lines,
         start_error: None,
+        over_limit: None,
     };
     events.session_ended(&ended(sovemu_sessions::EndReason::Stopped));
     events.session_ended(&sovemu_sessions::Ended {
