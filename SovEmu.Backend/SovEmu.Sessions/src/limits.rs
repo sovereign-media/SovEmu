@@ -41,6 +41,11 @@ const HARD_PERCENT: u64 = 125;
 /// `cpu.max`'s period, microseconds (the kernel's default).
 const CPU_PERIOD_US: u64 = 100_000;
 
+/// Linux's "no such process", which moving a process that has exited gives.
+const ESRCH: i32 = 3;
+/// Linux's "busy", which handing controllers down from a cgroup with a process in it gives.
+const EBUSY: i32 = 16;
+
 /// The controllers SovEmu uses, as `cgroup.controllers` names them.
 const CONTROLLERS: [&str; 3] = ["memory", "pids", "cpu"];
 
@@ -98,12 +103,24 @@ impl Cgroups {
             // be handed down.
             let server = base.join("sovemu-server");
             make_dir(&server)?;
-            let procs = std::fs::read_to_string(base.join("cgroup.procs"))?;
-            for pid in procs.split_whitespace() {
-                std::fs::write(server.join("cgroup.procs"), pid)?;
-            }
             let enable: String = controllers.iter().map(|c| format!("+{c} ")).collect();
-            std::fs::write(base.join("cgroup.subtree_control"), enable.trim_end())?;
+            // A process started meanwhile (a probe the server runs) lands here too, and the
+            // kernel refuses the controllers while one is: move it, and try again.
+            let mut attempts = 0;
+            loop {
+                let procs = std::fs::read_to_string(base.join("cgroup.procs"))?;
+                for pid in procs.split_whitespace() {
+                    match std::fs::write(server.join("cgroup.procs"), pid) {
+                        // It exited since the list was read: nothing to move.
+                        Err(e) if e.raw_os_error() == Some(ESRCH) => {}
+                        moved => moved?,
+                    }
+                }
+                match std::fs::write(base.join("cgroup.subtree_control"), enable.trim_end()) {
+                    Err(e) if e.raw_os_error() == Some(EBUSY) && attempts < 10 => attempts += 1,
+                    enabled => break enabled?,
+                }
+            }
             let workers = base.join("sovemu-workers");
             make_dir(&workers)?;
             std::fs::write(workers.join("cgroup.subtree_control"), enable.trim_end())?;
