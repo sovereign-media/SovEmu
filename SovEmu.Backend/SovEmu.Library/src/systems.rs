@@ -130,7 +130,11 @@ pub const SYSTEMS: &[System] = &[
         folders: &["nes", "famicom", "nintendo - nintendo entertainment system", "nintendo - nes"],
         extensions: &["nes", "unf", "unif", "fds"],
         cores: &["fceumm"],
-        options: &[],
+        // Every sprite on a line is drawn, past the console's limit (8 here, 16 on a PC Engine,
+        // 20 on a Mega Drive), so busy scenes stop flickering. The NES, Sega (Genesis Plus GX)
+        // and PC Engine systems all set it. The few games that used the limit to hide a sprite
+        // (a doorway, a title screen) show it for a moment; turn it off for the system to undo.
+        options: &[("fceumm_nospritelimit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -200,7 +204,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["megadrive", "genesis", "md", "sega - mega drive - genesis"],
         extensions: &["md", "gen", "smd"],
         cores: &["genesis_plus_gx"],
-        options: &[],
+        options: &[("genesis_plus_gx_no_sprite_limit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -214,7 +218,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["mastersystem", "sms", "sega - master system - mark iii"],
         extensions: &["sms"],
         cores: &["genesis_plus_gx"],
-        options: &[],
+        options: &[("genesis_plus_gx_no_sprite_limit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -277,7 +281,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gamegear", "gg", "sega - game gear"],
         extensions: &["gg"],
         cores: &["genesis_plus_gx"],
-        options: &[],
+        options: &[("genesis_plus_gx_no_sprite_limit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -291,7 +295,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["sg1000", "sg-1000", "sega - sg-1000"],
         extensions: &["sg"],
         cores: &["genesis_plus_gx"],
-        options: &[],
+        options: &[("genesis_plus_gx_no_sprite_limit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -306,7 +310,10 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["chd", "cue", "m3u", "iso"],
         cores: &["genesis_plus_gx"],
         // Backup RAM per game in the player's save folder, not one file per BIOS region.
-        options: &[("genesis_plus_gx_system_bram", "per game")],
+        options: &[
+            ("genesis_plus_gx_system_bram", "per game"),
+            ("genesis_plus_gx_no_sprite_limit", "enabled"),
+        ],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -334,7 +341,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["pcengine", "tg16", "turbografx16", "nec - pc engine - turbografx 16"],
         extensions: &["pce"],
         cores: &["mednafen_pce_fast"],
-        options: &[],
+        options: &[("pce_fast_nospritelimit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -348,7 +355,7 @@ pub const SYSTEMS: &[System] = &[
         folders: &["pcenginecd", "tg16cd", "turbografxcd", "nec - pc engine cd - turbografx-cd"],
         extensions: &["chd", "cue", "ccd", "toc", "m3u"],
         cores: &["mednafen_pce_fast"],
-        options: &[],
+        options: &[("pce_fast_nospritelimit", "enabled")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -725,6 +732,25 @@ mod tests {
                 assert!(!s.options.iter().any(|(k, _)| k == key), "{}: {key} twice", s.id);
             }
         }
+    }
+
+    #[test]
+    fn every_core_that_can_draw_past_the_sprite_limit_does() {
+        let limits: &[(&str, &str)] = &[
+            ("fceumm", "fceumm_nospritelimit"),
+            ("genesis_plus_gx", "genesis_plus_gx_no_sprite_limit"),
+            ("mednafen_pce_fast", "pce_fast_nospritelimit"),
+        ];
+        let mut seen = 0;
+        for s in SYSTEMS {
+            let Some((_, key)) = limits.iter().find(|(core, _)| s.cores.first() == Some(core))
+            else {
+                continue;
+            };
+            assert!(s.options.contains(&(*key, "enabled")), "{}: {key}", s.id);
+            seen += 1;
+        }
+        assert_eq!(seen, 8, "NES, five Sega systems and both PC Engines");
     }
 
     #[test]

@@ -176,6 +176,13 @@ A game starts with each setting taken from these, in order, the last one winning
 3. the admin's choice;
 4. the environment (`SovEmu__Systems__<id>__Options__<name>`).
 
+SovEmu's own defaults beyond saves and memory cards: the NES, Sega (Genesis Plus GX) and PC
+Engine systems draw every sprite on a line, past the console's limit, so busy scenes stop
+flickering (`fceumm_nospritelimit`, `genesis_plus_gx_no_sprite_limit`, `pce_fast_nospritelimit`;
+a few games used the limit to hide a sprite, and show it for a moment); PlayStation sound uses
+Gaussian interpolation; and the 3D systems' GPU enhancements (see
+[3D systems and the GPU](#3d-systems-and-the-gpu)).
+
 The environment always wins, and those settings show as locked on the page. The page also
 lists the admin's changes as environment variables to copy into `.env` or the Helm values, so
 the configuration never depends on the page. In the API: the `emulatorSettings` query and the
