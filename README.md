@@ -179,8 +179,11 @@ A game starts with each setting taken from these, in order, the last one winning
 SovEmu's own defaults beyond saves and memory cards: the NES, Sega (Genesis Plus GX) and PC
 Engine systems draw every sprite on a line, past the console's limit, so busy scenes stop
 flickering (`fceumm_nospritelimit`, `genesis_plus_gx_no_sprite_limit`, `pce_fast_nospritelimit`;
-a few games used the limit to hide a sprite, and show it for a moment); PlayStation sound uses
-Gaussian interpolation; and the 3D systems' GPU enhancements (see
+a few games used the limit to hide a sprite, and show it for a moment); GBA blends the pixels
+that flicker every other frame, which some games use for transparency
+(`mgba_interframe_blending=mix_smart`); NES sound is resampled at high quality
+(`fceumm_sndquality=High`); PlayStation sound uses Gaussian interpolation; and the 3D systems'
+GPU enhancements (see
 [3D systems and the GPU](#3d-systems-and-the-gpu)).
 
 The environment always wins, and those settings show as locked on the page. The page also

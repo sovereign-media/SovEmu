@@ -134,7 +134,8 @@ pub const SYSTEMS: &[System] = &[
         // 20 on a Mega Drive), so busy scenes stop flickering. The NES, Sega (Genesis Plus GX)
         // and PC Engine systems all set it. The few games that used the limit to hide a sprite
         // (a doorway, a title screen) show it for a moment; turn it off for the system to undo.
-        options: &[("fceumm_nospritelimit", "enabled")],
+        // Sound resampled at the core's high quality, not its default low, for very little CPU.
+        options: &[("fceumm_nospritelimit", "enabled"), ("fceumm_sndquality", "High")],
         gpu_options: &[],
         needs_gpu: false,
     },
@@ -190,7 +191,10 @@ pub const SYSTEMS: &[System] = &[
         folders: &["gba", "gameboyadvance", "nintendo - game boy advance"],
         extensions: &["gba"],
         cores: &["mgba"],
-        options: &[],
+        // Blends only the pixels that change every other frame: some games flicker a sprite to
+        // make it look transparent, as the console's slow LCD showed it. Unlike blending every
+        // frame, motion does not smear.
+        options: &[("mgba_interframe_blending", "mix_smart")],
         gpu_options: &[],
         needs_gpu: false,
     },
