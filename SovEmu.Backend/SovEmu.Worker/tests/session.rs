@@ -601,10 +601,10 @@ fn a_leaking_core_is_stopped_by_its_memory_limit_and_its_saves_are_written() {
     let mut buf = vec![0u8; 2048];
     let exit = loop {
         assert!(started.elapsed() < Duration::from_secs(90), "still running after 90 s");
-        if let Ok(line) = stdout.try_recv() {
-            if let Some(reason) = line.strip_prefix("exit=") {
-                break reason.to_owned();
-            }
+        if let Ok(line) = stdout.try_recv()
+            && let Some(reason) = line.strip_prefix("exit=")
+        {
+            break reason.to_owned();
         }
         let timeout = match rtc.poll_output().unwrap() {
             Output::Transmit(t) => {
