@@ -27,6 +27,12 @@ pub struct System {
     /// Core options SovEmu sets for it (`key`, `value`).
     #[serde(skip)]
     pub options: &'static [(&'static str, &'static str)],
+    /// Core options SovEmu sets for it only while its games render on a hardware GPU, an
+    /// integrated one included: the enhancements (a higher internal resolution) that a GPU
+    /// draws easily and Mesa's software renderer, or a hypervisor's adapter, would draw too
+    /// slowly to play. They apply on top of `options`.
+    #[serde(skip)]
+    pub gpu_options: &'static [(&'static str, &'static str)],
     /// A 3D system: its cores render with OpenGL, on a GPU or in software (`SovEmu__Rendering__Gpu`).
     pub needs_gpu: bool,
 }
@@ -125,6 +131,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["nes", "unf", "unif", "fds"],
         cores: &["fceumm"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -138,6 +145,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["sfc", "smc", "swc", "fig", "bs", "st"],
         cores: &["snes9x"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -151,6 +159,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gb", "dmg"],
         cores: &["gambatte", "mgba"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -164,6 +173,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gbc"],
         cores: &["gambatte", "mgba"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -177,6 +187,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gba"],
         cores: &["mgba"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -190,6 +201,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["md", "gen", "smd"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -203,6 +215,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["sms"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -218,7 +231,12 @@ pub const SYSTEMS: &[System] = &[
         cores: &["pcsx_rearmed"],
         // Read 256 sectors (~600 KB) ahead on the core's CD thread, instead of 12: a library on
         // a network share answers each read in tens to hundreds of milliseconds.
-        options: &[("pcsx_rearmed_cd_readahead", "256")],
+        // Gaussian sound interpolation, as the console's own SPU does, for next to no CPU.
+        options: &[
+            ("pcsx_rearmed_cd_readahead", "256"),
+            ("pcsx_rearmed_spu_interpolation", "gaussian"),
+        ],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -232,6 +250,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["zip", "7z"],
         cores: &["fbneo"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -245,6 +264,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["zip", "7z"],
         cores: &["fbneo"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -258,6 +278,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["gg"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -271,6 +292,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["sg"],
         cores: &["genesis_plus_gx"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -285,6 +307,7 @@ pub const SYSTEMS: &[System] = &[
         cores: &["genesis_plus_gx"],
         // Backup RAM per game in the player's save folder, not one file per BIOS region.
         options: &[("genesis_plus_gx_system_bram", "per game")],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -298,6 +321,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["32x"],
         cores: &["picodrive"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -311,6 +335,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["pce"],
         cores: &["mednafen_pce_fast"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -324,6 +349,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["chd", "cue", "ccd", "toc", "m3u"],
         cores: &["mednafen_pce_fast"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -337,6 +363,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["a26", "bin"],
         cores: &["stella"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -350,6 +377,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["a78", "bin"],
         cores: &["prosystem"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -363,6 +391,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["lnx", "lyx"],
         cores: &["handy"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -376,6 +405,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["ngp"],
         cores: &["mednafen_ngp"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -389,6 +419,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["ngc", "ngpc", "npc"],
         cores: &["mednafen_ngp"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -402,6 +433,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["ws"],
         cores: &["mednafen_wswan"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -415,6 +447,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["wsc", "pc2"],
         cores: &["mednafen_wswan"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -428,6 +461,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["vb", "vboy"],
         cores: &["mednafen_vb"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -441,6 +475,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["int", "bin", "rom"],
         cores: &["freeintv"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -454,6 +489,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["col", "cv", "bin", "rom"],
         cores: &["gearcoleco"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -467,6 +503,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["vec", "bin"],
         cores: &["vecx"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: false,
     },
     System {
@@ -480,6 +517,7 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["z64", "n64", "v64"],
         cores: &["mupen64plus_next"],
         options: &[],
+        gpu_options: &[],
         needs_gpu: true,
     },
     System {
@@ -499,6 +537,8 @@ pub const SYSTEMS: &[System] = &[
             ("reicast_threaded_rendering", "disabled"),
             ("reicast_per_content_vmus", "All VMUs"),
         ],
+        // Twice the console's 640×480 (the release's Flycast still names its options reicast_).
+        gpu_options: &[("reicast_internal_resolution", "1280x960")],
         needs_gpu: true,
     },
     System {
@@ -512,6 +552,15 @@ pub const SYSTEMS: &[System] = &[
         extensions: &["iso", "gcm", "gcz", "rvz", "ciso"],
         cores: &["dolphin"],
         options: &[],
+        // Twice the console's resolution (`2`: 1280×1056), 4× anisotropic filtering (`2`), and
+        // shaders compiled in the background, drawn with ubershaders meanwhile (`2`: "Async
+        // (UberShaders)") rather than stalling the frame for each new effect, which a stream
+        // shows as a dropped frame. Ubershaders are heavy, so not on the software renderer.
+        gpu_options: &[
+            ("dolphin_efb_scale", "2"),
+            ("dolphin_max_anisotropy", "2"),
+            ("dolphin_shader_compilation_mode", "2"),
+        ],
         needs_gpu: true,
     },
     System {
@@ -526,6 +575,9 @@ pub const SYSTEMS: &[System] = &[
         cores: &["pcsx2"],
         // Memory cards per game in the player's save folder, not shared under the BIOS folder.
         options: &[("pcsx2_shared_memory_cards", "disabled")],
+        // Twice the console's resolution. The core reads only the leading number, applies it at
+        // the game's start, and only on its hardware renderer (`pcsx2_renderer` Auto).
+        gpu_options: &[("pcsx2_upscale_multiplier", "2x Native (~720p)")],
         needs_gpu: true,
     },
 ];
@@ -663,6 +715,16 @@ mod tests {
         }
         assert!(by_id("snes").unwrap().box_aspect() > 1.0, "SNES boxes are landscape");
         assert!(by_id("nes").unwrap().box_aspect() < 1.0, "NES boxes are portrait");
+    }
+
+    #[test]
+    fn gpu_options_are_only_for_3d_systems_and_never_repeat_an_option() {
+        for s in SYSTEMS {
+            assert!(s.gpu_options.is_empty() || s.needs_gpu, "{}: draws on the CPU", s.id);
+            for (key, _) in s.gpu_options {
+                assert!(!s.options.iter().any(|(k, _)| k == key), "{}: {key} twice", s.id);
+            }
+        }
     }
 
     #[test]

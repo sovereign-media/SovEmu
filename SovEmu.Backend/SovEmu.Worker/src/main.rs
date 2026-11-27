@@ -236,7 +236,7 @@ struct SessionArgs {
     video_min_kbps: u32,
 
     /// The highest video bitrate adaptation chooses, kbit/s (never below the starting rate).
-    #[arg(long, default_value_t = 12000)]
+    #[arg(long, default_value_t = 20000)]
     video_max_kbps: u32,
 
     /// Opus bitrate, kbit/s.
@@ -401,7 +401,7 @@ struct ServeArgs {
     video_min_kbps: u32,
 
     /// The highest video bitrate adaptation chooses, kbit/s (never below the starting rate).
-    #[arg(long, default_value_t = 12000)]
+    #[arg(long, default_value_t = 20000)]
     video_max_kbps: u32,
 
     /// Opus bitrate, kbit/s.

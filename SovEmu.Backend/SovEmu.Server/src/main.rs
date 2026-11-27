@@ -315,7 +315,7 @@ pub struct Config {
     pub video_min_kbps: u32,
 
     /// The highest video bitrate a stream adapts up to, kbit/s (never below the starting rate).
-    #[arg(long, env = "SovEmu__Streaming__Video__MaxKbps", default_value_t = 12000)]
+    #[arg(long, env = "SovEmu__Streaming__Video__MaxKbps", default_value_t = 20000)]
     pub video_max_kbps: u32,
 
     /// Video codec for game streams: `auto`, `vp8` or `h264`. `auto` chooses for each client
