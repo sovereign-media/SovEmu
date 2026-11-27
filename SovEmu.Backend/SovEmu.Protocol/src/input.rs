@@ -14,8 +14,9 @@
 //! Clients send a packet whenever the state changes and at least every 100 ms regardless.
 //! The worker ignores any packet whose `seq` is not newer than the last it applied (comparison
 //! wraps), since the channel is unordered. Held buttons lapse like hotkeys: if no packet arrives
-//! for half a second (or the channel closes), the worker releases them, so a client that goes
-//! quiet cannot leave a button held for the rest of the session.
+//! for half a second (`SovEmu__Streaming__Input__LapseMilliseconds`, 300 to 5000) or the channel
+//! closes, the worker releases them, so a client that goes quiet cannot leave a button held for
+//! the rest of the session.
 //!
 //! ## Client → worker: [`Hotkeys`]
 //!

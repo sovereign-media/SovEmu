@@ -49,6 +49,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             dropout_keyframe_ms: args.dropout_keyframe_ms,
             probe_ms: args.probe_ms,
             probe_lan_ms: args.probe_lan_ms,
+            input_lapse_ms: args.input_lapse_ms,
             gpu: args.gpu.0.clone(),
             video_codec: args.video_codec,
             video_encoder: args.video_encoder,

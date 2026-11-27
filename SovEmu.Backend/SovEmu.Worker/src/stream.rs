@@ -44,16 +44,30 @@ use crate::watchdog;
 use sovemu_protocol::ipc::SessionHealth;
 use sovemu_protocol::{AudioPath, Link, Pipeline, VideoPath};
 
-/// Held input lapses if the client stops refreshing it: hotkeys, buttons and off-centre sticks.
-/// Every client resends what is held at least every 100 ms, so a release that never arrives (the
-/// input channel stalled or closed while the video kept going, the app lost its window) lets go
-/// within half a second instead of holding the button for the rest of the session.
-const INPUT_LAPSE: Duration = Duration::from_millis(500);
+/// Held input lapses if the client stops refreshing it: buttons and off-centre sticks after
+/// `--input-lapse-ms` (`SovEmu__Streaming__Input__LapseMilliseconds`, 500 by default), hotkeys
+/// after [`HOTKEY_LAPSE`]. Every client resends what is held at least every 100 ms, so a release
+/// that never arrives (the input channel stalled or closed while the video kept going, the app
+/// lost its window) lets go within the lapse instead of holding the button for the rest of the
+/// session.
+///
+/// Hotkeys keep a fixed half second, whatever the setting. A lost button release is put right
+/// by the next 100 ms refresh, which carries every button; the lapse only matters once the
+/// client goes quiet. Clients stop sending hotkeys once none is held, so a lost hotkey release
+/// is put right only by the lapse: a longer one would leave a game fast-forwarding or rewinding
+/// longer after the player let go.
+const HOTKEY_LAPSE: Duration = Duration::from_millis(500);
 
-/// Whether held input has gone unrefreshed for [`INPUT_LAPSE`]: buttons held (`held`) and last
-/// sent at `buttons_at`, or sticks off-centre and last sent at `analog_at`.
-fn input_lapsed(held: bool, buttons_at: Instant, analog_at: Option<Instant>, now: Instant) -> bool {
-    let stale = |at: Instant| now.duration_since(at) >= INPUT_LAPSE;
+/// Whether held input has gone unrefreshed for `lapse`: buttons held (`held`) and last sent at
+/// `buttons_at`, or sticks off-centre and last sent at `analog_at`.
+fn input_lapsed(
+    lapse: Duration,
+    held: bool,
+    buttons_at: Instant,
+    analog_at: Option<Instant>,
+    now: Instant,
+) -> bool {
+    let stale = |at: Instant| now.duration_since(at) >= lapse;
     (held && stale(buttons_at)) || analog_at.is_some_and(stale)
 }
 
@@ -140,6 +154,9 @@ pub(crate) struct SessionConfig {
     /// milliseconds (0: not checked), and on the same network.
     pub probe_ms: u32,
     pub probe_lan_ms: u32,
+    /// How long held buttons and sticks stay held once the client stops refreshing them, in
+    /// milliseconds ([`input_lapsed`]).
+    pub input_lapse_ms: u32,
     /// The GPU for OpenGL cores; `None` refuses them. Its render node also encodes H.264.
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
@@ -237,6 +254,8 @@ pub(crate) struct Session {
     audio_kbps: u32,
     hotkeys: Hotkeys,
     hotkeys_at: Instant,
+    /// How long held buttons and sticks outlast the client's last refresh ([`input_lapsed`]).
+    input_lapse: Duration,
     /// When `buttons` last arrived, and when the sticks last did while off-centre (`None`:
     /// centred, nothing to lapse).
     buttons_at: Instant,
@@ -376,6 +395,7 @@ impl Session {
             hotkeys: Hotkeys::default(),
             last_analog_seq: None,
             hotkeys_at: Instant::now(),
+            input_lapse: Duration::from_millis(u64::from(config.input_lapse_ms)),
             buttons_at: Instant::now(),
             analog_at: None,
             ticks: 0,
@@ -999,11 +1019,11 @@ impl Session {
         self.core.set_analog(&[]);
     }
 
-    /// Releases held input the client has stopped refreshing ([`INPUT_LAPSE`]), and says so:
+    /// Releases held input the client has stopped refreshing ([`input_lapsed`]), and says so:
     /// a client that goes quiet while holding something is a fault worth seeing in the log.
     fn lapse_input(&mut self, now: Instant) {
         let held = self.buttons.iter().any(|b| b.0 != 0);
-        if input_lapsed(held, self.buttons_at, self.analog_at, now) {
+        if input_lapsed(self.input_lapse, held, self.buttons_at, self.analog_at, now) {
             tracing::warn!(
                 buttons = ?self.buttons.iter().map(|b| b.0).collect::<Vec<_>>(),
                 silent_ms = now.duration_since(self.buttons_at).as_millis() as u64,
@@ -1243,7 +1263,7 @@ impl Session {
         watchdog::beat(watchdog::Phase::Emulating);
         let now = Instant::now();
         self.lapse_input(now);
-        let hotkeys = if now.duration_since(self.hotkeys_at) < INPUT_LAPSE {
+        let hotkeys = if now.duration_since(self.hotkeys_at) < HOTKEY_LAPSE {
             self.hotkeys
         } else {
             Hotkeys::default()
@@ -1536,17 +1556,31 @@ mod tests {
 
     #[test]
     fn held_input_lets_go_once_the_client_stops_refreshing_it() {
+        let lapse = Duration::from_millis(500);
         let t = Instant::now();
         let soon = t + Duration::from_millis(100);
-        let late = t + INPUT_LAPSE;
+        let late = t + lapse;
         // Left held, refreshed every 100 ms: still held.
-        assert!(!input_lapsed(true, t, None, soon));
+        assert!(!input_lapsed(lapse, true, t, None, soon));
         // The refreshes stop (the input channel stalled, the app lost its window): released.
-        assert!(input_lapsed(true, t, None, late));
+        assert!(input_lapsed(lapse, true, t, None, late));
         // Nothing held: nothing to release, however long the client is quiet.
-        assert!(!input_lapsed(false, t, None, late));
+        assert!(!input_lapsed(lapse, false, t, None, late));
         // A stick pushed over, its heartbeat stopped: released too; a centred one sends none.
-        assert!(input_lapsed(false, t, Some(t), late));
-        assert!(!input_lapsed(false, t, Some(soon), soon + Duration::from_millis(100)));
+        assert!(input_lapsed(lapse, false, t, Some(t), late));
+        assert!(!input_lapsed(lapse, false, t, Some(soon), soon + Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn a_longer_lapse_holds_input_through_a_longer_silence() {
+        // Raised for a lossy remote link: a second of silence no longer lets go.
+        let lapse = Duration::from_millis(1500);
+        let t = Instant::now();
+        let second = t + Duration::from_millis(1000);
+        assert!(!input_lapsed(lapse, true, t, None, second));
+        assert!(!input_lapsed(lapse, false, t, Some(t), second));
+        // It still lets go once the client has been quiet that long.
+        assert!(input_lapsed(lapse, true, t, None, t + lapse));
+        assert!(input_lapsed(lapse, false, t, Some(t), t + lapse));
     }
 }
