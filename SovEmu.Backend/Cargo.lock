@@ -3831,6 +3831,7 @@ dependencies = [
  "audioadapter-buffers",
  "bindgen",
  "pkg-config",
+ "png",
  "rubato",
  "tracing",
 ]

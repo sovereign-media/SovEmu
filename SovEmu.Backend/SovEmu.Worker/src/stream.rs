@@ -139,6 +139,12 @@ pub(crate) struct SessionConfig {
     pub gpu: Option<sovemu_retro_host::GpuChoice>,
     pub video_codec: CodecSetting,
     pub video_encoder: H264Preference,
+    /// Pictures are scaled up this many times (1 or 2) before they are encoded.
+    pub video_prescale: u32,
+    /// VP8's screen-content mode (0, 1 or 2).
+    pub video_screen_content: u8,
+    /// Testing only: frames shown instead of the game's picture (`replay.rs`).
+    pub replay_frames: Option<std::path::PathBuf>,
 }
 
 /// The connected (or connecting) client.
@@ -217,6 +223,8 @@ pub(crate) struct Session {
     ticks: u64,
     /// Size of the frame in `rgba`, for save-state screenshots.
     shot_size: (u32, u32),
+    /// Testing only: a clip shown instead of the game's picture.
+    replay: Option<crate::replay::Replay>,
     finished: bool,
     /// The core's system directory (a merge it may be reading from); dropped last, after the
     /// core.
@@ -285,6 +293,8 @@ impl Session {
                 bitrate_kbps: limits.start_kbps,
                 fps: av.fps.round() as u32,
                 keyframe_interval: config.keyframe_interval.max(1),
+                prescale: config.video_prescale.clamp(1, 2),
+                screen_content: config.video_screen_content.min(2),
             }),
             audio: AudioEncoder::new(av.sample_rate, config.audio_kbps * 1000)?,
             fps: av.fps,
@@ -338,6 +348,7 @@ impl Session {
             analog_at: None,
             ticks: 0,
             shot_size: (0, 0),
+            replay: config.replay_frames.as_deref().map(crate::replay::Replay::open).transpose()?,
             finished: false,
         })
     }
@@ -1121,6 +1132,12 @@ impl Session {
                 self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.rgba)?
         {
             picture = Some(ahead);
+        }
+
+        if picture.is_some()
+            && let Some(replay) = &mut self.replay
+        {
+            picture = Some(replay.next(&mut self.rgba)?);
         }
 
         // The ack goes out before this frame's video, so the first frame a client draws after the
