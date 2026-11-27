@@ -23,7 +23,9 @@ use sovemu_protocol::ipc::{ExitReason, Request};
 use sovemu_protocol::{
     ClientMessage, ClientStats, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
 };
-use sovemu_retro_host::{AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons};
+use sovemu_retro_host::{
+    AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, PixelFormat, VideoFrame,
+};
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
 use str0m::channel::ChannelId;
@@ -192,7 +194,8 @@ pub(crate) struct Session {
     clock: MediaClock,
     video: Video,
     audio: AudioEncoder,
-    rgba: Vec<u8>,
+    /// The picture to encode: RGBA, or a GPU core's frame as the GPU converted it to I420.
+    picture: VideoFrame,
     frame: u64,
     audio_samples: u64,
     buttons: Vec<JoypadButtons>,
@@ -266,7 +269,7 @@ pub(crate) struct Session {
     /// Frames sent to the client, for RTP timestamps: wall-clock paced even when fast-forward
     /// runs several emulated frames per tick.
     ticks: u64,
-    /// Size of the frame in `rgba`, for save-state screenshots.
+    /// Size of the frame in `picture`, for save-state screenshots.
     shot_size: (u32, u32),
     /// Testing only: a clip shown instead of the game's picture.
     replay: Option<crate::replay::Replay>,
@@ -316,6 +319,9 @@ impl Session {
         let mut persist =
             Persist::new(&config.save_dir, save_name.as_deref(), config.state_dir.clone());
         persist.restore(&mut core);
+        // A GPU core's frames come back already converted for the encoder, unless they are to
+        // be pre-scaled, which works on RGBA.
+        core.set_gpu_i420(config.video_prescale <= 1);
         tracing::info!(
             core.name = %core.system_info().library_name,
             core.version = %core.system_info().library_version,
@@ -345,7 +351,7 @@ impl Session {
             fps: av.fps,
             clock: MediaClock::new(av.fps),
             core,
-            rgba: Vec::new(),
+            picture: VideoFrame::default(),
             frame: 0,
             audio_samples: 0,
             buttons: vec![JoypadButtons::NONE; 2],
@@ -427,7 +433,8 @@ impl Session {
         let at = self.health_now();
         self.health.summary(Instant::now(), &at);
         let (width, height) = self.shot_size;
-        let shot = Screenshot { rgba: &self.rgba, width, height };
+        let rgba = screenshot_rgba(&self.picture);
+        let shot = Screenshot { rgba: &rgba, width, height };
         self.persist.finish(&mut self.core, self.frame > 0, Some(shot));
     }
 
@@ -488,7 +495,8 @@ impl Session {
             }
             Request::SaveState { slot, .. } => {
                 let (width, height) = self.shot_size;
-                let shot = Screenshot { rgba: &self.rgba, width, height };
+                let rgba = screenshot_rgba(&self.picture);
+                let shot = Screenshot { rgba: &rgba, width, height };
                 self.persist
                     .save_state(&mut self.core, *slot, Some(shot))
                     .map(|_| false)
@@ -1371,7 +1379,7 @@ impl Session {
         let mut picture = None;
         if drew {
             self.drawn = true;
-            out.video.write_rgba8(&mut self.rgba);
+            crate::video::keep_picture(out.video, &mut self.picture);
             picture = Some((out.video.width, out.video.height));
         }
 
@@ -1393,7 +1401,7 @@ impl Session {
         if !hotkeys.rewind
             && !hotkeys.fast_forward
             && let Some(ahead) =
-                self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.rgba)?
+                self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.picture)?
         {
             picture = Some(ahead);
         }
@@ -1401,7 +1409,10 @@ impl Session {
         if picture.is_some()
             && let Some(replay) = &mut self.replay
         {
-            picture = Some(replay.next(&mut self.rgba)?);
+            let (w, h) = replay.next(&mut self.picture.data)?;
+            (self.picture.width, self.picture.height) = (w, h);
+            self.picture.format = PixelFormat::Rgba8888;
+            picture = Some((w, h));
         }
 
         // The ack goes out before this frame's video, so the first frame a client draws after the
@@ -1418,7 +1429,7 @@ impl Session {
             self.shot_size = (w, h);
             watchdog::beat(watchdog::Phase::Encoding);
             let encode_from = Instant::now();
-            let encoded = self.video.encode(&self.rgba, w, h)?;
+            let encoded = self.video.encode_picture(&self.picture)?;
             if let Some(encoded) = &encoded {
                 self.health.encoded(encode_from.elapsed(), encoded.data.len(), encoded.keyframe);
                 self.send_rate.sent(encoded.data.len(), now);
@@ -1587,6 +1598,14 @@ pub(crate) fn declared_options(core: &Core) -> (Vec<CoreOption>, Vec<CoreCategor
         .map(|c| CoreCategory { key: c.key, description: c.description, info: c.info })
         .collect();
     (options, categories)
+}
+
+/// The picture as RGBA, for a save state's screenshot.
+fn screenshot_rgba(picture: &VideoFrame) -> std::borrow::Cow<'_, [u8]> {
+    match picture.format {
+        PixelFormat::Rgba8888 => std::borrow::Cow::Borrowed(&picture.data),
+        _ => std::borrow::Cow::Owned(picture.to_rgba8()),
+    }
 }
 
 #[cfg(test)]

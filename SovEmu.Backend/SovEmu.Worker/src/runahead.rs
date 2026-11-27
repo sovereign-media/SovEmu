@@ -13,7 +13,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use sovemu_retro_host::{Core, JoypadButtons};
+use sovemu_retro_host::{Core, JoypadButtons, VideoFrame};
 
 use sovemu_protocol::ipc::MAX_RUN_AHEAD as MAX_FRAMES;
 
@@ -46,14 +46,14 @@ impl RunAhead {
     }
 
     /// From the real frame the core has just run, runs ahead with the same `input`, writes the
-    /// last picture drawn into `rgba` and returns its size, and puts the core back. `None` when
+    /// last picture drawn into `picture` and returns its size, and puts the core back. `None` when
     /// it is off, or no frame ahead drew a picture (the real frame's then stands). Their sound
     /// is dropped: what is heard is the real timeline's.
     pub(crate) fn picture(
         &mut self,
         core: &mut Core,
         input: &[JoypadButtons],
-        rgba: &mut Vec<u8>,
+        picture: &mut VideoFrame,
     ) -> Result<Option<(u32, u32)>> {
         if self.frames == 0 {
             return Ok(None);
@@ -71,7 +71,7 @@ impl RunAhead {
         for _ in 0..self.frames {
             let out = core.run_frame(input)?;
             if out.video_updated && out.video.width > 0 {
-                out.video.write_rgba8(rgba);
+                crate::video::keep_picture(out.video, picture);
                 shown = Some((out.video.width, out.video.height));
             }
         }

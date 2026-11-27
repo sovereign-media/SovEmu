@@ -299,3 +299,32 @@ fn renders_a_gpu_core_and_reads_frames_back_upright() {
     let state = core.serialize().unwrap();
     core.unserialize(&state).unwrap();
 }
+
+/// Needs libEGL, like the test above.
+#[test]
+fn a_gpu_cores_frames_can_come_back_as_i420() {
+    if !sovemu_retro_host::gl::available() {
+        eprintln!("skipped: no libEGL here");
+        return;
+    }
+    let _guard = lock();
+    let mut core = Core::load(test_core(), gl_options(Some(GpuChoice::Software))).unwrap();
+    core.load_game(None).expect("load with a GL context");
+    let rgba = core.run_frame(&[]).unwrap().video.to_rgba8();
+    core.set_gpu_i420(true);
+    for _ in 0..2 {
+        let frame = core.run_frame(&[]).unwrap();
+        assert_eq!(frame.video.format, PixelFormat::I420);
+        assert_eq!((frame.video.width, frame.video.height), (WIDTH, HEIGHT));
+        let (w, h) = (WIDTH as usize, HEIGHT as usize);
+        assert_eq!(frame.video.data.len(), w * h + 2 * (w / 2) * (h / 2));
+        // Two flat halves, so back to RGBA it is the RGBA frame give or take rounding.
+        let back = frame.video.to_rgba8();
+        for (x, y) in [(0, 0), (WIDTH - 1, HEIGHT - 1)] {
+            let (a, b) = (pixel(&rgba, x, y), pixel(&back, x, y));
+            assert!(a.iter().zip(b).all(|(a, b)| a.abs_diff(b) <= 2), "({x}, {y}): {a:?} {b:?}");
+        }
+    }
+    core.set_gpu_i420(false);
+    assert_eq!(core.run_frame(&[]).unwrap().video.format, PixelFormat::Rgba8888);
+}

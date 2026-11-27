@@ -1,8 +1,10 @@
 //! Headless OpenGL for cores that render with the GPU (`RETRO_ENVIRONMENT_SET_HW_RENDER`).
 //!
 //! There is no window: an EGL context renders into a framebuffer object the core draws into,
-//! and each frame is read back to system memory for the video encoder. libEGL is opened at run
-//! time, so a machine without it (macOS, a minimal container) simply has no GPU rendering.
+//! and each frame is read back to system memory for the video encoder: as RGBA, or converted to
+//! I420 on the GPU first ([`yuv`]), which reads back 1.5 bytes a pixel instead of 4 and leaves
+//! the CPU no conversion to do. libEGL is opened at run time, so a machine without it (macOS, a
+//! minimal container) simply has no GPU rendering.
 //!
 //! Devices come from `EGL_EXT_device_enumeration`: each `/dev/dri/renderD*` node a driver
 //! serves, plus Mesa's software device (llvmpipe) when no GPU is usable. Like Sovereign's
@@ -56,6 +58,14 @@ const GL_VENDOR: u32 = 0x1F00;
 const GL_RENDERER: u32 = 0x1F01;
 const GL_VERSION: u32 = 0x1F02;
 const GL_COLOR_BUFFER_BIT: u32 = 0x4000;
+const GL_TEXTURE_2D: u32 = 0x0DE1;
+const GL_TEXTURE_BINDING_2D: u32 = 0x8069;
+const GL_TEXTURE_MIN_FILTER: u32 = 0x2801;
+const GL_TEXTURE_MAG_FILTER: u32 = 0x2800;
+const GL_TEXTURE_WRAP_S: u32 = 0x2802;
+const GL_TEXTURE_WRAP_T: u32 = 0x2803;
+const GL_NEAREST: i32 = 0x2600;
+const GL_CLAMP_TO_EDGE: i32 = 0x812F;
 
 macro_rules! fns {
     ($vis:vis struct $name:ident { $($field:ident : $sym:literal => fn($($arg:ty),*) $(-> $ret:ty)?;)* }) => {
@@ -235,13 +245,15 @@ fn devices(egl: &Egl) -> Vec<Device> {
 }
 
 macro_rules! gl_fns {
-    ($($field:ident : $sym:literal => fn($($arg:ty),*) $(-> $ret:ty)?;)*) => {
-        /// The GL entry points SovEmu itself calls (the core loads its own).
-        struct Gl {
+    ($(#[$meta:meta])* struct $name:ident {
+        $($field:ident : $sym:literal => fn($($arg:ty),*) $(-> $ret:ty)?;)*
+    }) => {
+        $(#[$meta])*
+        struct $name {
             $($field: unsafe extern "C" fn($($arg),*) $(-> $ret)?,)*
         }
 
-        impl Gl {
+        impl $name {
             fn load(egl: &Egl) -> Result<Self, String> {
                 Ok(Self {
                     $($field: {
@@ -262,6 +274,8 @@ macro_rules! gl_fns {
 }
 
 gl_fns! {
+    /// The GL entry points SovEmu itself calls (the core loads its own).
+    struct Gl {
     gen_framebuffers: "glGenFramebuffers" => fn(i32, *mut u32);
     delete_framebuffers: "glDeleteFramebuffers" => fn(i32, *const u32);
     bind_framebuffer: "glBindFramebuffer" => fn(u32, u32);
@@ -278,7 +292,18 @@ gl_fns! {
     clear: "glClear" => fn(u32);
     viewport: "glViewport" => fn(i32, i32, i32, i32);
     finish: "glFinish" => fn();
+    gen_textures: "glGenTextures" => fn(i32, *mut u32);
+    delete_textures: "glDeleteTextures" => fn(i32, *const u32);
+    bind_texture: "glBindTexture" => fn(u32, u32);
+    tex_image_2d: "glTexImage2D" => fn(u32, i32, i32, i32, i32, i32, u32, u32, *const c_void);
+    tex_parameter_i: "glTexParameteri" => fn(u32, u32, i32);
+    framebuffer_texture_2d: "glFramebufferTexture2D" => fn(u32, u32, u32, u32, i32);
+    get_integer_v: "glGetIntegerv" => fn(u32, *mut i32);
+    }
 }
+
+// After `gl_fns!`, which it uses.
+mod yuv;
 
 impl Gl {
     fn string(&self, name: u32) -> String {
@@ -324,13 +349,19 @@ pub struct GlContext {
     egl: &'static Egl,
     gl: Gl,
     display: EglDisplay,
+    config: EglConfig,
     context: EglContext,
+    /// The client API the context was made for (`EGL_OPENGL_API` or `EGL_OPENGL_ES_API`).
+    api: u32,
     fbo: u32,
+    /// The framebuffer's colour: a texture, so the I420 pass can sample it.
     color: u32,
     depth: u32,
     depth_format: Option<(u32, u32)>,
     width: u32,
     height: u32,
+    /// The pass that converts frames to I420 on the GPU, once tried: why not, if it failed.
+    yuv: Option<Result<yuv::YuvPass, String>>,
     pub info: RendererInfo,
 }
 
@@ -497,17 +528,20 @@ impl GlContext {
                 egl,
                 gl,
                 display,
+                config,
                 context,
+                api,
                 fbo: 0,
                 color: 0,
                 depth: 0,
                 depth_format,
                 width: 0,
                 height: 0,
+                yuv: None,
                 info,
             };
             (ctx.gl.gen_framebuffers)(1, &mut ctx.fbo);
-            (ctx.gl.gen_renderbuffers)(1, &mut ctx.color);
+            (ctx.gl.gen_textures)(1, &mut ctx.color);
             if depth_format.is_some() {
                 (ctx.gl.gen_renderbuffers)(1, &mut ctx.depth);
             }
@@ -547,16 +581,21 @@ impl GlContext {
         }
         self.make_current();
         let (w, h) = (width.max(self.width) as i32, height.max(self.height) as i32);
-        // SAFETY: the context is current and the names were generated on it.
+        // SAFETY: the context is current and the names were generated on it; the texture
+        // binding is the core's, so it is put back.
         let status = unsafe {
+            let mut bound = 0;
+            (self.gl.get_integer_v)(GL_TEXTURE_BINDING_2D, &mut bound);
+            (self.gl.bind_texture)(GL_TEXTURE_2D, self.color);
+            alloc_rgba_texture(&self.gl, self.gles(), w, h, std::ptr::null());
+            (self.gl.bind_texture)(GL_TEXTURE_2D, bound as u32);
             (self.gl.bind_framebuffer)(GL_FRAMEBUFFER, self.fbo);
-            (self.gl.bind_renderbuffer)(GL_RENDERBUFFER, self.color);
-            (self.gl.renderbuffer_storage)(GL_RENDERBUFFER, GL_RGBA8, w, h);
-            (self.gl.framebuffer_renderbuffer)(
+            (self.gl.framebuffer_texture_2d)(
                 GL_FRAMEBUFFER,
                 GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER,
+                GL_TEXTURE_2D,
                 self.color,
+                0,
             );
             if let Some((format, attachment)) = self.depth_format {
                 (self.gl.bind_renderbuffer)(GL_RENDERBUFFER, self.depth);
@@ -612,6 +651,55 @@ impl GlContext {
         }
     }
 
+    /// Reads the bottom-left `width` × `height` of the framebuffer converted to I420 on the GPU
+    /// (packed planes, as [`crate::PixelFormat::I420`] describes), `flip` as for [`Self::read`].
+    /// Err, with why, when the GPU cannot: the pass is set up and checked on the first call, and
+    /// a failure is kept, so every later call fails at once and the caller reads RGBA instead.
+    pub fn read_i420(
+        &mut self,
+        width: u32,
+        height: u32,
+        flip: bool,
+        out: &mut Vec<u8>,
+    ) -> Result<(), String> {
+        let (w, h) = (width.min(self.width), height.min(self.height));
+        self.make_current();
+        if self.yuv.is_none() {
+            let pass = yuv::YuvPass::create(self);
+            self.make_current();
+            match &pass {
+                Ok(_) => tracing::info!("GPU frames are converted to I420 on the GPU"),
+                Err(e) => {
+                    tracing::warn!(error = %e, "GPU frames cannot be converted on the GPU; reading them back as RGBA")
+                }
+            }
+            self.yuv = Some(pass);
+        }
+        let Some(Ok(pass)) = &mut self.yuv else {
+            return Err(self
+                .yuv
+                .as_ref()
+                .and_then(|p| p.as_ref().err())
+                .cloned()
+                .unwrap_or_default());
+        };
+        // SAFETY: the core's context is current. Its drawing must be done before the pass's
+        // context samples the texture: commands in two contexts are not ordered otherwise.
+        unsafe { (self.gl.finish)() };
+        let result =
+            pass.convert(&self.gl, self.color, (self.width, self.height), (w, h), flip, out);
+        self.make_current();
+        if let Err(e) = &result {
+            tracing::warn!(error = %e, "converting a frame on the GPU failed; reading frames back as RGBA");
+            self.yuv = Some(Err(e.clone()));
+        }
+        result
+    }
+
+    fn gles(&self) -> bool {
+        self.api == EGL_OPENGL_ES_API
+    }
+
     /// Draws a known colour into the framebuffer and reads it back: proof the device renders.
     fn self_test(&self) -> Result<(), String> {
         let mut out = Vec::new();
@@ -638,12 +726,14 @@ impl GlContext {
 
 impl Drop for GlContext {
     fn drop(&mut self) {
+        // The pass's context goes first: it shares this one's objects.
+        self.yuv = None;
         self.make_current();
         // SAFETY: the context is current; the names were generated on it; afterwards nothing
         // uses the context or display again.
         unsafe {
             (self.gl.delete_framebuffers)(1, &self.fbo);
-            (self.gl.delete_renderbuffers)(1, &self.color);
+            (self.gl.delete_textures)(1, &self.color);
             if self.depth != 0 {
                 (self.gl.delete_renderbuffers)(1, &self.depth);
             }
@@ -656,6 +746,25 @@ impl Drop for GlContext {
             (self.egl.f.destroy_context)(self.display, self.context);
             (self.egl.f.terminate)(self.display);
         }
+    }
+}
+
+/// Gives the bound `GL_TEXTURE_2D` RGBA8 storage of `w` × `h` (filled from `pixels`, or left
+/// undefined if null), sampled texel for texel.
+///
+/// # Safety
+///
+/// A context is current with the texture bound; `pixels` is null or holds `w * h` RGBA pixels.
+unsafe fn alloc_rgba_texture(gl: &Gl, gles: bool, w: i32, h: i32, pixels: *const c_void) {
+    // OpenGL ES 2 takes no sized internal format; ES 3 and desktop GL make RGBA8 of either.
+    let internal = if gles { GL_RGBA } else { GL_RGBA8 } as i32;
+    // SAFETY: the caller guarantees the context, the binding and the pixels.
+    unsafe {
+        (gl.tex_image_2d)(GL_TEXTURE_2D, 0, internal, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        (gl.tex_parameter_i)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        (gl.tex_parameter_i)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        (gl.tex_parameter_i)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        (gl.tex_parameter_i)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 }
 
@@ -752,6 +861,81 @@ mod tests {
             GpuChoice::Device("/dev/dri/renderD129".into()).to_string(),
             "/dev/dri/renderD129"
         );
+    }
+
+    /// `SovEmu.Media`'s RGBA → I420 (BT.601 limited range, 2×2 chroma averages), packed.
+    fn reference_i420(rgba: &[u8], w: usize, h: usize) -> Vec<u8> {
+        let px = |x: usize, y: usize| {
+            let i = (y * w + x) * 4;
+            (i32::from(rgba[i]), i32::from(rgba[i + 1]), i32::from(rgba[i + 2]))
+        };
+        let mut out: Vec<u8> = (0..w * h)
+            .map(|i| {
+                let (r, g, b) = px(i % w, i / w);
+                (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16) as u8
+            })
+            .collect();
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        let (mut u, mut v) = (Vec::new(), Vec::new());
+        for cy in 0..ch {
+            for cx in 0..cw {
+                let (x0, y0) = (cx * 2, cy * 2);
+                let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+                let (mut r, mut g, mut b) = (0, 0, 0);
+                for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+                    let (pr, pg, pb) = px(x, y);
+                    (r, g, b) = (r + pr, g + pg, b + pb);
+                }
+                let (r, g, b) = ((r + 2) / 4, (g + 2) / 4, (b + 2) / 4);
+                u.push((((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128).clamp(0, 255) as u8);
+                v.push((((112 * r - 94 * g - 18 * b + 128) >> 8) + 128).clamp(0, 255) as u8);
+            }
+        }
+        out.extend(u);
+        out.extend(v);
+        out
+    }
+
+    /// Needs libEGL with a working device (llvmpipe will do); elsewhere it says so and passes.
+    #[test]
+    fn converts_to_i420_on_the_gpu_exactly_as_the_cpu_does() {
+        if !available() {
+            eprintln!("skipped: no libEGL here");
+            return;
+        }
+        let requests =
+            [(GlApi::Gl, 0, 0), (GlApi::GlCore, 3, 3), (GlApi::Gles, 2, 0), (GlApi::Gles, 3, 0)];
+        for (api, major, minor) in requests {
+            let request = ContextRequest { api, major, minor, depth: true, stencil: false };
+            let mut ctx = GlContext::create(&GpuChoice::Software, request, 64, 48)
+                .unwrap_or_else(|e| panic!("{api:?} {major}.{minor}: {e}"));
+            // Every channel takes values all over 0..=255: no two neighbours alike.
+            let noise: Vec<u8> =
+                (0..64 * 48 * 4u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
+            ctx.make_current();
+            // SAFETY: the context is current; `noise` fills the framebuffer's 64 × 48.
+            unsafe {
+                (ctx.gl.bind_texture)(GL_TEXTURE_2D, ctx.color);
+                alloc_rgba_texture(&ctx.gl, ctx.gles(), 64, 48, noise.as_ptr().cast());
+                (ctx.gl.bind_texture)(GL_TEXTURE_2D, 0);
+            }
+            for (w, h) in [(64, 48), (37, 23), (1, 1), (9, 2)] {
+                for flip in [false, true] {
+                    let mut rgba = Vec::new();
+                    ctx.read(w, h, flip, &mut rgba);
+                    let mut i420 = Vec::new();
+                    ctx.read_i420(w, h, flip, &mut i420)
+                        .unwrap_or_else(|e| panic!("{api:?} {major}.{minor}: {e}"));
+                    let expected = reference_i420(&rgba, w as usize, h as usize);
+                    assert!(
+                        i420 == expected,
+                        "{api:?} {major}.{minor}, {w}×{h}, flip {flip}: {} of {} bytes differ",
+                        i420.iter().zip(&expected).filter(|(a, b)| a != b).count(),
+                        expected.len()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

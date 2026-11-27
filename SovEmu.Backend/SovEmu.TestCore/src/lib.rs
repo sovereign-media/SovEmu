@@ -25,6 +25,7 @@
 //!   context (`SET_HW_RENDER`) when the game loads, refusing to load without one, and each frame
 //!   clears the frontend's framebuffer to [`SOLID_COLOUR`] with its top half [`GL_TOP_COLOUR`]
 //!   (bottom-left origin, so a frontend that forgets to flip gets them the wrong way round).
+//!   `gl-<w>x<h>` ([`GL_SIZES`]) does the same at a 3D core's frame size, for benches.
 //! - **Battery save:** [`SAVE_RAM_SIZE`] bytes of `RETRO_MEMORY_SAVE_RAM`. Each frame writes the
 //!   frame counter into its first 8 bytes (little-endian), so a frontend's `.srm` persistence
 //!   can be checked; the rest is left alone.
@@ -66,6 +67,13 @@ const TONE_HZ: f64 = 440.0;
 pub const GL_TOP_COLOUR: u32 = 0x00_FF_00_00;
 
 const RENDER_KEY: &CStr = c"sovemu_test_render";
+
+/// The GL mode's other frame sizes (`sovemu_test_render=gl-640x480`): an N64 and a GameCube at
+/// 2× and 4× their native resolution, as Mupen64Plus-Next and Dolphin render them.
+pub const GL_SIZES: [(u32, u32); 4] = [(640, 480), (1280, 960), (1280, 1056), (2560, 2112)];
+
+/// The GL mode's frame size, read when the game loads.
+static GL_SIZE: Mutex<(u32, u32)> = Mutex::new((WIDTH, HEIGHT));
 
 /// The GL functions the GL mode uses, loaded in `context_reset`.
 #[derive(Clone, Copy)]
@@ -142,7 +150,8 @@ fn draw_gl() -> bool {
     let Some(fbo) = cb.get_current_framebuffer else { return false };
     const COLOR_BUFFER_BIT: u32 = 0x4000;
     const SCISSOR_TEST: u32 = 0x0C11;
-    let (w, h) = (WIDTH as i32, HEIGHT as i32);
+    let (w, h) = *GL_SIZE.lock().unwrap();
+    let (w, h) = (w as i32, h as i32);
     // SAFETY: the frontend made its context current before retro_run; these are its GL
     // functions, called with valid arguments.
     unsafe {
@@ -161,15 +170,19 @@ fn draw_gl() -> bool {
     true
 }
 
-/// Reads `sovemu_test_render` from the frontend.
-fn wants_gl() -> bool {
+/// Reads `sovemu_test_render` from the frontend: the GL mode's frame size, if it is on.
+fn wants_gl() -> Option<(u32, u32)> {
     let mut var = ffi::retro_variable { key: RENDER_KEY.as_ptr(), value: std::ptr::null() };
-    if env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE, (&raw mut var).cast()) && !var.value.is_null() {
-        // SAFETY: the frontend returns a NUL-terminated string.
-        unsafe { CStr::from_ptr(var.value) }.to_bytes() == b"gl"
-    } else {
-        false
+    if !env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE, (&raw mut var).cast()) || var.value.is_null() {
+        return None;
     }
+    // SAFETY: the frontend returns a NUL-terminated string.
+    let value = unsafe { CStr::from_ptr(var.value) }.to_str().ok()?;
+    if value == "gl" {
+        return Some((WIDTH, HEIGHT));
+    }
+    let (w, h) = value.strip_prefix("gl-")?.split_once('x')?;
+    Some((w.parse().ok()?, h.parse().ok()?)).filter(|size| GL_SIZES.contains(size))
 }
 
 #[derive(Clone, Copy)]
@@ -278,7 +291,11 @@ pub extern "C" fn retro_set_environment(cb: ffi::retro_environment_t) {
             key: PATTERN_KEY.as_ptr(),
             value: c"Test pattern; gradient|solid|noise".as_ptr(),
         },
-        ffi::retro_variable { key: RENDER_KEY.as_ptr(), value: c"Rendering; software|gl".as_ptr() },
+        ffi::retro_variable {
+            key: RENDER_KEY.as_ptr(),
+            value: c"Rendering; software|gl|gl-640x480|gl-1280x960|gl-1280x1056|gl-2560x2112"
+                .as_ptr(),
+        },
         ffi::retro_variable { key: std::ptr::null(), value: std::ptr::null() },
     ];
     env(ffi::RETRO_ENVIRONMENT_SET_VARIABLES, vars.as_mut_ptr().cast());
@@ -339,7 +356,14 @@ fn declare_options_v2() {
             c"Rendering",
             c"Draw in software, or through an OpenGL context from the frontend.",
             c"video".as_ptr(),
-            &[(c"software", c"Software"), (c"gl", c"OpenGL")],
+            &[
+                (c"software", c"Software"),
+                (c"gl", c"OpenGL"),
+                (c"gl-640x480", c"OpenGL, N64 at 2×"),
+                (c"gl-1280x960", c"OpenGL, N64 at 4×"),
+                (c"gl-1280x1056", c"OpenGL, GameCube at 2×"),
+                (c"gl-2560x2112", c"OpenGL, GameCube at 4×"),
+            ],
             c"software",
         ),
         definition(c"", c"", c"", std::ptr::null(), &[], c""),
@@ -428,12 +452,13 @@ pub unsafe extern "C" fn retro_get_system_info(info: *mut ffi::retro_system_info
 /// `info` must be a valid out-parameter.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_system_av_info(info: *mut ffi::retro_system_av_info) {
+    let (width, height) = *GL_SIZE.lock().unwrap();
     let value = ffi::retro_system_av_info {
         geometry: ffi::retro_game_geometry {
-            base_width: WIDTH,
-            base_height: HEIGHT,
-            max_width: WIDTH,
-            max_height: HEIGHT,
+            base_width: width,
+            base_height: height,
+            max_width: width,
+            max_height: height,
             aspect_ratio: 4.0 / 3.0,
         },
         timing: ffi::retro_system_timing { fps: FPS, sample_rate: SAMPLE_RATE },
@@ -531,8 +556,9 @@ pub extern "C" fn retro_run() {
         if let Some(video) = cb.video {
             let data =
                 if !dupe && draw_gl() { usize::MAX as *const c_void } else { std::ptr::null() };
+            let (w, h) = *GL_SIZE.lock().unwrap();
             // SAFETY: RETRO_HW_FRAME_BUFFER_VALID (all bits set) or a dupe.
-            unsafe { video(data, WIDTH, HEIGHT, 0) };
+            unsafe { video(data, w, h, 0) };
         }
     } else if let Some(video) = cb.video {
         let data = pixels.as_ref().map_or(std::ptr::null(), |p| p.as_ptr().cast::<c_void>());
@@ -609,7 +635,9 @@ pub unsafe extern "C" fn retro_load_game(game: *const ffi::retro_game_info) -> b
         return false;
     }
     HW.lock().unwrap().callback = None;
-    if wants_gl() {
+    let gl = wants_gl();
+    *GL_SIZE.lock().unwrap() = gl.unwrap_or((WIDTH, HEIGHT));
+    if gl.is_some() {
         let mut cb = ffi::retro_hw_render_callback {
             context_type: ffi::retro_hw_context_type::RETRO_HW_CONTEXT_OPENGL,
             context_reset: Some(context_reset),

@@ -34,9 +34,12 @@ The crates that run a libretro core and stream it: `LibretroFfi` → `RetroHost`
 ## GPU rendering
 
 Headless EGL in the worker (`RetroHost/src/gl.rs`): libEGL is opened at run time, never linked, so
-the worker still runs without Mesa. A GPU core's frames are read back from a framebuffer object
-after `retro_run`; the context is current on the thread that runs the core and must be made
-current before any call into it. `sovemu-worker gpu` is how the server learns about GPUs: a device
+the worker still runs without Mesa. A GPU core's frames are read back from a framebuffer object (its
+colour a texture) after `retro_run`: as RGBA, or, when the stream asks (`Core::set_gpu_i420`),
+converted to I420 by a shader in a second context sharing the core's (`gl/yuv.rs`), which never
+touches the core's GL state and must match `Media`'s conversion byte for byte. If that pass fails
+its check, frames stay RGBA, so every consumer takes either format. The core's context is
+current on the thread that runs the core and must be made current before any call into it. `sovemu-worker gpu` is how the server learns about GPUs: a device
 counts only if it drew a frame and read it back. A GPU with no DRM node (NVIDIA without
 `nvidia-drm`) is reported as `auto`, resolved hardware-first. Vulkan cores are not supported yet.
 

@@ -11,7 +11,7 @@ use std::ffi::{CStr, c_int};
 use std::ptr::NonNull;
 
 use crate::ffi;
-use crate::yuv::{I420Planes, chroma_len, rgba_to_i420};
+use crate::yuv::{I420Planes, Source, chroma_len};
 use crate::{EncodedFrame, Error};
 
 /// Encoder settings.
@@ -227,9 +227,29 @@ impl Vp8Encoder {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, Error> {
-        let expected = width as usize * height as usize * 4;
-        if rgba.len() != expected {
-            return Err(Error::BadFrame { expected, actual: rgba.len() });
+        self.encode_source(Source::Rgba(rgba), width, height)
+    }
+
+    /// Encodes one frame already in I420 (packed planes, [`crate::yuv::i420_len`] bytes), as a
+    /// GPU converts it: no conversion here, only a copy into the encoder's image.
+    pub fn encode_i420(
+        &mut self,
+        i420: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        self.encode_source(Source::I420(i420), width, height)
+    }
+
+    fn encode_source(
+        &mut self,
+        source: Source<'_>,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        let (expected, actual) = source.sizes(width as usize, height as usize);
+        if actual != expected {
+            return Err(Error::BadFrame { expected, actual });
         }
         if self.context.as_ref().is_none_or(|c| (c.width, c.height) != (width, height)) {
             self.context = None;
@@ -254,7 +274,7 @@ impl Vp8Encoder {
                 v: std::slice::from_raw_parts_mut(img.planes[2], vs * (ch - 1) + cw),
                 v_stride: vs,
             };
-            rgba_to_i420(rgba, w, h, planes);
+            source.write_i420(w, h, planes);
         }
 
         let flags =
@@ -428,6 +448,24 @@ mod tests {
             let pic = dec.decode(&frame.data).unwrap().expect("a picture");
             assert_eq!((pic.width, pic.height), (256, 224));
         }
+    }
+
+    #[test]
+    fn an_i420_frame_encodes_as_its_rgba_does() {
+        // One thread: on several, libvpx's output is not the same from run to run.
+        let config = Vp8Config { threads: 1, ..Vp8Config::default() };
+        let (mut from_rgba, mut from_i420) = (Vp8Encoder::new(config), Vp8Encoder::new(config));
+        for n in 0..3 {
+            let rgba = gradient(255, 223, n);
+            let i420 = crate::yuv::packed_i420(&rgba, 255, 223);
+            let a = from_rgba.encode(&rgba, 255, 223).unwrap();
+            let b = from_i420.encode_i420(&i420, 255, 223).unwrap();
+            assert_eq!(a, b, "frame {n}");
+        }
+        assert!(matches!(
+            from_i420.encode_i420(&[0; 10], 4, 4),
+            Err(Error::BadFrame { expected: 24, actual: 10 })
+        ));
     }
 
     #[test]
