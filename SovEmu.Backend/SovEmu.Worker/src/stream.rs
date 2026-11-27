@@ -33,7 +33,7 @@ use str0m::format::Codec;
 use str0m::media::{Frequency, MediaKind, MediaTime, Mid, Pt};
 use str0m::net::{Protocol, Receive};
 use str0m::rtp::Extension;
-use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
+use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig, RtcError};
 
 use crate::adapt::{Adaptation, ClientSample, LimitChange, Limits};
 use crate::health::{self, Health};
@@ -230,6 +230,9 @@ pub(crate) struct Session {
     stats_log_interval: Option<Duration>,
     /// Video frames sent to clients.
     frames_sent: u64,
+    /// A frame was left out because the connection's send queue was full: the next one is a
+    /// keyframe.
+    video_gap: bool,
     /// The core has drawn a picture: it is up, and can take a state.
     drawn: bool,
     /// A state asked for before that, loaded once it has (its slot and bytes).
@@ -385,6 +388,7 @@ impl Session {
             stats_log_interval: (config.health_interval > 0)
                 .then(|| Duration::from_secs(u64::from(config.health_interval))),
             frames_sent: 0,
+            video_gap: false,
             drawn: false,
             pending_load: None,
             events: Vec::new(),
@@ -836,6 +840,18 @@ pub(crate) fn run(
         for event in session.take_events() {
             on_event(event);
         }
+    }
+}
+
+/// Whether str0m took a frame or sound packet to send. It holds what it has not sent yet and
+/// refuses more past 512 (`WriteWithoutPoll`, though the loop polls between every frame): the
+/// link has carried less than the stream for seconds. What is refused is left out, as a congested
+/// link would lose it, rather than ending the session (sovereign-media/SovEmu#296).
+fn queued(written: Result<(), RtcError>) -> Result<bool> {
+    match written {
+        Ok(()) => Ok(true),
+        Err(RtcError::WriteWithoutPoll) => Ok(false),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -1391,7 +1407,9 @@ impl Session {
                 && let Some(writer) = p.rtc.writer(mid)
             {
                 let rtp_time = MediaTime::new(self.audio_samples, Frequency::FORTY_EIGHT_KHZ);
-                writer.write(pt, now, rtp_time, packet)?;
+                if !queued(writer.write(pt, now, rtp_time, packet))? {
+                    self.health.unsent();
+                }
             }
             self.audio_samples += sovemu_media::audio::PACKET_FRAMES as u64;
         }
@@ -1427,6 +1445,10 @@ impl Session {
 
         if let Some((w, h)) = picture {
             self.shot_size = (w, h);
+            // A frame was left out, so the next one sent must not depend on it.
+            if self.video_gap {
+                self.video.request_keyframe();
+            }
             watchdog::beat(watchdog::Phase::Encoding);
             let encode_from = Instant::now();
             let encoded = self.video.encode_picture(&self.picture)?;
@@ -1441,13 +1463,16 @@ impl Session {
                 && let Some(writer) = p.rtc.writer(mid)
             {
                 let rtp_time = MediaTime::from_90khz(self.clock.at(tick));
-                writer.playout_delay(MediaTime::from_millis(0), MediaTime::from_millis(0)).write(
-                    pt,
-                    now,
-                    rtp_time,
-                    encoded.data,
-                )?;
-                self.frames_sent += 1;
+                let written = writer
+                    .playout_delay(MediaTime::from_millis(0), MediaTime::from_millis(0))
+                    .write(pt, now, rtp_time, encoded.data);
+                if queued(written)? {
+                    self.frames_sent += 1;
+                    self.video_gap = false;
+                } else {
+                    self.health.unsent();
+                    self.video_gap = true;
+                }
             }
         }
 
@@ -1626,6 +1651,33 @@ mod tests {
             .filter_map(|l| l.strip_prefix("a=candidate:"))
             .map(|c| c.split(' ').skip(4).take(4).collect::<Vec<_>>().join(" "))
             .collect()
+    }
+
+    #[test]
+    fn a_full_send_queue_leaves_the_frame_out_instead_of_ending_the_session() {
+        str0m::crypto::from_feature_flags().install_process_default();
+        let now = Instant::now();
+        let mut sender = RtcConfig::new().build(now);
+        let mut receiver = RtcConfig::new().build(now);
+        let mut api = sender.sdp_api();
+        let mid =
+            api.add_media(MediaKind::Video, str0m::media::Direction::SendOnly, None, None, None);
+        let (offer, pending) = api.apply().unwrap();
+        let answer = receiver.sdp_api().accept_offer(offer).unwrap();
+        sender.sdp_api().accept_answer(pending, answer).unwrap();
+        let pt = payload_type(&mut sender, mid, Codec::Vp8).unwrap();
+
+        // Never connected, so nothing is sent and every frame waits in str0m's queue.
+        let mut refused = 0;
+        for frame in 0..600u64 {
+            let writer = sender.writer(mid).unwrap();
+            let written = writer.write(pt, now, MediaTime::from_90khz(frame * 1500), vec![0; 100]);
+            if !queued(written).expect("a full queue is not an error") {
+                refused += 1;
+            }
+        }
+        assert!(refused > 0, "str0m queued every frame: its limit moved");
+        assert!(refused < 600, "str0m refused every frame");
     }
 
     #[test]

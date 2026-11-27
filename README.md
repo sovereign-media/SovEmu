@@ -126,12 +126,15 @@ GPU probe:
 The API's `gpu` query (admin) returns the same, and each 3D system's `rendering` is `GPU`,
 `SOFTWARE` or `OFF`.
 
-On a hardware GPU, integrated ones included, the 3D systems also start with their enhancements:
-Dreamcast at 1280×960, GameCube at 2× (1280×1056) with 4× anisotropic filtering and shaders
-compiled in the background, PS2 at 2×. N64's core already draws at 2× (640×480). They stay at
-the console's own resolution in software or on a hypervisor's adapter. Each is an ordinary core
-option, so the emulator settings or `SovEmu__Systems__<id>__Options__<name>` change it; to bring
-PS2 back to 1×, for example, set `SovEmu__Systems__ps2__Options__pcsx2_upscale_multiplier=1x Native (PS2)`.
+On a hardware GPU, integrated ones included, GameCube also starts with 4× anisotropic filtering
+and shaders compiled in the background; in software or on a hypervisor's adapter it does not.
+Dreamcast, GameCube and PS2 draw at the console's own resolution everywhere (N64's core draws at
+640×480): every pixel of a higher one is encoded, sent and decoded, and at 2× a Fire TV took
+18–26 ms to decode a frame, more than a frame lasts at 60 fps, while the server's read back and
+encode no longer fit in one either (sovereign-media/SovEmu#296). Each is an ordinary core option,
+so the emulator settings or `SovEmu__Systems__<id>__Options__<name>` change it, for players whose
+devices decode the larger picture in time: for PS2 at 2×, for example, set
+`SovEmu__Systems__ps2__Options__pcsx2_upscale_multiplier=2x Native (~720p)`.
 
 - **Docker, AMD or Intel:** `docker compose -f compose.yaml -f compose.gpu.yaml up -d` passes
   `/dev/dri` through. Set `SOVEMU_RENDER_GID` in `.env` to the group that owns the render node
