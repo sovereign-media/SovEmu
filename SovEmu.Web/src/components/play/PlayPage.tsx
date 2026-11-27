@@ -8,10 +8,11 @@
 import {
   Activity,
   ArrowLeft,
+  Check,
   CircleAlert,
   Disc3,
-  FolderOpen,
   Gamepad2,
+  History,
   Keyboard,
   LogOut,
   type LucideIcon,
@@ -19,17 +20,17 @@ import {
   Play,
   Plus,
   RotateCcw,
-  Save,
+  Sparkles,
   ToggleLeft,
   ToggleRight,
-  Undo2,
+  Trash2,
   Users,
-  Wand2,
 } from "lucide-react";
 import { type SubmitEvent, useEffect, useReducer, useRef, useState } from "react";
 import {
   AUTO_SLOT,
   api,
+  type Cheat,
   type ControllerMappingList,
   type Game,
   type PadLayout,
@@ -79,11 +80,12 @@ const ICONS: Record<string, LucideIcon> = {
   play: Play,
   restart: RotateCcw,
   back: ArrowLeft,
-  resume: Undo2,
-  save: Save,
-  load: FolderOpen,
-  cheats: Wand2,
-  controls: Keyboard,
+  // The game menu's icons are the Android app's (Player.kt), so both menus read the same.
+  resume: Play,
+  save: Check,
+  load: History,
+  cheats: Sparkles,
+  controls: Gamepad2,
   display: MonitorCog,
   reset: RotateCcw,
   stats: Activity,
@@ -91,6 +93,7 @@ const ICONS: Record<string, LucideIcon> = {
   add: Plus,
   on: ToggleRight,
   off: ToggleLeft,
+  remove: Trash2,
   button: Gamepad2,
   keyboard: Keyboard,
   players: Users,
@@ -357,7 +360,7 @@ function Player() {
           const s = slots.find((x) => x.slot === n);
           return {
             label: n === AUTO_SLOT ? "Auto save" : `Slot ${n}`,
-            detail: s ? ago(s.savedAt) : "Empty",
+            detail: s ? `Saved ${ago(s.savedAt)}` : "Empty",
             image: s?.screenshotUrl ?? "",
             disabled: !s && !emptyEnabled,
             run: () => onPick(n),
@@ -367,7 +370,7 @@ function Player() {
       async function saveMenu() {
         const slots = await api.saves(gameId);
         stack.push({
-          title: "Save state",
+          title: "Save to a slot",
           items: slotItems(
             slots,
             SLOTS,
@@ -390,7 +393,7 @@ function Player() {
       async function loadMenu() {
         const slots = await api.saves(gameId);
         stack.push({
-          title: "Load state",
+          title: "Load a save",
           items: slotItems(
             slots,
             [AUTO_SLOT, ...SLOTS],
@@ -428,7 +431,7 @@ function Player() {
       // Controls: every connected device with its player; choosing one remaps it. Mappings are
       // the user's, per controller model, saved on the server (docs/CONTROLLERS.md).
       const controlsMenu = (): Menu => ({
-        title: "Controls: choose a controller",
+        title: "Controllers: choose one to remap it",
         items: input.devices().map((d) => ({
           label: d.info.name,
           icon: d.key === KEYBOARD ? "keyboard" : "button",
@@ -556,10 +559,30 @@ function Player() {
         };
       };
 
+      const removeCheatMenu = (cheats: Cheat[]) =>
+        stack.push({
+          title: "Remove a cheat",
+          items: cheats.map((c) => ({
+            label: c.description || c.code,
+            icon: "remove",
+            detail: c.description ? c.code : "",
+            run: async () => {
+              try {
+                await api.deleteCheat(gameId, c.id);
+                toast("Cheat removed");
+              } catch (e) {
+                toast(`Could not remove: ${(e as Error).message}`);
+              }
+              stack.pop();
+              await cheatsMenu(true);
+            },
+          })),
+        });
+
       async function cheatsMenu(replace = false) {
         const cheats = await api.cheats(gameId);
         const menu: Menu = {
-          title: "Cheats: choose one to turn it on or off",
+          title: cheats.length ? "Cheats: choose one to turn it on or off" : "Cheats",
           items: [
             ...cheats.map((c) => ({
               label: c.description || c.code,
@@ -586,6 +609,11 @@ function Player() {
                   await cheatsMenu(true);
                 }),
             },
+            // The Android app removes a cheat with a button on its row; a menu row has one
+            // action, so removing is a page of its own.
+            ...(cheats.length
+              ? [{ label: "Remove a cheat…", icon: "remove", run: () => removeCheatMenu(cheats) }]
+              : []),
           ],
         };
         if (replace) stack.replace(menu);
@@ -615,6 +643,7 @@ function Player() {
 
       const gameMenu = (): Menu => ({
         title: game.title,
+        badge: true,
         items: [
           { label: "Resume", icon: "resume", run: () => stack.close() },
           { label: "Save state", icon: "save", run: saveMenu },
@@ -630,7 +659,7 @@ function Player() {
               ]
             : []),
           { label: "Cheats", icon: "cheats", run: () => cheatsMenu() },
-          { label: "Controls", icon: "controls", run: () => stack.push(controlsMenu()) },
+          { label: "Controllers", icon: "controls", run: () => stack.push(controlsMenu()) },
           {
             label: "Display filter",
             icon: "display",
@@ -656,7 +685,7 @@ function Player() {
               stack.close();
             },
           },
-          { label: "Quit game", icon: "quit", detail: "Saves your progress", run: quit },
+          { label: "Quit game", icon: "quit", divider: true, run: quit },
         ],
       });
 
@@ -664,6 +693,7 @@ function Player() {
       const auto = initialSlots.find((s) => s.slot === AUTO_SLOT);
       stack.push({
         title: auto ? "Welcome back" : "Ready",
+        badge: true,
         onBack: () => void quit(),
         items: auto
           ? [
@@ -683,10 +713,13 @@ function Player() {
             ],
       });
 
-      // Chosen already on the game list (?start=continue or ?start=new): skip the question.
+      // Chosen already on the game list (?start=continue, ?start=new, or a slot from the game
+      // panel's saves, ?start=2): skip the question.
       const chosen = new URLSearchParams(location.search).get("start");
-      if (chosen === "continue" && auto) void begin(AUTO_SLOT);
-      else if (chosen === "new" || chosen === "continue") void begin(null);
+      const slot = chosen !== null && /^\d+$/.test(chosen) ? Number(chosen) : null;
+      if (slot !== null && initialSlots.some((s) => s.slot === slot)) void begin(slot);
+      else if (chosen === "continue" && auto) void begin(AUTO_SLOT);
+      else if (chosen === "new" || chosen === "continue" || slot !== null) void begin(null);
 
       // Menu navigation. While playing with no menu open, game keys must not drive menus.
       // Escape both opens the menu and means Back: the press that opened it must not also
@@ -871,7 +904,12 @@ function Player() {
                 </span>
                 <span className="text-xs text-slate-500 tabular-nums">{progress.detail}</span>
               </div>
-              <Progress value={progress.percent} color={color} className="h-1.5 bg-white/10" label={progress.label} />
+              <Progress
+                value={progress.percent}
+                color="var(--color-accent)"
+                className="h-1.5 bg-white/15"
+                label={progress.label}
+              />
             </div>
           )}
         </section>
@@ -881,7 +919,21 @@ function Player() {
           (pad and keyboard through listenNav), so Radix's own Escape and outside clicks are off. */}
       <Dialog
         open={!!top && !cheatForm}
-        title={top?.menu.title ?? ""}
+        title={
+          top?.menu.badge && loaded?.system ? (
+            <span className="flex items-center gap-2.5">
+              <span
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-black text-white"
+                style={{ background: color }}
+              >
+                {loaded.system.short}
+              </span>
+              <span className="truncate">{top.menu.title}</span>
+            </span>
+          ) : (
+            (top?.menu.title ?? "")
+          )
+        }
         dim={playing}
         className={diagrams ? "w-[56rem]" : undefined}
         contentProps={{
@@ -908,10 +960,12 @@ function Player() {
                   onClick={() => stack.activate(i)}
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5",
+                    // The Android app's highlight: the accent, not the system's colour.
+                    on ? "bg-accent/45" : "hover:bg-white/5",
                     item.disabled && "cursor-default opacity-40",
-                    !on && "hover:bg-white/5",
+                    item.divider &&
+                      "relative mt-3 before:absolute before:inset-x-0 before:-top-2 before:h-px before:bg-white/10",
                   )}
-                  style={on ? { background: color } : undefined}
                 >
                   {item.image !== undefined ? (
                     <div className="pixelated grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded bg-black/50 text-xs text-slate-500">

@@ -14,11 +14,15 @@ export interface MenuItem {
   disabled?: boolean;
   /** Keys to light on the menu's diagrams while this item is selected. */
   highlight?: { system?: string[]; controller?: string[] };
+  /** A rule above this item, setting it apart (Quit game, as the Android app does). */
+  divider?: boolean;
   run: () => void | Promise<void>;
 }
 
 export interface Menu {
   title: string;
+  /** Head the menu with the game's system badge, as the Android app's game menu does. */
+  badge?: boolean;
   items: MenuItem[];
   /** What Back does at this level; the default pops the menu. */
   onBack?: () => void;

@@ -179,8 +179,7 @@ export function FilterDrawer({
             ))}
             {!players && !ratings && esrb.length === 0 && lists.length === 0 && (
               <p className="text-sm text-slate-500">
-                Filters for players, ratings, genres and more appear once game information has been fetched for these
-                games.
+                Rating, player, genre and series filters appear once game information has been fetched for these games.
               </p>
             )}
           </div>

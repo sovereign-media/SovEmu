@@ -1,11 +1,13 @@
 // A game's details in a side panel over the grid: artwork (and its video snap), facts,
-// description, Continue / Start over or Play, save slots and play history. Full height on the
+// description, Continue / Start over or Play, its saves to start from and play history, laid out
+// as the Android app's panel is. Full height on the
 // right edge, over the page, which dims behind it and never reflows for it. Not modal: the grid
 // stays usable, and choosing another card switches the panel to it.
 
 import {
   Building2,
   CalendarDays,
+  Disc3,
   Gamepad2,
   Library,
   Play,
@@ -20,7 +22,7 @@ import { Dialog } from "radix-ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../../lib/api";
 import { esrbLabel, stars } from "../../lib/esrb";
-import { maxPlayers } from "../../lib/games";
+import { maxPlayers, partsLabel } from "../../lib/games";
 import { formatBytes } from "../../lib/numbers";
 import { ago, agoFromSqlite } from "../../lib/time";
 import { Button } from "../ui/button";
@@ -96,7 +98,8 @@ type GamePanelProps = {
   system: SystemSummary;
   slots: SaveSlot[];
   onClose: () => void;
-  onPlay: (start: "continue" | "new") => void;
+  /** Play: from the auto save, from the start, or from one save slot. */
+  onPlay: (start: "continue" | "new" | number) => void;
   /** The game was added to favourites (true) or taken out. */
   onFavourite: (favourite: boolean) => void;
   /** The patch it plays with changed (its saves are the patched game's own). */
@@ -142,6 +145,7 @@ export function GamePanel({ game, system, slots, onClose, onPlay, onFavourite, o
                   {players !== null && (
                     <Fact icon={<Users />}>{players === 1 ? "1 player" : `${shown.players} players`}</Fact>
                   )}
+                  {shown.discs > 1 && <Fact icon={<Disc3 />}>{partsLabel(shown.discs, shown.partKind)}</Fact>}
                   {shown.rating !== null && <Fact icon={<Star />}>{stars(shown.rating)} out of 5</Fact>}
                   {shown.modes.length > 0 && <Fact icon={<Gamepad2 />}>{shown.modes.join(", ")}</Fact>}
                   {shown.series.length > 0 && <Fact icon={<Library />}>{shown.series.join(", ")}</Fact>}
@@ -169,30 +173,41 @@ export function GamePanel({ game, system, slots, onClose, onPlay, onFavourite, o
                   <Play className="fill-current" /> Play
                 </Button>
               )}
+            </div>
+            <div className="flex flex-wrap gap-2">
               <GameCollections game={shown} onFavourite={onFavourite} />
             </div>
             <GamePatch game={shown} onPatch={onPatch} />
             {shown.description && <p className="text-sm leading-relaxed text-slate-300">{shown.description}</p>}
             {slots.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Saves</p>
-                <div className="flex flex-wrap gap-2">
-                  {slots.map((s) => (
-                    <Tooltip
-                      key={s.slot}
-                      content={`${s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`} · ${ago(s.savedAt)}`}
-                    >
-                      <span className="pixelated grid h-12 w-16 place-items-center overflow-hidden rounded border border-white/10 bg-black/50 text-[10px] text-slate-400">
-                        {s.screenshotUrl ? (
-                          <img src={s.screenshotUrl} alt="" className="pixelated size-full object-cover" />
-                        ) : s.slot === AUTO_SLOT ? (
-                          "Auto"
-                        ) : (
-                          `Slot ${s.slot}`
-                        )}
-                      </span>
-                    </Tooltip>
-                  ))}
+                <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Start from a save</p>
+                <div className="flex flex-wrap gap-3">
+                  {slots.map((s) => {
+                    const name = s.slot === AUTO_SLOT ? "Auto save" : `Slot ${s.slot}`;
+                    return (
+                      <button
+                        key={s.slot}
+                        type="button"
+                        aria-label={`Play from ${name === "Auto save" ? "the auto save" : `slot ${s.slot}`}, saved ${ago(s.savedAt)}`}
+                        onClick={() => onPlay(s.slot === AUTO_SLOT ? "continue" : s.slot)}
+                        className="group grid w-28 gap-1 text-left outline-none"
+                      >
+                        <span className="pixelated relative grid aspect-[4/3] place-items-center overflow-hidden rounded-md border-2 border-transparent bg-black/50 text-xs text-slate-500 group-hover:border-white group-focus-visible:border-white">
+                          {s.screenshotUrl ? (
+                            <img src={s.screenshotUrl} alt="" className="pixelated size-full object-cover" />
+                          ) : (
+                            name
+                          )}
+                          <span className="absolute inset-0 hidden place-items-center bg-black/40 group-hover:grid group-focus-visible:grid">
+                            <Play className="size-6 fill-current" />
+                          </span>
+                        </span>
+                        <span className="truncate text-xs font-semibold text-slate-200">{name}</span>
+                        <span className="truncate text-[11px] text-slate-500">{ago(s.savedAt)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

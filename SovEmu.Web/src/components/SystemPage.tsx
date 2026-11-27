@@ -8,7 +8,7 @@
 // The list logic is src/lib/games.ts.
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowDownAZ, Check, CircleCheck, Microchip, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AUTO_SLOT, type Game, type SaveSlot, type SystemSummary } from "../lib/api";
@@ -115,14 +115,12 @@ function GameCard({ game, system, focused, open, onOpen }: GameCardProps) {
       </div>
       <div className="min-w-0 px-0.5">
         <p className="truncate text-sm font-semibold">{game.title}</p>
-        <p className="flex items-center gap-1.5 truncate text-xs text-slate-400">
-          {game.release && <span className="truncate font-medium text-amber-200/90">{game.release} ·</span>}
-          {game.releaseDate?.slice(0, 4) ?? game.tags[0] ?? system.short}
-          {players !== null && players >= 2 && (
-            <span className="flex items-center gap-0.5">
-              · <Users className="size-3" /> {players}
-            </span>
-          )}
+        {/* "1994 · 2 players", the release first in amber: the Android app's caption. */}
+        <p className="truncate text-xs text-slate-400">
+          {game.release && <span className="font-medium text-amber-200/90">{game.release} · </span>}
+          {[game.releaseDate?.slice(0, 4), players !== null && players >= 2 ? `${players} players` : null]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
     </button>
@@ -215,7 +213,7 @@ function Games() {
   }, [openId]);
   const slots: SaveSlot[] = useQuery({ ...q.saves(savesFor ?? 0), enabled: savesFor !== null }).data ?? [];
 
-  const play = (g: Game | null, start: "continue" | "new") => {
+  const play = (g: Game | null, start: "continue" | "new" | number) => {
     if (g) go(`/play/?game=${g.id}&start=${start}`);
   };
   const changeSort = (s: GameSort) => {
