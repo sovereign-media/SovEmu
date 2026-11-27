@@ -324,8 +324,7 @@ struct Pending {
 /// then while one it was not asked is now configured.
 fn needs_lookup(status: Option<&str>, tried: Option<&str>, available: &[&str]) -> bool {
     match status {
-        // Found before ScreenScraper was asked for screenshots and logos (migration 0031), and
-        // for age ratings, modes, series and themes (0032).
+        // Never looked up, or left unfinished by a source that stopped (`store`'s `unfinished`).
         None | Some("refresh") => true,
         Some("not_found") => {
             let tried: Vec<&str> = tried.unwrap_or("").split(',').collect();
@@ -1135,10 +1134,10 @@ mod tests {
         let all = ["fbneo", "screenscraper"];
         assert!(needs_lookup(None, None, &["fbneo"]), "never looked up");
         assert!(!needs_lookup(Some("found"), Some("fbneo"), &all), "found stays found");
-        assert!(needs_lookup(Some("refresh"), Some("screenscraper"), &all), "migration 0031");
+        assert!(needs_lookup(Some("refresh"), Some("screenscraper"), &all), "left unfinished");
         assert!(!needs_lookup(Some("not_found"), Some("fbneo"), &["fbneo"]), "nothing new");
         assert!(needs_lookup(Some("not_found"), Some("fbneo"), &all), "credentials added");
-        assert!(needs_lookup(Some("not_found"), Some(""), &["fbneo"]), "before this was kept");
+        assert!(needs_lookup(Some("not_found"), Some(""), &["fbneo"]), "nothing tried yet");
         assert!(!needs_lookup(Some("not_found"), Some("fbneo,screenscraper"), &all));
     }
 }

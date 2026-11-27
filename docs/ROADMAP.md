@@ -54,10 +54,10 @@ held 59.93 fps over 300 frames with no resyncs.
       the last admin, nor an account the environment declares, which shows locked)
 - [x] The admin Activity page: who did what, and when (sign-ins and refusals through
       `sovemu_identity`'s observer, games started and ended through `sovemu_sessions`', admin
-      changes from their resolvers), kept in `activity` (migration 0023, pruned after
+      changes from their resolvers), kept in `activity` (pruned after
       `SovEmu__ActivityLog__RetentionDays`), filtered by account and kind, paged, and exported as CSV
-- [x] The admin Statistics page: every game played is kept as it ends (`play_sessions`,
-      migration 0024), and a week, month or year shows the totals, time played per day (per
+- [x] The admin Statistics page: every game played is kept as it ends (`play_sessions`),
+      and a week, month or year shows the totals, time played per day (per
       week over a year), the most played games, each account's and system's time, and the most
       favourited games, each figure one query over the window by start time
 - [x] The admin Logs page: the server's recent log kept in memory (`SovEmu__Logging__BufferLines`, 0
@@ -73,8 +73,8 @@ held 59.93 fps over 300 frames with no resyncs.
       keeps `games.missing_parts`) and the files no system plays (`scan_skipped`, migration
       0025), each counted per system, and a game looked up again on its own (`lookUpGame`)
 - [x] Shared collections (`/admin/collections/`): an admin's collections for everyone, on every
-      Home beside each user's own (`sharedCollections`; one table, `collections.user_id` null,
-      migration 0026), filled from a game's panel; declared as `SovEmu__Collections__<n>__Name`
+      Home beside each user's own (`sharedCollections`; one table, `collections.user_id` null),
+      filled from a game's panel; declared as `SovEmu__Collections__<n>__Name`
       and `__GAMES__<m>` (`<system>/<file>`), kept in step after each scan and locked, and
       offered as environment lines
 - [x] Backups (`/admin/backups/`): the database (`VACUUM INTO`), the signing keys and every save
@@ -92,7 +92,7 @@ held 59.93 fps over 300 frames with no resyncs.
       page, with what that account has played and its saves, and sign one out through oauth-as's
       family revocation (`signIns`, `user`, `endSignIn`)
 - [x] The apps name their device once signed in (`nameDevice`: app, version, device), kept by
-      refresh family in SovEmu's own `sign_in_devices` (migration 0027) beside oauth-as's
+      refresh family in SovEmu's own `sign_in_devices` beside oauth-as's
       records, so a sign-in on the Devices page says which device it is
 - [x] ROM library: systems table (Recalbox folder names and aliases, extension fallback, preferred
       cores), scanner that keeps game ids stable across rescans, No-Intro title and tag parsing
@@ -265,7 +265,7 @@ held 59.93 fps over 300 frames with no resyncs.
       whether it went direct, through STUN or through a TURN relay; then the stream settings
 - [x] The admin Client errors page: what the apps report (`reportClientEvents`: failed or lost
       connections, stalled pictures, screen errors, unknown controllers) is kept in
-      `client_events` (migration 0022, pruned after `SovEmu__ClientErrors__RetentionDays`) and grouped by
+      `client_events` (pruned after `SovEmu__ClientErrors__RetentionDays`) and grouped by
       kind and by app and device, each group opening onto its events with the game they
       happened in
 - [ ] Zero-copy GPU capture: hand a 3D core's framebuffer to VA-API as a dmabuf instead of
@@ -290,7 +290,7 @@ held 59.93 fps over 300 frames with no resyncs.
       before `ready`); clients follow a start with `start_id` and
       `GET /api/sessions/starting/{id}`; the web player shows a loading bar
 - [x] Emulator settings in the web app: each core's options (probed by a worker), changed per
-      system by admins (`system_settings`, migration 0005); the environment wins and is shown
+      system by admins (`system_settings`); the environment wins and is shown
       locked; changes are offered as `SovEmu__Systems__…` lines
 - [x] Run-ahead (#85): per system, the picture runs 0-4 frames ahead of the game, hiding its
       own input lag (single-instance: save, run ahead, show, restore; sound from the real

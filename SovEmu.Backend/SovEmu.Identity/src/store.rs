@@ -1,5 +1,5 @@
-//! oauth-as's [`Storage`] over SQLite: the tables are in the server's migration
-//! `0016_oidc.sql`, one per kind of record, each record kept whole as JSON beside the columns it
+//! oauth-as's [`Storage`] over SQLite: the tables are the server's `oauth_*` (its
+//! `migrations/`), one per kind of record, each record kept whole as JSON beside the columns it
 //! is looked up, cascaded and swept by.
 //!
 //! Atomicity comes from the database, never from a lock in this process: a take is one

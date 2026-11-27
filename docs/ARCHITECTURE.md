@@ -142,7 +142,7 @@ at a time, giving up on a URL after three failures. Its queue is the table, so a
 it. The files live in `data/artwork/games/<game id>/` (`box.webp`, `shot.webp`, `marquee.webp`,
 `video.mp4`), pictures as lossy WebP, and are a game's only
 artwork: the scan reads ROMs alone, never the artwork folders a Batocera library keeps beside them
-(`images/`, `videos/`; migration `0031` dropped what it had found there). The API's artwork
+(`images/`, `videos/`). The API's artwork
 kinds map onto them: `thumb` is the box art, `image` the screenshot, `marquee` the logo. After
 every scan a reconcile job (`metadata/reconcile.rs`) deletes what games no longer in the library
 left (their information, downloaded files and resized copies) and forgets downloaded files that
