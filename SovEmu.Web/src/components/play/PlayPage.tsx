@@ -797,43 +797,48 @@ function Player() {
 
   return (
     <main className="fixed inset-0 grid place-items-center bg-black">
-      {frame ? (
-        // The decoration fitted to the screen, the picture (its shape kept) in its window, the
-        // artwork drawn over the picture's edges.
-        <div
-          className="relative"
-          style={{
-            aspectRatio: `${frame.width} / ${frame.height}`,
-            width: `min(100vw, calc(100dvh * ${frame.width} / ${frame.height}))`,
-          }}
-        >
-          <div className="absolute" style={windowInsets(frame)}>
-            <video
-              ref={video}
-              autoPlay
-              playsInline
-              className={cn("pixelated absolute inset-0 size-full object-contain", filtered && "opacity-0")}
-            />
-            <canvas ref={canvas} className={cn("absolute inset-0 size-full object-contain", !filtered && "hidden")} />
-          </div>
+      {/* One video and one canvas, framed or not: the stream and the display filter hold on to
+          the elements they were given when the screen opened, and the decoration only arrives
+          with the game's details, after that. Two layouts with an element each swapped them
+          for new, empty ones, and the picture played into a video nobody saw. */}
+      <div
+        className={cn("relative", !frame && "h-full max-h-dvh w-auto max-w-full")}
+        style={
+          frame
+            ? // The decoration fitted to the screen, the picture (its shape kept) in its window,
+              // the artwork drawn over the picture's edges.
+              {
+                aspectRatio: `${frame.width} / ${frame.height}`,
+                width: `min(100vw, calc(100dvh * ${frame.width} / ${frame.height}))`,
+              }
+            : { aspectRatio: aspect }
+        }
+      >
+        <div className={cn("absolute", !frame && "inset-0")} style={frame ? windowInsets(frame) : undefined}>
+          <video
+            ref={video}
+            autoPlay
+            playsInline
+            className={cn(
+              "pixelated absolute inset-0 size-full",
+              frame ? "object-contain" : "object-fill",
+              filtered && "opacity-0",
+            )}
+          />
+          <canvas
+            ref={canvas}
+            className={cn("absolute inset-0 size-full", frame && "object-contain", !filtered && "hidden")}
+          />
+        </div>
+        {frame && (
           <img
             src={frame.url}
             alt=""
             draggable={false}
             className="pointer-events-none absolute inset-0 size-full select-none"
           />
-        </div>
-      ) : (
-        <div className="relative h-full max-h-dvh w-auto max-w-full" style={{ aspectRatio: aspect }}>
-          <video
-            ref={video}
-            autoPlay
-            playsInline
-            className={cn("pixelated absolute inset-0 size-full object-fill", filtered && "opacity-0")}
-          />
-          <canvas ref={canvas} className={cn("absolute inset-0 size-full", !filtered && "hidden")} />
-        </div>
-      )}
+        )}
+      </div>
 
       {splash && (
         <section
