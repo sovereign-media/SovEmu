@@ -36,6 +36,7 @@ import {
   CreateSharedCollectionMutation,
   DecorationsQuery,
   DeleteBackupMutation,
+  DeleteCheatMutation,
   DeleteCollectionMutation,
   DeleteSharedCollectionMutation,
   EmulatorSettingsQuery as EmulatorSettingsDocument,
@@ -385,6 +386,8 @@ export const api = {
     (await request(AddCheatMutation, { gameId, code, description })).addCheat,
   setCheat: async (gameId: number, cheatId: number, enabled: boolean) =>
     (await request(SetCheatMutation, { gameId, cheatId, enabled })).setCheatEnabled,
+  deleteCheat: async (gameId: number, cheatId: number) =>
+    (await request(DeleteCheatMutation, { gameId, cheatId })).deleteCheat,
   /** The mappings in force for this user on a system, or on every system with none (docs/CONTROLLERS.md). */
   controllerMappings: async (system: string | null = null) =>
     (await request(ControllerMappingsQuery, { system })).controllerMappings,

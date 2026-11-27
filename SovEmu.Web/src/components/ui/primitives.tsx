@@ -56,7 +56,7 @@ export function Dialog({
           {...contentProps}
         >
           <div className="flex items-center gap-2 px-3 pt-1 pb-2">
-            <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-sm font-normal text-slate-400">
+            <DialogPrimitive.Title className="min-w-0 flex-1 truncate text-base font-semibold text-slate-100">
               {title}
             </DialogPrimitive.Title>
             {closeButton && onOpenChange && (

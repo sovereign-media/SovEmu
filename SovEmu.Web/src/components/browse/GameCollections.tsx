@@ -1,4 +1,5 @@
-// A game's place in this user's lists, on its panel: a heart for favourites, and a menu of
+// A game's place in this user's lists, on its panel: "Add to favourites" (or "Favourite", the
+// heart filled) and "Collections", labelled as the Android app labels them, and a menu of
 // collections to put it in or take it out of, with "New collection…" (named in a dialog). An
 // admin's menu also has the shared collections, but for those set in the environment.
 
@@ -120,19 +121,19 @@ export function GameCollections({ game, onFavourite }: GameCollectionsProps) {
   return (
     <>
       <Button
-        size="lg"
         variant="outline"
         aria-pressed={game.favourite}
-        aria-label={game.favourite ? "Remove from favourites" : "Add to favourites"}
+        title={game.favourite ? "Remove from favourites" : undefined}
         onClick={toggleFavourite}
       >
-        <Heart className={cn(game.favourite && "fill-red-400 text-red-400")} />
+        <Heart className={cn(game.favourite && "fill-red-300 text-red-300")} />
+        {game.favourite ? "Favourite" : "Add to favourites"}
       </Button>
       <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
-          <Button size="lg" variant="outline" aria-label="Collections">
-            <ListPlus />
-            {inMenu > 0 && <span className="text-xs tabular-nums">{inMenu}</span>}
+          <Button variant="outline">
+            <ListPlus /> Collections
+            {inMenu > 0 && <span className="text-xs text-slate-400 tabular-nums">{inMenu}</span>}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

@@ -593,6 +593,12 @@ export const AddCheatMutation = graphql(`
   }
 `);
 
+export const DeleteCheatMutation = graphql(`
+  mutation DeleteCheat($gameId: Int!, $cheatId: Int!) {
+    deleteCheat(gameId: $gameId, cheatId: $cheatId)
+  }
+`);
+
 export const SetCheatMutation = graphql(`
   mutation SetCheat($gameId: Int!, $cheatId: Int!, $enabled: Boolean!) {
     setCheatEnabled(gameId: $gameId, cheatId: $cheatId, enabled: $enabled) {
