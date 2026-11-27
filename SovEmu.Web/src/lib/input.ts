@@ -23,7 +23,7 @@ import {
   stickInputs,
   toMapping,
 } from "./controllers";
-import { type Analog, bit, CENTRED, type Hotkeys, MAX_PORTS } from "./protocol";
+import { type Analog, type ButtonName, bit, CENTRED, type Hotkeys, MAX_PORTS } from "./protocol";
 
 const STICK_THRESHOLD = 0.5;
 const FAST_FORWARD_KEY = "Tab";
@@ -79,6 +79,15 @@ export function padState(pressed: (i: number) => boolean, mapping: Mapping): num
   return state;
 }
 
+/**
+ * Whether the player needs on-screen controls: a touch screen and nothing else to play with, the
+ * Android app's rule (`touchControlsWanted`). A browser cannot list keyboards, so one counts as
+ * attached once a key that plays the game has been pressed.
+ */
+export function touchControlsWanted(touchscreen: boolean, gamepads: number, keyboardUsed: boolean): boolean {
+  return touchscreen && gamepads === 0 && !keyboardUsed;
+}
+
 export class InputState {
   /**
    * The game reads analog sticks (a 3D system): the left stick moves the stick, not the D-pad.
@@ -93,6 +102,12 @@ export class InputState {
   private keyboardPort = 0;
   private known = new Map<string, ControllerInfo>();
   private held = new Set<string>();
+  /** The on-screen controls' buttons held, player 1's as on Android (added to the keyboard's). */
+  private touched = 0;
+  /** Buttons pressed since the last read: a tap shorter than a frame still reaches the game. */
+  private tapped = 0;
+  /** A key that plays the game has been pressed: there is a keyboard to play with. */
+  keyboardUsed = false;
 
   /** Removes the listeners: the player screen is gone, but the page (and window) stay. */
   private listening = new AbortController();
@@ -101,7 +116,15 @@ export class InputState {
     const signal = this.listening.signal;
     target.addEventListener("keydown", (e) => this.onKey(e, true), { signal });
     target.addEventListener("keyup", (e) => this.onKey(e, false), { signal });
-    target.addEventListener("blur", () => this.held.clear(), { signal });
+    target.addEventListener(
+      "blur",
+      () => {
+        this.held.clear();
+        this.touched = 0;
+        this.tapped = 0;
+      },
+      { signal },
+    );
     target.addEventListener("gamepadconnected", (e) => this.players.join(`pad:${e.gamepad.index}`), { signal });
     target.addEventListener("gamepaddisconnected", (e) => this.players.leave(`pad:${e.gamepad.index}`), { signal });
     // Pads already connected (a reload) join in slot order.
@@ -163,9 +186,16 @@ export class InputState {
   private onKey(e: KeyboardEvent, down: boolean) {
     const relevant = e.code in this.mapping(KEYBOARD) || e.code === FAST_FORWARD_KEY || e.code === REWIND_KEY;
     if (!relevant) return;
+    this.keyboardUsed = true;
     if (down) this.held.add(e.code);
     else this.held.delete(e.code);
     e.preventDefault();
+  }
+
+  /** An on-screen button pressed (true) or let go, for player 1. */
+  touch(button: ButtonName, down: boolean) {
+    this.touched = down ? this.touched | bit(button) : this.touched & ~bit(button);
+    if (down) this.tapped |= bit(button);
   }
 
   /** The current state of every player. */
@@ -182,6 +212,8 @@ export class InputState {
       if (name) ports[keyboardPort] |= bit(name);
     }
     used = Math.max(used, keyboardPort);
+    ports[0] |= this.touched | this.tapped;
+    this.tapped = 0;
 
     const analogSet = new Set<number>();
     for (const pad of this.pads()) {

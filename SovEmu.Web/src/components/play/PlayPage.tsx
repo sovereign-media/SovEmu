@@ -26,7 +26,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { type SubmitEvent, useEffect, useReducer, useRef, useState } from "react";
+import { type SubmitEvent, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   AUTO_SLOT,
   api,
@@ -57,7 +57,7 @@ import { invalidate, q, queryClient } from "../../lib/data";
 import { type Decoration, parseAspect, shouldFrame, windowInsets } from "../../lib/decoration";
 import { FILTERS, type FilterMode, VideoFilter } from "../../lib/filter";
 import { go } from "../../lib/go";
-import { captureInput, InputState } from "../../lib/input";
+import { captureInput, InputState, touchControlsWanted } from "../../lib/input";
 import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
 import { describeFirstPicture, describeStart, ForwardOnly, newStartId, type StartStatus } from "../../lib/launch";
 import { type Menu, type MenuItem, MenuStack } from "../../lib/menu";
@@ -75,6 +75,7 @@ import { Dialog, Field, inputClass, Progress } from "../ui/primitives";
 import { useToast } from "../ui/toast";
 import { LatencyGraph } from "./LatencyGraph";
 import { QualityChip } from "./QualityChip";
+import { TouchController } from "./TouchController";
 
 const ICONS: Record<string, LucideIcon> = {
   play: Play,
@@ -165,6 +166,11 @@ function Player() {
   const [cheatForm, setCheatForm] = useState<null | ((code: string, description: string) => void)>(null);
   const formOpen = useRef(false);
   formOpen.current = cheatForm !== null;
+  // On-screen controls: wanted on a touch screen with no pad or keyboard (the Android app's rule).
+  const [touch, setTouch] = useState(false);
+  const inputs = useRef<InputState | null>(null);
+  const openMenu = useRef<() => void>(() => {});
+  const onTouch = useCallback((button: ButtonName, down: boolean) => inputs.current?.touch(button, down), []);
 
   useEffect(() => {
     const stack = menus.current!;
@@ -178,6 +184,24 @@ function Player() {
     let lastFrames = 0;
     let stalledFor = 0;
     const input = new InputState();
+    inputs.current = input;
+    // Whether the on-screen controls are wanted, again whenever a pad comes or goes or a key that
+    // plays the game is pressed.
+    const touchscreen = matchMedia("(pointer: coarse)");
+    const watching = new AbortController();
+    const wantTouch = () =>
+      setTouch(
+        touchControlsWanted(
+          touchscreen.matches,
+          [...(navigator.getGamepads?.() ?? [])].filter(Boolean).length,
+          input.keyboardUsed,
+        ),
+      );
+    wantTouch();
+    for (const event of ["gamepadconnected", "gamepaddisconnected", "keydown"]) {
+      addEventListener(event, wantTouch, { signal: watching.signal });
+    }
+    touchscreen.addEventListener("change", wantTouch, { signal: watching.signal });
     const sampler = new StatsSampler();
     const history = new LatencyHistory();
     const filter = new VideoFilter(video.current!, canvas.current!);
@@ -740,6 +764,10 @@ function Player() {
         }
       };
       addEventListener("keydown", onKey);
+      // The on-screen controls' menu button: the way out of a game on a phone.
+      openMenu.current = () => {
+        if (session && !stack.open) stack.push(gameMenu());
+      };
       let comboHeld = false;
       const watchPads = () => {
         if (stopped) return;
@@ -808,6 +836,7 @@ function Player() {
       cleanup();
       session?.close();
       filter.stop();
+      watching.abort();
       input.dispose();
       end();
     };
@@ -1036,6 +1065,9 @@ function Player() {
           </div>
         </form>
       </Dialog>
+
+      {/* Hidden while a menu is open: the menu is touched directly, and a held button is let go. */}
+      {touch && playing && !splash && !top && <TouchController onButton={onTouch} onMenu={() => openMenu.current()} />}
 
       {quality && <QualityChip notice={quality} />}
 
