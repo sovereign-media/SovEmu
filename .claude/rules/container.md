@@ -105,7 +105,7 @@ them.
 
 Cores, ROMs, BIOS files or data: `cores/`, `roms/`, `system/` and `data/` are gitignored.
 `scripts/fetch-cores.sh` downloads cores for local testing, `scripts/fetch-free-roms.sh` freely
-licensed homebrew.
+licensed homebrew, chosen as [test-roms.md](test-roms.md) says (Artemio's 240p Test Suite first).
 
 ## Codecs
 
