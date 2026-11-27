@@ -145,6 +145,11 @@ struct ConnectionTestArgs {
     #[arg(long = "stun")]
     stun: Vec<String>,
 
+    /// The public address the home router forwards to this port (the server asked it, with UPnP
+    /// or NAT-PMP), offered beside the STUN servers' when it is another.
+    #[arg(long = "public")]
+    public: Option<SocketAddr>,
+
     /// Seconds before it gives up, connected or not.
     #[arg(long, default_value_t = 30)]
     timeout: u64,
@@ -198,6 +203,11 @@ struct SessionArgs {
     /// A STUN server (`host:port`) to ask for the public address, once per server.
     #[arg(long = "stun")]
     stun: Vec<String>,
+
+    /// The public address the home router forwards to this port (the server asked it, with UPnP
+    /// or NAT-PMP), offered beside the STUN servers' when it is another.
+    #[arg(long = "public")]
+    public: Option<SocketAddr>,
 
     /// The system's BIOS folder.
     #[arg(long)]

@@ -4,6 +4,7 @@ members = [
     "SovEmu.Assets",
     "SovEmu.Identity",
     "SovEmu.LibretroFfi",
+    "SovEmu.PortMapping",
     "SovEmu.Library",
     "SovEmu.Media",
     "SovEmu.Protocol",

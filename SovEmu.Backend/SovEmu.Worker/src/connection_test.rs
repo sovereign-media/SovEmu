@@ -35,7 +35,8 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
     let advertised = crate::stream::advertised_addr(args.advertise, socket.local_addr()?);
     let udp = Udp::new(socket, advertised).with_ipv6(args.advertise_ipv6, 0)?;
     // Asked before the offer is read, so the answer is usually back by then.
-    let mut reflexive = crate::stun::Reflexive::new(&args.stun, udp.primary());
+    let mut reflexive =
+        crate::stun::Reflexive::new(&args.stun, udp.primary()).with_forwarded(args.public);
     reflexive.ask(udp.primary());
 
     let mut stdin = std::io::stdin().lock();
@@ -44,8 +45,8 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
     let Ok(Request::Offer { id, offer, .. }) = serde_json::from_str::<Request>(&line) else {
         bail!("expected an offer on stdin, got {:?}", line.trim());
     };
-    let public = reflexive.current(&udp);
-    let mut rtc = match answer(&offer, Hosts::of(&udp), public) {
+    let public = reflexive.addresses(&udp);
+    let mut rtc = match answer(&offer, Hosts::of(&udp), &public) {
         Ok((rtc, answer)) => {
             reply(&Reply::Answer { id, answer });
             rtc
@@ -75,7 +76,7 @@ pub(crate) fn run(args: ConnectionTestArgs) -> Result<()> {
 fn answer(
     offer: &SessionDescription,
     hosts: Hosts,
-    public: Option<std::net::SocketAddr>,
+    public: &[std::net::SocketAddr],
 ) -> Result<(Rtc, SessionDescription)> {
     let offer = SdpOffer::from_sdp_string(&offer.sdp).map_err(|e| anyhow!("bad offer: {e}"))?;
     // As a game session's: full ICE, and its public address beside its own.

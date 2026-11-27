@@ -1210,6 +1210,20 @@ export const NetworkQuery = graphql(
         urls
         hasCredential
       }
+      portMapping {
+        state
+        protocol
+        router
+        localAddress
+        externalAddress
+        externalAddressPrivate
+        ports {
+          transport
+          internal
+          external
+          error
+        }
+      }
       settings {
         ...ConfigSettingFields
       }

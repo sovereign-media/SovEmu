@@ -155,8 +155,101 @@ pub(super) struct NetworkReport {
     pub(super) secure_cookies: bool,
     /// STUN/TURN servers handed to browsers.
     pub(super) ice_servers: Vec<IceServerSummary>,
+    /// What the home router was asked to forward, and what it does (UPnP or NAT-PMP).
+    pub(super) port_mapping: PortMappingReport,
     /// The settings this page is about, as the Configuration page shows them.
     pub(super) settings: Vec<ConfigSetting>,
+}
+
+/// Where asking the home router to forward ports is.
+#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PortMappingState {
+    /// Not asked: `SovEmu__Network__PortMapping` is off.
+    Off,
+    /// Looking for a router.
+    Searching,
+    /// No router answered UPnP or NAT-PMP (it has them turned off, or the server is in a
+    /// container on a bridge network, where the search can't reach it). Searched again every ten
+    /// minutes.
+    NoRouter,
+    /// A router answered: `ports` says what it forwards.
+    Active,
+    /// The server is shutting down, and the forwards were removed.
+    Stopped,
+}
+
+/// What the home router was asked to forward, and what it does.
+#[derive(SimpleObject)]
+pub(super) struct PortMappingReport {
+    pub(super) state: PortMappingState,
+    /// `UPnP` or `NAT-PMP`.
+    pub(super) protocol: Option<String>,
+    /// The router's address on the LAN.
+    pub(super) router: Option<String>,
+    /// This server's address as the router sees it: where it forwards to.
+    pub(super) local_address: Option<String>,
+    /// The router's own address on the internet, as it reports it.
+    pub(super) external_address: Option<String>,
+    /// The router's own address is a private one: another router, or the internet provider's
+    /// carrier-grade NAT, is in front of it, so what it forwards can't be reached from the
+    /// internet.
+    pub(super) external_address_private: bool,
+    pub(super) ports: Vec<ForwardedPort>,
+}
+
+/// A port the router was asked to forward.
+#[derive(SimpleObject)]
+pub(super) struct ForwardedPort {
+    /// `udp` or `tcp`.
+    pub(super) transport: String,
+    /// The port on this server.
+    pub(super) internal: i32,
+    /// The port the router forwards from, once it does.
+    pub(super) external: Option<i32>,
+    /// Why it doesn't, when the router refused.
+    pub(super) error: Option<String>,
+}
+
+impl PortMappingReport {
+    fn new(mapper: Option<&sovemu_port_mapping::PortMapper>) -> Self {
+        use sovemu_port_mapping::State;
+        let Some(status) = mapper.map(|m| m.status()) else {
+            return Self {
+                state: PortMappingState::Off,
+                protocol: None,
+                router: None,
+                local_address: None,
+                external_address: None,
+                external_address_private: false,
+                ports: Vec::new(),
+            };
+        };
+        Self {
+            state: match status.state {
+                State::Searching => PortMappingState::Searching,
+                State::NoRouter => PortMappingState::NoRouter,
+                State::Active => PortMappingState::Active,
+                State::Stopped => PortMappingState::Stopped,
+            },
+            protocol: status.protocol.map(|p| p.name().to_owned()),
+            router: status.router.map(|ip| ip.to_string()),
+            local_address: status.local_ip.map(|ip| ip.to_string()),
+            external_address: status.external_ip.map(|ip| ip.to_string()),
+            external_address_private: status
+                .external_ip
+                .is_some_and(|ip| !sovemu_port_mapping::is_internet_address(ip)),
+            ports: status
+                .ports
+                .into_iter()
+                .map(|p| ForwardedPort {
+                    transport: p.transport.name().to_owned(),
+                    internal: p.internal.into(),
+                    external: p.external.map(Into::into),
+                    error: p.error,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// An ICE server, without its credentials.
@@ -174,6 +267,7 @@ pub(super) const NETWORK_SETTINGS: &[&str] = &[
     "SovEmu__Streaming__Udp__Bind",
     "SovEmu__Streaming__AdvertiseAddress",
     "SovEmu__Streaming__AdvertiseAddressV6",
+    "SovEmu__Network__PortMapping",
     "SovEmu__Http__PublicUrl",
     "SovEmu__Network__TrustedProxyNetwork",
     "SovEmu__Http__SecureCookies",
@@ -528,6 +622,7 @@ impl ServerQuery {
             trusted_proxies: config.trusted_proxies.iter().map(ToString::to_string).collect(),
             secure_cookies: config.secure_cookies,
             ice_servers,
+            port_mapping: PortMappingReport::new(state.port_mapping.as_deref()),
             settings: crate::configuration::settings_where(config, |name| {
                 NETWORK_SETTINGS.contains(&name)
             })

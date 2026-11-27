@@ -36,6 +36,26 @@ fn start_with(offer: SessionDescription, extra: &[&str]) -> (std::process::Child
 }
 
 #[test]
+fn offers_the_address_the_router_forwards() {
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut rtc = RtcConfig::new().build(Instant::now());
+    rtc.add_local_candidate(Candidate::host("127.0.0.1:9".parse().unwrap(), "udp").unwrap());
+    let mut api = rtc.sdp_api();
+    api.add_channel("connection-test".into());
+    let (offer, _) = api.apply().expect("an offer");
+    let (mut child, reply) = start_with(
+        SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() },
+        &["--public", "203.0.113.9:51000"],
+    );
+    let Reply::Answer { answer, .. } = reply else { panic!("expected an answer: {reply:?}") };
+    let srflx: Vec<&str> = answer.sdp.lines().filter(|l| l.contains("typ srflx")).collect();
+    assert_eq!(srflx.len(), 1, "{}", answer.sdp);
+    assert!(srflx[0].contains("203.0.113.9 51000 typ srflx"), "{}", srflx[0]);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn echoes_a_browsers_data_channel_on_a_game_port() {
     echoes_over(UdpSocket::bind("127.0.0.1:0").unwrap(), &[]);
 }

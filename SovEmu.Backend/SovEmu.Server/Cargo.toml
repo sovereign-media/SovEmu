@@ -14,6 +14,7 @@ sovemu-identity = { path = "../SovEmu.Identity" }
 sovemu-library = { path = "../SovEmu.Library" }
 sovemu-sessions = { path = "../SovEmu.Sessions" }
 sovemu-protocol = { path = "../SovEmu.Protocol" }
+sovemu-port-mapping = { path = "../SovEmu.PortMapping" }
 sovemu-relay = { path = "../SovEmu.Relay" }
 anyhow = "1"
 async-graphql = "7.2.1"

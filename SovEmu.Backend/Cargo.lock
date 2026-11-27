@@ -3837,6 +3837,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sovemu-port-mapping"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "roxmltree",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "sovemu-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3890,6 +3902,7 @@ dependencies = [
  "sovemu-assets",
  "sovemu-identity",
  "sovemu-library",
+ "sovemu-port-mapping",
  "sovemu-protocol",
  "sovemu-relay",
  "sovemu-sessions",

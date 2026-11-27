@@ -1,13 +1,13 @@
 // Network: how browsers and apps reach the server and its game streams: the address media goes
 // to, the UDP ports and how many are held, the sign-in addresses, how this very request arrived
-// (for checking a proxy), and the STUN/TURN servers. Read-only: these are settings, listed at the
+// (for checking a proxy), the STUN/TURN servers and what the home router forwards. Read-only: these are settings, listed at the
 // bottom as the Configuration page shows them.
 
 import { useQuery } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { q } from "../../lib/data";
-import { networkWarnings, portRange } from "../../lib/network";
+import { forwardedPort, networkWarnings, portMappingSummary, portRange } from "../../lib/network";
 import { Progress } from "../ui/primitives";
 import AdminPage, { AdminSection, ErrorNote } from "./AdminPage";
 import SettingRow from "./SettingRow";
@@ -140,6 +140,31 @@ function Network() {
                 ))}
               </ul>
             )}
+          </AdminSection>
+
+          <AdminSection title="Router port forwarding">
+            <p className="mt-2 text-sm">{portMappingSummary(n.portMapping)}</p>
+            {n.portMapping.state === "ACTIVE" && (
+              <>
+                <Facts>
+                  <Fact label="Router's internet address">
+                    <code className={mono}>{n.portMapping.externalAddress ?? "(unknown)"}</code>
+                  </Fact>
+                </Facts>
+                <ul className="mt-3 grid gap-1">
+                  {n.portMapping.ports.map((p) => (
+                    <li key={`${p.transport}-${p.internal}`} className="text-sm">
+                      <code className={mono}>{forwardedPort(p)}</code>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <p className="mt-3 text-xs text-muted">
+              The server asks the router (UPnP or NAT-PMP) to forward the game ports and the relay's port 3478, so
+              players away from home connect with nothing set up on the router. Each game offers the public address the
+              router forwards beside the one STUN sees.
+            </p>
           </AdminSection>
 
           <AdminSection title="Settings">
