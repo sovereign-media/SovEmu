@@ -454,7 +454,7 @@ value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 | `SovEmu__Paths__Cores` | `cores` (`/opt/sovemu/cores`) | libretro cores |
 | `SovEmu__Library__Cache__LargeGameMegabytes` | `64` | `cache` mode: larger games are cached after their session, not before |
 | `SovEmu__Library__CopyThreads` | `4` | Files copied at once by the mirror sync |
-| `SovEmu__Systems__<id>__Core`, `__Enabled`, `__Decoration`, `__RunAhead`, `__Options__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), core options (see below) |
+| `SovEmu__Systems__<id>__Core`, `__Enabled`, `__Decoration`, `__RunAhead`, `__Prescale`, `__Options__<name>` | none | Per-system core, hiding a system, decoration set, run-ahead frames (0-4, 2D systems), pre-scale (1 or 2, see `SovEmu__Streaming__Video__Prescale`), core options (see below) |
 | `SovEmu__Collections__<n>__Name`, `__Games__<m>` | none | A shared collection everyone sees, its games as `<system id>/<file name>` (`nes/Super Stand-in (USA).nes`), in order. Kept in step after each scan; locked on the admin page, which offers the collections made there in this form. A collection no longer declared is deleted |
 | `SovEmu__Controllers__<n>__Id`, `__Bindings`, `__System`, `__Name` | none | Default button mapping for a controller model (`xbox`, `dualsense`, `pad:<vendor>:<product>`, `keyboard` …), as `south:B,east:A,…`: see [docs/CONTROLLERS.md](docs/CONTROLLERS.md). Wins over the admin page; a user's own mapping wins over both |
 | **Game information** | | |
@@ -483,7 +483,7 @@ value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 | `SovEmu__Streaming__Video__MaxKbps` | `12000` | The highest video bitrate a stream adapts up to (never below `SovEmu__Streaming__Video__Kbps`). Set it to `SovEmu__Streaming__Video__Kbps` for a stream that only adapts down |
 | `SovEmu__Streaming__Video__Codec` | `auto` | `auto`, `vp8` or `h264`. `auto` chooses for each client as it connects: every codec this server encodes and the client decodes is priced in milliseconds a frame, and the cheapest is sent. Encoding is priced by the startup encoder test (the admin's Streaming page shows it); decoding by what that device's decoder measured the last time it played with the codec, and until it has, by what the device declares (a hardware decoder with a low-latency mode is taken as fast). Close prices go to the codec encoded on the GPU. A client that sends no capabilities gets VP8. Naming a codec sends it to every client. The `video codec chosen` log line, and each session on the admin's Sessions page, show the prices |
 | `SovEmu__Streaming__Video__Encoder` | `auto` | H.264 encoder: `auto` (the GPU's: VA-API on Intel/AMD, NVENC on NVIDIA; else x264), `vaapi`, `nvenc` or `software`. One that does not open, or holds frames back, falls back to x264 |
-| `SovEmu__Streaming__Video__Prescale` | `1` | `1` or `2`: scale each game's picture up this many times by repeating pixels before it is encoded. At `2` every console pixel is a 2×2 block, so the codecs' 4:2:0 chroma keeps each pixel's own colour, for four times the pixels to encode and to decode (sovereign-media/SovEmu#263 measures whether that is worth it) |
+| `SovEmu__Streaming__Video__Prescale` | per system | `1` or `2`: scale each game's picture up this many times by repeating pixels before it is encoded. At `2` every console pixel is a 2×2 block, so the codecs' 4:2:0 chroma keeps each pixel's own colour, for four times the pixels to encode and to decode. Unset, it is `2` for NES, SNES, Game Boy Color and GBA, where it was measured to help (sovereign-media/SovEmu#263), and `1` elsewhere; set, it is every system's, and `SovEmu__Systems__<id>__Prescale` still wins. Frames that would come out larger than 640×480 (SNES hi-res) are sent at their own size |
 | `SovEmu__Streaming__Video__ScreenContent` | `0` | VP8's screen-content mode, tuned for flat colour and sharp edges: `0` off, `1` on, `2` on with more aggressive rate control, which may drop frames. H.264 has no such mode |
 | `SovEmu__Streaming__Audio__Kbps` | `128` | Opus bitrate |
 | `SovEmu__Sessions__IdleTimeoutSeconds` | `300` | Seconds a session survives with no client |
@@ -557,6 +557,7 @@ SovEmu__Systems__nes__Core=nestopia                  # use this core (if install
 SovEmu__Systems__gamegear__Enabled=false             # hide a system
 SovEmu__Systems__gba__Decoration=none                # no frame around GBA games
 SovEmu__Systems__snes__RunAhead=2                   # hide two frames of input lag (default 1)
+SovEmu__Systems__gb__Prescale=2                     # send Game Boy pixels as 2×2 blocks too
 ```
 
 Declared accounts are created at startup and kept in step: a changed password signs that user

@@ -60,8 +60,6 @@ pub struct WorkerConfig {
     /// `SovEmu__Streaming__Video__Encoder`).
     pub video_codec: String,
     pub video_encoder: String,
-    /// `--video-prescale` (`SovEmu__Streaming__Video__Prescale`): 1 or 2.
-    pub video_prescale: u32,
     /// `--video-screen-content` (`SovEmu__Streaming__Video__ScreenContent`): 0 to 2.
     pub video_screen_content: u8,
     /// Testing only: `--replay-frames` (`SovEmu__Streaming__Debug__ReplayFrames`).
@@ -180,6 +178,9 @@ pub struct Launch {
     pub variables: Vec<(String, String)>,
     /// Frames the picture runs ahead of the game, hiding its own input lag (0: off).
     pub run_ahead: u32,
+    /// Times the picture is scaled up before it is encoded, 1 or 2 (`--video-prescale`: the
+    /// system's `SovEmu__Systems__<id>__Prescale`, as the server resolved it).
+    pub prescale: u32,
     /// Run once the worker has exited (for example, to cache a large disc image only after the
     /// session that streamed it, so the copy does not compete with the game for the network).
     pub after_exit: Option<Box<dyn FnOnce() + Send + Sync>>,
@@ -730,6 +731,7 @@ impl Workers {
             patch = launch.patch.as_ref().map(|(_, name)| name.as_str()),
             options = launch.variables.len(),
             run_ahead = launch.run_ahead,
+            prescale = launch.prescale,
             udp.port = port,
             "session starting"
         );
@@ -755,7 +757,7 @@ impl Workers {
             .arg("--video-encoder")
             .arg(&self.config.video_encoder)
             .arg("--video-prescale")
-            .arg(self.config.video_prescale.to_string())
+            .arg(launch.prescale.to_string())
             .arg("--video-screen-content")
             .arg(self.config.video_screen_content.to_string())
             .arg("--core")
@@ -1195,7 +1197,6 @@ done
             audio_kbps: 64,
             video_codec: "auto".into(),
             video_encoder: "software".into(),
-            video_prescale: 1,
             video_screen_content: 0,
             replay_frames: None,
             start_timeout: Duration::from_secs(10),
@@ -1233,6 +1234,7 @@ done
             patch: None,
             variables: Vec::new(),
             run_ahead: 0,
+            prescale: 1,
             after_exit: None,
             start_id: None,
         }
@@ -1335,6 +1337,20 @@ sleep 0.3
         workers.start(launch(&dir, 1, 2)).await.unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(!args.contains("--run-ahead"), "off is the worker's default: {args}");
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn the_launch_s_prescale_reaches_the_worker() {
+        let dir = dir("prescale");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        workers.start(Launch { prescale: 2, ..launch(&dir, 1, 1) }).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains("--video-prescale 2"), "{args}");
+        workers.start(launch(&dir, 1, 2)).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains("--video-prescale 1"), "{args}");
         workers.stop_all().await;
         settle(&workers, 2).await;
     }

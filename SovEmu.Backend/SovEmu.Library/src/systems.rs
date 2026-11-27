@@ -62,6 +62,18 @@ impl System {
     pub fn default_run_ahead(&self) -> u32 {
         if self.run_ahead() { DEFAULT_RUN_AHEAD } else { 0 }
     }
+
+    /// How many times its games' pictures are scaled up by repeating pixels before they are
+    /// encoded, when neither `SovEmu__Systems__<id>__Prescale` nor
+    /// `SovEmu__Streaming__Video__Prescale` says. 2 on the systems measured to gain from it
+    /// (sovereign-media/SovEmu#263: with each console pixel a 2×2 block, 4:2:0 keeps its colour),
+    /// else 1. The original Game Boy has no colour to keep; the others are not measured yet.
+    pub fn default_prescale(&self) -> u32 {
+        match self.id {
+            "nes" | "snes" | "gbc" | "gba" => 2,
+            _ => 1,
+        }
+    }
 }
 
 /// Run-ahead's default on the systems that support it. One frame hides most of the games' own
@@ -602,6 +614,16 @@ mod tests {
         }
         assert!(by_id("snes").unwrap().box_aspect() > 1.0, "SNES boxes are landscape");
         assert!(by_id("nes").unwrap().box_aspect() < 1.0, "NES boxes are portrait");
+    }
+
+    #[test]
+    fn the_measured_colour_systems_prescale_by_default() {
+        let prescale = |id| by_id(id).unwrap().default_prescale();
+        for id in ["nes", "snes", "gbc", "gba"] {
+            assert_eq!(prescale(id), 2, "{id}");
+        }
+        assert_eq!(prescale("gb"), 1, "four greys: no colour to keep");
+        assert_eq!(prescale("psx"), 1, "not measured");
     }
 
     #[test]

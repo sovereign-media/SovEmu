@@ -323,10 +323,12 @@ pub struct Config {
 
     /// Scale each game's picture up this many times (1 or 2) by repeating pixels before it is
     /// encoded. At 2 every console pixel is a 2×2 block, so the codecs' 4:2:0 chroma keeps each
-    /// pixel's own colour, for four times the pixels to encode and to decode.
-    #[arg(long, env = "SovEmu__Streaming__Video__Prescale", default_value_t = 1,
+    /// pixel's own colour, for four times the pixels to encode and to decode. Unset, each
+    /// system has SovEmu's choice (`System::default_prescale`: 2 for NES, SNES, Game Boy Color
+    /// and GBA); per system, `SovEmu__Systems__<id>__Prescale` wins over both.
+    #[arg(long, env = "SovEmu__Streaming__Video__Prescale",
           value_parser = clap::value_parser!(u32).range(1..=2))]
-    pub video_prescale: u32,
+    pub video_prescale: Option<u32>,
 
     /// VP8's screen-content mode, tuned for flat colour and sharp edges: 0 off, 1 on, 2 on with
     /// more aggressive rate control (it may drop frames). H.264 has no such mode.
@@ -666,6 +668,16 @@ impl Config {
     /// The decoration set a system's games are framed with (`none`: no frame).
     pub fn decoration_for(&self, system: &str) -> &str {
         self.systems.get(system).and_then(|s| s.decoration.as_deref()).unwrap_or(&self.decoration)
+    }
+
+    /// How many times a system's games' pictures are scaled up before they are encoded: the
+    /// system's own setting, else the streaming one, else SovEmu's choice for the system.
+    pub fn prescale_for(&self, system: &sovemu_library::systems::System) -> u32 {
+        self.systems
+            .get(system.id)
+            .and_then(|s| s.prescale)
+            .or(self.video_prescale)
+            .unwrap_or_else(|| system.default_prescale())
     }
 
     /// Where everything lives in the data folder.
@@ -1107,7 +1119,6 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         audio_kbps: config.audio_kbps,
         video_codec: config.video_codec.clone(),
         video_encoder: config.video_encoder.clone(),
-        video_prescale: config.video_prescale,
         video_screen_content: config.video_screen_content,
         replay_frames: config.debug_replay_frames.clone(),
         start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
@@ -1461,6 +1472,28 @@ mod tests {
         let config = Config::parse_from(["sovemu-server", "--metadata-sources", "launchbox"]);
         let err = metadata_providers(&config, &paths).err().unwrap().to_string();
         assert!(err.contains("launchbox") && err.contains("screenscraper"), "{err}");
+    }
+
+    #[test]
+    fn prescale_is_the_system_s_then_the_streaming_setting_then_sovemu_s_choice() {
+        use sovemu_library::systems::by_id;
+        let (nes, gb, psx) = (by_id("nes").unwrap(), by_id("gb").unwrap(), by_id("psx").unwrap());
+        let mut config = Config::parse_from(["sovemu-server"]);
+        assert_eq!(
+            [nes, gb, psx].map(|s| config.prescale_for(s)),
+            [2, 1, 1],
+            "SovEmu's choice: 2 where it was measured to help"
+        );
+        config.video_prescale = Some(1);
+        assert_eq!(config.prescale_for(nes), 1, "the streaming setting turns it off everywhere");
+        config.systems.insert(
+            "nes".into(),
+            structured::SystemSpec { prescale: Some(2), ..Default::default() },
+        );
+        assert_eq!(config.prescale_for(nes), 2, "a system's own setting wins");
+        assert_eq!(config.prescale_for(psx), 1);
+        let config = Config::parse_from(["sovemu-server", "--video-prescale", "2"]);
+        assert_eq!(config.prescale_for(psx), 2, "the streaming setting is every system's default");
     }
 
     #[test]

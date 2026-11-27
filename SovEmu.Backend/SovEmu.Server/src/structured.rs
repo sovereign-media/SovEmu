@@ -4,8 +4,8 @@
 //! - Users: `SovEmu__Users__<n>__Username`, `__PASSWORD` (or `__PASSWORD_FILE`), `__ROLE`
 //!   (`viewer`, the default, or `admin`; `__ADMIN=true` is the older spelling of `admin`).
 //! - Systems: `SovEmu__Systems__<id>__Core` (the core to use), `__ENABLED` (false hides it),
-//!   `__DECORATION` (the decoration set, or `none`), and `__OPTIONS__<core option>` (libretro core
-//!   options, over SovEmu's own).
+//!   `__DECORATION` (the decoration set, or `none`), `__RUN_AHEAD` (frames), `__PRESCALE` (1 or 2),
+//!   and `__OPTIONS__<core option>` (libretro core options, over SovEmu's own).
 //! - Controller defaults: `SovEmu__Controllers__<n>__Id` (a controller ID from
 //!   docs/CONTROLLERS.md), `__BINDINGS` (`south:B,east:A,…`), and optionally `__SYSTEM` (a
 //!   system id: the default for that system only) and `__NAME`.
@@ -43,6 +43,8 @@ pub struct SystemSpec {
     pub decoration: Option<String>,
     /// Frames its games' pictures run ahead, hiding their own input lag (0: off).
     pub run_ahead: Option<u32>,
+    /// How many times its games' pictures are scaled up before they are encoded (1 or 2).
+    pub prescale: Option<u32>,
 }
 
 /// A setting's field as written in messages: `RUN_AHEAD` → `RunAhead`, `CORE` → `Core`.
@@ -154,8 +156,9 @@ pub(crate) fn systems(vars: &[(String, String)]) -> Result<BTreeMap<String, Syst
                         spec.decoration = Some(value.trim().to_owned()).filter(|d| !d.is_empty())
                     }
                     "RUNAHEAD" => spec.run_ahead = Some(parse_run_ahead(&var, &id, &value)?),
+                    "PRESCALE" => spec.prescale = Some(parse_prescale(&var, &value)?),
                     other => bail!(
-                        "{var}: unknown setting {other:?} (Core, Enabled, Decoration, RunAhead or Options__<name>)"
+                        "{var}: unknown setting {other:?} (Core, Enabled, Decoration, RunAhead, Prescale or Options__<name>)"
                     ),
                 }
             }
@@ -179,6 +182,15 @@ fn parse_run_ahead(var: &str, system: &str, value: &str) -> Result<u32> {
         bail!("{var}: run-ahead is for the 2D systems; {system} is too costly to run ahead");
     }
     Ok(frames)
+}
+
+/// A pre-scale: 1 (off) or 2, as `SovEmu__Streaming__Video__Prescale` takes.
+fn parse_prescale(var: &str, value: &str) -> Result<u32> {
+    match value.trim() {
+        "1" => Ok(1),
+        "2" => Ok(2),
+        other => bail!("{var}: 1 (off) or 2, got {other:?}"),
+    }
 }
 
 /// Default controller mappings from `SovEmu__Controllers__<n>__…`, ordered by index. A list
@@ -371,6 +383,21 @@ mod tests {
             systems(&vars(&[("SovEmu__Systems__nes__COLOUR", "red")])).is_err(),
             "unknown setting"
         );
+    }
+
+    #[test]
+    fn prescale_is_1_or_2() {
+        let s = systems(&vars(&[
+            ("SovEmu__Systems__gb__Prescale", "2"),
+            ("SovEmu__Systems__SNES__PRESCALE", " 1 "),
+        ]))
+        .unwrap();
+        assert_eq!(s["gb"].prescale, Some(2));
+        assert_eq!(s["snes"].prescale, Some(1), "any letter case");
+        for bad in ["3", "0", "2x", ""] {
+            let err = systems(&vars(&[("SovEmu__Systems__nes__Prescale", bad)])).unwrap_err();
+            assert!(format!("{err:#}").contains("SovEmu__Systems__nes__Prescale"), "{bad:?}");
+        }
     }
 
     #[test]
