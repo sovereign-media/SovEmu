@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="340" font-family="sans-serif" font-size="11">
+<rect width="560" height="340" fill="white"/>
+<text x="60" y="18" font-size="13" font-weight="bold">gb: ΔE2000 mean against bitrate (lower is better)</text>
+<line x1="60" x2="390" y1="294.0" y2="294.0" stroke="#eee"/>
+<text x="54" y="298.0" text-anchor="end" fill="#555">0.00</text>
+<line x1="60" x2="390" y1="241.2" y2="241.2" stroke="#eee"/>
+<text x="54" y="245.2" text-anchor="end" fill="#555">0.12</text>
+<line x1="60" x2="390" y1="188.4" y2="188.4" stroke="#eee"/>
+<text x="54" y="192.4" text-anchor="end" fill="#555">0.24</text>
+<line x1="60" x2="390" y1="135.6" y2="135.6" stroke="#eee"/>
+<text x="54" y="139.6" text-anchor="end" fill="#555">0.36</text>
+<line x1="60" x2="390" y1="82.8" y2="82.8" stroke="#eee"/>
+<text x="54" y="86.8" text-anchor="end" fill="#555">0.48</text>
+<line x1="60" x2="390" y1="30.0" y2="30.0" stroke="#eee"/>
+<text x="54" y="34.0" text-anchor="end" fill="#555">0.60</text>
+<text x="60.0" y="310" text-anchor="middle" fill="#555">0</text>
+<text x="126.0" y="310" text-anchor="middle" fill="#555">50</text>
+<text x="192.0" y="310" text-anchor="middle" fill="#555">101</text>
+<text x="258.0" y="310" text-anchor="middle" fill="#555">151</text>
+<text x="324.0" y="310" text-anchor="middle" fill="#555">201</text>
+<text x="390.0" y="310" text-anchor="middle" fill="#555">251</text>
+<text x="225.0" y="330" text-anchor="middle" fill="#333">actual kbit/s</text>
+<line x1="60" x2="390" y1="294.0" y2="294.0" stroke="#999"/>
+<path d="M203.4,55.9 L203.4,55.9 L205.0,55.4 L209.4,54.0" fill="none" stroke="#2a6fdb" stroke-width="2"/>
+<circle cx="203.4" cy="55.9" r="3" fill="#2a6fdb"/>
+<circle cx="203.4" cy="55.9" r="3" fill="#2a6fdb"/>
+<circle cx="205.0" cy="55.4" r="3" fill="#2a6fdb"/>
+<circle cx="209.4" cy="54.0" r="3" fill="#2a6fdb"/>
+<line x1="402" x2="424" y1="40" y2="40" stroke="#2a6fdb" stroke-width="2"/>
+<text x="430" y="44">vp8 1x</text>
+<path d="M350.7,79.0 L354.0,76.3 L359.8,76.0 L374.3,72.5" fill="none" stroke="#d9480f" stroke-width="2"/>
+<circle cx="350.7" cy="79.0" r="3" fill="#d9480f"/>
+<circle cx="354.0" cy="76.3" r="3" fill="#d9480f"/>
+<circle cx="359.8" cy="76.0" r="3" fill="#d9480f"/>
+<circle cx="374.3" cy="72.5" r="3" fill="#d9480f"/>
+<line x1="402" x2="424" y1="56" y2="56" stroke="#d9480f" stroke-width="2"/>
+<text x="430" y="60">vp8 2x</text>
+<path d="M160.6,91.2 L160.6,91.2 L160.6,91.2 L160.7,91.3" fill="none" stroke="#2b8a3e" stroke-width="2"/>
+<circle cx="160.6" cy="91.2" r="3" fill="#2b8a3e"/>
+<circle cx="160.6" cy="91.2" r="3" fill="#2b8a3e"/>
+<circle cx="160.6" cy="91.2" r="3" fill="#2b8a3e"/>
+<circle cx="160.7" cy="91.3" r="3" fill="#2b8a3e"/>
+<line x1="402" x2="424" y1="72" y2="72" stroke="#2b8a3e" stroke-width="2"/>
+<text x="430" y="76">x264 1x</text>
+<path d="M301.9,118.1 L337.3,113.9 L344.8,119.9 L365.0,118.8" fill="none" stroke="#ae3ec9" stroke-width="2"/>
+<circle cx="301.9" cy="118.1" r="3" fill="#ae3ec9"/>
+<circle cx="337.3" cy="113.9" r="3" fill="#ae3ec9"/>
+<circle cx="344.8" cy="119.9" r="3" fill="#ae3ec9"/>
+<circle cx="365.0" cy="118.8" r="3" fill="#ae3ec9"/>
+<line x1="402" x2="424" y1="88" y2="88" stroke="#ae3ec9" stroke-width="2"/>
+<text x="430" y="92">x264 2x</text>
+</svg>

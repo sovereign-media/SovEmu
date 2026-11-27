@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/mgba_libretro.dylib --rom "data/roms/gba/240p Test Suite.gba" --frames 1800 --png-every 1 --hold 200-205:start --hold 400-404:right --hold 430-434:down --hold 450-454:down --hold 470-474:down --hold 500-504:a
+# kept frames 0-1799 as frame_000000-frame_001799
