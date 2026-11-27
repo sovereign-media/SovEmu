@@ -60,6 +60,12 @@ pub struct WorkerConfig {
     /// `SovEmu__Streaming__Video__Encoder`).
     pub video_codec: String,
     pub video_encoder: String,
+    /// `--video-prescale` (`SovEmu__Streaming__Video__Prescale`): 1 or 2.
+    pub video_prescale: u32,
+    /// `--video-screen-content` (`SovEmu__Streaming__Video__ScreenContent`): 0 to 2.
+    pub video_screen_content: u8,
+    /// Testing only: `--replay-frames` (`SovEmu__Streaming__Debug__ReplayFrames`).
+    pub replay_frames: Option<PathBuf>,
     /// How long a worker may take to load its core and game. Generous by default: a disc image
     /// on a remote share takes tens of seconds to open.
     pub start_timeout: Duration,
@@ -743,6 +749,10 @@ impl Workers {
             .arg(&self.config.video_codec)
             .arg("--video-encoder")
             .arg(&self.config.video_encoder)
+            .arg("--video-prescale")
+            .arg(self.config.video_prescale.to_string())
+            .arg("--video-screen-content")
+            .arg(self.config.video_screen_content.to_string())
             .arg("--core")
             .arg(&launch.core)
             .arg("--rom")
@@ -795,6 +805,9 @@ impl Workers {
         }
         if launch.run_ahead > 0 {
             command.arg("--run-ahead").arg(launch.run_ahead.to_string());
+        }
+        if let Some(frames) = &self.config.replay_frames {
+            command.arg("--replay-frames").arg(frames);
         }
         let spawned = command
             .stdin(Stdio::piped())
@@ -1173,6 +1186,9 @@ done
             audio_kbps: 64,
             video_codec: "auto".into(),
             video_encoder: "software".into(),
+            video_prescale: 1,
+            video_screen_content: 0,
+            replay_frames: None,
             start_timeout: Duration::from_secs(10),
             stop_timeout,
             rewind_seconds: 0,

@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/snes9x_libretro.dylib --rom "data/roms/snes/Castle Platformer.sfc" --frames 1800 --png-every 1 --hold 300-1790:right --hold 400-414:b --hold 490-504:b --hold 580-594:b --hold 670-684:b --hold 760-774:b --hold 850-864:b --hold 940-954:b --hold 1030-1044:b --hold 1120-1134:b --hold 1210-1224:b --hold 1300-1314:b --hold 1390-1404:b --hold 1480-1494:b --hold 1570-1584:b --hold 1660-1674:b --hold 1750-1764:b
+# kept frames 0-1799 as frame_000000-frame_001799

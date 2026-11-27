@@ -1,0 +1,7 @@
+label,rect,scale,de_mean,de_over_2_3_pct,de_p99,edges,edge_width_px
+firetv-snes-1x,240x0+1440x1080,5.62,2.940,27.27,19.84,8,14.38
+firetv-snes-2x,240x0+1440x1080,5.62,1.899,16.71,16.38,8,10.50
+firetv-nes-colour-still-1x,240x0+1440x1080,5.62,0.864,4.58,20.21,15,10.67
+firetv-nes-colour-still-2x,240x0+1440x1080,5.62,0.554,2.41,12.56,15,7.20
+firetv-nes-bleed-still-1x,240x0+1440x1080,5.62,12.568,58.67,41.09,0,0.00
+firetv-nes-bleed-still-2x,240x0+1440x1080,5.62,6.898,42.28,46.37,0,0.00

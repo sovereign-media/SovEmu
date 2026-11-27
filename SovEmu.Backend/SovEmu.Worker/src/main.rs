@@ -27,6 +27,7 @@ mod patch;
 mod persist;
 mod priority;
 mod probe;
+mod replay;
 mod rewind;
 mod runahead;
 mod schedule;
@@ -292,6 +293,21 @@ struct SessionArgs {
     /// One that does not open, or holds frames back, falls back to x264.
     #[arg(long, default_value = "auto")]
     video_encoder: sovemu_media::H264Preference,
+
+    /// Scale each picture up this many times (1 or 2) by repeating pixels before it is encoded:
+    /// at 2 each pixel is a 2×2 block, so 4:2:0 chroma keeps every pixel's colour.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=2))]
+    video_prescale: u32,
+
+    /// VP8's screen-content mode: 0 off, 1 on, 2 on with more aggressive rate control. H.264
+    /// has no such mode.
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=2))]
+    video_screen_content: u8,
+
+    /// Testing only: a folder of `frame_NNNNNN.png` shown instead of the game's picture, the
+    /// next one each time the game draws, looping (the encoder bench's captures, #263).
+    #[arg(long)]
+    replay_frames: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -421,6 +437,21 @@ struct ServeArgs {
     /// One that does not open, or holds frames back, falls back to x264.
     #[arg(long, default_value = "auto")]
     video_encoder: sovemu_media::H264Preference,
+
+    /// Scale each picture up this many times (1 or 2) by repeating pixels before it is encoded:
+    /// at 2 each pixel is a 2×2 block, so 4:2:0 chroma keeps every pixel's colour.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=2))]
+    video_prescale: u32,
+
+    /// VP8's screen-content mode: 0 off, 1 on, 2 on with more aggressive rate control. H.264
+    /// has no such mode.
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=2))]
+    video_screen_content: u8,
+
+    /// Testing only: a folder of `frame_NNNNNN.png` shown instead of the game's picture, the
+    /// next one each time the game draws, looping (the encoder bench's captures, #263).
+    #[arg(long)]
+    replay_frames: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]

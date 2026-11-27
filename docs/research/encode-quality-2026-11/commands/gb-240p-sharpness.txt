@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/gambatte_libretro.dylib --rom "data/roms/gb/240p Test Suite.gb" --frames 1800 --png-every 1 --var gambatte_gb_hwmode=GB --hold 200-205:start --hold 400-404:down --hold 420-424:down --hold 440-444:down --hold 460-464:down --hold 500-504:a --hold 1050-1054:b --hold 1100-1104:down --hold 1120-1124:down --hold 1140-1144:down --hold 1160-1164:down --hold 1200-1204:a
+# kept frames 0-1799 as frame_000000-frame_001799

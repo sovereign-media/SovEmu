@@ -321,6 +321,19 @@ pub struct Config {
           value_parser = ["auto", "vaapi", "nvenc", "software"])]
     pub video_encoder: String,
 
+    /// Scale each game's picture up this many times (1 or 2) by repeating pixels before it is
+    /// encoded. At 2 every console pixel is a 2×2 block, so the codecs' 4:2:0 chroma keeps each
+    /// pixel's own colour, for four times the pixels to encode and to decode.
+    #[arg(long, env = "SovEmu__Streaming__Video__Prescale", default_value_t = 1,
+          value_parser = clap::value_parser!(u32).range(1..=2))]
+    pub video_prescale: u32,
+
+    /// VP8's screen-content mode, tuned for flat colour and sharp edges: 0 off, 1 on, 2 on with
+    /// more aggressive rate control (it may drop frames). H.264 has no such mode.
+    #[arg(long, env = "SovEmu__Streaming__Video__ScreenContent", default_value_t = 0,
+          value_parser = clap::value_parser!(u8).range(0..=2))]
+    pub video_screen_content: u8,
+
     /// Opus audio bitrate for game streams, kbit/s.
     #[arg(long, env = "SovEmu__Streaming__Audio__Kbps", default_value_t = 128)]
     pub audio_kbps: u32,
@@ -461,6 +474,12 @@ pub struct Config {
     /// internet connection would: more than that waits, then is thrown away. 0: no limit.
     #[arg(long, env = "SovEmu__Streaming__Debug__VideoLimitKbps", default_value_t = 0)]
     pub debug_limit_video_kbps: u32,
+
+    /// Testing only: a folder of `frame_NNNNNN.png` (the encoder bench's captures) that every
+    /// game shows instead of its own picture, the next frame each time it draws, looping. Leave
+    /// it unset.
+    #[arg(long, env = "SovEmu__Streaming__Debug__ReplayFrames")]
+    pub debug_replay_frames: Option<PathBuf>,
 
     /// Testing only: hold each of every game's outgoing video packets a different time, up
     /// to this many milliseconds, as Wi-Fi and busy routes do. Leave it at 0.
@@ -1077,6 +1096,9 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         audio_kbps: config.audio_kbps,
         video_codec: config.video_codec.clone(),
         video_encoder: config.video_encoder.clone(),
+        video_prescale: config.video_prescale,
+        video_screen_content: config.video_screen_content,
+        replay_frames: config.debug_replay_frames.clone(),
         start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
         stop_timeout: std::time::Duration::from_secs(config.worker_stop_timeout),
         rewind_seconds: config.rewind_seconds,

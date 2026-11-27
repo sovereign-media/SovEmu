@@ -75,6 +75,11 @@ pub(crate) struct VideoSettings {
     pub(crate) bitrate_kbps: u32,
     pub(crate) fps: u32,
     pub(crate) keyframe_interval: u32,
+    /// Pictures are scaled up this many times (1 or 2) by repeating pixels before encoding
+    /// (`SovEmu__Streaming__Video__Prescale`).
+    pub(crate) prescale: u32,
+    /// VP8's screen-content mode, 0 to 2 (`SovEmu__Streaming__Video__ScreenContent`).
+    pub(crate) screen_content: u8,
 }
 
 enum Encoder {
@@ -90,6 +95,8 @@ pub(crate) struct Video {
     encoder: Encoder,
     /// The encoder last logged, so a change (a fallback) is logged once.
     logged: Option<&'static str>,
+    /// The pre-scaled picture, kept between frames (empty at a prescale of 1).
+    scaled: Vec<u8>,
 }
 
 impl Video {
@@ -99,7 +106,7 @@ impl Video {
             _ => VideoCodec::H264,
         };
         let encoder = Self::make(&settings, codec, settings.bitrate_kbps);
-        Self { client_codec: settings.codec, settings, encoder, logged: None }
+        Self { client_codec: settings.codec, settings, encoder, logged: None, scaled: Vec::new() }
     }
 
     fn make(settings: &VideoSettings, codec: VideoCodec, bitrate_kbps: u32) -> Encoder {
@@ -115,6 +122,7 @@ impl Video {
                 bitrate_kbps,
                 fps: settings.fps,
                 keyframe_interval: settings.keyframe_interval,
+                screen_content: settings.screen_content,
                 ..Vp8Config::default()
             })),
         }
@@ -179,8 +187,8 @@ impl Video {
             encoder: self.encoder_name().unwrap_or_default().into(),
             hardware,
             fallbacks,
-            width,
-            height,
+            width: width * self.settings.prescale,
+            height: height * self.settings.prescale,
             fps: (fps * 100.0).round() / 100.0,
             // The session's, which knows what the player was last told.
             kbps: 0,
@@ -217,6 +225,13 @@ impl Video {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
+        let (rgba, width, height) = match self.settings.prescale {
+            2 => {
+                prescale_2x(rgba, width as usize, height as usize, &mut self.scaled);
+                (self.scaled.as_slice(), width * 2, height * 2)
+            }
+            _ => (rgba, width, height),
+        };
         let encoded = match &mut self.encoder {
             Encoder::H264(e) => e.encode(rgba, width, height),
             Encoder::Vp8(e) => e.encode(rgba, width, height),
@@ -232,6 +247,20 @@ impl Video {
             );
         }
         Ok(encoded)
+    }
+}
+
+/// Scales tightly packed RGBA up 2× by repeating each pixel into a 2×2 block.
+fn prescale_2x(rgba: &[u8], width: usize, height: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(width * height * 16);
+    for row in rgba.chunks_exact(width * 4).take(height) {
+        let start = out.len();
+        for pixel in row.as_chunks::<4>().0 {
+            out.extend_from_slice(pixel);
+            out.extend_from_slice(pixel);
+        }
+        out.extend_from_within(start..);
     }
 }
 
@@ -261,6 +290,41 @@ mod tests {
             bitrate_kbps: 1000,
             fps: 60,
             keyframe_interval: 600,
+            prescale: 1,
+            screen_content: 0,
+        }
+    }
+
+    #[test]
+    fn prescale_2x_makes_each_pixel_a_block() {
+        let rgba = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut out = Vec::new();
+        prescale_2x(&rgba, 2, 2, &mut out);
+        let p = |i: u8| [i * 4 + 1, i * 4 + 2, i * 4 + 3, i * 4 + 4];
+        let row = |a: u8, b: u8| [p(a), p(a), p(b), p(b)].concat();
+        assert_eq!(out, [row(0, 1), row(0, 1), row(2, 3), row(2, 3)].concat());
+    }
+
+    #[test]
+    fn a_prescaled_stream_is_twice_the_size_and_says_so() {
+        for codec in [VideoCodec::Vp8, VideoCodec::H264] {
+            let mut video =
+                Video::new(VideoSettings { prescale: 2, ..settings(CodecSetting::Only(codec)) });
+            let rgba = [200u8, 30, 30, 255].repeat(64 * 48);
+            let frame = video.encode(&rgba, 64, 48).unwrap().expect("a frame");
+            let size = match codec {
+                VideoCodec::Vp8 => {
+                    let pic = sovemu_media::Vp8Decoder::new().unwrap().decode(&frame.data);
+                    pic.unwrap().map(|p| (p.width, p.height))
+                }
+                VideoCodec::H264 => {
+                    let pic = sovemu_media::H264Decoder::new().unwrap().decode(&frame.data);
+                    pic.unwrap().map(|p| (p.width, p.height))
+                }
+            };
+            assert_eq!(size, Some((128, 96)), "{codec:?}");
+            let path = video.path(64, 48, 60.0);
+            assert_eq!((path.width, path.height), (128, 96), "{codec:?}");
         }
     }
 

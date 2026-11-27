@@ -23,8 +23,8 @@ use std::ffi::{CStr, CString, c_char, c_int};
 use std::ptr;
 
 use crate::ffi;
-use crate::vp8::DecodedFrame;
-use crate::yuv::{I420Planes, rgba_to_i420, rgba_to_nv12};
+use crate::vp8::{DecodedFrame, pack_plane};
+use crate::yuv::{I420Planes, chroma_len, rgba_to_i420, rgba_to_nv12};
 use crate::{EncodedFrame, Error};
 
 /// Threads x264 encodes a frame on.
@@ -743,7 +743,8 @@ impl H264Decoder {
     /// Decodes one access unit (Annex B), returning the picture if one was produced.
     pub fn decode(&mut self, data: &[u8]) -> Result<Option<DecodedFrame>, Error> {
         // SAFETY: the packet borrows `data` only for the send call and is cleared after it; a
-        // received frame's luma plane holds `height` rows of `linesize[0]` bytes until unref.
+        // received frame is 4:2:0 (all a Constrained Baseline stream can be): its luma plane holds
+        // `height` rows of `linesize[0]` bytes, each chroma plane half as many rows, until unref.
         unsafe {
             (*self.packet).data = data.as_ptr().cast_mut();
             (*self.packet).size = data.len() as c_int;
@@ -757,12 +758,17 @@ impl H264Decoder {
             }
             check("receive frame", err)?;
             let f = &*self.frame;
-            let (w, h, stride) = (f.width as usize, f.height as usize, f.linesize[0] as usize);
-            let mut luma = Vec::with_capacity(w * h);
-            for row in 0..h {
-                luma.extend_from_slice(std::slice::from_raw_parts(f.data[0].add(row * stride), w));
-            }
-            let picture = DecodedFrame { width: w as u32, height: h as u32, luma };
+            let (w, h) = (f.width as usize, f.height as usize);
+            let (cw, ch) = (chroma_len(w), chroma_len(h));
+            let plane =
+                |i: usize, width, rows| pack_plane(f.data[i], f.linesize[i] as usize, width, rows);
+            let picture = DecodedFrame {
+                width: w as u32,
+                height: h as u32,
+                luma: plane(0, w, h),
+                u: plane(1, cw, ch),
+                v: plane(2, cw, ch),
+            };
             ffi::av_frame_unref(self.frame);
             Ok(Some(picture))
         }
@@ -863,6 +869,20 @@ mod tests {
         enc.set_bitrate(800).unwrap();
         let next = enc.encode(&gradient(255, 223, 1), 255, 223).unwrap().unwrap();
         assert!(!next.keyframe, "x264 changes its bitrate without a keyframe");
+    }
+
+    #[test]
+    fn decoded_frames_carry_both_chroma_planes() {
+        // A solid colour comes back with its own chroma in every sample of each plane; the
+        // stream rounds 255x223 up to whole macroblock pairs, and so do the planes.
+        let rgba = [0u8, 0, 255, 255].repeat(255 * 223);
+        let frame = software().encode(&rgba, 255, 223).unwrap().unwrap();
+        let pic = H264Decoder::new().unwrap().decode(&frame.data).unwrap().unwrap();
+        assert_eq!((pic.width, pic.height), (256, 224));
+        assert_eq!((pic.luma.len(), pic.u.len(), pic.v.len()), (256 * 224, 128 * 112, 128 * 112));
+        // BT.601 limited blue is (41, 240, 110); allow the codec a little rounding.
+        assert!(pic.u.iter().all(|&u| u.abs_diff(240) <= 3), "u {:?}", &pic.u[..4]);
+        assert!(pic.v.iter().all(|&v| v.abs_diff(110) <= 3), "v {:?}", &pic.v[..4]);
     }
 
     #[test]

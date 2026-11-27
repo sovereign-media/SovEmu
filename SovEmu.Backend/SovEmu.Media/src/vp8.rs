@@ -11,7 +11,7 @@ use std::ffi::{CStr, c_int};
 use std::ptr::NonNull;
 
 use crate::ffi;
-use crate::yuv::{I420Planes, rgba_to_i420};
+use crate::yuv::{I420Planes, chroma_len, rgba_to_i420};
 use crate::{EncodedFrame, Error};
 
 /// Encoder settings.
@@ -28,11 +28,22 @@ pub struct Vp8Config {
     /// Threads a frame is encoded on. It is also cut into as many parts as there are threads
     /// (up to 8), which a decoder with several cores decodes side by side.
     pub threads: u32,
+    /// libvpx's screen-content mode (`VP8E_SET_SCREEN_CONTENT_MODE`), tuned for flat colour and
+    /// sharp edges: 0 off, 1 on, 2 on with more aggressive rate control (it may drop frames).
+    /// 0 leaves the control unset, so the stream is byte for byte what it was without it.
+    pub screen_content: u8,
 }
 
 impl Default for Vp8Config {
     fn default() -> Self {
-        Self { bitrate_kbps: 2_500, fps: 60, cpu_used: 8, keyframe_interval: 600, threads: 4 }
+        Self {
+            bitrate_kbps: 2_500,
+            fps: 60,
+            cpu_used: 8,
+            keyframe_interval: 600,
+            threads: 4,
+            screen_content: 0,
+        }
     }
 }
 
@@ -166,6 +177,10 @@ impl Vp8Encoder {
                 ffi::VPX_ENCODER_ABI_VERSION as c_int,
             )
         })?;
+        let screen_content = (self.config.screen_content > 0).then_some((
+            ffi::vp8e_enc_control_id::VP8E_SET_SCREEN_CONTENT_MODE,
+            i32::from(self.config.screen_content.min(2)),
+        ));
         let controls = [
             (ffi::vp8e_enc_control_id::VP8E_SET_CPUUSED, self.config.cpu_used),
             (ffi::vp8e_enc_control_id::VP8E_SET_NOISE_SENSITIVITY, 0),
@@ -177,7 +192,7 @@ impl Vp8Encoder {
             // Keyframes may use at most 3x an average frame, so a refresh is not a burst.
             (ffi::vp8e_enc_control_id::VP8E_SET_MAX_INTRA_BITRATE_PCT, 300),
         ];
-        for (id, value) in controls {
+        for (id, value) in controls.into_iter().chain(screen_content) {
             // SAFETY: the context is initialised; each control takes one int.
             let err = unsafe { ffi::vpx_codec_control_(&mut *ctx, id as c_int, value as c_int) };
             if let Err(e) = check("control", err) {
@@ -299,12 +314,37 @@ impl std::fmt::Debug for Vp8Decoder {
 // SAFETY: the libvpx context is only used through `&mut self`.
 unsafe impl Send for Vp8Decoder {}
 
-/// A decoded frame's size and luma plane (packed, `width * height` bytes).
+/// A decoded I420 picture: its size and its three planes, each packed with no row padding.
+/// `luma` is `width * height` bytes; `u` and `v` are each `chroma_len(width) *
+/// chroma_len(height)` (see [`crate::yuv::chroma_len`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedFrame {
     pub width: u32,
     pub height: u32,
     pub luma: Vec<u8>,
+    pub u: Vec<u8>,
+    pub v: Vec<u8>,
+}
+
+/// Copies `rows` rows of `width` bytes out of a plane whose rows are `stride` bytes apart.
+///
+/// # Safety
+///
+/// `plane` must be readable for `stride * (rows - 1) + width` bytes.
+pub(crate) unsafe fn pack_plane(
+    plane: *const u8,
+    stride: usize,
+    width: usize,
+    rows: usize,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(width * rows);
+    for row in 0..rows {
+        // SAFETY: the caller guarantees row `row` of `width` bytes is readable.
+        out.extend_from_slice(unsafe {
+            std::slice::from_raw_parts(plane.add(row * stride), width)
+        });
+    }
+    out
 }
 
 impl Vp8Decoder {
@@ -340,14 +380,20 @@ impl Vp8Decoder {
         let img = unsafe { ffi::vpx_codec_get_frame(&mut *self.ctx, &mut iter) };
         // SAFETY: libvpx returns null or an image valid until the next decode.
         let Some(img) = (unsafe { img.as_ref() }) else { return Ok(None) };
-        let (w, h, stride) = (img.d_w as usize, img.d_h as usize, img.stride[0] as usize);
-        let mut luma = Vec::with_capacity(w * h);
-        for row in 0..h {
-            // SAFETY: the luma plane holds `h` rows of `stride` bytes.
-            let src = unsafe { std::slice::from_raw_parts(img.planes[0].add(row * stride), w) };
-            luma.extend_from_slice(src);
-        }
-        Ok(Some(DecodedFrame { width: img.d_w, height: img.d_h, luma }))
+        let (w, h) = (img.d_w as usize, img.d_h as usize);
+        let (cw, ch) = (chroma_len(w), chroma_len(h));
+        let plane = |i: usize, width, rows| {
+            // SAFETY: a VP8 image is I420: plane 0 holds `h` rows and planes 1 and 2 hold
+            // `ch` rows, each of its stride, which is at least the plane's width.
+            unsafe { pack_plane(img.planes[i], img.stride[i] as usize, width, rows) }
+        };
+        Ok(Some(DecodedFrame {
+            width: img.d_w,
+            height: img.d_h,
+            luma: plane(0, w, h),
+            u: plane(1, cw, ch),
+            v: plane(2, cw, ch),
+        }))
     }
 }
 
@@ -420,6 +466,69 @@ mod tests {
                 assert_eq!((pic.width, pic.height), (640, 448), "{threads} threads");
             }
         }
+    }
+
+    /// Flat colour blocks with hard edges, sliding a pixel a frame: what screen-content mode is for.
+    fn blocks(w: u32, h: u32, shift: u32) -> Vec<u8> {
+        let colours = [[255, 0, 0], [0, 0, 255], [255, 255, 0], [0, 160, 0]];
+        let mut out = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let c = colours[(((x + shift) / 16 + y / 16) % 4) as usize];
+                out.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+        }
+        out
+    }
+
+    fn stream(config: Vp8Config, frames: u32) -> Vec<Option<EncodedFrame>> {
+        let mut enc = Vp8Encoder::new(config);
+        (0..frames).map(|n| enc.encode(&blocks(256, 224, n), 256, 224).unwrap()).collect()
+    }
+
+    #[test]
+    fn every_screen_content_mode_makes_a_stream_that_decodes() {
+        for screen_content in [0, 1, 2] {
+            let config = Vp8Config { screen_content, bitrate_kbps: 800, ..Vp8Config::default() };
+            let mut dec = Vp8Decoder::new().unwrap();
+            let mut pictures = 0;
+            for frame in stream(config, 30).into_iter().flatten() {
+                let pic = dec.decode(&frame.data).unwrap().expect("a picture");
+                assert_eq!((pic.width, pic.height), (256, 224), "mode {screen_content}");
+                pictures += 1;
+            }
+            assert!(pictures > 0, "mode {screen_content} sent nothing");
+        }
+    }
+
+    #[test]
+    fn screen_content_mode_0_is_the_stream_without_it() {
+        // Mode 0 leaves the control unset: the same frames make the same bytes as an encoder
+        // configured as before the setting existed. Screen-content mode changes them where the
+        // bitrate is tight (with plenty to spare, this content is at the lowest quantizer either
+        // way and the modes make the same stream).
+        // A positive `cpu_used` lets libvpx change speed with how long frames take, so a loaded
+        // machine encodes differently from run to run: a fixed speed (negative) and one thread
+        // make the bytes repeatable.
+        let tight =
+            Vp8Config { bitrate_kbps: 800, cpu_used: -8, threads: 1, ..Vp8Config::default() };
+        let off = stream(tight, 20);
+        assert_eq!(off, stream(Vp8Config { screen_content: 0, ..tight }, 20));
+        assert_ne!(off, stream(Vp8Config { screen_content: 1, ..tight }, 20));
+    }
+
+    #[test]
+    fn decoded_frames_carry_both_chroma_planes() {
+        // A solid colour comes back with its own chroma in every sample of each plane.
+        let (w, h) = (33, 17);
+        let rgba = [255u8, 0, 0, 255].repeat((w * h) as usize);
+        let frame = Vp8Encoder::new(Vp8Config::default()).encode(&rgba, w, h).unwrap().unwrap();
+        let pic = Vp8Decoder::new().unwrap().decode(&frame.data).unwrap().unwrap();
+        let chroma = chroma_len(w as usize) * chroma_len(h as usize);
+        assert_eq!((pic.luma.len(), pic.u.len(), pic.v.len()), ((w * h) as usize, chroma, chroma));
+        // BT.601 limited red is (82, 90, 240); allow the codec a little rounding.
+        assert!(pic.u.iter().all(|&u| u.abs_diff(90) <= 3), "u {:?}", &pic.u[..4]);
+        assert!(pic.v.iter().all(|&v| v.abs_diff(240) <= 3), "v {:?}", &pic.v[..4]);
     }
 
     #[test]

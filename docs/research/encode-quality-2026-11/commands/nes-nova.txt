@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/fceumm_libretro.dylib --rom "data/roms/nes/Nova the Squirrel.nes" --frames 1800 --png-every 1 --hold 200-205:start --hold 300-305:start --hold 420-425:a --hold 470-474:down --hold 500-505:a --hold 600-1790:right --hold 700-716:a --hold 900-916:a --hold 1100-1116:a --hold 1300-1316:a --hold 1500-1516:a
+# kept frames 0-1799 as frame_000000-frame_001799

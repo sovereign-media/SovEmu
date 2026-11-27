@@ -19,3 +19,11 @@ workspace = true
 audioadapter-buffers = "5.2.0"
 rubato = "5.1.0"
 tracing = "0.1.44"
+
+[dev-dependencies]
+png = "0.18.1"
+
+# The encoder quality bench (sovereign-media/SovEmu#263); its unit tests run with the crate's.
+[[example]]
+name = "encode_quality"
+test = true
