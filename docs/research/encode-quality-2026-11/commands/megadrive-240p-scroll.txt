@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/genesis_plus_gx_libretro.dylib --rom "data/roms/megadrive/240p Test Suite.md" --frames 2200 --png-every 1 --hold 450-454:down --hold 490-494:y --hold 530-534:down --hold 550-554:down --hold 570-574:down --hold 590-594:down --hold 620-624:y --hold 660-664:y
+# kept frames 400-2199 as frame_000000-frame_001799

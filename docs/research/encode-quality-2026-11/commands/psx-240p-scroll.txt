@@ -1,0 +1,2 @@
+sovemu-worker headless --core cores/pcsx_rearmed_libretro.dylib --rom "data/roms/psx/240p Test Suite.cue" --frames 2200 --png-every 1 --hold 450-454:down --hold 470-474:down --hold 490-494:down --hold 510-514:down --hold 530-534:down --hold 560-564:b
+# kept frames 400-2199 as frame_000000-frame_001799

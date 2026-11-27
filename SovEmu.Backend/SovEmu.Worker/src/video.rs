@@ -82,12 +82,13 @@ pub(crate) struct VideoSettings {
     pub(crate) screen_content: u8,
 }
 
-/// The largest picture a pre-scale makes, width by height. A frame larger than half of it (a
-/// SNES game's 512×448 hi-res screens, a PlayStation's 640×480) is encoded at its own size: four
-/// times its pixels were never measured (sovereign-media/SovEmu#263 measured up to 512×480), and
-/// such a frame already has a pixel per chroma sample's worth of detail to spare. A SNES game
-/// switching to hi-res then keeps its stream's size, 512×448 either way.
-const PRESCALE_MAX: (u32, u32) = (640, 480);
+/// The largest picture a pre-scale makes, width by height: a PC Engine's 352×240 doubled, the
+/// largest measured (sovereign-media/SovEmu#266). A frame larger than half of it (a SNES game's
+/// 512×448 hi-res screens, a PlayStation's 368-wide and 640×480 modes) is encoded at its own
+/// size: four times its pixels were never measured, and such a frame already has a pixel per
+/// chroma sample's worth of detail to spare. A SNES game switching to hi-res then keeps its
+/// stream's size, 512×448 either way.
+const PRESCALE_MAX: (u32, u32) = (704, 480);
 
 enum Encoder {
     H264(H264Encoder),
@@ -348,11 +349,15 @@ mod tests {
             prescale: 2,
             ..settings(CodecSetting::Only(VideoCodec::Vp8))
         });
-        for (w, h) in [(256, 240), (256, 224), (240, 160), (160, 144), (320, 240)] {
+        // NES, SNES, GBA, Game Boy, Genesis (and PAL), PC Engine.
+        for (w, h) in
+            [(256, 240), (256, 224), (240, 160), (160, 144), (320, 224), (320, 240), (352, 240)]
+        {
             assert_eq!(video.scale(w, h), 2, "{w}×{h}");
         }
-        // SNES hi-res, and its interlaced-only and wide-only modes; a PlayStation's 640×480.
-        for (w, h) in [(512, 448), (256, 448), (512, 224), (640, 480)] {
+        // SNES hi-res, and its interlaced-only and wide-only modes; a PlayStation's 368-wide and
+        // 640×480 modes.
+        for (w, h) in [(512, 448), (256, 448), (512, 224), (368, 240), (640, 480)] {
             assert_eq!(video.scale(w, h), 1, "{w}×{h}");
         }
         let path = video.path(512, 448, 60.0);

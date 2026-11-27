@@ -32,11 +32,12 @@ Recommendation per system:
 | Game Boy Color | **Ship** (30% → 10%) | Off |
 | GBA | **Ship** (19% → 2.3%) | Off |
 | Game Boy | No change; leave at 1× | Off |
-| Genesis, PC Engine, PS1 | Not measured (no ROM here: see Gaps) | Not measured |
+| Genesis | **Ship** (23% → 1.3%; measured for #266, below) | Not measured |
+| PC Engine | **Ship** (19% → 2.8%; needs the cap at 704×480) | Not measured |
+| PS1 | The 2D test suite gains as the others (21% → 4.4%), but games are mostly 3D: leave at 1× until a 3D game is measured | Not measured |
 
-Shipping it is a per-system setting in the worker's video path (`SovEmu__Systems__<id>__…`), a
-follow-up; `SovEmu__Streaming__Video__Prescale`, added here, applies it to every system and stays
-at 1 by default.
+Shipping it is per system: `SovEmu__Systems__<id>__Prescale` (#266), whose default is 2 on the
+systems marked **Ship**; `SovEmu__Streaming__Video__Prescale` sets every system's.
 
 ## How it was measured
 
@@ -110,6 +111,53 @@ What the table shows:
 
 x264 (reference only, not shipped) shows the same picture with larger gains at 2× (visible pixels
 on GBA 17.7% → 0.2%, on SNES 15.9% → 0.5%), and fewer bits than VP8 at 2×.
+
+## Test 1, continued: Genesis, PC Engine and PS1
+
+Measured for #266 on 2026-11-27, on the same machine with the harness at `c952663`, VP8 only.
+Artemio's 240p Test Suite (GPL-2.0; Genesis 1.32 and PC Engine HuCard 1.15 from its itch.io page,
+the PS1 port by filipalac from GitHub), now fetched by `scripts/fetch-free-roms.sh`. Two clips a
+system: the colour bars, then the colour-bleed check; and the scroll test, a full-screen
+parallax background scrolling for most of the clip. Cores `genesis_plus_gx` (320×224),
+`mednafen_pce_fast` (352×240) and `pcsx_rearmed` with its built-in BIOS (320×240). The clips
+start 400 frames in, past the boot screens.
+
+| System, rate | ΔE2000 mean | Pixels > 2.3 | Worst 1% of frames | PSNR-Cb (dB) | Actual kbit/s | Encode p95 (ms) | Decode p95 (ms) | Dropped |
+|---|---|---|---|---|---|---|---|---|
+| Genesis, no codec | 3.01 → 0.18 | 21.7% → 0.0% | 5.51 → 0.66 | 30.5 → 62.8 |  |  |  |  |
+| Genesis 5,000 | 3.12 → 0.37 | 22.9% → 1.3% | 5.60 → 1.37 | 30.5 → 54.2 | 2053 → 2438 | 0.59 → 1.45 | 0.41 → 0.85 | 0 → 0 |
+| Genesis 2,500 | 3.26 → 0.75 | 25.5% → 9.4% | 5.80 → 2.22 | 30.2 → 49.6 | 1216 → 1365 | 0.53 → 1.43 | 0.27 → 0.52 | 0 → 0 |
+| Genesis 1,500 | 3.46 → 1.25 | 28.9% → 18.2% | 6.03 → 3.30 | 29.9 → 46.5 | 773 → 890 | 0.52 → 1.38 | 0.22 → 0.43 | 0 → 0 |
+| Genesis 800 | 3.83 → 1.89 | 33.3% → 23.7% | 6.59 → 3.79 | 29.8 → 44.1 | 467 → 546 | 0.50 → 1.27 | 0.16 → 0.31 | 0 → 0 |
+| PC Engine, no codec | 2.47 → 0.14 | 17.9% → 0.0% | 4.11 → 0.41 | 28.6 → 62.3 |  |  |  |  |
+| PC Engine 5,000 | 2.58 → 0.43 | 18.8% → 2.8% | 4.21 → 1.16 | 28.4 → 52.0 | 1983 → 2343 | 0.63 → 1.51 | 0.44 → 0.60 | 0 → 0 |
+| PC Engine 2,500 | 2.72 → 0.95 | 21.3% → 13.2% | 4.50 → 3.11 | 28.4 → 47.8 | 1159 → 1298 | 0.56 → 1.47 | 0.26 → 0.44 | 0 → 0 |
+| PC Engine 1,500 | 2.93 → 1.37 | 25.0% → 18.0% | 4.79 → 3.53 | 28.1 → 45.9 | 734 → 861 | 0.52 → 1.43 | 0.18 → 0.35 | 0 → 0 |
+| PC Engine 800 | 3.24 → 1.68 | 28.5% → 19.9% | 5.28 → 3.70 | 28.0 → 44.8 | 442 → 657 | 0.51 → 1.43 | 0.15 → 0.35 | 0 → 0 |
+| PS1, no codec | 2.81 → 0.15 | 19.9% → 0.0% | 4.88 → 0.39 | 27.5 → 61.6 |  |  |  |  |
+| PS1 5,000 | 2.98 → 0.53 | 21.0% → 4.4% | 5.08 → 1.34 | 27.5 → 50.2 | 2334 → 2468 | 0.65 → 1.48 | 0.46 → 0.62 | 0 → 0 |
+| PS1 2,500 | 3.16 → 1.10 | 24.6% → 16.0% | 5.27 → 2.66 | 27.4 → 45.7 | 1202 → 1357 | 0.53 → 1.36 | 0.25 → 0.42 | 0 → 0 |
+| PS1 1,500 | 3.39 → 1.56 | 28.3% → 20.9% | 5.56 → 3.03 | 27.3 → 43.7 | 760 → 897 | 0.53 → 1.43 | 0.19 → 0.36 | 0 → 0 |
+| PS1 800 | 3.82 → 1.86 | 32.3% → 22.7% | 6.10 → 3.21 | 27.0 → 42.8 | 450 → 691 | 0.49 → 1.38 | 0.14 → 0.34 | 0 → 0 |
+
+What it adds to the first five systems:
+
+- **The same gain on still colour.** On the colour-bar clips, visibly wrong pixels fall from
+  15–19% to 0.4–3% at every rate, for 125–205 → 295–415 kbit/s.
+- **The scroll clips are the first to use the whole rate.** A full screen of parallax
+  scrolling at 60 fps takes all VP8 is given (750–4,500 kbit/s), so here 2× competes for bits.
+  It still wins at the rates a session runs at: at 5,000 kbit/s (the starting rate) visibly
+  wrong pixels fall from 22–28% to 2–6% on those clips, and at 2,500 from 27–33% to 18–29%. At
+  800 and 1,500, the mean colour error is still lower at 2×, but luma SSIM is slightly worse
+  (by up to 0.02 at 800): a stream squeezed that far loses some detail either way.
+- **VP8 overshoots small targets at 2×**: at 800 kbit/s the PC Engine and PS1 scroll clips sent
+  about 1,000. The rate adaptation reacts to what is sent, so a congested link is still served.
+- **The PC Engine's frame is 352 wide**, so its 2× picture is 704×480, past the 640×480 the
+  worker first allowed: the cap is now 704×480. Decoding it costs 0.6–0.9 ms p95 here; the Fire
+  TV Stick was not measured at this size (1.9 ms at SNES's 512×448, so roughly 3 ms expected).
+- **PS1**: the suite is 2D at 320×240 and gains as the others do. PlayStation games are mostly 3D
+  and change resolution (256 to 640 wide), so it stays at 1× by default until a 3D game is
+  measured; `SovEmu__Systems__psx__Prescale=2` turns it on.
 
 ## Test 2: screen-content mode
 
@@ -230,10 +278,8 @@ Screen-content mode fails "pixels > 2.3 down by a quarter" on every system in ev
 
 ## Gaps
 
-- **Genesis, PC Engine and PS1 were not measured**: there's no freely licensed ROM for them in
-  `scripts/fetch-free-roms.sh`, and Artemio's 240p Test Suite publishes only sources for them
-  (built with SGDK and HuC). `mednafen_pce_fast` and `genesis_plus_gx` are fetched; a run needs
-  only clips (`scripts/encode-quality-captures.sh` takes a new line each).
+- Genesis, PC Engine and PS1 were measured later, for #266 (above), with test-suite clips only:
+  no game, and no 3D PlayStation game.
 - On the stick, only SNES and NES clips were run; GBC and GBA weren't (they are smaller frames,
   so cheaper to decode).
 - Fire TV decode times are WebRTC's mean per 10 s window, not per-frame percentiles (the app's

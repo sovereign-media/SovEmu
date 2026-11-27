@@ -66,11 +66,12 @@ impl System {
     /// How many times its games' pictures are scaled up by repeating pixels before they are
     /// encoded, when neither `SovEmu__Systems__<id>__Prescale` nor
     /// `SovEmu__Streaming__Video__Prescale` says. 2 on the systems measured to gain from it
-    /// (sovereign-media/SovEmu#263: with each console pixel a 2×2 block, 4:2:0 keeps its colour),
-    /// else 1. The original Game Boy has no colour to keep; the others are not measured yet.
+    /// (sovereign-media/SovEmu#263 and #266: with each console pixel a 2×2 block, 4:2:0 keeps its
+    /// colour), else 1. The original Game Boy has no colour to keep. PlayStation games stay at 1:
+    /// its 2D test suite gains as these do, but its games are mostly 3D, which was not measured.
     pub fn default_prescale(&self) -> u32 {
         match self.id {
-            "nes" | "snes" | "gbc" | "gba" => 2,
+            "nes" | "snes" | "gbc" | "gba" | "megadrive" | "pcengine" => 2,
             _ => 1,
         }
     }
@@ -619,11 +620,11 @@ mod tests {
     #[test]
     fn the_measured_colour_systems_prescale_by_default() {
         let prescale = |id| by_id(id).unwrap().default_prescale();
-        for id in ["nes", "snes", "gbc", "gba"] {
+        for id in ["nes", "snes", "gbc", "gba", "megadrive", "pcengine"] {
             assert_eq!(prescale(id), 2, "{id}");
         }
         assert_eq!(prescale("gb"), 1, "four greys: no colour to keep");
-        assert_eq!(prescale("psx"), 1, "not measured");
+        assert_eq!(prescale("psx"), 1, "3D games not measured");
     }
 
     #[test]

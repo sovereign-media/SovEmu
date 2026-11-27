@@ -17,19 +17,46 @@ trap 'rm -rf "$tmp"' EXIT
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
+# Downloads an itch.io upload (`itch:<user>/<game>/<upload id>`) as the page's free-download
+# button does: itch.io hands out short-lived links, so the checksum, not the URL, pins the file.
+itch() {
+  local user="${1%%/*}" rest="${1#*/}"
+  local game="${rest%%/*}" upload="${rest#*/}" page csrf download jar="$tmp/itch-cookies"
+  page="https://$user.itch.io/$game"
+  csrf="$(curl -fsS -c "$jar" "$page" | grep -o 'csrf_token" value="[^"]*' | head -1 | cut -d'"' -f3)"
+  # "No thanks, just take me to the downloads": a download page whose visit lets the session
+  # ask for the file's link.
+  download="$(curl -fsS -b "$jar" -c "$jar" -X POST --data-urlencode "csrf_token=$csrf" \
+    "$page/download_url" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | sed 's|\\/|/|g')"
+  csrf="$(curl -fsS -b "$jar" -c "$jar" "$download" \
+    | grep -o 'csrf_token" value="[^"]*' | head -1 | cut -d'"' -f3)"
+  curl -fsS -b "$jar" -X POST --data-urlencode "csrf_token=$csrf" \
+    "$page/file/$upload?source=game_download" | grep -o '"url":"[^"]*' | cut -d'"' -f4 | sed 's|\\/|/|g'
+}
+
 # system  file name in the library  sha256  url  [path inside a zip]  licence
+# A disc's path inside the zip is its `.cue` and `.bin`, comma-separated: both are copied, named
+# as the library file, and the cue is pointed at the renamed bin.
 while IFS='|' read -r system name sum url inner licence; do
   [ -n "$system" ] || continue
   out="$dest/$system/$name"
   if [ -f "$out" ]; then echo "have  $system/$name"; continue; fi
   mkdir -p "$dest/$system"
   file="$tmp/download"
+  case "$url" in itch:*) url="$(itch "${url#itch:}")" ;; esac
   curl --fail --silent --show-error --location -o "$file" "$url"
   got="$(sha256 "$file")"
-  [ "$got" = "$sum" ] || { echo "checksum mismatch for $url: $got" >&2; exit 1; }
+  [ "$got" = "$sum" ] || { echo "checksum mismatch for $name: $got" >&2; exit 1; }
   if [ -n "$inner" ]; then
     rm -rf "$tmp/zip" && mkdir "$tmp/zip" && unzip -q "$file" -d "$tmp/zip"
-    cp "$tmp/zip/$inner" "$out"
+    case "$inner" in
+      *.cue,*.bin)
+        bin="${out%.*}.bin"
+        cp "$tmp/zip/${inner#*,}" "$bin"
+        sed "s|^FILE \"[^\"]*\"|FILE \"$(basename "$bin")\"|" "$tmp/zip/${inner%%,*}" > "$out"
+        ;;
+      *) cp "$tmp/zip/$inner" "$out" ;;
+    esac
   else
     cp "$file" "$out"
   fi
@@ -41,4 +68,7 @@ snes|Castle Platformer.sfc|e75da7af6f3a1bd10c21cf4324d0c4321271ce3b9ef3408b2dc2d
 gb|240p Test Suite.gb|733eb6e7ec0719752ddd5fcda4e715c2f2e20f4ac4bc971c4bd1d49272f9bb04|https://github.com/pinobatch/240p-test-mini/releases/download/v0.23/gb240p.gb||GPL-2.0, pinobatch/240p-test-mini
 gbc|uCity.gbc|9422ee2ca7b7ea1d46b58b2a429fff3f354dfd3e732dee1e7ae6220f148ce6e0|https://github.com/AntonioND/ucity/releases/download/v1.3/ucity.gbc||GPL-3.0, AntonioND/ucity
 gba|240p Test Suite.gba|47844f7140738a06f8f3bc09780da3ab095539a250b870f614feed561d9d6f34|https://github.com/pinobatch/240p-test-mini/releases/download/v0.23/240pee_mb.gba||GPL-2.0, pinobatch/240p-test-mini
+megadrive|240p Test Suite.md|0db29b9739cc75c44dcbf2f3fa74608fff57cf05835e88cf28ffeb1faa4b7970|itch:artemiourbina/240p-test-suite/17035733|240pSuite-1.32.bin|GPL-2.0, ArtemioUrbina/240pTestSuite
+pcengine|240p Test Suite.pce|b772532fe00a03e338977b5ab539eff8ecb71b2fb084c771335104d537da08e7|itch:artemiourbina/240p-test-suite/9964366|240pSuite.pce|GPL-2.0, ArtemioUrbina/240pTestSuite
+psx|240p Test Suite.cue|63f64dcd61bd35d277f9164d17563afc2de8e1adcd316a8e0a45ea753bfbf542|https://github.com/filipalac/240pTestSuite-PS1/releases/download/19122020/240pTestSuitePS1-EMU.zip|240pTestSuitePS1-EMU.cue,240pTestSuitePS1-EMU.bin|GPL-2.0, filipalac/240pTestSuite-PS1
 EOF

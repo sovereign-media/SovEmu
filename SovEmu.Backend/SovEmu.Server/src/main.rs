@@ -324,8 +324,8 @@ pub struct Config {
     /// Scale each game's picture up this many times (1 or 2) by repeating pixels before it is
     /// encoded. At 2 every console pixel is a 2×2 block, so the codecs' 4:2:0 chroma keeps each
     /// pixel's own colour, for four times the pixels to encode and to decode. Unset, each
-    /// system has SovEmu's choice (`System::default_prescale`: 2 for NES, SNES, Game Boy Color
-    /// and GBA); per system, `SovEmu__Systems__<id>__Prescale` wins over both.
+    /// system has SovEmu's choice (`System::default_prescale`: 2 for NES, SNES, Game Boy Color,
+    /// GBA, Genesis and PC Engine); per system, `SovEmu__Systems__<id>__Prescale` wins over both.
     #[arg(long, env = "SovEmu__Streaming__Video__Prescale",
           value_parser = clap::value_parser!(u32).range(1..=2))]
     pub video_prescale: Option<u32>,
