@@ -305,7 +305,15 @@ function Player() {
           await new Promise((r) => setTimeout(r, 250));
         }
       })();
-      const starting = api.startSession(gameId, startId).then((s) => {
+      // Chosen already on the game list (?start=continue, ?start=new, or a slot from the game
+      // panel's saves, ?start=2): the question is skipped, and a save to continue from is loaded
+      // by the start itself rather than by a request of its own once it is ready.
+      const chosen = new URLSearchParams(location.search).get("start");
+      const slot = chosen !== null && /^\d+$/.test(chosen) ? Number(chosen) : null;
+      const hasSlot = (n: number) => initialSlots.some((s) => s.slot === n);
+      let startedFrom =
+        slot !== null && hasSlot(slot) ? slot : chosen === "continue" && hasSlot(AUTO_SLOT) ? AUTO_SLOT : null;
+      const starting = api.startSession(gameId, startId, startedFrom).then((s) => {
         polling = false;
         showProgress({ phase: "READY", elapsedMs: 0, phaseMs: 0 });
         // The bar stays for the last stretch: the game's first picture (`begin`).
@@ -332,7 +340,12 @@ function Player() {
           return;
         }
         if (stopped) return;
-        if (slot !== null) await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
+        // The start loaded it already when it was chosen before the game started.
+        const loaded = slot !== null && slot === startedFrom;
+        startedFrom = null;
+        if (slot !== null && !loaded) {
+          await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
+        }
         stack.close();
         // The splash stays until the game has drawn: a console's BIOS can boot for seconds, and
         // a save is only loaded once the game is up. The bar counts the wait meanwhile.
@@ -825,11 +838,8 @@ function Player() {
             ],
       });
 
-      // Chosen already on the game list (?start=continue, ?start=new, or a slot from the game
-      // panel's saves, ?start=2): skip the question.
-      const chosen = new URLSearchParams(location.search).get("start");
-      const slot = chosen !== null && /^\d+$/.test(chosen) ? Number(chosen) : null;
-      if (slot !== null && initialSlots.some((s) => s.slot === slot)) void begin(slot);
+      // Chosen already on the game list: skip the question.
+      if (slot !== null && hasSlot(slot)) void begin(slot);
       else if (chosen === "continue" && auto) void begin(AUTO_SLOT);
       else if (chosen === "new" || chosen === "continue" || slot !== null) void begin(null);
 

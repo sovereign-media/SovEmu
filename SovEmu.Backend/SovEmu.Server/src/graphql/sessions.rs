@@ -389,17 +389,28 @@ pub(super) struct SessionsMutation;
 impl SessionsMutation {
     /// Starts a game (ending this user's running one first) and returns once it is ready to
     /// stream. Give a `startId` (8–64 letters, digits, `-` or `_`) to follow its progress with
-    /// `startProgress` meanwhile.
+    /// `startProgress` meanwhile. Give a `slot` to continue from that save state: it is loaded
+    /// as the game starts, as `loadState` would, without a request of its own before the
+    /// client connects. A state that cannot be loaded is logged and the game starts afresh.
     async fn start_session(
         &self,
         ctx: &Context<'_>,
         game_id: i64,
         start_id: Option<String>,
+        slot: Option<u32>,
     ) -> Result<SessionNode> {
         let user = user(ctx).await?;
-        let session = crate::api::start_session(state(ctx), &user, game_id, start_id.as_deref())
-            .await
-            .api()?;
+        if let Some(slot) = slot {
+            crate::api::check_slot(slot).api()?;
+        }
+        let state = state(ctx);
+        let session =
+            crate::api::start_session(state, &user, game_id, start_id.as_deref()).await.api()?;
+        if let Some(slot) = slot
+            && let Err(e) = crate::api::load_state(state, &user, &session.id, slot).await
+        {
+            tracing::warn!(session = %session.id, slot, error = %e.message, "could not continue from a save");
+        }
         let entry = Entry::new(Kind::GameStarted).about(&session.title).detail(&session.system);
         record(ctx, &user, entry);
         Ok(SessionNode(session))

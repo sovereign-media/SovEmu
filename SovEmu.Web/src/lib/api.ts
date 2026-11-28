@@ -367,8 +367,9 @@ export const api = {
   fetchMetadata: async (system?: string, force = false, fields: MetadataField[] = []) =>
     (await request(FetchMetadataMutation, { system: system ?? null, force, fields })).fetchMetadata,
   /** `startId` lets `startProgress` follow the start while this waits for it. */
-  startSession: async (gameId: number, startId?: string) =>
-    (await request(StartSessionMutation, { gameId, startId: startId ?? null })).startSession,
+  /** Starts a game; `slot` continues from that save, loaded as the game starts. */
+  startSession: async (gameId: number, startId?: string, slot?: number | null) =>
+    (await request(StartSessionMutation, { gameId, startId: startId ?? null, slot: slot ?? null })).startSession,
   startProgress: async (startId: string) => (await request(StartProgressDocument, { startId })).startProgress,
   /**
    * The worker's answer (SDP) to a WebRTC offer for the session; `client` names this browser and

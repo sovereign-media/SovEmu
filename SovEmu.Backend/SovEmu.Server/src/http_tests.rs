@@ -352,9 +352,8 @@ const SYSTEMS: &str = "{ systems { id name gameCount playable rendering } }";
 const GAMES: &str = "query($id: ID!) { system(id: $id) { games {
     id title fileTitle tags lastPlayedAt playCount media mediaUrl(kind: THUMB) description
     developer releaseDate rating players patch } } }";
-const START: &str =
-    "mutation($game: Int!, $start: String) { startSession(gameId: $game, startId: $start) {
-    id title core width height } }";
+const START: &str = "mutation($game: Int!, $start: String, $slot: Int) {
+    startSession(gameId: $game, startId: $start, slot: $slot) { id title core width height } }";
 const PROGRESS: &str =
     "query($id: String!) { startProgress(startId: $id) { phase elapsedMs error } }";
 const METADATA: &str = "{ metadataStatus { running total done found failed sources notes \
@@ -718,6 +717,9 @@ async fn runs_a_game_session_in_a_worker() {
     assert_eq!(game["saves"][0]["screenshotUrl"], Value::Null, "no frame streamed yet");
     assert_eq!(game["autoSave"], Value::Null);
     h.ok(load, json!({"s": sid, "slot": 2})).await;
+    // A start that continues from a slot no game can have is refused before anything starts.
+    assert_eq!(h.err(START, json!({"game": id, "slot": 99})).await.0, "BAD_REQUEST");
+    assert_eq!(h.state.workers.count(), 1);
     let (code, message) = h.err(load, json!({"s": sid, "slot": 5})).await;
     assert_eq!(code, "BAD_REQUEST");
     assert!(message.contains("empty"), "{message}");
@@ -755,7 +757,9 @@ async fn runs_a_game_session_in_a_worker() {
     assert_eq!(home["home"]["recent"][0]["id"], id, "the game just played comes first");
 
     // Starting another game replaces the session; stopping ends it.
-    let second = h.ok(START, json!({"game": id})).await["startSession"]["id"].clone();
+    // ... continuing from a save as it starts (the state loads as the game does).
+    h.ok(save, json!({"s": sid, "slot": 4})).await;
+    let second = h.ok(START, json!({"game": id, "slot": 4})).await["startSession"]["id"].clone();
     assert_ne!(second, sid.as_str());
     assert_eq!(h.state.workers.count(), 1);
     let stop = "mutation($id: ID!) { stopSession(id: $id) }";

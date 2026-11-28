@@ -748,8 +748,8 @@ export const ResetControllerMappingMutation = graphql(`
 
 export const StartSessionMutation = graphql(
   `
-  mutation StartSession($gameId: Int!, $startId: String) {
-    startSession(gameId: $gameId, startId: $startId) {
+  mutation StartSession($gameId: Int!, $startId: String, $slot: Int) {
+    startSession(gameId: $gameId, startId: $startId, slot: $slot) {
       ...SessionFields
     }
   }
