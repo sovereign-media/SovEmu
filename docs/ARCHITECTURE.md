@@ -212,7 +212,11 @@ Saves belong to a user and live under `/sov-data/saves/<user id>/<system>/`.
   last frame. Slot 0 is the auto state, written whenever a session ends, so the player can
   continue later.
 
-Every write goes to a temporary file and is renamed into place. The server never reads or writes
+Every write goes to a temporary file, flushed to the disk (`fsync`), and is renamed into place, the
+rename flushed too, so a power cut leaves the old save or the new one, never an empty file. Writes
+happen on a thread of the worker's own, in the order asked, since one flush can take a quarter of a
+second on a slow disk: the stream's thread only copies what it takes from the core. A save state is
+answered once it is on the disk, and the session ends only once every write is. The server never reads or writes
 state data itself: it relays `save_state`/`load_state` to the session's worker, and only lists
 and deletes the files.
 

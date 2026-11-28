@@ -45,9 +45,10 @@ counts only if it drew a frame and read it back. A GPU with no DRM node (NVIDIA 
 
 ## Saves
 
-**Never lose a player's progress.** Battery saves and states are written atomically (temp file +
-rename) in `persist.rs`, on every exit path (`Session::finish`, called from `Drop`). Never write a
-save in place.
+**Never lose a player's progress.** Battery saves and states are written atomically (temp file,
+`fsync`, rename, `fsync` of the directory) in `persist.rs`, on every exit path (`Session::finish`,
+called from `Drop`, which waits until they are on the disk). Never write a save in place. Writes
+run on the saver's thread, never the stream's: copy what the core hands over, then queue it.
 
 ## Encoding
 

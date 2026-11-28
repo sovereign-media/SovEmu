@@ -480,8 +480,24 @@ impl Session {
         self.core.discs().map(|d| d.count)
     }
 
-    /// Handles a control request. Returns `Ok(true)` if the loop should stop.
-    fn control(&mut self, request: &Request) -> Result<bool, String> {
+    /// Handles a control request, answering `reply` (a save state once it is on the disk).
+    /// Returns whether the loop should stop.
+    fn control(&mut self, request: &Request, reply: crate::persist::Reply) -> bool {
+        if let Request::SaveState { slot, .. } = request {
+            let (width, height) = self.shot_size;
+            let rgba = screenshot_rgba(&self.picture);
+            let shot = Screenshot { rgba: &rgba, width, height };
+            self.persist.save_state(&mut self.core, *slot, Some(shot), Some(reply));
+            return false;
+        }
+        let result = self.control_now(request);
+        let stop = matches!(result, Ok(true));
+        let _ = reply.send(result.map(|_| ()));
+        stop
+    }
+
+    /// Handles a control request answered as soon as it is done. `Ok(true)`: stop the loop.
+    fn control_now(&mut self, request: &Request) -> Result<bool, String> {
         match request {
             Request::Reset { .. } => {
                 self.core.reset();
@@ -508,15 +524,8 @@ impl Session {
                 self.finish();
                 Ok(true)
             }
-            Request::SaveState { slot, .. } => {
-                let (width, height) = self.shot_size;
-                let rgba = screenshot_rgba(&self.picture);
-                let shot = Screenshot { rgba: &rgba, width, height };
-                self.persist
-                    .save_state(&mut self.core, *slot, Some(shot))
-                    .map(|_| false)
-                    .map_err(|e| format!("{e:#}"))
-            }
+            // Answered once written, by `control`: never here.
+            Request::SaveState { .. } => Err("a save state is answered once it is written".into()),
             Request::LoadState { slot, .. } => {
                 let bytes = self.persist.read_state(*slot).map_err(|e| format!("{e:#}"))?;
                 if self.drawn {
@@ -711,10 +720,7 @@ pub(crate) fn run(
                     let _ = reply.send(answer);
                 }
                 Ok(Command::Control { request, reply }) => {
-                    let result = session.control(&request);
-                    let stop = matches!(result, Ok(true));
-                    let _ = reply.send(result.map(|_| ()));
-                    if stop {
+                    if session.control(&request, reply) {
                         tracing::info!("shutting down on request");
                         return Ok(ExitReason::Stopped);
                     }
