@@ -93,6 +93,8 @@ pub(crate) struct VideoSettings {
     pub(crate) prescale: u32,
     /// VP8's screen-content mode, 0 to 2 (`SovEmu__Streaming__Video__ScreenContent`).
     pub(crate) screen_content: u8,
+    /// VP8's speed, `cpu_used` (`SovEmu__Streaming__Video__CpuUsed`).
+    pub(crate) cpu_used: i32,
 }
 
 /// The largest picture a pre-scale makes, width by height: a PC Engine's 352×240 doubled, the
@@ -153,6 +155,7 @@ impl Video {
                 fps: settings.fps,
                 keyframe_interval: settings.keyframe_interval,
                 screen_content: settings.screen_content,
+                cpu_used: settings.cpu_used,
                 ..Vp8Config::default()
             })),
         }
@@ -359,6 +362,7 @@ mod tests {
             keyframe_interval: 600,
             prescale: 1,
             screen_content: 0,
+            cpu_used: -2,
         }
     }
 

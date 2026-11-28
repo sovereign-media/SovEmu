@@ -349,6 +349,12 @@ struct SessionArgs {
     #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=2))]
     video_screen_content: u8,
 
+    /// VP8's speed (libvpx's `cpu_used`): negative a fixed speed, lower being slower and
+    /// better; positive chosen by libvpx from how long frames take. H.264 has no such setting.
+    #[arg(long, default_value_t = -2, allow_negative_numbers = true,
+          value_parser = clap::value_parser!(i32).range(-16..=16))]
+    video_cpu_used: i32,
+
     /// Testing only: a folder of `frame_NNNNNN.png` shown instead of the game's picture, the
     /// next one each time the game draws, looping (the encoder bench's captures, #263).
     #[arg(long)]
@@ -522,6 +528,12 @@ struct ServeArgs {
     #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u8).range(0..=2))]
     video_screen_content: u8,
 
+    /// VP8's speed (libvpx's `cpu_used`): negative a fixed speed, lower being slower and
+    /// better; positive chosen by libvpx from how long frames take. H.264 has no such setting.
+    #[arg(long, default_value_t = -2, allow_negative_numbers = true,
+          value_parser = clap::value_parser!(i32).range(-16..=16))]
+    video_cpu_used: i32,
+
     /// Testing only: a folder of `frame_NNNNNN.png` shown instead of the game's picture, the
     /// next one each time the game draws, looping (the encoder bench's captures, #263).
     #[arg(long)]
@@ -642,5 +654,31 @@ mod tests {
         assert_eq!(parse_key_value("a = b=c"), Ok(("a".into(), "b=c".into())));
         assert!(parse_key_value("novalue").is_err());
         assert!(parse_key_value("=x").is_err());
+    }
+
+    #[test]
+    fn a_negative_vp8_speed_parses_in_both_streaming_commands() {
+        // A fixed speed is negative, which clap would otherwise take for a flag.
+        use clap::Args as _;
+        for args in [
+            SessionArgs::augment_args(clap::Command::new("w")),
+            ServeArgs::augment_args(clap::Command::new("w")),
+        ] {
+            let arg = args.get_arguments().find(|a| a.get_id() == "video_cpu_used").unwrap();
+            let command = clap::Command::new("w").arg(arg.clone());
+            let speed = |given: &[&str]| {
+                let mut argv = vec!["w"];
+                argv.extend_from_slice(given);
+                command
+                    .clone()
+                    .try_get_matches_from(argv)
+                    .map(|m| m.get_one::<i32>("video_cpu_used").copied())
+            };
+            assert_eq!(speed(&[]).unwrap(), Some(-2), "the default is a fixed 2");
+            assert_eq!(speed(&["--video-cpu-used=-2"]).unwrap(), Some(-2));
+            assert_eq!(speed(&["--video-cpu-used", "-16"]).unwrap(), Some(-16));
+            assert_eq!(speed(&["--video-cpu-used=8"]).unwrap(), Some(8));
+            assert!(speed(&["--video-cpu-used=17"]).is_err());
+        }
     }
 }

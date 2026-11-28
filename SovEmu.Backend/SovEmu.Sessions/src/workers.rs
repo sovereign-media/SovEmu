@@ -68,6 +68,8 @@ pub struct WorkerConfig {
     pub video_encoder: String,
     /// `--video-screen-content` (`SovEmu__Streaming__Video__ScreenContent`): 0 to 2.
     pub video_screen_content: u8,
+    /// `--video-cpu-used` (`SovEmu__Streaming__Video__CpuUsed`): VP8's speed, -16 to 16.
+    pub video_cpu_used: i32,
     /// Testing only: `--replay-frames` (`SovEmu__Streaming__Debug__ReplayFrames`).
     pub replay_frames: Option<PathBuf>,
     /// How long a worker may take to load its core and game. Generous by default: a disc image
@@ -866,6 +868,7 @@ impl Workers {
             .arg(launch.prescale.to_string())
             .arg("--video-screen-content")
             .arg(self.config.video_screen_content.to_string())
+            .arg(format!("--video-cpu-used={}", self.config.video_cpu_used))
             .arg("--core")
             .arg(&launch.core)
             .arg("--rom")
@@ -1346,6 +1349,7 @@ done
             video_codec: "auto".into(),
             video_encoder: "software".into(),
             video_screen_content: 0,
+            video_cpu_used: -2,
             replay_frames: None,
             start_timeout: Duration::from_secs(10),
             stop_timeout,
@@ -1538,6 +1542,18 @@ sleep 0.3
         workers.start(launch(&dir, 1, 2)).await.unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains("--video-prescale 1"), "{args}");
+        workers.stop_all().await;
+        settle(&workers, 2).await;
+    }
+
+    #[tokio::test]
+    async fn the_vp8_speed_reaches_the_worker_as_one_argument() {
+        // Joined with `=`: as two words, a negative speed would read as a flag of its own.
+        let dir = dir("cpu-used");
+        let workers = workers(&dir, "exit 0", Duration::from_secs(5));
+        workers.start(launch(&dir, 1, 1)).await.unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains("--video-cpu-used=-2"), "{args}");
         workers.stop_all().await;
         settle(&workers, 2).await;
     }
