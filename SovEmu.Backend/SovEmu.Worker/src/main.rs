@@ -608,6 +608,7 @@ fn main() -> ExitCode {
         .as_deref()
         .map(|id| tracing::info_span!("session", session.id = %id, system = cli.system.as_deref()));
     let _session = span.as_ref().map(tracing::Span::enter);
+    pacing::precise_timers();
     let result = match cli.command {
         Command::Session(args) => session::run(args),
         Command::Serve(args) => serve::run(args),

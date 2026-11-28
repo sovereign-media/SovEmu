@@ -9,27 +9,22 @@
 //! the one address it offers, so its datagrams are tagged with that. What goes out leaves by the
 //! socket of the destination's family.
 //!
-//! With IPv4 alone the socket is read on the stream's own thread, as it always was. With both,
-//! each is read on a thread of its own and the datagrams meet in one queue, since std has no way
-//! to wait on two sockets at once.
+//! Both are waited on together, on the stream's own thread, with `ppoll` (`poll` off Linux): its
+//! timeout is a high-resolution timer, where a socket's read timeout is rounded up to the
+//! kernel's tick (4 ms at the usual 250 Hz) and ended every frame's wait milliseconds late.
 //!
 //! [`advertised_addr`]: sovemu_protocol::net::advertised_addr
 
 use std::io::{self, ErrorKind};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use rustix::event::{PollFd, PollFlags, Timespec};
 use sovemu_protocol::net::Ipv6Advertise;
 
-/// How often a reading thread looks up to see whether the session has ended.
-const READ_SLICE: Duration = Duration::from_millis(200);
-
-/// One received datagram: its bytes, who sent it, and the local address it was sent to.
-type Datagram = (Vec<u8>, SocketAddr, SocketAddr);
+/// The longest a read may block on a socket `ppoll` said was readable: Linux can say so of a
+/// datagram it then drops for a bad checksum, and the read must not then hang the stream.
+const READ_GUARD: Duration = Duration::from_millis(1);
 
 /// A session's sockets.
 #[derive(Debug)]
@@ -39,16 +34,15 @@ pub(crate) struct Udp {
     advertised: SocketAddr,
     /// The IPv6 socket, and the address it offers.
     v6: Option<(UdpSocket, SocketAddr)>,
-    /// With two sockets, what their reading threads have received.
-    incoming: Option<Receiver<Datagram>>,
-    /// Tells the reading threads to stop.
-    closed: Arc<AtomicBool>,
+    /// Which socket is read first when both have something, taking turns so neither starves.
+    v6_first: std::cell::Cell<bool>,
 }
 
 impl Udp {
     /// The session's socket alone, its datagrams tagged with `advertised`.
     pub(crate) fn new(primary: UdpSocket, advertised: SocketAddr) -> Self {
-        Self { primary, advertised, v6: None, incoming: None, closed: Arc::default() }
+        guard_reads(&primary);
+        Self { primary, advertised, v6: None, v6_first: std::cell::Cell::new(false) }
     }
 
     /// Adds the IPv6 socket `setting` asks for, marked with `dscp` as the first is. When there
@@ -77,11 +71,8 @@ impl Udp {
         crate::priority::mark(&socket, dscp);
         tracing::info!(address = %addr, bound = %socket.local_addr()?, "offered over IPv6 too");
 
-        let (tx, rx) = mpsc::channel();
-        read_on_thread("udp-v4", self.primary.try_clone()?, self.advertised, &tx, &self.closed)?;
-        read_on_thread("udp-v6", socket.try_clone()?, addr, &tx, &self.closed)?;
+        guard_reads(&socket);
         self.v6 = Some((socket, addr));
-        self.incoming = Some(rx);
         Ok(self)
     }
 
@@ -108,42 +99,85 @@ impl Udp {
         }
     }
 
-    /// The next datagram within `wait` (at least a millisecond): its length in `buf`, its
-    /// source, and the local address it was sent to. `None` when nothing came.
+    /// The next datagram within `wait` (none: only what has already arrived): its length in
+    /// `buf`, its source, and the local address it was sent to. `None` when nothing came.
     pub(crate) fn recv(
         &self,
         buf: &mut [u8],
         wait: Duration,
     ) -> io::Result<Option<(usize, SocketAddr, SocketAddr)>> {
-        let wait = wait.max(Duration::from_millis(1));
-        let Some(incoming) = &self.incoming else {
-            self.primary.set_read_timeout(Some(wait))?;
-            return match self.primary.recv_from(buf) {
-                Ok((n, source)) => Ok(Some((n, source, self.advertised))),
-                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                    Ok(None)
+        let deadline = Instant::now() + wait;
+        loop {
+            let (v4_ready, v6_ready) = self.wait_readable(deadline)?;
+            // Both have something: take turns.
+            let v6_turn = v6_ready && (!v4_ready || self.v6_first.get());
+            let received = match &self.v6 {
+                Some((v6, local)) if v6_turn => {
+                    self.v6_first.set(false);
+                    read(v6, buf, *local)
                 }
-                Err(e) => Err(e),
+                _ if v4_ready => {
+                    self.v6_first.set(true);
+                    read(&self.primary, buf, self.advertised)
+                }
+                _ => return Ok(None), // the deadline passed
             };
-        };
-        match incoming.recv_timeout(wait) {
-            Ok((data, source, local)) => {
-                let n = data.len().min(buf.len());
-                buf[..n].copy_from_slice(&data[..n]);
-                Ok(Some((n, source, local)))
+            match received {
+                Ok(datagram) => return Ok(Some(datagram)),
+                // Readable but gone (a datagram dropped for its checksum): wait out the rest.
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(e) => return Err(e),
             }
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => {
-                Err(io::Error::other("the sockets' reading threads have stopped"))
+        }
+    }
+
+    /// Waits until a socket is readable or `deadline` passes: which are readable, (IPv4, IPv6).
+    fn wait_readable(&self, deadline: Instant) -> io::Result<(bool, bool)> {
+        let readable = PollFlags::IN | PollFlags::ERR;
+        loop {
+            let mut fds = [
+                PollFd::new(&self.primary, PollFlags::IN),
+                PollFd::new(&self.primary, PollFlags::IN),
+            ];
+            let n = match &self.v6 {
+                Some((v6, _)) => {
+                    fds[1] = PollFd::new(v6, PollFlags::IN);
+                    2
+                }
+                None => 1,
+            };
+            let left = deadline.saturating_duration_since(Instant::now());
+            let timeout = Timespec {
+                tv_sec: left.as_secs().try_into().unwrap_or(i64::MAX),
+                tv_nsec: left.subsec_nanos().into(),
+            };
+            match rustix::event::poll(&mut fds[..n], Some(&timeout)) {
+                Ok(_) => {
+                    let ready = |fd: &PollFd<'_>| fd.revents().intersects(readable);
+                    return Ok((ready(&fds[0]), n == 2 && ready(&fds[1])));
+                }
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(e) => return Err(e.into()),
             }
         }
     }
 }
 
-impl Drop for Udp {
-    fn drop(&mut self) {
-        self.closed.store(true, Ordering::Relaxed);
+/// Bounds how long a read can block ([`READ_GUARD`]).
+fn guard_reads(socket: &UdpSocket) {
+    if let Err(e) = socket.set_read_timeout(Some(READ_GUARD)) {
+        tracing::debug!(error = %e, "cannot bound the socket's reads");
     }
+}
+
+/// One datagram from `socket`, which was readable, tagged with `local`.
+fn read(
+    socket: &UdpSocket,
+    buf: &mut [u8],
+    local: SocketAddr,
+) -> io::Result<(usize, SocketAddr, SocketAddr)> {
+    let (n, source) = socket.recv_from(buf)?;
+    Ok((n, source, local))
 }
 
 /// An IPv6 socket on `port`, only IPv6 (so it leaves IPv4 to the other socket): bound to `ip`
@@ -164,38 +198,6 @@ fn bind_v6(ip: Ipv6Addr, port: u16) -> io::Result<UdpSocket> {
         Err(e) if e.kind() == ErrorKind::AddrNotAvailable => bind(Ipv6Addr::UNSPECIFIED),
         result => result,
     }
-}
-
-/// Reads `socket` on a thread of its own, tagging its datagrams with `local`, until the session
-/// ends or nobody is listening.
-fn read_on_thread(
-    name: &str,
-    socket: UdpSocket,
-    local: SocketAddr,
-    tx: &Sender<Datagram>,
-    closed: &Arc<AtomicBool>,
-) -> io::Result<()> {
-    // A read timeout is the socket's, shared by every handle to it: only this thread reads.
-    socket.set_read_timeout(Some(READ_SLICE))?;
-    let (tx, closed) = (tx.clone(), closed.clone());
-    let span = tracing::Span::current();
-    thread::Builder::new().name(name.into()).spawn(move || {
-        let _span = span.enter();
-        let mut buf = vec![0u8; 2048];
-        while !closed.load(Ordering::Relaxed) {
-            match socket.recv_from(&mut buf) {
-                Ok((n, source)) => {
-                    if tx.send((buf[..n].to_vec(), source, local)).is_err() {
-                        break;
-                    }
-                }
-                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-                // An ICMP error from an earlier send to a client that went away.
-                Err(e) => tracing::debug!(error = %e, "UDP receive failed"),
-            }
-        }
-    })?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -223,6 +225,49 @@ mod tests {
         assert_eq!(
             (&buf[..n], source, local),
             (&b"hello"[..], client.local_addr().unwrap(), advertised)
+        );
+        assert!(udp.recv(&mut buf, Duration::from_millis(5)).unwrap().is_none(), "then nothing");
+    }
+
+    /// The two-socket path, which needs no IPv6 to test: what it waits on is two sockets.
+    #[test]
+    fn two_sockets_are_waited_on_together_and_take_turns() {
+        let first = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let second = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (to_first, to_second) = (first.local_addr().unwrap(), second.local_addr().unwrap());
+        let advertised: SocketAddr = "192.0.2.10:50000".parse().unwrap();
+        let tagged: SocketAddr = "[2001:db8::1]:50000".parse().unwrap();
+        let mut udp = Udp::new(first, advertised);
+        guard_reads(&second);
+        udp.v6 = Some((second, tagged));
+
+        let mut buf = [0u8; 64];
+        assert!(udp.recv(&mut buf, Duration::ZERO).unwrap().is_none(), "nothing yet");
+        let client = UdpSocket::bind("127.0.0.1:0").unwrap();
+        // A late datagram on the second socket ends a wait on both.
+        let late = client.try_clone().unwrap();
+        let sender = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            late.send_to(b"late", to_second).unwrap();
+        });
+        let (n, _, local) = udp.recv(&mut buf, Duration::from_secs(5)).unwrap().unwrap();
+        assert_eq!((&buf[..n], local), (&b"late"[..], tagged));
+        sender.join().unwrap();
+
+        // Both busy: neither starves, and each datagram keeps its socket's tag.
+        for i in 0..3u8 {
+            client.send_to(&[b'4', i], to_first).unwrap();
+            client.send_to(&[b'6', i], to_second).unwrap();
+        }
+        let mut heard = Vec::new();
+        while heard.len() < 6 {
+            let (n, _, local) = udp.recv(&mut buf, Duration::from_secs(5)).unwrap().unwrap();
+            heard.push((buf[..n].to_vec(), local));
+        }
+        let order: Vec<u8> = heard.iter().map(|(d, _)| d[0]).collect();
+        assert!(order.windows(2).all(|w| w[0] != w[1]), "turns: {order:?}");
+        assert!(
+            heard.iter().all(|(d, local)| *local == if d[0] == b'4' { advertised } else { tagged })
         );
         assert!(udp.recv(&mut buf, Duration::from_millis(5)).unwrap().is_none(), "then nothing");
     }

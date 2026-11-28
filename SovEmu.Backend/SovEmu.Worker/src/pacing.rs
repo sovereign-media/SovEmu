@@ -9,6 +9,17 @@ use std::time::{Duration, Instant};
 
 const MAX_LAG_FRAMES: u32 = 3;
 
+/// Asks the kernel to wake this thread, and every thread it starts from now on, when its timers
+/// say rather than up to 50 µs later (Linux's default timer slack), which it allows itself to
+/// batch wake-ups. A frame's wait is a few milliseconds: the 50 µs came off every one of them.
+/// Called first thing, before any thread starts.
+pub(crate) fn precise_timers() {
+    #[cfg(target_os = "linux")]
+    if let Err(e) = rustix::thread::set_current_timer_slack(std::num::NonZeroU64::new(1)) {
+        tracing::debug!(error = %e, "cannot tighten the timer slack");
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Pacer {
     fps: f64,
