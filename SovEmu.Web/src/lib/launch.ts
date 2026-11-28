@@ -68,9 +68,31 @@ const NETWORK = { from: 0.85, to: 0.97 };
  * The session is ready and this client is reaching it (ICE, then DTLS): nothing to show of
  * the game yet, and the worker's check of the connection comes once connected.
  */
-export function describeConnecting(waitedMs: number): LaunchView {
+export function describeConnecting(waitedMs: number, attempt = 0): LaunchView {
   const seconds = Math.floor(waitedMs / 1000);
-  return { label: "Connecting", detail: seconds >= 3 ? `${seconds} s` : "", fraction: NETWORK.from };
+  const parts: string[] = [];
+  if (seconds >= 3) parts.push(`${seconds} s`);
+  if (waitedMs >= NO_PICTURE_HINT_MS) parts.push("Escape opens the menu");
+  return { label: attempt > 0 ? "Reconnecting" : "Connecting", detail: parts.join(" · "), fraction: NETWORK.from };
+}
+
+/**
+ * Reconnecting (#302): a connection that fails, or stays disconnected past
+ * {@link DISCONNECTED_GRACE_MS}, or never connects within {@link CONNECT_TIMEOUT_MS}, is offered
+ * again to the same session, which takes the new client in place of the old. After
+ * {@link RECONNECT_ATTEMPTS} the start has failed: {@link describeConnectionFailed}.
+ */
+export const RECONNECT_ATTEMPTS = 3;
+export const DISCONNECTED_GRACE_MS = 5000;
+export const CONNECT_TIMEOUT_MS = 15_000;
+
+/** The loading screen once reconnecting has given up. */
+export function describeConnectionFailed(): LaunchView {
+  return {
+    label: "Could not connect to the game",
+    detail: "The server's game ports may be unreachable from here · Escape opens the menu",
+    fraction: 0,
+  };
 }
 
 /**

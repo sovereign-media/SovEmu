@@ -4,6 +4,7 @@
 
 import type { InputState } from "./input";
 import { LatencyMeter } from "./latency";
+import { supersedes } from "./link";
 import { type QualityNotice, qualityNotice } from "./pipeline";
 import {
   type Analog,
@@ -90,7 +91,9 @@ export class Session {
     private readonly events: SessionEvents = {},
     options: SessionOptions = {},
   ) {
-    this.pc = new RTCPeerConnection({ iceServers: options.iceServers ?? [] });
+    // One transport for everything (str0m answers bundled only): gathering, and any TURN
+    // allocation, happens once rather than per media section, inside the non-trickle wait.
+    this.pc = new RTCPeerConnection({ iceServers: options.iceServers ?? [], bundlePolicy: "max-bundle" });
     this.pc.addTransceiver("video", { direction: "recvonly" });
     this.pc.addTransceiver("audio", { direction: "recvonly" });
     this.channel = this.pc.createDataChannel(INPUT_CHANNEL, { ordered: false, maxRetransmits: 0 });
@@ -186,6 +189,7 @@ export class Session {
   };
 
   private setLink(link: Link) {
+    if (!supersedes(this.link, link)) return;
     this.link = link;
     this.events.onLink?.(link);
   }
