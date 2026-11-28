@@ -1,7 +1,9 @@
 // Display filters, drawn on a WebGL canvas over the (invisible) video element: the video keeps
 // decoding and playing audio, and each new frame is uploaded as a texture.
 //
-// - sharp: nearest-neighbour, crisp pixels (the default)
+// - sharp: nearest-neighbour, crisp pixels (the default). The video element already scales so
+//   (`.pixelated`), so it is shown itself and the canvas draws nothing: no upload per frame, and
+//   the frame on screen is the one the latency meter times.
 // - smooth: bilinear
 // - crt: scanlines between source rows and a faint aperture-grille mask
 
@@ -62,6 +64,11 @@ export class VideoFilter {
     return this.gl !== null;
   }
 
+  /** Whether the canvas is what shows: a filter the video element cannot draw, and WebGL for it. */
+  get active(): boolean {
+    return this.supported && this.mode !== "sharp";
+  }
+
   setMode(mode: FilterMode) {
     this.mode = mode;
     const gl = this.gl;
@@ -80,7 +87,7 @@ export class VideoFilter {
     };
     const draw = () => {
       if (!this.running) return;
-      this.draw();
+      if (this.active) this.draw();
       if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(draw);
       else requestAnimationFrame(draw);
     };

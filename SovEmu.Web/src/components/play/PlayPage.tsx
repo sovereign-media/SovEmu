@@ -60,13 +60,17 @@ import { go } from "../../lib/go";
 import { captureInput, InputState, touchControlsWanted } from "../../lib/input";
 import { LatencyHistory, type LatencyPoint, twoColumns } from "../../lib/latency";
 import {
+  CONNECT_TIMEOUT_MS,
+  DISCONNECTED_GRACE_MS,
   describeConnecting,
+  describeConnectionFailed,
   describeFirstPicture,
   describeLink,
   describeStart,
   ForwardOnly,
   loadingBackground,
   newStartId,
+  RECONNECT_ATTEMPTS,
   type StartStatus,
 } from "../../lib/launch";
 import { networkLabel } from "../../lib/link";
@@ -277,10 +281,8 @@ function Player() {
       setLoaded({ game, system, decoration: game.decoration ?? null });
       input.analogSticks = !!system?.needsGpu;
       input.setMappings(mappings);
-      if (filter.supported) {
-        setFiltered(true);
-        filter.setMode(filterMode);
-      }
+      filter.setMode(filterMode);
+      setFiltered(filter.active);
 
       // --- The session: start at once (the splash's choices show meanwhile), and follow the
       // start on the bar.
@@ -303,7 +305,15 @@ function Player() {
           await new Promise((r) => setTimeout(r, 250));
         }
       })();
-      const starting = api.startSession(gameId, startId).then((s) => {
+      // Chosen already on the game list (?start=continue, ?start=new, or a slot from the game
+      // panel's saves, ?start=2): the question is skipped, and a save to continue from is loaded
+      // by the start itself rather than by a request of its own once it is ready.
+      const chosen = new URLSearchParams(location.search).get("start");
+      const slot = chosen !== null && /^\d+$/.test(chosen) ? Number(chosen) : null;
+      const hasSlot = (n: number) => initialSlots.some((s) => s.slot === n);
+      let startedFrom =
+        slot !== null && hasSlot(slot) ? slot : chosen === "continue" && hasSlot(AUTO_SLOT) ? AUTO_SLOT : null;
+      const starting = api.startSession(gameId, startId, startedFrom).then((s) => {
         polling = false;
         showProgress({ phase: "READY", elapsedMs: 0, phaseMs: 0 });
         // The bar stays for the last stretch: the game's first picture (`begin`).
@@ -330,21 +340,29 @@ function Player() {
           return;
         }
         if (stopped) return;
-        if (slot !== null) await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
+        // The start loaded it already when it was chosen before the game started.
+        const loaded = slot !== null && slot === startedFrom;
+        startedFrom = null;
+        if (slot !== null && !loaded) {
+          await api.loadState(s.id, slot).catch((e) => toast(`Could not load: ${e.message}`));
+        }
         stack.close();
         // The splash stays until the game has drawn: a console's BIOS can boot for seconds, and
         // a save is only loaded once the game is up. The bar counts the wait meanwhile.
-        const waitingFrom = performance.now();
+        let waitingFrom = performance.now();
         // The worker checks the connection before it sends a picture (`0x83`, #243): the bar
         // follows the check, then the wait for the first picture. An older worker sends none,
         // and its picture comes at once.
         let link: Link | null = null;
+        // Connections made for this start: a failed one is made again (`RECONNECT_ATTEMPTS`).
+        let attempt = 0;
+        let pictured = false;
         const showWaiting = () => {
           const view =
             link?.state === "probing"
               ? describeLink(link)
               : !link
-                ? describeConnecting(performance.now() - waitingFrom)
+                ? describeConnecting(performance.now() - waitingFrom, attempt)
                 : describeFirstPicture(performance.now() - waitingFrom);
           setProgress({
             label: view.label,
@@ -357,6 +375,7 @@ function Player() {
         const waiting = window.setInterval(showWaiting, 500);
         timers.push(waiting);
         const firstPicture = () => {
+          pictured = true;
           window.clearInterval(waiting);
           setProgress(null);
           setSplash(false);
@@ -366,38 +385,82 @@ function Player() {
         const v = video.current!;
         if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(firstPicture);
         else v.addEventListener("loadeddata", firstPicture, { once: true });
-        session = new Session(
-          async (sdp) => api.answer(s.id, sdp, clientName(), await clientCapabilities()),
-          video.current!,
-          input,
-          {
-            onState: (state) => {
-              if (state === "failed" || state === "disconnected") {
-                const lost = everConnected ? "CONNECTION_LOST" : "CONNECTION_FAILED";
-                reportClientEvent(lost, `WebRTC ${state}`, s.id);
-              }
-              if (state === "connected") {
-                everConnected = true;
-                filter.start();
-                showWaiting();
-              }
-              if (state === "failed" || state === "disconnected") toast(`Connection ${state}`);
+
+        // A connection not made in time, or disconnected for too long, is made again: the
+        // worker takes a new offer in place of the client it had.
+        let watchdog = 0;
+        const arm = (ms: number) => {
+          window.clearTimeout(watchdog);
+          watchdog = window.setTimeout(() => reconnect(), ms);
+          timers.push(watchdog);
+        };
+        const reconnect = () => {
+          window.clearTimeout(watchdog);
+          if (stopped) return;
+          if (attempt >= RECONNECT_ATTEMPTS) {
+            session?.close();
+            window.clearInterval(waiting);
+            if (pictured) {
+              setStatus("Lost the connection to the game");
+            } else {
+              const view = describeConnectionFailed();
+              setProgress({ label: view.label, detail: view.detail, percent: 0, failed: true });
+            }
+            return;
+          }
+          attempt += 1;
+          if (pictured) toast("Reconnecting…");
+          connect();
+        };
+        const connect = () => {
+          session?.close();
+          link = null;
+          waitingFrom = performance.now();
+          const current: Session = new Session(
+            async (sdp) => api.answer(s.id, sdp, clientName(), await clientCapabilities()),
+            v,
+            input,
+            {
+              onState: (state) => {
+                if (session !== current) return; // a connection already replaced
+                if (state === "failed" || state === "disconnected") {
+                  const lost = everConnected ? "CONNECTION_LOST" : "CONNECTION_FAILED";
+                  reportClientEvent(lost, `WebRTC ${state}`, s.id);
+                }
+                if (state === "connected") {
+                  window.clearTimeout(watchdog);
+                  everConnected = true;
+                  filter.start();
+                  if (!pictured) showWaiting();
+                }
+                // Disconnected often recovers by itself; failed never does.
+                if (state === "disconnected") arm(DISCONNECTED_GRACE_MS);
+                if (state === "failed") reconnect();
+              },
+              onLink: (l) => {
+                if (session !== current) return;
+                link = l;
+                setNetwork(networkLabel(l.path));
+                if (!pictured) showWaiting();
+              },
+              onQuality: (notice) => {
+                setQuality(notice);
+                window.clearTimeout(qualityTimer);
+                qualityTimer = window.setTimeout(() => setQuality(null), QUALITY_NOTICE_MS);
+              },
             },
-            onLink: (l) => {
-              link = l;
-              setNetwork(networkLabel(l.path));
-              showWaiting();
-            },
-            onQuality: (notice) => {
-              setQuality(notice);
-              window.clearTimeout(qualityTimer);
-              qualityTimer = window.setTimeout(() => setQuality(null), QUALITY_NOTICE_MS);
-            },
-          },
-          { iceServers },
-        );
+            { iceServers },
+          );
+          session = current;
+          arm(CONNECT_TIMEOUT_MS);
+          current.connect().catch((e) => {
+            if (session !== current) return;
+            reportClientEvent("CONNECTION_FAILED", `offer: ${(e as Error).message}`, s.id);
+            reconnect();
+          });
+        };
         setPlaying(true);
-        await session.connect();
+        connect();
       }
 
       async function quit() {
@@ -483,6 +546,7 @@ function Player() {
               filterMode = mode;
               localStorage.setItem(FILTER_KEY, mode);
               filter.setMode(mode);
+              setFiltered(filter.active);
               stack.close();
               toast(label);
             },
@@ -774,11 +838,8 @@ function Player() {
             ],
       });
 
-      // Chosen already on the game list (?start=continue, ?start=new, or a slot from the game
-      // panel's saves, ?start=2): skip the question.
-      const chosen = new URLSearchParams(location.search).get("start");
-      const slot = chosen !== null && /^\d+$/.test(chosen) ? Number(chosen) : null;
-      if (slot !== null && initialSlots.some((s) => s.slot === slot)) void begin(slot);
+      // Chosen already on the game list: skip the question.
+      if (slot !== null && hasSlot(slot)) void begin(slot);
       else if (chosen === "continue" && auto) void begin(AUTO_SLOT);
       else if (chosen === "new" || chosen === "continue" || slot !== null) void begin(null);
 

@@ -23,6 +23,45 @@ export function frameWorkLabel(h: NonNullable<ActiveSession["health"]>): string 
   return parts.join(" · ");
 }
 
+/**
+ * What happened to the stream in the worker's last health interval, beyond its means:
+ * `2 keyframes (5 asked, 3 ignored) · 1 dropout · 4 of 600 frames not sent · largest 38 KB`.
+ * Null when nothing did, so the row only shows when there is something to explain.
+ */
+export function streamEventsLabel(h: NonNullable<ActiveSession["health"]>): string | null {
+  const parts: string[] = [];
+  if (h.keyframeRequests > 0) {
+    const ignored = h.keyframeRequestsIgnored > 0 ? `, ${h.keyframeRequestsIgnored} ignored` : "";
+    parts.push(`${plural(h.keyframes, "keyframe")} (${h.keyframeRequests} asked${ignored})`);
+  }
+  if (h.dropouts > 0) parts.push(plural(h.dropouts, "dropout"));
+  if (h.unsent > 0) parts.push(`${h.unsent} of ${h.encoded} frames not sent`);
+  if (!parts.length) return null;
+  if (h.largestFrame > 0) parts.push(`largest ${Math.round(h.largestFrame / 1024)} KB`);
+  return parts.join(" · ");
+}
+
+/**
+ * The player's link as they see it: `relay-tcp · 1280×720 · round trip 24 / 61 ms (p95) ·
+ * 12 lost · 3 dropped`. Null while their stats are not coming.
+ */
+export function playerLinkLabel(s: Pick<ActiveSession, "clientStats">): string | null {
+  const c = s.clientStats;
+  if (!c) return null;
+  const parts = [
+    c.path ?? null,
+    c.width && c.height ? `${c.width}×${c.height}` : null,
+    c.inputRttMs != null
+      ? `input round trip ${Math.round(c.inputRttMs)}${c.inputRttP95Ms != null ? ` / ${Math.round(c.inputRttP95Ms)} ms (p95)` : " ms"}`
+      : null,
+    c.packetsLost ? `${c.packetsLost} lost` : null,
+    c.framesDropped ? `${c.framesDropped} dropped` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /** A session that runs late on more than this share of its frames is struggling. */
 const STRUGGLING = 0.05;
 

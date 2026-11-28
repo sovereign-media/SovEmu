@@ -33,11 +33,12 @@ use str0m::format::Codec;
 use str0m::media::{Frequency, MediaKind, MediaTime, Mid, Pt};
 use str0m::net::{Protocol, Receive};
 use str0m::rtp::Extension;
+use str0m::stats::PeerStats;
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig, RtcError};
 
 use crate::adapt::{Adaptation, ClientSample, LimitChange, Limits};
 use crate::health::{self, Health};
-use crate::link::{PathClass, Probe, Stop};
+use crate::link::{BestRtt, PathClass, Probe, Stop};
 use crate::pacing::{MediaClock, Pacer};
 use crate::persist::{Persist, Screenshot};
 use crate::rewind::Rewind;
@@ -259,7 +260,7 @@ pub(crate) struct Session {
     /// What the client had lost, and its best round trip, as the check started: more loss or
     /// a round trip well up on it during the check means the link is full.
     probe_lost: Option<u64>,
-    probe_rtt_ms: Option<f64>,
+    probe_rtt: BestRtt,
     /// Where the client's link goes: as the worker saw it, refined by what the client says.
     path: Option<PathClass>,
     client_path: Option<String>,
@@ -407,7 +408,7 @@ impl Session {
             probe_budget: Duration::from_millis(u64::from(config.probe_ms)),
             probe_lan_budget: Duration::from_millis(u64::from(config.probe_lan_ms)),
             probe_lost: None,
-            probe_rtt_ms: None,
+            probe_rtt: BestRtt::default(),
             path: None,
             client_path: None,
             link: None,
@@ -568,7 +569,9 @@ fn accept_offer(
         .enable_opus(true, true)
         // The estimate starts at what leaves the starting rate for video, and probes for more,
         // up to the ceiling.
-        .enable_bwe(Some(Bitrate::kbps(starting_estimate_kbps)));
+        .enable_bwe(Some(Bitrate::kbps(starting_estimate_kbps)))
+        // Loss and round trip from the client's receiver reports, for the connection check.
+        .set_stats_interval(Some(PEER_STATS));
     if codecs.allows(VideoCodec::H264) {
         // Constrained Baseline, level 3.1, packetization mode 1: what every WebRTC client
         // decodes, and the profile the encoder writes.
@@ -836,6 +839,10 @@ pub(crate) fn run(
             && p.connected
             && !session.probing()
             && Instant::now() >= next_frame
+            // str0m hands out channel data only when polled: without this, input read this
+            // turn would reach the core one frame late, after the frame it arrived for. A peer
+            // found gone here is dropped by the next turn's drive.
+            && drive(p, &udp, &mut session)?.is_some()
         {
             let behind = Instant::now().saturating_duration_since(next_frame);
             session.step(p, behind)?;
@@ -935,6 +942,7 @@ fn drive(p: &mut Peer, socket: &Udp, session: &mut Session) -> Result<Option<Ins
                 Event::ChannelData(data) if Some(data.id) == p.input => {
                     session.handle_input(&data.data);
                 }
+                Event::PeerStats(stats) => session.probe_peer_stats(&stats, Instant::now()),
                 Event::KeyframeRequest(_) => {
                     // One keyframe for a burst of requests, and none for a request sent
                     // before the last keyframe could have arrived.
@@ -1219,27 +1227,47 @@ impl Session {
     }
 
     /// The client's stats while its link is checked: packets lost since the check began, or a
-    /// round trip well up on the best it has reported, mean the link is full.
+    /// round trip well up on the best seen, mean the link is full. They come once a second, so
+    /// they mostly speak for a long check; the worker's own statistics (`probe_peer_stats`)
+    /// speak for a short one.
     fn probe_stats(&mut self, stats: &ClientStats, now: Instant) {
-        let Some(probe) = &mut self.probe else { return };
+        if self.probe.is_none() {
+            return;
+        }
         let lost = stats.packets_lost.unwrap_or(0);
         let baseline = *self.probe_lost.get_or_insert(lost);
         let rtt = stats.net_rtt_ms;
-        let best = match (self.probe_rtt_ms, rtt) {
-            (Some(best), Some(rtt)) => best.min(rtt),
-            (best, rtt) => best.or(rtt).unwrap_or(f64::MAX),
-        };
-        self.probe_rtt_ms = Some(best);
-        let rtt_rose = rtt.is_some_and(|rtt| rtt > best * 1.5 + 20.0);
-        if lost > baseline || rtt_rose {
+        let rose = self.probe_rtt.see(rtt);
+        if lost > baseline || rose {
             tracing::debug!(
                 lost,
                 baseline,
                 rtt_ms = rtt,
-                best_rtt_ms = best,
+                best_rtt_ms = self.probe_rtt.best(),
+                "trouble while checking the connection (client)"
+            );
+            self.probe.as_mut().expect("probing").trouble(now);
+        }
+    }
+
+    /// The worker's own view of the link while it is checked, every [`PEER_STATS`]: what the
+    /// client's receiver reports say was lost of what was sent, and the round trip they give.
+    fn probe_peer_stats(&mut self, stats: &PeerStats, now: Instant) {
+        if self.probe.is_none() {
+            return;
+        }
+        let rtt = stats.rtt.map(|d| d.as_secs_f64() * 1000.0);
+        let rose = self.probe_rtt.see(rtt);
+        let loss = stats.egress_loss_fraction;
+        tracing::trace!(loss, rtt_ms = rtt, "link while checking the connection");
+        if rose || crate::link::lossy(loss) {
+            tracing::debug!(
+                loss,
+                rtt_ms = rtt,
+                best_rtt_ms = self.probe_rtt.best(),
                 "trouble while checking the connection"
             );
-            probe.trouble(now);
+            self.probe.as_mut().expect("probing").trouble(now);
         }
     }
 
@@ -1295,7 +1323,7 @@ impl Session {
         let link = Link {
             state: Link::DONE.into(),
             start_kbps: self.video.bitrate_kbps(),
-            rtt_ms: self.probe_rtt_ms.filter(|rtt| *rtt < f64::MAX),
+            rtt_ms: self.probe_rtt.best(),
             stopped_by: why.name().into(),
             ..report
         };
@@ -1319,7 +1347,7 @@ impl Session {
     fn new_client(&mut self) {
         self.probe = None;
         self.probe_lost = None;
-        self.probe_rtt_ms = None;
+        self.probe_rtt = BestRtt::default();
         self.path = None;
         self.client_path = None;
         self.link = None;
@@ -1572,11 +1600,18 @@ impl Session {
         }
         let now = Instant::now();
         let pipeline = self.pipeline();
-        if self.pipeline.as_ref() != Some(&pipeline) {
+        // The bandwidth estimate moves several times a second: on its own it is no change, and
+        // rides along with the next one or the periodic resend.
+        let changed = self.pipeline.as_ref().is_none_or(|last| {
+            let mut last = last.clone();
+            last.video.estimate_kbps = pipeline.video.estimate_kbps;
+            last != pipeline
+        });
+        if changed {
             self.events.push(StreamEvent::Pipeline(pipeline.clone()));
-            self.pipeline = Some(pipeline);
             self.pipeline_to_client_at = None;
         }
+        self.pipeline = Some(pipeline);
         let due =
             self.pipeline_to_client_at.is_none_or(|at| now.duration_since(at) >= PIPELINE_RESEND);
         if due
@@ -1601,6 +1636,8 @@ const PENDING_LOAD_FRAMES: u64 = 600;
 /// How often the pipeline goes to the client even when it has not changed: the input channel
 /// does not retransmit, so a lost one is replaced soon.
 const PIPELINE_RESEND: Duration = Duration::from_secs(2);
+/// How often str0m reports the link's loss and round trip (`probe_peer_stats`).
+const PEER_STATS: Duration = Duration::from_millis(200);
 
 /// How often a client is told how far the check of its link has got.
 const LINK_REPORT: Duration = Duration::from_millis(200);

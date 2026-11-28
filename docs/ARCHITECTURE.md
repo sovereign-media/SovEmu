@@ -274,7 +274,8 @@ the middle of a session.
 Before a new client's stream starts, the worker checks its link. The game waits and no video is
 sent, while str0m pads the link toward the stream's ceiling and its send-bandwidth estimate finds
 what the link carries. The check ends when the estimate reaches the ceiling, holds steady for
-500 ms (from half the budget on), the client reports loss or a rising round trip, or the budget
+500 ms (from half the budget on), the link shows loss or a rising round trip (the client's
+receiver reports, which str0m sums up every 200 ms, and the client's own stats), or the budget
 (2 s; 750 ms on the server's own network, where the estimator starts near the ceiling) runs out.
 The stream then starts at what `adapt.rs` would leave for video from that estimate (85%, less
 the audio, within the floor and ceiling; over TCP to the relay, 60% of that), and the estimator

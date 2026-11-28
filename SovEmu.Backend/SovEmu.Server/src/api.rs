@@ -733,7 +733,7 @@ fn check_save_slot(slot: u32) -> ApiResult<()> {
 }
 
 /// Slots a player loads or deletes: the auto save (0) too.
-fn check_slot(slot: u32) -> ApiResult<()> {
+pub(crate) fn check_slot(slot: u32) -> ApiResult<()> {
     if slot <= MAX_SLOT {
         Ok(())
     } else {

@@ -88,7 +88,8 @@
 //!
 //! How the worker is making the stream: what renders the picture, the video codec and encoder
 //! (and any encoder it fell back from, with why), the audio, and run-ahead. Sent when the
-//! channel opens and again whenever any of it changes (a fallback, a new resolution), so a
+//! channel opens, again whenever any of it changes (a fallback, a new resolution, a new
+//! bitrate; a new bandwidth estimate alone is no change), and every 2 s regardless, so a
 //! client's stats panel can show the server's side beside its own. `video.kbps` is the bitrate
 //! as last told to the player: when it differs from the one before, a client shows a notice
 //! at the top of the screen (quality raised, or lowered and why, from `video.limited_by`). JSON, like
@@ -297,6 +298,11 @@ impl AnalogPacket {
     }
 }
 
+/// A count a client may send signed: a negative one is read as 0.
+fn count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
+    Ok(Option::<i64>::deserialize(deserializer)?.map(|n| n.max(0).unsigned_abs()))
+}
+
 /// The longest stats message accepted, header included.
 pub const MAX_STATS_LEN: usize = 2048;
 
@@ -335,11 +341,12 @@ pub struct ClientStats {
     pub fps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kbps: Option<f64>,
-    /// Video and audio packets lost, since the stream began.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Video and audio packets lost, since the stream began. WebRTC's count is signed and goes
+    /// negative when duplicates outnumber losses: read as 0, never a reason to drop the message.
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "count")]
     pub packets_lost: Option<u64>,
     /// Video frames dropped (not decoded in time, or not shown), since the stream began.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "count")]
     pub frames_dropped: Option<u64>,
     /// TV game mode (ALLM) asked for, and the low-latency Wi-Fi lock held.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -432,7 +439,8 @@ pub struct Link {
     pub estimate_kbps: u32,
     /// The video rate the stream starts at, kbit/s, once done.
     pub start_kbps: u32,
-    /// The round trip the worker measures, milliseconds.
+    /// The best round trip seen during the check, milliseconds: the worker's own (from the
+    /// client's receiver reports) or the client's reported one, whichever was lower.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rtt_ms: Option<f64>,
     /// Why the check ended: `ceiling` (the estimate reached the most the stream may use),
@@ -698,6 +706,11 @@ mod tests {
         let mut newer = vec![0x04, 1];
         newer.extend_from_slice(br#"{"fps":59.9,"from_a_newer_client":true}"#);
         assert_eq!(ClientStats::decode(&newer).unwrap().fps, Some(59.9));
+        // WebRTC's signed packet count, negative after duplicates, keeps the rest of the message.
+        let mut negative = vec![0x04, 1];
+        negative.extend_from_slice(br#"{"fps":60,"packets_lost":-3}"#);
+        let stats = ClientStats::decode(&negative).unwrap();
+        assert_eq!((stats.fps, stats.packets_lost), (Some(60.0), Some(0)));
         assert!(matches!(ClientStats::decode(b"\x04\x01\"fast\""), Err(DecodeError::BadStats(_))));
         let mut long = vec![0x04, 1, b'{'];
         long.resize(MAX_STATS_LEN + 1, b' ');

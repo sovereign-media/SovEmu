@@ -181,6 +181,19 @@ pub(super) struct StreamHealth {
     pub(super) video_kbps_target: i32,
     /// The send-bandwidth estimate, kbit/s.
     pub(super) estimate_kbps: Option<f64>,
+    /// In the interval: frames encoded, and of those the ones dropped before they left (the
+    /// send queue was full).
+    pub(super) encoded: f64,
+    pub(super) unsent: f64,
+    /// Keyframes sent, keyframes the player asked for (after loss), and asks ignored (a burst
+    /// answered with one keyframe).
+    pub(super) keyframes: f64,
+    pub(super) keyframe_requests: f64,
+    pub(super) keyframe_requests_ignored: f64,
+    /// Times the player went silent (Wi-Fi, mostly) and was heard again.
+    pub(super) dropouts: f64,
+    /// The largest frame, bytes.
+    pub(super) largest_frame: f64,
 }
 
 impl From<&sovemu_protocol::ipc::SessionHealth> for StreamHealth {
@@ -196,6 +209,13 @@ impl From<&sovemu_protocol::ipc::SessionHealth> for StreamHealth {
             video_kbps: h.video_kbps,
             video_kbps_target: h.video_kbps_target as i32,
             estimate_kbps: h.estimate_kbps.map(|k| k as f64),
+            encoded: h.encoded as f64,
+            unsent: h.unsent as f64,
+            keyframes: h.keyframes as f64,
+            keyframe_requests: h.keyframe_requests as f64,
+            keyframe_requests_ignored: h.keyframe_requests_ignored as f64,
+            dropouts: h.dropouts as f64,
+            largest_frame: h.largest_frame as f64,
         }
     }
 }
@@ -208,14 +228,24 @@ pub(super) struct ClientStreamStats {
     pub(super) estimate_ms: Option<f64>,
     /// Button to frame, as the client measures it (the display's own lag comes on top).
     pub(super) input_to_frame_ms: Option<f64>,
+    /// The input round trip, median and 95th percentile.
     pub(super) input_rtt_ms: Option<f64>,
+    pub(super) input_rtt_p95_ms: Option<f64>,
     pub(super) net_rtt_ms: Option<f64>,
     pub(super) jitter_ms: Option<f64>,
     pub(super) decode_ms: Option<f64>,
     pub(super) fps: Option<f64>,
     pub(super) kbps: Option<f64>,
-    /// Packets lost since the stream began.
+    /// Packets lost, and frames dropped (not decoded in time, or not shown), since the stream
+    /// began.
     pub(super) packets_lost: Option<f64>,
+    pub(super) frames_dropped: Option<f64>,
+    /// The picture the player decodes.
+    pub(super) width: Option<i32>,
+    pub(super) height: Option<i32>,
+    /// How the player reaches the worker: `direct`, or through the relay over `relay-udp`,
+    /// `relay-tcp` or `relay-tls`.
+    pub(super) path: Option<String>,
     /// The player's video decoder.
     pub(super) decoder: Option<String>,
     /// Whether that decoder runs in low-latency mode; null where the client cannot tell.
@@ -228,12 +258,17 @@ impl From<&sovemu_protocol::ClientStats> for ClientStreamStats {
             estimate_ms: s.estimate_ms,
             input_to_frame_ms: s.input_to_frame_ms,
             input_rtt_ms: s.input_rtt_p50_ms,
+            input_rtt_p95_ms: s.input_rtt_p95_ms,
             net_rtt_ms: s.net_rtt_ms,
             jitter_ms: s.jitter_ms,
             decode_ms: s.decode_ms,
             fps: s.fps,
             kbps: s.kbps,
             packets_lost: s.packets_lost.map(|n| n as f64),
+            frames_dropped: s.frames_dropped.map(|n| n as f64),
+            width: s.width.map(|w| w as i32),
+            height: s.height.map(|h| h as i32),
+            path: s.path.clone(),
             decoder: s.decoder.clone(),
             low_latency_decode: s.low_latency_decode,
         }
@@ -389,17 +424,28 @@ pub(super) struct SessionsMutation;
 impl SessionsMutation {
     /// Starts a game (ending this user's running one first) and returns once it is ready to
     /// stream. Give a `startId` (8–64 letters, digits, `-` or `_`) to follow its progress with
-    /// `startProgress` meanwhile.
+    /// `startProgress` meanwhile. Give a `slot` to continue from that save state: it is loaded
+    /// as the game starts, as `loadState` would, without a request of its own before the
+    /// client connects. A state that cannot be loaded is logged and the game starts afresh.
     async fn start_session(
         &self,
         ctx: &Context<'_>,
         game_id: i64,
         start_id: Option<String>,
+        slot: Option<u32>,
     ) -> Result<SessionNode> {
         let user = user(ctx).await?;
-        let session = crate::api::start_session(state(ctx), &user, game_id, start_id.as_deref())
-            .await
-            .api()?;
+        if let Some(slot) = slot {
+            crate::api::check_slot(slot).api()?;
+        }
+        let state = state(ctx);
+        let session =
+            crate::api::start_session(state, &user, game_id, start_id.as_deref()).await.api()?;
+        if let Some(slot) = slot
+            && let Err(e) = crate::api::load_state(state, &user, &session.id, slot).await
+        {
+            tracing::warn!(session = %session.id, slot, error = %e.message, "could not continue from a save");
+        }
         let entry = Entry::new(Kind::GameStarted).about(&session.title).detail(&session.system);
         record(ctx, &user, entry);
         Ok(SessionNode(session))

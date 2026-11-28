@@ -69,7 +69,8 @@ export class StatsSampler {
     // comes back), plus half a frame of alignment, ~2 ms encode, jitter buffer, decode and
     // half a display refresh at 60 Hz.
     const estimate = inputRtt + 8 + 2 + (jitterMs || 0) + (decodeMs || 0) + 8;
-    const lost = (v.packetsLost ?? 0) + (now.audio?.packetsLost ?? 0);
+    // WebRTC's counts are signed (duplicates can outnumber losses); the worker reads a count.
+    const lost = Math.max(0, v.packetsLost ?? 0) + Math.max(0, now.audio?.packetsLost ?? 0);
 
     const p95 = percentile(session.inputRtts, 95);
     const numbers: ClientStats = {

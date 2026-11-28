@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { clientPath, measuredLabel, networkItems, networkLabel, pairLabel, rateLabel, transportLabel } from "./link";
+import {
+  clientPath,
+  measuredLabel,
+  networkItems,
+  networkLabel,
+  pairLabel,
+  rateLabel,
+  supersedes,
+  transportLabel,
+} from "./link";
 import type { Link } from "./protocol";
 
 const host = { candidateType: "host", protocol: "udp" };
@@ -67,5 +76,19 @@ describe("the Network rows", () => {
       { label: "Started at", value: "12.0 Mbit/s" },
       { label: "Estimate now", value: "15.4 Mbit/s" },
     ]);
+  });
+});
+
+describe("supersedes", () => {
+  const probing = (elapsedMs: number) => done({ state: "probing", elapsedMs, stoppedBy: "" });
+  it("takes the first report, later probing reports and the result", () => {
+    expect(supersedes(null, probing(0))).toBe(true);
+    expect(supersedes(probing(200), probing(400))).toBe(true);
+    expect(supersedes(probing(400), done())).toBe(true);
+  });
+  it("drops a probing report that arrives late, after a later one or the result", () => {
+    expect(supersedes(probing(400), probing(200))).toBe(false);
+    expect(supersedes(done(), probing(1800))).toBe(false);
+    expect(supersedes(done(), done({ startKbps: 9000 }))).toBe(true);
   });
 });

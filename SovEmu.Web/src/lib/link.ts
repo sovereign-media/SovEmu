@@ -19,6 +19,17 @@ export function clientPath(local: Stat | undefined): string | undefined {
   return `relay-${protocol === "tcp" || protocol === "tls" ? protocol : "udp"}`;
 }
 
+/**
+ * Whether a check report should replace the one shown. The input channel is unordered, so a
+ * "probing" report can arrive after "done" (or after a later "probing"): it is stale, and would
+ * send the loading bar's label and the Network rows back. A client checks its link once.
+ */
+export function supersedes(current: Link | null, next: Link): boolean {
+  if (!current) return true;
+  if (current.state === "done") return next.state === "done";
+  return next.state === "done" || next.elapsedMs >= current.elapsedMs;
+}
+
 const CANDIDATES: Record<string, string> = { host: "host", srflx: "STUN", prflx: "STUN", relay: "relay" };
 
 /** `host → host`, `STUN → host`, `relay → host`: the selected pair's candidate types. */

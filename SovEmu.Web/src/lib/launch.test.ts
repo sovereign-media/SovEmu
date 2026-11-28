@@ -87,6 +87,8 @@ describe("checking the connection", () => {
     // checking the connection.
     expect(describeConnecting(500)).toEqual({ label: "Connecting", detail: "", fraction: 0.85 });
     expect(describeConnecting(4200).detail).toBe("4 s");
+    expect(describeConnecting(21_000).detail).toBe("21 s · Escape opens the menu");
+    expect(describeConnecting(500, 1).label).toBe("Reconnecting");
   });
 
   it("leaves where the player is to the network chip", () => {

@@ -748,8 +748,8 @@ export const ResetControllerMappingMutation = graphql(`
 
 export const StartSessionMutation = graphql(
   `
-  mutation StartSession($gameId: Int!, $startId: String) {
-    startSession(gameId: $gameId, startId: $startId) {
+  mutation StartSession($gameId: Int!, $startId: String, $slot: Int) {
+    startSession(gameId: $gameId, startId: $startId, slot: $slot) {
       ...SessionFields
     }
   }
@@ -931,16 +931,28 @@ export const ActiveSessionsQuery = graphql(`
         videoKbps
         videoKbpsTarget
         estimateKbps
+        encoded
+        unsent
+        keyframes
+        keyframeRequests
+        keyframeRequestsIgnored
+        dropouts
+        largestFrame
       }
       clientStats {
         estimateMs
         inputToFrameMs
         inputRttMs
+        inputRttP95Ms
         netRttMs
         decodeMs
         fps
         kbps
         packetsLost
+        framesDropped
+        width
+        height
+        path
         decoder
         lowLatencyDecode
       }
