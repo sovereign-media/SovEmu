@@ -1,8 +1,8 @@
 //! How far each game start has got, for the player's loading bar.
 //!
-//! `POST /api/sessions` blocks until the game is ready, which on a slow library can take a
-//! minute. A client that wants progress sends a `start_id` of its own with that request and
-//! polls `GET /api/sessions/starting/{start_id}` while it waits. The phases come from the server
+//! The `startSession` mutation answers once the game is ready, which on a slow library can
+//! take a minute. A client that wants progress sends a `startId` of its own with it and polls
+//! the `startProgress(startId)` query while it waits. The phases come from the server
 //! (saving the previous session, starting the worker) and from the worker's `progress` lines
 //! (opening the core, reading the game). Entries are dropped a minute after they finish.
 

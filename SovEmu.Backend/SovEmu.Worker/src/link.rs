@@ -128,6 +128,34 @@ impl Stop {
     }
 }
 
+/// More of what was sent lost than this, while a link is checked, means it is full.
+const FULL_LOSS: f32 = 0.02;
+
+/// Whether a loss fraction seen while a link is checked (str0m's, from the client's receiver
+/// reports) says the link is full.
+pub(crate) fn lossy(fraction: Option<f32>) -> bool {
+    fraction.is_some_and(|f| f > FULL_LOSS)
+}
+
+/// The round trips seen while a link is checked, the client's and the worker's alike: the best
+/// is kept, and one well up on it is what a full link's queue makes.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct BestRtt(Option<f64>);
+
+impl BestRtt {
+    /// Takes a round trip in milliseconds; true when it is well up on the best before it.
+    pub(crate) fn see(&mut self, rtt: Option<f64>) -> bool {
+        let Some(rtt) = rtt.filter(|r| r.is_finite() && *r > 0.0) else { return false };
+        let best = self.0.map_or(rtt, |best| best.min(rtt));
+        self.0 = Some(best);
+        rtt > best * 1.5 + 20.0
+    }
+
+    pub(crate) fn best(self) -> Option<f64> {
+        self.0
+    }
+}
+
 /// One check of a client's link: estimates go in, and it says when it is done.
 #[derive(Debug, Clone)]
 pub(crate) struct Probe {
@@ -250,6 +278,20 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    #[test]
+    fn a_round_trip_well_up_on_the_best_or_loss_means_a_full_link() {
+        let mut rtt = BestRtt::default();
+        assert!(!rtt.see(None) && !rtt.see(Some(f64::NAN)) && !rtt.see(Some(0.0)));
+        assert!(!rtt.see(Some(30.0)), "the first is the best so far");
+        assert!(!rtt.see(Some(10.0)));
+        assert_eq!(rtt.best(), Some(10.0));
+        assert!(!rtt.see(Some(35.0)), "within half again and 20 ms");
+        assert!(rtt.see(Some(36.0)));
+        assert_eq!(rtt.best(), Some(10.0), "a rise is not the best");
+        assert!(!lossy(None) && !lossy(Some(0.0)) && !lossy(Some(0.02)));
+        assert!(lossy(Some(0.05)));
     }
 
     #[test]

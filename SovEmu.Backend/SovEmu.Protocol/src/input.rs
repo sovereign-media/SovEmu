@@ -439,7 +439,8 @@ pub struct Link {
     pub estimate_kbps: u32,
     /// The video rate the stream starts at, kbit/s, once done.
     pub start_kbps: u32,
-    /// The round trip the worker measures, milliseconds.
+    /// The best round trip seen during the check, milliseconds: the worker's own (from the
+    /// client's receiver reports) or the client's reported one, whichever was lower.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rtt_ms: Option<f64>,
     /// Why the check ended: `ceiling` (the estimate reached the most the stream may use),
