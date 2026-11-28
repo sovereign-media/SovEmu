@@ -20,6 +20,10 @@ pub(crate) struct Stats {
     pub(crate) overran: u64,
     /// Ticks that started more than half a period after they were due (the host was busy).
     pub(crate) started_late: u64,
+    /// How late ticks started, summed and at worst: what waking up for a frame costs, paid
+    /// before every frame.
+    pub(crate) late_time: Duration,
+    pub(crate) worst_late: Duration,
     pub(crate) tick_time: Duration,
     pub(crate) worst_tick: Duration,
     pub(crate) encoded: u64,
@@ -58,6 +62,8 @@ impl Stats {
         self.ticks += other.ticks;
         self.overran += other.overran;
         self.started_late += other.started_late;
+        self.late_time += other.late_time;
+        self.worst_late = self.worst_late.max(other.worst_late);
         self.tick_time += other.tick_time;
         self.worst_tick = self.worst_tick.max(other.worst_tick);
         self.encoded += other.encoded;
@@ -92,6 +98,15 @@ impl Stats {
         mean_ms(self.tick_time, self.ticks)
     }
 
+    /// How late a tick started, on average, in milliseconds to the hundredth.
+    pub(crate) fn mean_late_ms(&self) -> f64 {
+        if self.ticks == 0 {
+            0.0
+        } else {
+            round2(self.late_time.as_secs_f64() * 1000.0 / self.ticks as f64)
+        }
+    }
+
     pub(crate) fn mean_encode_ms(&self) -> f64 {
         mean_ms(self.encode_time, self.encoded)
     }
@@ -117,6 +132,14 @@ fn mean_ms(total: Duration, count: u64) -> f64 {
 
 fn ms(d: Duration) -> f64 {
     round1(d.as_secs_f64() * 1000.0)
+}
+
+fn ms2(d: Duration) -> f64 {
+    round2(d.as_secs_f64() * 1000.0)
+}
+
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
 }
 
 fn round1(x: f64) -> f64 {
@@ -177,6 +200,8 @@ impl Health {
         w.ticks += 1;
         w.tick_time += took;
         w.worst_tick = w.worst_tick.max(took);
+        w.late_time += behind;
+        w.worst_late = w.worst_late.max(behind);
         if took > self.period {
             w.overran += 1;
         }
@@ -277,6 +302,8 @@ impl Health {
             fps = t.fps(),
             overran = t.overran,
             started_late = t.started_late,
+            late_mean_ms = t.mean_late_ms(),
+            late_worst_ms = ms2(t.worst_late),
             tick_mean_ms = t.mean_tick_ms(),
             tick_worst_ms = ms(t.worst_tick),
             encode_mean_ms = t.mean_encode_ms(),
@@ -328,6 +355,8 @@ fn log_health(w: &Stats, at: &Now) {
                 ticks = w.ticks,
                 overran = w.overran,
                 started_late = w.started_late,
+                late_mean_ms = w.mean_late_ms(),
+                late_worst_ms = ms2(w.worst_late),
                 tick_mean_ms = w.mean_tick_ms(),
                 tick_worst_ms = ms(w.worst_tick),
                 encode_mean_ms = w.mean_encode_ms(),
@@ -397,6 +426,7 @@ mod tests {
         assert_eq!((s.ticks, s.overran, s.started_late), (3, 1, 1));
         assert_eq!(s.worst_tick, 20 * MS);
         assert_eq!(s.mean_tick_ms(), 10.0);
+        assert_eq!((s.mean_late_ms(), s.worst_late), (3.33, 10 * MS));
         assert_eq!(s.mean_encode_ms(), 3.0);
         assert_eq!(s.video_kbps(), 32.0, "4000 bytes in a second");
         assert_eq!(s.inputs, 1);

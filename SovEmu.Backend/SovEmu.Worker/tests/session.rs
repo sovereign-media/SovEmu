@@ -630,6 +630,117 @@ fn a_leaking_core_is_stopped_by_its_memory_limit_and_its_saves_are_written() {
     assert!(auto_state.exists(), "no auto state at {}", auto_state.display());
 }
 
+/// A benchmark, not a check: how evenly frames reach a client. Streams the test core for
+/// `SOVEMU_BENCH_SECONDS` (20 by default), over IPv6 too with `SOVEMU_BENCH_IPV6=1` (the worker's
+/// two-socket path), and prints how late each frame arrived against its RTP timestamp, after the
+/// earliest: what the worker's wake-ups, pacing and sending add before a frame leaves. The
+/// worker's own `session health` lines (every two seconds) say how late its ticks started.
+///
+/// `cargo test --release -p sovemu-worker --test session -- --ignored --nocapture frame_pacing`
+#[test]
+#[ignore = "a benchmark: run it by name"]
+fn frame_pacing() {
+    let seconds: u64 =
+        std::env::var("SOVEMU_BENCH_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
+    let ipv6 = std::env::var("SOVEMU_BENCH_IPV6").is_ok_and(|v| v == "1");
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut extra = vec!["--health-interval", "2"];
+    if ipv6 {
+        extra.extend(["--advertise-ipv6", "::1"]);
+    }
+    let extra: Vec<&std::ffi::OsStr> = extra.iter().map(|a| a.as_ref()).collect();
+    let Ok(socket) = UdpSocket::bind(if ipv6 { "[::1]:0" } else { "127.0.0.1:0" }) else {
+        eprintln!("no IPv6 loopback here: skipped");
+        return;
+    };
+    let mut worker = Worker::start_with(&extra);
+    socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
+    let local = socket.local_addr().unwrap();
+    let mut rtc = RtcConfig::new().build(Instant::now());
+    rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
+    let mut api = rtc.sdp_api();
+    api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+    let (offer, pending) = api.apply().expect("an offer");
+    let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+    let (status, body) =
+        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+    assert_eq!(status, 200, "{body}");
+    let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+    rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
+
+    // (arrival, the frame's RTP time in seconds), from the first frame on.
+    let mut frames: Vec<(Instant, f64)> = Vec::new();
+    let mut buf = vec![0u8; 2048];
+    let started = Instant::now();
+    let mut first: Option<Instant> = None;
+    while first.is_none_or(|f| f.elapsed() < Duration::from_secs(seconds)) {
+        assert!(started.elapsed() < Duration::from_secs(seconds + 30), "no video");
+        let timeout = match rtc.poll_output().unwrap() {
+            Output::Transmit(t) => {
+                socket.send_to(&t.contents, t.destination).unwrap();
+                continue;
+            }
+            Output::Event(Event::MediaData(data)) => {
+                let now = Instant::now();
+                first.get_or_insert(now);
+                frames.push((now, data.time.as_seconds()));
+                continue;
+            }
+            Output::Event(_) => continue,
+            Output::Timeout(t) => t,
+        };
+        let wait = timeout
+            .saturating_duration_since(Instant::now())
+            .clamp(Duration::from_millis(1), Duration::from_millis(10));
+        socket.set_read_timeout(Some(wait)).unwrap();
+        if let Ok((n, source)) = socket.recv_from(&mut buf) {
+            let contents = buf[..n].try_into().unwrap();
+            let receive = Receive { proto: Protocol::Udp, source, destination: local, contents };
+            rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
+        }
+        rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
+    }
+
+    // The first two seconds start the stream (its keyframe, the encoder settling): left out.
+    let steady: Vec<_> = frames
+        .iter()
+        .filter(|(at, _)| at.duration_since(first.unwrap()) >= Duration::from_secs(2))
+        .collect();
+    assert!(steady.len() > 60, "only {} frames", steady.len());
+    let (t0, r0) = *steady[0];
+    let offsets: Vec<f64> =
+        steady.iter().map(|(at, rtp)| at.duration_since(t0).as_secs_f64() - (rtp - r0)).collect();
+    let earliest = offsets.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut late: Vec<f64> = offsets.iter().map(|o| (o - earliest) * 1000.0).collect();
+    late.sort_by(f64::total_cmp);
+    let mut gaps: Vec<f64> = steady
+        .windows(2)
+        .map(|w| {
+            let shown = w[1].0.duration_since(w[0].0).as_secs_f64();
+            ((shown - (w[1].1 - w[0].1)) * 1000.0).abs()
+        })
+        .collect();
+    gaps.sort_by(f64::total_cmp);
+    let at = |v: &[f64], p: f64| v[((v.len() - 1) as f64 * p) as usize];
+    let span = steady.last().unwrap().0.duration_since(t0).as_secs_f64();
+    eprintln!(
+        "frame pacing over {}: {} frames in {span:.1} s ({:.1} fps)\n\
+         \x20 arrival lateness ms: p50 {:.2}  p95 {:.2}  p99 {:.2}  max {:.2}\n\
+         \x20 frame-gap error ms:  p50 {:.2}  p95 {:.2}  p99 {:.2}  max {:.2}",
+        if ipv6 { "IPv6 (two sockets)" } else { "IPv4 (one socket)" },
+        steady.len(),
+        steady.len() as f64 / span,
+        at(&late, 0.5),
+        at(&late, 0.95),
+        at(&late, 0.99),
+        late[late.len() - 1],
+        at(&gaps, 0.5),
+        at(&gaps, 0.95),
+        at(&gaps, 0.99),
+        gaps[gaps.len() - 1],
+    );
+}
+
 /// The acks each ratio is measured over: the latest ones, normally and fast-forwarding.
 const RATIO_ACKS: usize = 6;
 /// The first acks, while the stream starts, which no ratio is measured over.
