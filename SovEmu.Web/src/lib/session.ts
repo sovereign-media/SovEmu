@@ -210,6 +210,17 @@ export class Session {
   }
 
   private onMessage(data: ArrayBuffer) {
+    // Acks come with every frame that took input: the one to find first.
+    const ack = decodeAck(data);
+    if (ack) {
+      // The ack echoes the low 32 bits of the send time; put back the high ones from now.
+      const now = performance.now();
+      const age = (now32() - ack.clientTimeMs) >>> 0;
+      this.latency.acked(now - age, now);
+      this.inputRtts.push(age);
+      if (this.inputRtts.length > 60) this.inputRtts.shift();
+      return;
+    }
     const pipeline = decodePipeline(data);
     if (pipeline) {
       const notice = qualityNotice(this.pipeline, pipeline);
@@ -220,18 +231,7 @@ export class Session {
       return;
     }
     const link = decodeLink(data);
-    if (link) {
-      this.setLink(link);
-      return;
-    }
-    const ack = decodeAck(data);
-    if (!ack) return;
-    // The ack echoes the low 32 bits of the send time; put back the high ones from now.
-    const now = performance.now();
-    const age = (now32() - ack.clientTimeMs) >>> 0;
-    this.latency.acked(now - age, now);
-    this.inputRtts.push((now32() - ack.clientTimeMs) >>> 0);
-    if (this.inputRtts.length > 60) this.inputRtts.shift();
+    if (link) this.setLink(link);
   }
 }
 
