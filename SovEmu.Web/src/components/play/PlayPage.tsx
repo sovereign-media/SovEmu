@@ -277,10 +277,8 @@ function Player() {
       setLoaded({ game, system, decoration: game.decoration ?? null });
       input.analogSticks = !!system?.needsGpu;
       input.setMappings(mappings);
-      if (filter.supported) {
-        setFiltered(true);
-        filter.setMode(filterMode);
-      }
+      filter.setMode(filterMode);
+      setFiltered(filter.active);
 
       // --- The session: start at once (the splash's choices show meanwhile), and follow the
       // start on the bar.
@@ -483,6 +481,7 @@ function Player() {
               filterMode = mode;
               localStorage.setItem(FILTER_KEY, mode);
               filter.setMode(mode);
+              setFiltered(filter.active);
               stack.close();
               toast(label);
             },
