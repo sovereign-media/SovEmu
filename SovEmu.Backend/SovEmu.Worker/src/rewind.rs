@@ -9,6 +9,10 @@
 //! taking one every other frame cost more than a whole frame period (the game ran at half speed)
 //! and kept a fraction of a second. A snapshot must fit a share of the frame period
 //! ([`BUDGET`]), and the history must be able to hold at least [`MIN_STATES`].
+//!
+//! A snapshot is written into a buffer the history let go of (the oldest one, dropped past the
+//! cap, or one stepped back through), never a fresh one: at a few MiB a state, new pages cost
+//! more than taking the state. The one buffer kept spare is beyond the memory cap.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -26,6 +30,8 @@ pub(crate) const INTERVAL: u32 = 2;
 #[derive(Debug)]
 pub(crate) struct Rewind {
     states: VecDeque<Vec<u8>>,
+    /// A buffer to take the next snapshot into.
+    spare: Option<Vec<u8>>,
     bytes: usize,
     max_bytes: usize,
     max_states: usize,
@@ -43,6 +49,7 @@ impl Rewind {
             budget: Duration::from_secs_f64(BUDGET / fps.clamp(1.0, 1000.0)),
             slow: 0,
             states: VecDeque::new(),
+            spare: None,
             bytes: 0,
             max_bytes,
             max_states,
@@ -57,7 +64,8 @@ impl Rewind {
     }
 
     /// Called once per emulated frame; snapshots every [`INTERVAL`] frames.
-    pub(crate) fn record<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
+    /// `serialize` writes the state into the buffer it is given, replacing what it held.
+    pub(crate) fn record<E>(&mut self, serialize: impl FnOnce(&mut Vec<u8>) -> Result<(), E>) {
         if self.unsupported || self.max_states == 0 || self.max_bytes == 0 {
             return;
         }
@@ -73,7 +81,7 @@ impl Rewind {
     /// fits the budget (kept as the first of the history) or rewind turns itself off. A game
     /// continued from a save does this out of sight, where `record` would decide it over the
     /// first frames the player sees: on a PS2 that was three stalls of 50 ms or more.
-    pub(crate) fn trial<E>(&mut self, mut serialize: impl FnMut() -> Result<Vec<u8>, E>) {
+    pub(crate) fn trial<E>(&mut self, mut serialize: impl FnMut(&mut Vec<u8>) -> Result<(), E>) {
         for _ in 0..SLOW_SNAPSHOTS {
             if self.unsupported || self.max_states == 0 || self.max_bytes == 0 {
                 return;
@@ -88,11 +96,12 @@ impl Rewind {
 
     /// Takes one snapshot, timing it: turns rewind off if this one, or the run it ends,
     /// costs too much.
-    fn snapshot<E>(&mut self, serialize: impl FnOnce() -> Result<Vec<u8>, E>) {
+    fn snapshot<E>(&mut self, serialize: impl FnOnce(&mut Vec<u8>) -> Result<(), E>) {
+        let mut state = self.spare.take().unwrap_or_default();
         let started = Instant::now();
-        let state = serialize();
+        let written = serialize(&mut state);
         let took = started.elapsed();
-        if let Ok(state) = &state {
+        if written.is_ok() {
             self.slow = if took > self.budget { self.slow + 1 } else { 0 };
             if self.slow >= SLOW_SNAPSHOTS || state.len() * MIN_STATES > self.max_bytes {
                 tracing::info!(
@@ -103,19 +112,21 @@ impl Rewind {
                 );
                 self.unsupported = true;
                 self.clear();
+                self.spare = None;
                 return;
             }
         }
-        match state {
-            Ok(state) if state.len() <= self.max_bytes => {
+        match written {
+            Ok(()) if state.len() <= self.max_bytes => {
                 self.bytes += state.len();
                 self.states.push_back(state);
                 while self.bytes > self.max_bytes || self.states.len() > self.max_states {
                     let Some(old) = self.states.pop_front() else { break };
                     self.bytes -= old.len();
+                    self.spare.get_or_insert(old);
                 }
             }
-            Ok(_) => self.unsupported = true,
+            Ok(()) => self.unsupported = true,
             Err(_) => {
                 tracing::info!("this core cannot save states; rewind is off");
                 self.unsupported = true;
@@ -131,11 +142,16 @@ impl Rewind {
         let Some(state) = self.states.pop_back() else { return false };
         self.bytes -= state.len();
         self.counter = 0;
-        unserialize(&state).is_ok()
+        let restored = unserialize(&state).is_ok();
+        self.spare.get_or_insert(state);
+        restored
     }
 
     /// Forgets everything (after loading a state or a reset, history no longer applies).
     pub(crate) fn clear(&mut self) {
+        if let Some(state) = self.states.pop_back() {
+            self.spare.get_or_insert(state);
+        }
         self.states.clear();
         self.bytes = 0;
         self.counter = 0;
@@ -146,11 +162,39 @@ impl Rewind {
 mod tests {
     use super::*;
 
+    /// A serializer's work: the state, written over what the buffer held.
+    fn fill(buf: &mut Vec<u8>, state: &[u8]) -> Result<(), ()> {
+        buf.clear();
+        buf.extend_from_slice(state);
+        Ok(())
+    }
+
+    #[test]
+    fn snapshots_reuse_the_buffers_the_history_lets_go_of() {
+        let mut r = Rewind::new(1 << 20, 3, 60.0);
+        let mut given = Vec::new();
+        for frame in 0u8..40 {
+            r.record(|s| {
+                given.push(s.capacity());
+                fill(s, &[frame; 64])
+            });
+        }
+        // The first snapshots, and the one after the cap is first passed, start from nothing;
+        // from then on every one is written into a buffer let go of.
+        assert_eq!(given.iter().filter(|&&c| c == 0).count(), 4, "{given:?}");
+        r.step_back(|_| Ok::<_, ()>(()));
+        r.record(|_| Ok::<_, ()>(()));
+        r.record(|s| {
+            assert!(s.capacity() >= 64, "after stepping back, a buffer let go of is still reused");
+            fill(s, &[1; 64])
+        });
+    }
+
     #[test]
     fn snapshots_every_interval_and_steps_back_newest_first() {
         let mut r = Rewind::new(1024, 100, 60.0);
         for frame in 0u8..6 {
-            r.record(|| Ok::<_, ()>(vec![frame; 4]));
+            r.record(|s| fill(s, &[frame; 4]));
         }
         assert_eq!(r.len(), 3, "every {INTERVAL} frames");
         let mut seen = Vec::new();
@@ -165,12 +209,12 @@ mod tests {
     fn evicts_the_oldest_past_either_cap() {
         let mut r = Rewind::new(40, 100, 60.0);
         for frame in 0u8..20 {
-            r.record(|| Ok::<_, ()>(vec![frame; 4]));
+            r.record(|s| fill(s, &[frame; 4]));
         }
         assert_eq!(r.len(), 10, "40 bytes hold ten 4-byte states");
         let mut r = Rewind::new(1 << 20, 3, 60.0);
         for frame in 0u8..20 {
-            r.record(|| Ok::<_, ()>(vec![frame; 4]));
+            r.record(|s| fill(s, &[frame; 4]));
         }
         assert_eq!(r.len(), 3);
     }
@@ -181,9 +225,9 @@ mod tests {
         let mut r = Rewind::new(64, 100, 60.0);
         let mut calls = 0;
         for _ in 0..20 {
-            r.record(|| {
+            r.record(|s| {
                 calls += 1;
-                Ok::<_, ()>(vec![0; 16])
+                fill(s, &[0; 16])
             });
         }
         assert_eq!((calls, r.len()), (1, 0));
@@ -192,10 +236,10 @@ mod tests {
         let mut r = Rewind::new(1 << 20, 100, 60.0);
         let mut calls = 0;
         for _ in 0..20 {
-            r.record(|| {
+            r.record(|s| {
                 calls += 1;
                 std::thread::sleep(Duration::from_millis(6));
-                Ok::<_, ()>(vec![0; 4])
+                fill(s, &[0; 4])
             });
         }
         assert_eq!((calls, r.len()), (3, 0));
@@ -205,29 +249,29 @@ mod tests {
     fn a_trial_settles_a_slow_core_before_play() {
         let mut r = Rewind::new(1 << 20, 100, 60.0);
         let mut calls = 0;
-        r.trial(|| {
+        r.trial(|s| {
             calls += 1;
             std::thread::sleep(Duration::from_millis(6));
-            Ok::<_, ()>(vec![0; 4])
+            fill(s, &[0; 4])
         });
         assert_eq!((calls, r.len()), (SLOW_SNAPSHOTS, 0), "off before the first frame");
-        r.record(|| -> Result<Vec<u8>, ()> { panic!("rewind is off: no more snapshots") });
-        r.record(|| -> Result<Vec<u8>, ()> { panic!("rewind is off: no more snapshots") });
+        r.record(|_| -> Result<(), ()> { panic!("rewind is off: no more snapshots") });
+        r.record(|_| -> Result<(), ()> { panic!("rewind is off: no more snapshots") });
     }
 
     #[test]
     fn a_trial_keeps_the_first_snapshot_that_fits() {
         let mut r = Rewind::new(1 << 20, 100, 60.0);
         let mut calls = 0;
-        r.trial(|| {
+        r.trial(|s| {
             calls += 1;
-            Ok::<_, ()>(vec![7; 4])
+            fill(s, &[7; 4])
         });
         assert_eq!((calls, r.len()), (1, 1));
         // The history goes on from there at the usual interval.
-        r.record(|| Ok::<_, ()>(vec![8; 4]));
+        r.record(|s| fill(s, &[8; 4]));
         assert_eq!(r.len(), 1);
-        r.record(|| Ok::<_, ()>(vec![9; 4]));
+        r.record(|s| fill(s, &[9; 4]));
         assert_eq!(r.len(), 2);
     }
 
@@ -236,9 +280,9 @@ mod tests {
         let mut r = Rewind::new(1024, 100, 60.0);
         let mut calls = 0;
         for _ in 0..10 {
-            r.record(|| {
+            r.record(|_| {
                 calls += 1;
-                Err::<Vec<u8>, _>("no")
+                Err::<(), _>("no")
             });
         }
         assert_eq!(calls, 1);

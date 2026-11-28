@@ -72,6 +72,15 @@ impl Worker {
 
     /// With `env` set for the worker (and so for its core) too.
     fn start_with_env(extra: &[&std::ffi::OsStr], env: &[(&str, &str)]) -> Self {
+        Self::start_core(test_core(), extra, env)
+    }
+
+    /// Running `core` rather than the test core.
+    fn start_core(
+        core: &std::path::Path,
+        extra: &[&std::ffi::OsStr],
+        env: &[(&str, &str)],
+    ) -> Self {
         // A folder of its own: the tests run side by side, and each deletes its folder when done.
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -80,7 +89,7 @@ impl Worker {
         let mut child = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
             .arg("serve")
             .arg("--core")
-            .arg(test_core())
+            .arg(core)
             .args(["--http", "127.0.0.1:0", "--udp", "127.0.0.1:0"])
             .arg("--system-dir")
             .arg(dir.join("system"))
@@ -628,6 +637,178 @@ fn a_leaking_core_is_stopped_by_its_memory_limit_and_its_saves_are_written() {
     assert_eq!(exit, "memory_limit");
     let auto_state = worker.dir.join("saves/states/slot0.state");
     assert!(auto_state.exists(), "no auto state at {}", auto_state.display());
+}
+
+/// With run-ahead, the picture sent is a frame ahead's and the real frame's is never drawn:
+/// the stream still sends a picture every tick, and it moves.
+#[test]
+fn run_ahead_streams_the_picture_of_a_frame_ahead() {
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut worker = Worker::start_with(&["--run-ahead".as_ref(), "2".as_ref()]);
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let mut client = VideoClient::connect(&mut worker, socket);
+    let mut h264 = H264Decoder::new().unwrap();
+    let mut lumas = Vec::new();
+    client.receive(Duration::from_secs(30), |data| {
+        if let Ok(Some(picture)) = h264.decode(&data.data) {
+            lumas.push(picture.luma);
+        }
+        lumas.len() < 30
+    });
+    assert_eq!(lumas.len(), 30, "decoded {} pictures in 30 s", lumas.len());
+    // The test core's gradient moves a step every frame: no two pictures in a row alike.
+    assert!(lumas.windows(2).all(|w| w[0] != w[1]), "a picture repeated");
+}
+
+/// A client that receives video alone, over a socket of its own.
+struct VideoClient {
+    rtc: str0m::Rtc,
+    socket: UdpSocket,
+    local: SocketAddr,
+}
+
+impl VideoClient {
+    /// Offers to receive video and applies the worker's answer.
+    fn connect(worker: &mut Worker, socket: UdpSocket) -> Self {
+        // Room for a burst, should the test fall behind the stream.
+        socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
+        let local = socket.local_addr().unwrap();
+        let mut rtc = RtcConfig::new().build(Instant::now());
+        rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
+        let mut api = rtc.sdp_api();
+        api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+        let (offer, pending) = api.apply().expect("an offer");
+        let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+        let (status, body) =
+            worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+        assert_eq!(status, 200, "{body}");
+        let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+        let answer = SdpAnswer::from_sdp_string(&answer.sdp).unwrap();
+        rtc.sdp_api().accept_answer(pending, answer).unwrap();
+        Self { rtc, socket, local }
+    }
+
+    /// Runs the connection, handing each video frame to `frame`, until it returns false.
+    /// Fails if that takes longer than `limit`.
+    fn receive(
+        &mut self,
+        limit: Duration,
+        mut frame: impl FnMut(&str0m::media::MediaData) -> bool,
+    ) {
+        let started = Instant::now();
+        let mut buf = vec![0u8; 2048];
+        loop {
+            assert!(started.elapsed() < limit, "still receiving after {limit:?}");
+            let timeout = match self.rtc.poll_output().unwrap() {
+                Output::Transmit(t) => {
+                    self.socket.send_to(&t.contents, t.destination).unwrap();
+                    continue;
+                }
+                Output::Event(Event::MediaData(data)) => {
+                    if !frame(&data) {
+                        return;
+                    }
+                    continue;
+                }
+                Output::Event(_) => continue,
+                Output::Timeout(t) => t,
+            };
+            let wait = timeout
+                .saturating_duration_since(Instant::now())
+                .clamp(Duration::from_millis(1), Duration::from_millis(10));
+            self.socket.set_read_timeout(Some(wait)).unwrap();
+            if let Ok((n, source)) = self.socket.recv_from(&mut buf) {
+                let contents = buf[..n].try_into().unwrap();
+                let destination = self.local;
+                let receive = Receive { proto: Protocol::Udp, source, destination, contents };
+                self.rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
+            }
+            self.rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
+        }
+    }
+}
+
+/// A benchmark, not a check: how evenly frames reach a client. Streams the test core for
+/// `SOVEMU_BENCH_SECONDS` (20 by default), over IPv6 too with `SOVEMU_BENCH_IPV6=1` (the worker's
+/// two-socket path), or a real core with `SOVEMU_BENCH_CORE` (and its `SOVEMU_BENCH_ROM`), and
+/// prints how late each frame arrived against its RTP timestamp, after the
+/// earliest: what the worker's wake-ups, pacing and sending add before a frame leaves. The
+/// worker's own `session health` lines (every two seconds) say how late its ticks started.
+///
+/// `cargo test --release -p sovemu-worker --test session -- --ignored --nocapture frame_pacing`
+#[test]
+#[ignore = "a benchmark: run it by name"]
+fn frame_pacing() {
+    let seconds: u64 =
+        std::env::var("SOVEMU_BENCH_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
+    let ipv6 = std::env::var("SOVEMU_BENCH_IPV6").is_ok_and(|v| v == "1");
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut extra = vec!["--health-interval", "2"];
+    if ipv6 {
+        extra.extend(["--advertise-ipv6", "::1"]);
+    }
+    let Ok(socket) = UdpSocket::bind(if ipv6 { "[::1]:0" } else { "127.0.0.1:0" }) else {
+        eprintln!("no IPv6 loopback here: skipped");
+        return;
+    };
+    let rom = std::env::var("SOVEMU_BENCH_ROM").ok();
+    if let Some(rom) = &rom {
+        extra.extend(["--rom", rom.as_str()]);
+    }
+    let extra: Vec<&std::ffi::OsStr> = extra.iter().map(|a| a.as_ref()).collect();
+    let core = std::env::var_os("SOVEMU_BENCH_CORE")
+        .map_or_else(|| test_core().to_path_buf(), PathBuf::from);
+    let mut worker = Worker::start_core(&core, &extra, &[]);
+    let mut client = VideoClient::connect(&mut worker, socket);
+
+    // (arrival, the frame's RTP time in seconds), from the first frame on.
+    let mut frames: Vec<(Instant, f64)> = Vec::new();
+    let mut first: Option<Instant> = None;
+    client.receive(Duration::from_secs(seconds + 30), |data| {
+        let now = Instant::now();
+        first.get_or_insert(now);
+        frames.push((now, data.time.as_seconds()));
+        first.is_some_and(|f| f.elapsed() < Duration::from_secs(seconds))
+    });
+
+    // The first two seconds start the stream (its keyframe, the encoder settling): left out.
+    let steady: Vec<_> = frames
+        .iter()
+        .filter(|(at, _)| at.duration_since(first.unwrap()) >= Duration::from_secs(2))
+        .collect();
+    assert!(steady.len() > 60, "only {} frames", steady.len());
+    let (t0, r0) = *steady[0];
+    let offsets: Vec<f64> =
+        steady.iter().map(|(at, rtp)| at.duration_since(t0).as_secs_f64() - (rtp - r0)).collect();
+    let earliest = offsets.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut late: Vec<f64> = offsets.iter().map(|o| (o - earliest) * 1000.0).collect();
+    late.sort_by(f64::total_cmp);
+    let mut gaps: Vec<f64> = steady
+        .windows(2)
+        .map(|w| {
+            let shown = w[1].0.duration_since(w[0].0).as_secs_f64();
+            ((shown - (w[1].1 - w[0].1)) * 1000.0).abs()
+        })
+        .collect();
+    gaps.sort_by(f64::total_cmp);
+    let at = |v: &[f64], p: f64| v[((v.len() - 1) as f64 * p) as usize];
+    let span = steady.last().unwrap().0.duration_since(t0).as_secs_f64();
+    eprintln!(
+        "frame pacing over {}: {} frames in {span:.1} s ({:.1} fps)\n\
+         \x20 arrival lateness ms: p50 {:.2}  p95 {:.2}  p99 {:.2}  max {:.2}\n\
+         \x20 frame-gap error ms:  p50 {:.2}  p95 {:.2}  p99 {:.2}  max {:.2}",
+        if ipv6 { "IPv6 (two sockets)" } else { "IPv4 (one socket)" },
+        steady.len(),
+        steady.len() as f64 / span,
+        at(&late, 0.5),
+        at(&late, 0.95),
+        at(&late, 0.99),
+        late[late.len() - 1],
+        at(&gaps, 0.5),
+        at(&gaps, 0.95),
+        at(&gaps, 0.99),
+        gaps[gaps.len() - 1],
+    );
 }
 
 /// The acks each ratio is measured over: the latest ones, normally and fast-forwarding.

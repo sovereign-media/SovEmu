@@ -199,7 +199,9 @@ frame or more after reading it; with run-ahead the worker runs each frame, saves
 runs N more frames with the same input, shows the last one's picture and puts the state back.
 A press then shows up N frames (about 17 ms each at 60 fps) sooner, while the game's real
 timeline and its sound are untouched. Most games need 1 or 2; too many and the game visibly
-skips ahead. Each frame costs N more emulated frames and a save state, so it is only for the
+skips ahead. Only the picture shown is drawn: the core is told it may skip drawing the real
+frame and every frame ahead but the last, and their sound. Each frame still costs N more
+emulated frames and a save state, so it is only for the
 systems that render in software (not N64, Dreamcast, GameCube or PS2), and a worker that
 cannot keep up runs fewer frames ahead by itself. It is on by default, 1 frame on every
 system that supports it; change it per system with `SovEmu__Systems__<id>__RunAhead` (0 to 4,
@@ -531,7 +533,7 @@ value (`SovEmu__Http__PublicUrl=https://…`) still works for a list of one.
 | `SovEmu__Streaming__Debug__VideoLimitKbps` | `0` | Testing only: every game's link carries at most this much video (kbit/s), as a slow internet connection does: packets leave one after another at that rate, video that comes faster waits up to 300 ms, and what would wait longer is thrown away. Audio and the connection's own packets are not limited. 0 is no limit; leave it there |
 | `SovEmu__Streaming__Debug__ReplayFrames` | | Testing only: a folder of `frame_NNNNNN.png` (the encoder bench's captures, `scripts/encode-quality-captures.sh`) that every game shows instead of its own picture, the next frame each time it draws, looping, so a client decodes exactly the frames the bench scored. Leave it unset |
 | `SovEmu__Streaming__Debug__VideoJitterMilliseconds` | `0` | Testing only: every game holds each outgoing video packet a different time, from nothing up to this many milliseconds (on top of `SovEmu__Streaming__Debug__VideoDelayMilliseconds`), without putting any out of order, as Wi-Fi and busy routes do. The same on every run. Leave it at 0 |
-| `SovEmu__Sessions__HealthSeconds` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), and give the largest frame (`largest_frame_kb`) |
+| `SovEmu__Sessions__HealthSeconds` | `10` | Seconds between each game's `session health` log line while someone plays (0: off; the `session summary` at the end stays). Both lines count the keyframes sent, the client's requests for one and how many were ignored because a keyframe was already on its way (`keyframes`, `keyframe_requests`, `keyframe_requests_ignored`), give the largest frame (`largest_frame_kb`), and say how late frames started against their schedule, on average and at worst (`late_mean_ms`, `late_worst_ms`) |
 | `SovEmu__Sessions__FailuresKept` | `50` | Failed games the admin Sessions page keeps (a load error, a crash, a worker that had to be killed), with the core's last log lines; 0 keeps none. In memory: the log has every one |
 | `SovEmu__Home__FeaturedCount` | `8` | Games in the home screen's hero (0 hides it) |
 | `SovEmu__Home__RowLength` | `20` | Games in each home screen row (recently played, recently added, top rated) |

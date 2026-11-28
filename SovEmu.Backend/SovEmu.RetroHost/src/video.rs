@@ -79,8 +79,9 @@ impl VideoFrame {
 
     /// Converts the frame to 8-bit RGBA (alpha always 255), replacing the contents of `out`.
     ///
-    /// Each format is one pass over a buffer sized up front, which the compiler vectorises: at
-    /// a GPU core's 4× resolutions this runs every frame over 20 MB.
+    /// Each format is one pass over a buffer sized up front, which the compiler vectorises. The
+    /// stream does not need it (its encoders convert from every format), only screenshots and
+    /// a pre-scaled GPU frame do.
     pub fn write_rgba8(&self, out: &mut Vec<u8>) {
         let pixels = self.width as usize * self.height as usize;
         out.clear();

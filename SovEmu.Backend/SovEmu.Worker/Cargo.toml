@@ -19,8 +19,9 @@ serde_json = "1.0.154"
 getrandom = "0.3"
 # `all`: the IPv6 traffic class (DSCP on an IPv6 socket) is behind it on Linux.
 socket2 = { version = "0.6", features = ["all"] }
-# The session's own limits (limits.rs): rlimits and the page size, without unsafe.
-rustix = { version = "1", default-features = false, features = ["process", "param", "std"] }
+# The session's own limits (limits.rs): rlimits and the page size; waiting on its sockets
+# (udp.rs) and its timer slack (pacing.rs). All without unsafe.
+rustix = { version = "1", default-features = false, features = ["event", "param", "process", "std", "thread"] }
 sovemu-media = { version = "0.1.0", path = "../SovEmu.Media" }
 sovemu-protocol = { version = "0.1.0", path = "../SovEmu.Protocol" }
 sovemu-retro-host = { path = "../SovEmu.RetroHost" }

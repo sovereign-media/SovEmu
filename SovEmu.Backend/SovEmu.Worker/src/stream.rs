@@ -25,7 +25,7 @@ use sovemu_protocol::{
     seq_is_newer,
 };
 use sovemu_retro_host::{
-    AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, PixelFormat, VideoFrame,
+    AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, Keep, PixelFormat, VideoFrame,
 };
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
@@ -483,8 +483,24 @@ impl Session {
         self.core.discs().map(|d| d.count)
     }
 
-    /// Handles a control request. Returns `Ok(true)` if the loop should stop.
-    fn control(&mut self, request: &Request) -> Result<bool, String> {
+    /// Handles a control request, answering `reply` (a save state once it is on the disk).
+    /// Returns whether the loop should stop.
+    fn control(&mut self, request: &Request, reply: crate::persist::Reply) -> bool {
+        if let Request::SaveState { slot, .. } = request {
+            let (width, height) = self.shot_size;
+            let rgba = screenshot_rgba(&self.picture);
+            let shot = Screenshot { rgba: &rgba, width, height };
+            self.persist.save_state(&mut self.core, *slot, Some(shot), Some(reply));
+            return false;
+        }
+        let result = self.control_now(request);
+        let stop = matches!(result, Ok(true));
+        let _ = reply.send(result.map(|_| ()));
+        stop
+    }
+
+    /// Handles a control request answered as soon as it is done. `Ok(true)`: stop the loop.
+    fn control_now(&mut self, request: &Request) -> Result<bool, String> {
         match request {
             Request::Reset { .. } => {
                 self.core.reset();
@@ -511,15 +527,8 @@ impl Session {
                 self.finish();
                 Ok(true)
             }
-            Request::SaveState { slot, .. } => {
-                let (width, height) = self.shot_size;
-                let rgba = screenshot_rgba(&self.picture);
-                let shot = Screenshot { rgba: &rgba, width, height };
-                self.persist
-                    .save_state(&mut self.core, *slot, Some(shot))
-                    .map(|_| false)
-                    .map_err(|e| format!("{e:#}"))
-            }
+            // Answered once written, by `control`: never here.
+            Request::SaveState { .. } => Err("a save state is answered once it is written".into()),
             Request::LoadState { slot, .. } => {
                 let bytes = self.persist.read_state(*slot).map_err(|e| format!("{e:#}"))?;
                 if self.drawn {
@@ -714,10 +723,7 @@ pub(crate) fn run(
                     let _ = reply.send(answer);
                 }
                 Ok(Command::Control { request, reply }) => {
-                    let result = session.control(&request);
-                    let stop = matches!(result, Ok(true));
-                    let _ = reply.send(result.map(|_| ()));
-                    if stop {
+                    if session.control(&request, reply) {
                         tracing::info!("shutting down on request");
                         return Ok(ExitReason::Stopped);
                     }
@@ -1394,18 +1400,24 @@ impl Session {
             let core = &mut self.core;
             self.rewind.step_back(|state| core.unserialize(state));
         } else if hotkeys.fast_forward {
+            // Only the last frame of the tick is seen and heard: the others are run for their
+            // time alone.
             for _ in 1..self.fast_forward {
-                self.core.run_frame(&self.buttons)?;
+                self.core.run_frame_keeping(&self.buttons, Keep::NOTHING)?;
                 self.frame += 1;
                 let core = &mut self.core;
-                self.rewind.record(|| core.serialize());
+                self.rewind.record(|state| core.serialize_into(state));
             }
         }
 
         // A held state's boot is never seen, so it gets no input: a button pressed at the
         // loading screen must not reach a BIOS menu, or be held into the game.
         let input: &[JoypadButtons] = if self.pending_load.is_some() { &[] } else { &self.buttons };
-        let out = self.core.run_frame(input)?;
+        // Running ahead, the picture shown is a frame ahead's: the real frame's is not drawn.
+        let ahead = !hotkeys.rewind && !hotkeys.fast_forward && self.pending_load.is_none();
+        let keep =
+            if ahead && self.run_ahead.hides_real_picture() { Keep::AUDIO } else { Keep::ALL };
+        let out = self.core.run_frame_keeping(input, keep)?;
         let frame = self.frame;
         self.frame += 1;
         let tick = self.ticks;
@@ -1441,7 +1453,7 @@ impl Session {
                 // Still behind the loading screen: what costs time once is paid here, not
                 // on the first frames the player sees and plays.
                 let core = &mut self.core;
-                self.rewind.trial(|| core.serialize());
+                self.rewind.trial(|state| core.serialize_into(state));
                 self.start_continued_play(p);
                 tracing::info!(
                     slot,
@@ -1479,12 +1491,12 @@ impl Session {
 
         // The picture runs ahead of the real frame, hiding the game's own input lag; not while
         // rewinding or fast-forwarding, whose pictures are meant to be elsewhere in time.
-        if !hotkeys.rewind
-            && !hotkeys.fast_forward
-            && let Some(ahead) =
+        if ahead
+            && let Some(size) =
                 self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.picture)?
         {
-            picture = Some(ahead);
+            self.drawn = true;
+            picture = Some(size);
         }
 
         if picture.is_some()
@@ -1540,8 +1552,16 @@ impl Session {
         }
 
         if !hotkeys.rewind {
-            let core = &mut self.core;
-            self.rewind.record(|| core.serialize());
+            // Run-ahead has just taken this very state: copied, it costs a memcpy.
+            let (core, taken) = (&mut self.core, self.run_ahead.take_state());
+            self.rewind.record(|state| match taken {
+                Some(taken) => {
+                    state.clear();
+                    state.extend_from_slice(taken);
+                    Ok(())
+                }
+                None => core.serialize_into(state),
+            });
         }
         self.persist.tick(&mut self.core, now);
         self.health.ticked(behind, now.elapsed());

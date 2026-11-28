@@ -45,13 +45,16 @@ counts only if it drew a frame and read it back. A GPU with no DRM node (NVIDIA 
 
 ## Saves
 
-**Never lose a player's progress.** Battery saves and states are written atomically (temp file +
-rename) in `persist.rs`, on every exit path (`Session::finish`, called from `Drop`). Never write a
-save in place.
+**Never lose a player's progress.** Battery saves and states are written atomically (temp file,
+`fsync`, rename, `fsync` of the directory) in `persist.rs`, on every exit path (`Session::finish`,
+called from `Drop`, which waits until they are on the disk). Never write a save in place. Writes
+run on the saver's thread, never the stream's: copy what the core hands over, then queue it.
 
 ## Encoding
 
-`Media` knows nothing about libretro: RGBA→I420/NV12, H.264 (libavcodec: VA-API, NVENC or x264,
+`Media` knows nothing about libretro: packed pixels (RGBA, XRGB8888, RGB565, 0RGB1555, its own
+`PixelLayout`) → I420/NV12 straight from the core's format, SSE2 or AVX2 picked at run time and
+matching its scalar reference (kept in its tests) byte for byte, H.264 (libavcodec: VA-API, NVENC or x264,
 picked at run time, falling back to x264), VP8 (libvpx) and Opus (libopus), all tuned for real
 time, plus `AudioEncoder` (any core rate to 48 kHz, 10 ms packets). Latency comes before quality.
 

@@ -7,20 +7,27 @@
 //! session (it outlives clients), so a client that negotiates the other codec gets a new
 //! encoder, starting with a keyframe.
 
-use sovemu_media::{EncodedFrame, H264Config, H264Encoder, H264Preference, Vp8Config, Vp8Encoder};
+use sovemu_media::{
+    EncodedFrame, H264Config, H264Encoder, H264Preference, PixelLayout, Vp8Config, Vp8Encoder,
+};
 use sovemu_protocol::{Fallback, VideoPath};
 use sovemu_retro_host::{PixelFormat, VideoFrame};
 
-/// Keeps a frame the core drew as the picture to encode: I420 (a GPU core's, converted on the
-/// GPU) as it is, any other format as RGBA.
+/// Keeps a frame the core drew as the picture to encode, as it came: the encoder converts
+/// straight from the core's format (or takes a GPU core's I420 as it is).
 pub(crate) fn keep_picture(frame: &VideoFrame, picture: &mut VideoFrame) {
-    if frame.format == PixelFormat::I420 {
-        picture.clone_from(frame);
-    } else {
-        frame.write_rgba8(&mut picture.data);
-        (picture.width, picture.height) = (frame.width, frame.height);
-        picture.format = PixelFormat::Rgba8888;
-    }
+    picture.clone_from(frame);
+}
+
+/// The encoder's name for a packed format; `None` for I420, which is not packed pixels.
+fn layout(format: PixelFormat) -> Option<PixelLayout> {
+    Some(match format {
+        PixelFormat::Rgba8888 => PixelLayout::Rgba8888,
+        PixelFormat::Xrgb8888 => PixelLayout::Xrgb8888,
+        PixelFormat::Rgb565 => PixelLayout::Rgb565,
+        PixelFormat::Rgb1555 => PixelLayout::Rgb1555,
+        PixelFormat::I420 => return None,
+    })
 }
 
 /// A video codec the worker can send.
@@ -259,15 +266,16 @@ impl Video {
         }
     }
 
-    /// Encodes a picture [`keep_picture`] kept: RGBA, or I420 straight into the encoder
-    /// (unless it is to be pre-scaled, which works on RGBA).
+    /// Encodes a picture [`keep_picture`] kept: packed pixels in any of the cores' formats,
+    /// converted straight into the encoder, or I420 copied in (unless it is to be pre-scaled,
+    /// which works on packed pixels).
     pub(crate) fn encode_picture(
         &mut self,
         picture: &VideoFrame,
     ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
         let (width, height) = (picture.width, picture.height);
-        if picture.format != PixelFormat::I420 {
-            return self.encode(&picture.data, width, height);
+        if let Some(layout) = layout(picture.format) {
+            return self.encode_packed(&picture.data, layout, width, height);
         }
         if self.scale(width, height) > 1 {
             let mut rgba = std::mem::take(&mut self.unpacked);
@@ -284,22 +292,35 @@ impl Video {
         Ok(encoded)
     }
 
+    /// Encodes tightly packed RGBA.
     pub(crate) fn encode(
         &mut self,
         rgba: &[u8],
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
-        let (rgba, width, height) = match self.scale(width, height) {
+        self.encode_packed(rgba, PixelLayout::Rgba8888, width, height)
+    }
+
+    /// Encodes packed pixels in `layout`, pre-scaled first if the setting asks.
+    fn encode_packed(
+        &mut self,
+        pixels: &[u8],
+        layout: PixelLayout,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, sovemu_media::Error> {
+        let (pixels, width, height) = match self.scale(width, height) {
             2 => {
-                prescale_2x(rgba, width as usize, height as usize, &mut self.scaled);
+                let bpp = layout.bytes_per_pixel();
+                prescale_2x(pixels, bpp, width as usize, height as usize, &mut self.scaled);
                 (self.scaled.as_slice(), width * 2, height * 2)
             }
-            _ => (rgba, width, height),
+            _ => (pixels, width, height),
         };
         let encoded = match &mut self.encoder {
-            Encoder::H264(e) => e.encode(rgba, width, height),
-            Encoder::Vp8(e) => e.encode(rgba, width, height),
+            Encoder::H264(e) => e.encode_pixels(pixels, layout, width, height),
+            Encoder::Vp8(e) => e.encode_pixels(pixels, layout, width, height),
         }?;
         self.log_encoder();
         Ok(encoded)
@@ -320,13 +341,13 @@ impl Video {
     }
 }
 
-/// Scales tightly packed RGBA up 2× by repeating each pixel into a 2×2 block.
-fn prescale_2x(rgba: &[u8], width: usize, height: usize, out: &mut Vec<u8>) {
+/// Scales tightly packed pixels of `bpp` bytes up 2× by repeating each into a 2×2 block.
+fn prescale_2x(pixels: &[u8], bpp: usize, width: usize, height: usize, out: &mut Vec<u8>) {
     out.clear();
-    out.reserve(width * height * 16);
-    for row in rgba.chunks_exact(width * 4).take(height) {
+    out.reserve(width * height * bpp * 4);
+    for row in pixels.chunks_exact(width * bpp).take(height) {
         let start = out.len();
-        for pixel in row.as_chunks::<4>().0 {
+        for pixel in row.chunks_exact(bpp) {
             out.extend_from_slice(pixel);
             out.extend_from_slice(pixel);
         }
@@ -370,7 +391,7 @@ mod tests {
     fn prescale_2x_makes_each_pixel_a_block() {
         let rgba = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let mut out = Vec::new();
-        prescale_2x(&rgba, 2, 2, &mut out);
+        prescale_2x(&rgba, 4, 2, 2, &mut out);
         let p = |i: u8| [i * 4 + 1, i * 4 + 2, i * 4 + 3, i * 4 + 4];
         let row = |a: u8, b: u8| [p(a), p(a), p(b), p(b)].concat();
         assert_eq!(out, [row(0, 1), row(0, 1), row(2, 3), row(2, 3)].concat());
@@ -454,7 +475,7 @@ mod tests {
             };
             let mut kept = VideoFrame::default();
             keep_picture(&drawn, &mut kept);
-            assert_eq!((kept.format, &kept.data), (PixelFormat::Rgba8888, &rgba));
+            assert_eq!(kept, drawn, "a drawn frame is kept as it came");
             keep_picture(&i420, &mut kept);
             assert_eq!(kept, i420, "I420 is kept as it is");
             let a = from_rgba.encode(&rgba, 32, 24).unwrap();
@@ -462,6 +483,36 @@ mod tests {
             assert_eq!(a.is_some(), b.is_some(), "prescale {prescale}");
             if prescale == 1 {
                 assert_eq!(a, b, "the same stream from either");
+            }
+        }
+    }
+
+    #[test]
+    fn a_picture_encodes_from_the_cores_format_as_from_its_rgba() {
+        let (w, h) = (33u32, 21u32);
+        for format in [
+            PixelFormat::Rgba8888,
+            PixelFormat::Xrgb8888,
+            PixelFormat::Rgb565,
+            PixelFormat::Rgb1555,
+        ] {
+            for prescale in [1, 2] {
+                let video = || {
+                    // x264: libvpx on several threads does not make the same stream twice.
+                    Video::new(VideoSettings {
+                        prescale,
+                        ..settings(CodecSetting::Only(VideoCodec::H264))
+                    })
+                };
+                let len = (w * h) as usize * format.bytes_per_pixel();
+                let data = (0..len).map(|i| (i.wrapping_mul(2_654_435_761) >> 11) as u8).collect();
+                let frame = VideoFrame { width: w, height: h, format, data };
+                let (mut direct, mut via_rgba) = (video(), video());
+                for _ in 0..3 {
+                    let a = direct.encode_picture(&frame).unwrap();
+                    let b = via_rgba.encode(&frame.to_rgba8(), w, h).unwrap();
+                    assert_eq!(a, b, "{format:?} at prescale {prescale}");
+                }
             }
         }
     }
