@@ -23,6 +23,7 @@ import {
   type Link,
   type Pipeline,
 } from "./protocol";
+import { startTicker } from "./ticker";
 
 /** Send at least this often even when nothing changed: the channel drops lost packets. */
 const HEARTBEAT_MS = 100;
@@ -79,6 +80,7 @@ export class Session {
   private lastAnalogSend = 0;
   private raf = 0;
   private frameCallback = 0;
+  private stopTicker: () => void = () => {};
 
   /** While true, the controller state is withheld (a menu is open): nothing is pressed. */
   suspended = false;
@@ -139,10 +141,12 @@ export class Session {
       /* needs a user gesture; Connect is one */
     });
     this.raf = requestAnimationFrame(this.pump);
+    this.stopTicker = startTicker(HEARTBEAT_MS, this.hiddenTick);
   }
 
   close(): void {
     cancelAnimationFrame(this.raf);
+    this.stopTicker();
     this.video.cancelVideoFrameCallback?.(this.frameCallback);
     this.pc.close();
   }
@@ -154,8 +158,20 @@ export class Session {
 
   /** Every animation frame: send the input state if it changed or the heartbeat is due. */
   private pump = () => {
+    this.send();
+    this.raf = requestAnimationFrame(this.pump);
+  };
+
+  /** In a hidden tab, where animation frames stop: the heartbeat goes on (`startTicker`). */
+  private hiddenTick = () => {
+    if (document.hidden) this.send();
+  };
+
+  private send() {
     if (this.channel.readyState === "open") {
-      const reading = this.suspended ? null : this.input.read();
+      // A hidden tab holds nothing pressed (a key let go there is never heard); the menu's
+      // pause holds, so a game paused under the menu stays paused.
+      const reading = this.suspended || document.hidden ? null : this.input.read();
       const ports = reading?.ports ?? [0];
       const state = ports.join(",");
       // While suspended (the menu is open) the game is paused, not just left without input.
@@ -185,8 +201,7 @@ export class Session {
         this.lastAnalogSend = now;
       }
     }
-    this.raf = requestAnimationFrame(this.pump);
-  };
+  }
 
   private setLink(link: Link) {
     if (!supersedes(this.link, link)) return;
