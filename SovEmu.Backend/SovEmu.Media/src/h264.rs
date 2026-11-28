@@ -24,7 +24,7 @@ use std::ptr;
 
 use crate::ffi;
 use crate::vp8::{DecodedFrame, pack_plane};
-use crate::yuv::{I420Planes, Source, chroma_len};
+use crate::yuv::{I420Planes, PixelLayout, Source, chroma_len};
 use crate::{EncodedFrame, Error};
 
 /// Threads x264 encodes a frame on.
@@ -379,7 +379,19 @@ impl H264Encoder {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, Error> {
-        self.encode_source(Source::Rgba(rgba), width, height)
+        self.encode_pixels(rgba, PixelLayout::Rgba8888, width, height)
+    }
+
+    /// Encodes one frame of packed pixels in `layout` (`width * height` pixels, no row padding),
+    /// converted straight from it. Returns `None` if the encoder produced nothing for it.
+    pub fn encode_pixels(
+        &mut self,
+        pixels: &[u8],
+        layout: PixelLayout,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        self.encode_source(Source::Packed(pixels, layout), width, height)
     }
 
     /// Encodes one frame already in I420 (packed planes, [`crate::yuv::i420_len`] bytes), as a

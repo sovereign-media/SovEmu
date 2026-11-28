@@ -65,7 +65,7 @@ SovEmu/
     SovEmu.RetroHost/        safe frontend: load core, environment, run loop         [Phase 0]
     SovEmu.TestCore/         deterministic cdylib core for tests                     [Phase 0]
     SovEmu.Worker/           per-session binary (headless now, WebRTC later)         [Phase 0]
-    SovEmu.Media/            RGBA→I420, VP8 (libvpx), Opus, resampling               [Phase 1]
+    SovEmu.Media/            pixels→I420, VP8 (libvpx), Opus, resampling             [Phase 1]
     SovEmu.Protocol/         wire formats: input packets, signalling                 [Phase 1]
     SovEmu.Server/           axum: web client + API, auth, SQLite, orchestration     [Phase 2]
   SovEmu.Web/                Vite + React + TanStack Router (Radix UI), static; served by Rust [Phase 1]

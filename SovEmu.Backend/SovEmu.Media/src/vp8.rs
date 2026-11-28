@@ -11,7 +11,7 @@ use std::ffi::{CStr, c_int};
 use std::ptr::NonNull;
 
 use crate::ffi;
-use crate::yuv::{I420Planes, Source, chroma_len};
+use crate::yuv::{I420Planes, PixelLayout, Source, chroma_len};
 use crate::{EncodedFrame, Error};
 
 /// Encoder settings.
@@ -227,7 +227,19 @@ impl Vp8Encoder {
         width: u32,
         height: u32,
     ) -> Result<Option<EncodedFrame>, Error> {
-        self.encode_source(Source::Rgba(rgba), width, height)
+        self.encode_pixels(rgba, PixelLayout::Rgba8888, width, height)
+    }
+
+    /// Encodes one frame of packed pixels in `layout` (`width * height` pixels, no row padding),
+    /// converted straight from it. Returns `None` if rate control dropped the frame.
+    pub fn encode_pixels(
+        &mut self,
+        pixels: &[u8],
+        layout: PixelLayout,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<EncodedFrame>, Error> {
+        self.encode_source(Source::Packed(pixels, layout), width, height)
     }
 
     /// Encodes one frame already in I420 (packed planes, [`crate::yuv::i420_len`] bytes), as a

@@ -181,7 +181,12 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
         }
         timings.push(t.elapsed());
         if let (true, Some((width, height))) = (png, picture) {
-            write_png(&args.out.join(format!("frame_{n:06}.png")), width, height, &kept.data)?;
+            write_png(
+                &args.out.join(format!("frame_{n:06}.png")),
+                width,
+                height,
+                &kept.to_rgba8(),
+            )?;
         }
         if last {
             last_picture = picture;
@@ -199,7 +204,7 @@ pub(crate) fn run(args: HeadlessArgs) -> Result<()> {
     wav.finalize()?;
 
     if let Some((width, height)) = last_picture {
-        write_png(&args.out.join("last.png"), width, height, &kept.data)?;
+        write_png(&args.out.join("last.png"), width, height, &kept.to_rgba8())?;
     }
 
     let summary = Summary {
