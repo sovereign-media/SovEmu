@@ -72,6 +72,15 @@ impl Worker {
 
     /// With `env` set for the worker (and so for its core) too.
     fn start_with_env(extra: &[&std::ffi::OsStr], env: &[(&str, &str)]) -> Self {
+        Self::start_core(test_core(), extra, env)
+    }
+
+    /// Running `core` rather than the test core.
+    fn start_core(
+        core: &std::path::Path,
+        extra: &[&std::ffi::OsStr],
+        env: &[(&str, &str)],
+    ) -> Self {
         // A folder of its own: the tests run side by side, and each deletes its folder when done.
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -80,7 +89,7 @@ impl Worker {
         let mut child = Command::new(env!("CARGO_BIN_EXE_sovemu-worker"))
             .arg("serve")
             .arg("--core")
-            .arg(test_core())
+            .arg(core)
             .args(["--http", "127.0.0.1:0", "--udp", "127.0.0.1:0"])
             .arg("--system-dir")
             .arg(dir.join("system"))
@@ -721,7 +730,8 @@ impl VideoClient {
 
 /// A benchmark, not a check: how evenly frames reach a client. Streams the test core for
 /// `SOVEMU_BENCH_SECONDS` (20 by default), over IPv6 too with `SOVEMU_BENCH_IPV6=1` (the worker's
-/// two-socket path), and prints how late each frame arrived against its RTP timestamp, after the
+/// two-socket path), or a real core with `SOVEMU_BENCH_CORE` (and its `SOVEMU_BENCH_ROM`), and
+/// prints how late each frame arrived against its RTP timestamp, after the
 /// earliest: what the worker's wake-ups, pacing and sending add before a frame leaves. The
 /// worker's own `session health` lines (every two seconds) say how late its ticks started.
 ///
@@ -737,12 +747,18 @@ fn frame_pacing() {
     if ipv6 {
         extra.extend(["--advertise-ipv6", "::1"]);
     }
-    let extra: Vec<&std::ffi::OsStr> = extra.iter().map(|a| a.as_ref()).collect();
     let Ok(socket) = UdpSocket::bind(if ipv6 { "[::1]:0" } else { "127.0.0.1:0" }) else {
         eprintln!("no IPv6 loopback here: skipped");
         return;
     };
-    let mut worker = Worker::start_with(&extra);
+    let rom = std::env::var("SOVEMU_BENCH_ROM").ok();
+    if let Some(rom) = &rom {
+        extra.extend(["--rom", rom.as_str()]);
+    }
+    let extra: Vec<&std::ffi::OsStr> = extra.iter().map(|a| a.as_ref()).collect();
+    let core = std::env::var_os("SOVEMU_BENCH_CORE")
+        .map_or_else(|| test_core().to_path_buf(), PathBuf::from);
+    let mut worker = Worker::start_core(&core, &extra, &[]);
     let mut client = VideoClient::connect(&mut worker, socket);
 
     // (arrival, the frame's RTP time in seconds), from the first frame on.
