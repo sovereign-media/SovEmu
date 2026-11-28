@@ -34,8 +34,8 @@ them changes all four together: a PR in each repository it touches.
 
 `SovEmu.Protocol/src/input.rs`, `SovEmu.Web/src/lib/protocol.ts`, Android's `core/.../Protocol.kt`
 and iOS's `SovEmuKit/Protocol.swift`: input `0x01`, hotkeys `0x02`, analog `0x03`, stats `0x04`,
-ack `0x81`, pipeline `0x82`, each tested against the same byte vectors. Bump `INPUT_VERSION` if an
-old client would misread the new format.
+ack `0x81`, pipeline `0x82`, link check `0x83`, each tested against the same byte vectors. Bump
+`INPUT_VERSION` if an old client would misread the new format.
 
 ## Controllers
 

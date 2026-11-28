@@ -836,6 +836,10 @@ pub(crate) fn run(
             && p.connected
             && !session.probing()
             && Instant::now() >= next_frame
+            // str0m hands out channel data only when polled: without this, input read this
+            // turn would reach the core one frame late, after the frame it arrived for. A peer
+            // found gone here is dropped by the next turn's drive.
+            && drive(p, &udp, &mut session)?.is_some()
         {
             let behind = Instant::now().saturating_duration_since(next_frame);
             session.step(p, behind)?;
@@ -1572,11 +1576,18 @@ impl Session {
         }
         let now = Instant::now();
         let pipeline = self.pipeline();
-        if self.pipeline.as_ref() != Some(&pipeline) {
+        // The bandwidth estimate moves several times a second: on its own it is no change, and
+        // rides along with the next one or the periodic resend.
+        let changed = self.pipeline.as_ref().is_none_or(|last| {
+            let mut last = last.clone();
+            last.video.estimate_kbps = pipeline.video.estimate_kbps;
+            last != pipeline
+        });
+        if changed {
             self.events.push(StreamEvent::Pipeline(pipeline.clone()));
-            self.pipeline = Some(pipeline);
             self.pipeline_to_client_at = None;
         }
+        self.pipeline = Some(pipeline);
         let due =
             self.pipeline_to_client_at.is_none_or(|at| now.duration_since(at) >= PIPELINE_RESEND);
         if due
