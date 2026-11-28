@@ -170,6 +170,8 @@ pub(crate) struct SessionConfig {
     pub video_prescale: u32,
     /// VP8's screen-content mode (0, 1 or 2).
     pub video_screen_content: u8,
+    /// VP8's speed (`cpu_used`, -16 to 16).
+    pub video_cpu_used: i32,
     /// Testing only: frames shown instead of the game's picture (`replay.rs`).
     pub replay_frames: Option<std::path::PathBuf>,
 }
@@ -358,6 +360,7 @@ impl Session {
                 keyframe_interval: config.keyframe_interval.max(1),
                 prescale: config.video_prescale.clamp(1, 2),
                 screen_content: config.video_screen_content.min(2),
+                cpu_used: config.video_cpu_used.clamp(-16, 16),
             }),
             audio: AudioEncoder::new(av.sample_rate, config.audio_kbps * 1000)?,
             fps: av.fps,

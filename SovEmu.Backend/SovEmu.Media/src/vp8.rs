@@ -21,7 +21,11 @@ pub struct Vp8Config {
     pub bitrate_kbps: u32,
     /// Frames per second of the source; used for timestamps and rate control.
     pub fps: u32,
-    /// libvpx speed/quality trade-off, -16..=16; higher is faster.
+    /// libvpx's speed (`VP8E_SET_CPUUSED`, -16..=16): negative is a fixed speed, a lower
+    /// magnitude slower and better; positive lets libvpx pick its speed from how long frames
+    /// take, which with frames this small settles at 4 whatever the value. The default, a fixed
+    /// 2, gives a closer picture in the same or fewer bits for about 1 ms more a frame
+    /// (`docs/research/encode-speed-2026-11.md`).
     pub cpu_used: i32,
     /// Longest gap between keyframes, in frames, when no client asks for one.
     pub keyframe_interval: u32,
@@ -32,6 +36,9 @@ pub struct Vp8Config {
     /// sharp edges: 0 off, 1 on, 2 on with more aggressive rate control (it may drop frames).
     /// 0 leaves the control unset, so the stream is byte for byte what it was without it.
     pub screen_content: u8,
+    /// The loop filter's sharpness (`VP8E_SET_SHARPNESS`, 0..=7): higher smooths less across
+    /// block edges. 0 leaves the control unset (libvpx's own 0).
+    pub sharpness: u8,
 }
 
 impl Default for Vp8Config {
@@ -39,10 +46,11 @@ impl Default for Vp8Config {
         Self {
             bitrate_kbps: 2_500,
             fps: 60,
-            cpu_used: 8,
+            cpu_used: -2,
             keyframe_interval: 600,
             threads: 4,
             screen_content: 0,
+            sharpness: 0,
         }
     }
 }
@@ -192,7 +200,11 @@ impl Vp8Encoder {
             // Keyframes may use at most 3x an average frame, so a refresh is not a burst.
             (ffi::vp8e_enc_control_id::VP8E_SET_MAX_INTRA_BITRATE_PCT, 300),
         ];
-        for (id, value) in controls.into_iter().chain(screen_content) {
+        let sharpness = (self.config.sharpness > 0).then_some((
+            ffi::vp8e_enc_control_id::VP8E_SET_SHARPNESS,
+            i32::from(self.config.sharpness.min(7)),
+        ));
+        for (id, value) in controls.into_iter().chain(screen_content).chain(sharpness) {
             // SAFETY: the context is initialised; each control takes one int.
             let err = unsafe { ffi::vpx_codec_control_(&mut *ctx, id as c_int, value as c_int) };
             if let Err(e) = check("control", err) {
@@ -553,6 +565,24 @@ mod tests {
         let off = stream(tight, 20);
         assert_eq!(off, stream(Vp8Config { screen_content: 0, ..tight }, 20));
         assert_ne!(off, stream(Vp8Config { screen_content: 1, ..tight }, 20));
+    }
+
+    #[test]
+    fn sharpness_0_is_the_stream_without_it_and_7_decodes() {
+        // As screen-content mode: 0 leaves the control unset, so a server that does not set it
+        // sends what it did before; 7 filters block edges less, which changes the bytes where the
+        // rate is tight, and still decodes.
+        let tight =
+            Vp8Config { bitrate_kbps: 800, cpu_used: -8, threads: 1, ..Vp8Config::default() };
+        let off = stream(tight, 20);
+        assert_eq!(off, stream(Vp8Config { sharpness: 0, ..tight }, 20));
+        let sharp = stream(Vp8Config { sharpness: 7, ..tight }, 20);
+        assert_ne!(off, sharp);
+        let mut dec = Vp8Decoder::new().unwrap();
+        for frame in sharp.into_iter().flatten() {
+            let pic = dec.decode(&frame.data).unwrap().expect("a picture");
+            assert_eq!((pic.width, pic.height), (256, 224));
+        }
     }
 
     #[test]

@@ -176,6 +176,7 @@ fn group(env: &str) -> Option<Group> {
         | "SovEmu__Streaming__Video__Encoder"
         | "SovEmu__Streaming__Video__Prescale"
         | "SovEmu__Streaming__Video__ScreenContent"
+        | "SovEmu__Streaming__Video__CpuUsed"
         | "SovEmu__Streaming__Audio__Kbps"
         | "SovEmu__Sessions__IdleTimeoutSeconds"
         | "SovEmu__Sessions__StartTimeoutSeconds"

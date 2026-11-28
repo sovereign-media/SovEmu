@@ -5,8 +5,12 @@
 //! cargo run --release -p sovemu-media --example encode_quality -- bench \
 //!   --captures ../test-results/encode-quality/captures --out ../test-results/encode-quality \
 //!   [--clips nes-nova,snes-castle] [--codecs vp8,x264] [--prescale 1,2] [--screen-content 0] \
-//!   [--kbps 800,1500,2500,5000] [--timing-runs 2] [--crop-frame 900] [--csv results.csv]
+//!   [--kbps 800,1500,2500,5000] [--cpu-used 8] [--sharpness 0] [--timing-runs 2] \
+//!   [--crop-frame 900] [--csv results.csv]
 //! ```
+//!
+//! `--cpu-used` and `--sharpness` are VP8's speed and loop-filter sharpness (`Vp8Config`), the
+//! session's own by default; each row ends with the pair it was encoded with.
 //!
 //! A clip is a folder of `frame_NNNNNN.png` (the core's own frames, from
 //! `scripts/encode-quality-captures.sh`). For every clip it scores the floors (no codec: RGBA →
@@ -128,12 +132,27 @@ struct Variant {
     codec: Codec,
     prescale: usize,
     screen_content: u8,
+    cpu_used: i32,
+    sharpness: u8,
     kbps: u32,
 }
 
 impl Variant {
     fn name(&self) -> String {
-        format!("{}-{}x-sc{}-{}k", self.codec.name(), self.prescale, self.screen_content, self.kbps)
+        let base = format!(
+            "{}-{}x-sc{}-{}k",
+            self.codec.name(),
+            self.prescale,
+            self.screen_content,
+            self.kbps
+        );
+        let defaults = Vp8Config::default();
+        if self.codec == Codec::X264
+            || (self.cpu_used == defaults.cpu_used && self.sharpness == defaults.sharpness)
+        {
+            return base; // the names the first runs' crops have
+        }
+        format!("{base}-cpu{}-sh{}", self.cpu_used, self.sharpness)
     }
 }
 
@@ -235,6 +254,8 @@ impl Encoder {
                     bitrate_kbps: v.kbps,
                     fps: FPS,
                     screen_content: v.screen_content,
+                    cpu_used: v.cpu_used,
+                    sharpness: v.sharpness,
                     ..Vp8Config::default()
                 }),
                 Vp8Decoder::new()?,
@@ -364,7 +385,7 @@ fn worst_1pct(scores: &[FrameScore], key: impl Fn(&FrameScore) -> f64, worst_hig
 const CSV_HEADER: &str = "clip,system,codec,prescale,screen_content,target_kbps,actual_kbps,\
 de_mean,de_over_2_3_pct,de_p99,psnr_y,psnr_cb,psnr_cr,ssim_y,worst1pct_de,enc_ms_mean,enc_ms_p95,\
 dec_ms_mean,dec_ms_p95,keyframe_bytes,dropped,first_keyframe_bytes,worst1pct_psnr_y,\
-worst1pct_ssim_y,frames";
+worst1pct_ssim_y,frames,cpu_used,sharpness";
 
 /// A CSV row's measured part, after `clip,system,codec,prescale,screen_content,target_kbps`.
 #[derive(Debug, Default)]
@@ -375,12 +396,14 @@ pub(crate) struct Row {
     pub(crate) keyframe_bytes: usize,
     pub(crate) first_keyframe_bytes: usize,
     pub(crate) dropped: usize,
+    /// VP8's `cpu_used` and sharpness; none for a floor, x264 or a client's frames.
+    pub(crate) vp8: Option<(i32, u8)>,
 }
 
 pub(crate) fn csv_row(prefix: &str, scores: &[FrameScore], row: &Row) -> String {
     let m = |f: fn(&FrameScore) -> f64| mean(&scores.iter().map(f).collect::<Vec<_>>());
     format!(
-        "{prefix},{:.1},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{:.4},{:.3},{:.3},{:.3},{:.3},{},{},{},{:.3},{:.5},{}",
+        "{prefix},{:.1},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.5},{:.4},{:.3},{:.3},{:.3},{:.3},{},{},{},{:.3},{:.5},{},{}",
         row.actual_kbps,
         m(|s| s.de_mean),
         m(|s| s.de_over_pct),
@@ -400,6 +423,7 @@ pub(crate) fn csv_row(prefix: &str, scores: &[FrameScore], row: &Row) -> String 
         worst_1pct(scores, |s| s.psnr_y, false),
         worst_1pct(scores, |s| s.ssim_y, false),
         scores.len(),
+        row.vp8.map_or(",".to_owned(), |(cpu, sharp)| format!("{cpu},{sharp}")),
     )
 }
 
@@ -431,6 +455,9 @@ fn bench(o: &Options) -> Result<()> {
     let codecs: Vec<Codec> = o.list("codecs", "vp8,x264")?;
     let prescales: Vec<usize> = o.list("prescale", "1,2")?;
     let modes: Vec<u8> = o.list("screen-content", "0")?;
+    let defaults = Vp8Config::default();
+    let speeds: Vec<i32> = o.list("cpu-used", &defaults.cpu_used.to_string())?;
+    let sharpnesses: Vec<u8> = o.list("sharpness", &defaults.sharpness.to_string())?;
     let rates: Vec<u32> = o.list("kbps", "800,1500,2500,5000")?;
     let timing_runs: usize = o.get("timing-runs").unwrap_or("2").parse()?;
     let crop_frame: usize = o.get("crop-frame").unwrap_or("900").parse()?;
@@ -472,66 +499,85 @@ fn bench(o: &Options) -> Result<()> {
                     if codec == Codec::X264 && screen_content != 0 {
                         continue; // x264 has no such mode
                     }
-                    for &kbps in &rates {
-                        let v = Variant { codec, prescale, screen_content, kbps };
-                        let t = Instant::now();
-                        let mut best = run(&clip, &v)?;
-                        for _ in 1..timing_runs {
-                            let again = run(&clip, &v)?;
-                            if again.bytes != best.bytes {
-                                eprintln!(
-                                    "  {}: runs differ ({} vs {} bytes)",
-                                    v.name(),
-                                    again.bytes,
-                                    best.bytes
-                                );
+                    // x264 has neither setting: it runs once, at VP8's defaults' place.
+                    let vp8_settings: Vec<(i32, u8)> = if codec == Codec::X264 {
+                        vec![(defaults.cpu_used, defaults.sharpness)]
+                    } else {
+                        speeds
+                            .iter()
+                            .flat_map(|&c| sharpnesses.iter().map(move |&s| (c, s)))
+                            .collect()
+                    };
+                    for (cpu_used, sharpness) in vp8_settings {
+                        for &kbps in &rates {
+                            let v = Variant {
+                                codec,
+                                prescale,
+                                screen_content,
+                                cpu_used,
+                                sharpness,
+                                kbps,
+                            };
+                            let t = Instant::now();
+                            let mut best = run(&clip, &v)?;
+                            for _ in 1..timing_runs {
+                                let again = run(&clip, &v)?;
+                                if again.bytes != best.bytes {
+                                    eprintln!(
+                                        "  {}: runs differ ({} vs {} bytes)",
+                                        v.name(),
+                                        again.bytes,
+                                        best.bytes
+                                    );
+                                }
+                                if mean(&again.enc_ms) < mean(&best.enc_ms) {
+                                    best.enc_ms = again.enc_ms;
+                                }
+                                if mean(&again.dec_ms) < mean(&best.dec_ms) {
+                                    best.dec_ms = again.dec_ms;
+                                }
                             }
-                            if mean(&again.enc_ms) < mean(&best.enc_ms) {
-                                best.enc_ms = again.enc_ms;
-                            }
-                            if mean(&again.dec_ms) < mean(&best.dec_ms) {
-                                best.dec_ms = again.dec_ms;
-                            }
+                            let encoded = t.elapsed().as_secs_f64();
+                            let pairs: Vec<(usize, Arc<Picture>)> =
+                                best.shown.iter().cloned().enumerate().collect();
+                            let scores = parallel_map(&pairs, |(i, p)| {
+                                score::score(&clip.frames[*i], p, prescale, &to_rgb)
+                            });
+                            let seconds = clip.frames.len() as f64 / f64::from(FPS);
+                            let row = Row {
+                                actual_kbps: best.bytes as f64 * 8.0 / seconds / 1000.0,
+                                enc_ms: best.enc_ms,
+                                dec_ms: best.dec_ms,
+                                keyframe_bytes: best.forced_keyframe,
+                                first_keyframe_bytes: best.first_keyframe,
+                                dropped: best.dropped,
+                                vp8: (codec == Codec::Vp8).then_some((cpu_used, sharpness)),
+                            };
+                            let prefix = format!(
+                                "{},{},{},{prescale},{screen_content},{kbps}",
+                                clip.name,
+                                clip.system(),
+                                codec.name()
+                            );
+                            writeln!(csv, "{}", csv_row(&prefix, &scores, &row))?;
+                            csv.flush()?;
+                            let path = crops.join(format!("{}.png", v.name()));
+                            crop::write_crop(
+                                &path,
+                                &clip.frames[crop_at],
+                                &best.shown[crop_at],
+                                prescale,
+                                region,
+                                &to_rgb,
+                            )?;
+                            eprintln!(
+                                "  {:<22} {:>7.0} kbit/s  dE {:.3}  encode {encoded:.1}s  score {:.1}s",
+                                v.name(),
+                                row.actual_kbps,
+                                mean(&scores.iter().map(|s| s.de_mean).collect::<Vec<_>>()),
+                                t.elapsed().as_secs_f64() - encoded,
+                            );
                         }
-                        let encoded = t.elapsed().as_secs_f64();
-                        let pairs: Vec<(usize, Arc<Picture>)> =
-                            best.shown.iter().cloned().enumerate().collect();
-                        let scores = parallel_map(&pairs, |(i, p)| {
-                            score::score(&clip.frames[*i], p, prescale, &to_rgb)
-                        });
-                        let seconds = clip.frames.len() as f64 / f64::from(FPS);
-                        let row = Row {
-                            actual_kbps: best.bytes as f64 * 8.0 / seconds / 1000.0,
-                            enc_ms: best.enc_ms,
-                            dec_ms: best.dec_ms,
-                            keyframe_bytes: best.forced_keyframe,
-                            first_keyframe_bytes: best.first_keyframe,
-                            dropped: best.dropped,
-                        };
-                        let prefix = format!(
-                            "{},{},{},{prescale},{screen_content},{kbps}",
-                            clip.name,
-                            clip.system(),
-                            codec.name()
-                        );
-                        writeln!(csv, "{}", csv_row(&prefix, &scores, &row))?;
-                        csv.flush()?;
-                        let path = crops.join(format!("{}.png", v.name()));
-                        crop::write_crop(
-                            &path,
-                            &clip.frames[crop_at],
-                            &best.shown[crop_at],
-                            prescale,
-                            region,
-                            &to_rgb,
-                        )?;
-                        eprintln!(
-                            "  {:<22} {:>7.0} kbit/s  dE {:.3}  encode {encoded:.1}s  score {:.1}s",
-                            v.name(),
-                            row.actual_kbps,
-                            mean(&scores.iter().map(|s| s.de_mean).collect::<Vec<_>>()),
-                            t.elapsed().as_secs_f64() - encoded,
-                        );
                     }
                 }
             }

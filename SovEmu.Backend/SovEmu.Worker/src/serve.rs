@@ -57,6 +57,7 @@ pub(crate) fn run(args: ServeArgs) -> Result<()> {
             video_encoder: args.video_encoder,
             video_prescale: args.video_prescale,
             video_screen_content: args.video_screen_content,
+            video_cpu_used: args.video_cpu_used,
             replay_frames: args.replay_frames.clone(),
             state_dir: Some(args.save_dir.join("states")),
         },

@@ -348,6 +348,15 @@ pub struct Config {
           value_parser = clap::value_parser!(u8).range(0..=2))]
     pub video_screen_content: u8,
 
+    /// VP8's speed (libvpx's `cpu_used`, -16 to 16): negative is a fixed speed, lower being
+    /// slower and better; positive lets libvpx choose its speed from how long frames take,
+    /// which on a fast machine settles at 4. The default, a fixed 2, sends a better picture in
+    /// the same or fewer bits (so clients decode no more) for about 1 ms more encoding a frame
+    /// (`docs/research/encode-speed-2026-11.md`). H.264 has no such setting.
+    #[arg(long, env = "SovEmu__Streaming__Video__CpuUsed", default_value_t = -2,
+          allow_negative_numbers = true, value_parser = clap::value_parser!(i32).range(-16..=16))]
+    pub video_cpu_used: i32,
+
     /// Opus audio bitrate for game streams, kbit/s.
     #[arg(long, env = "SovEmu__Streaming__Audio__Kbps", default_value_t = 128)]
     pub audio_kbps: u32,
@@ -1235,6 +1244,7 @@ pub async fn build_state(mut config: Config) -> Result<AppState> {
         video_codec: config.video_codec.clone(),
         video_encoder: config.video_encoder.clone(),
         video_screen_content: config.video_screen_content,
+        video_cpu_used: config.video_cpu_used,
         replay_frames: config.debug_replay_frames.clone(),
         start_timeout: std::time::Duration::from_secs(config.worker_start_timeout),
         stop_timeout: std::time::Duration::from_secs(config.worker_stop_timeout),
@@ -1815,6 +1825,19 @@ mod tests {
             assert!(!summary.contains(secret), "{secret} in {summary}");
         }
         assert!(Config::try_parse_from(["sovemu-server", "--log-format", "xml"]).is_err());
+    }
+
+    #[test]
+    fn the_vp8_speed_is_a_fixed_2_unless_set() {
+        assert_eq!(Config::parse_from(["sovemu-server"]).video_cpu_used, -2);
+        let speed = |given: &str| {
+            Config::try_parse_from(["sovemu-server", "--video-cpu-used", given])
+                .map(|c| c.video_cpu_used)
+        };
+        assert_eq!(speed("-16").unwrap(), -16, "a negative value is a speed, not a flag");
+        assert_eq!(speed("8").unwrap(), 8, "the old adaptive speed is still available");
+        assert!(speed("17").is_err());
+        assert!(speed("-17").is_err());
     }
 
     #[test]
