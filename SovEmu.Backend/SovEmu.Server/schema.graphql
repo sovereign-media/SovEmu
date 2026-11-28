@@ -833,16 +833,32 @@ type ClientStreamStats {
 	Button to frame, as the client measures it (the display's own lag comes on top).
 	"""
 	inputToFrameMs: Float
+	"""
+	The input round trip, median and 95th percentile.
+	"""
 	inputRttMs: Float
+	inputRttP95Ms: Float
 	netRttMs: Float
 	jitterMs: Float
 	decodeMs: Float
 	fps: Float
 	kbps: Float
 	"""
-	Packets lost since the stream began.
+	Packets lost, and frames dropped (not decoded in time, or not shown), since the stream
+	began.
 	"""
 	packetsLost: Float
+	framesDropped: Float
+	"""
+	The picture the player decodes.
+	"""
+	width: Int
+	height: Int
+	"""
+	How the player reaches the worker: `direct`, or through the relay over `relay-udp`,
+	`relay-tcp` or `relay-tls`.
+	"""
+	path: String
 	"""
 	The player's video decoder.
 	"""
@@ -3336,6 +3352,27 @@ type StreamHealth {
 	The send-bandwidth estimate, kbit/s.
 	"""
 	estimateKbps: Float
+	"""
+	In the interval: frames encoded, and of those the ones dropped before they left (the
+	send queue was full).
+	"""
+	encoded: Float!
+	unsent: Float!
+	"""
+	Keyframes sent, keyframes the player asked for (after loss), and asks ignored (a burst
+	answered with one keyframe).
+	"""
+	keyframes: Float!
+	keyframeRequests: Float!
+	keyframeRequestsIgnored: Float!
+	"""
+	Times the player went silent (Wi-Fi, mostly) and was heard again.
+	"""
+	dropouts: Float!
+	"""
+	The largest frame, bytes.
+	"""
+	largestFrame: Float!
 }
 
 """

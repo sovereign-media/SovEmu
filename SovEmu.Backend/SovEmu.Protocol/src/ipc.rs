@@ -191,6 +191,24 @@ pub struct SessionHealth {
     /// The send-bandwidth estimate, where there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate_kbps: Option<u64>,
+    /// In the interval: frames encoded, and of those the ones the send queue refused (dropped
+    /// before they left); keyframes sent, keyframes the client asked for and asks ignored (a
+    /// burst answered with one); dropouts (the client silent, then heard again); and the
+    /// largest frame, bytes. What explains a stutter, beside the means above.
+    #[serde(default)]
+    pub encoded: u64,
+    #[serde(default)]
+    pub unsent: u64,
+    #[serde(default)]
+    pub keyframes: u64,
+    #[serde(default)]
+    pub keyframe_requests: u64,
+    #[serde(default)]
+    pub keyframe_requests_ignored: u64,
+    #[serde(default)]
+    pub dropouts: u64,
+    #[serde(default)]
+    pub largest_frame: u64,
 }
 
 /// Why a worker stopped on its own terms, in [`Reply::Exiting`].

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { clientSummary, decoderSummary, durationLabel, failureLabel, frameWorkLabel, healthSummary } from "./sessions";
+import {
+  clientSummary,
+  decoderSummary,
+  durationLabel,
+  failureLabel,
+  frameWorkLabel,
+  healthSummary,
+  playerLinkLabel,
+  streamEventsLabel,
+} from "./sessions";
 
 describe("sessions page", () => {
   it("says how long a game has run", () => {
@@ -20,7 +29,56 @@ describe("sessions page", () => {
     videoKbps: 1820.4,
     videoKbpsTarget: 2500,
     estimateKbps: null,
+    encoded: 600,
+    unsent: 0,
+    keyframes: 0,
+    keyframeRequests: 0,
+    keyframeRequestsIgnored: 0,
+    dropouts: 0,
+    largestFrame: 9000,
   };
+
+  it("says what happened to the stream only when something did", () => {
+    expect(streamEventsLabel(health)).toBeNull();
+    expect(
+      streamEventsLabel({
+        ...health,
+        keyframes: 2,
+        keyframeRequests: 5,
+        keyframeRequestsIgnored: 3,
+        dropouts: 1,
+        unsent: 4,
+        largestFrame: 38_900,
+      }),
+    ).toBe("2 keyframes (5 asked, 3 ignored) · 1 dropout · 4 of 600 frames not sent · largest 38 KB");
+    expect(streamEventsLabel({ ...health, keyframes: 1, keyframeRequests: 1 })).toBe(
+      "1 keyframe (1 asked) · largest 9 KB",
+    );
+  });
+
+  it("says how the player reaches the stream", () => {
+    const link = {
+      estimateMs: null,
+      inputToFrameMs: null,
+      netRttMs: null,
+      decodeMs: null,
+      fps: null,
+      kbps: null,
+      decoder: null,
+      lowLatencyDecode: null,
+      path: "relay-tcp",
+      width: 1280,
+      height: 720,
+      inputRttMs: 24,
+      inputRttP95Ms: 61,
+      packetsLost: 12,
+      framesDropped: 3,
+    };
+    expect(playerLinkLabel({ clientStats: link })).toBe(
+      "relay-tcp · 1280×720 · input round trip 24 / 61 ms (p95) · 12 lost · 3 dropped",
+    );
+    expect(playerLinkLabel({ clientStats: null })).toBeNull();
+  });
 
   it("sums up the worker's health against the game's frame rate", () => {
     const pipeline = { fps: 59.94 } as NonNullable<Parameters<typeof healthSummary>[0]["pipeline"]>;
@@ -56,6 +114,11 @@ describe("sessions page", () => {
       fps: 60,
       kbps: 900,
       packetsLost: 0,
+      inputRttP95Ms: null as number | null,
+      framesDropped: null as number | null,
+      width: null as number | null,
+      height: null as number | null,
+      path: null as string | null,
     };
     expect(clientSummary({ clientStats: stats })).toBe("~45 ms button→pixel · decode 3.1 ms");
     expect(clientSummary({ clientStats: { ...stats, packetsLost: 3 } })).toBe(

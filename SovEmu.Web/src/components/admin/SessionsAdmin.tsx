@@ -16,6 +16,8 @@ import {
   failureLabel,
   frameWorkLabel,
   healthSummary,
+  playerLinkLabel,
+  streamEventsLabel,
 } from "../../lib/sessions";
 import { Button } from "../ui/button";
 import { Confirm, Pill, Tooltip } from "../ui/primitives";
@@ -79,6 +81,8 @@ function Details({ s }: DetailsProps) {
         }`,
       ],
     );
+    const events = streamEventsLabel(h);
+    if (events) rows.push(["Stream events", events]);
   }
   const c = s.clientStats;
   if (c) {
@@ -87,6 +91,8 @@ function Details({ s }: DetailsProps) {
       rows.push(["Button→frame", `${ms(c.inputToFrameMs)} measured on the player's device`]);
     const decoder = decoderSummary(s);
     if (decoder) rows.push(["Player's decoder", decoder]);
+    const link = playerLinkLabel(s);
+    if (link) rows.push(["Player's link", link]);
     rows.push([
       "Player's view",
       `input round trip ${ms(c.inputRttMs)} · network ${ms(c.netRttMs)} · decode ${ms(c.decodeMs)}`,

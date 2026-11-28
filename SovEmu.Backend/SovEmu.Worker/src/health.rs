@@ -257,6 +257,13 @@ impl Health {
             video_kbps: window.video_kbps(),
             video_kbps_target: at.video_kbps_target,
             estimate_kbps: at.estimate_kbps,
+            encoded: window.encoded,
+            unsent: window.unsent,
+            keyframes: window.keyframes,
+            keyframe_requests: window.keyframe_requests,
+            keyframe_requests_ignored: window.keyframe_requests_ignored,
+            dropouts: window.dropouts,
+            largest_frame: window.largest_frame,
         })
     }
 

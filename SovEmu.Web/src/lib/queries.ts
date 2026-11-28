@@ -931,16 +931,28 @@ export const ActiveSessionsQuery = graphql(`
         videoKbps
         videoKbpsTarget
         estimateKbps
+        encoded
+        unsent
+        keyframes
+        keyframeRequests
+        keyframeRequestsIgnored
+        dropouts
+        largestFrame
       }
       clientStats {
         estimateMs
         inputToFrameMs
         inputRttMs
+        inputRttP95Ms
         netRttMs
         decodeMs
         fps
         kbps
         packetsLost
+        framesDropped
+        width
+        height
+        path
         decoder
         lowLatencyDecode
       }
