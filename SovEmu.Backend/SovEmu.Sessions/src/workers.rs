@@ -258,22 +258,52 @@ pub struct Live {
     /// The device behind the current offer (the server's name for it), for what its decoder
     /// measures.
     device: Option<String>,
-    /// The client's decode times since its offer: their sum in ms, and how many.
+    /// The client's decode times since its offer: their sum in ms, and how many; and how many
+    /// reports carried one, warm-up included.
     decode_ms_sum: f64,
     decode_samples: u32,
+    decode_seen: u32,
 }
+
+/// A client's first reports with a decode time are its decoder warming up: not counted.
+const DECODE_WARMUP: u32 = 3;
+/// Reports at a lower frame rate are a paused game (a menu open) or a stall: not counted.
+const DECODE_MIN_FPS: f64 = 10.0;
+/// A client that leaves with at least this many counted reports since the last told mean has
+/// its mean told then, so a short session counts too.
+const DECODE_FLUSH_MIN: u32 = 5;
 
 impl Live {
     /// Takes a client's report: its decode time joins the mean, and every
     /// [`crate::DECODE_REPORT_SAMPLES`] reports the mean so far is returned to be told, with
     /// the device and codec it was measured on.
     fn measure(&mut self, stats: &ClientStats) -> Option<(String, String, f64, u32)> {
-        let decode_ms = stats.decode_ms.filter(|ms| ms.is_finite() && *ms >= 0.0)?;
+        let decode_ms = stats.decode_ms.filter(|ms| ms.is_finite() && *ms > 0.0)?;
+        self.decode_seen += 1;
+        if self.decode_seen <= DECODE_WARMUP || stats.fps.is_some_and(|fps| fps < DECODE_MIN_FPS) {
+            return None;
+        }
         self.decode_ms_sum += decode_ms;
         self.decode_samples += 1;
         if !self.decode_samples.is_multiple_of(crate::DECODE_REPORT_SAMPLES) {
             return None;
         }
+        self.told_mean()
+    }
+
+    /// The client is going (it left, or another replaced it): the mean of what it measured
+    /// since the last told, if there is enough of it, and the count starts over.
+    fn flush(&mut self) -> Option<(String, String, f64, u32)> {
+        let untold = self.decode_samples % crate::DECODE_REPORT_SAMPLES;
+        let told = (untold >= DECODE_FLUSH_MIN).then(|| self.told_mean()).flatten();
+        self.decode_ms_sum = 0.0;
+        self.decode_samples = 0;
+        self.decode_seen = 0;
+        told
+    }
+
+    /// The mean so far, with the device and codec it was measured on.
+    fn told_mean(&self) -> Option<(String, String, f64, u32)> {
         let device = self.device.clone()?;
         let codec = self.pipeline.as_ref()?.video.codec.clone();
         Some((
@@ -282,6 +312,18 @@ impl Live {
             self.decode_ms_sum / f64::from(self.decode_samples),
             self.decode_samples,
         ))
+    }
+}
+
+/// Tells the observer a mean decode time [`Live::measure`] or [`Live::flush`] gave.
+fn tell_decoded(observer: &dyn Observer, measured: Option<(String, String, f64, u32)>) {
+    if let Some((device, codec, mean_ms, samples)) = measured {
+        observer.decode_measured(&crate::Decoded {
+            device: &device,
+            codec: &codec,
+            mean_ms,
+            samples,
+        });
     }
 }
 
@@ -636,11 +678,13 @@ impl Session {
         match self.request(|id| Request::Offer { id, offer, codec }).await? {
             Reply::Answer { answer, .. } => {
                 // A new client: its decoder's times start over.
+                // (A client it replaced was told as it disconnected.)
                 self.with_live(|live| {
                     live.codec_choice = choice;
                     live.device = device;
                     live.decode_ms_sum = 0.0;
                     live.decode_samples = 0;
+                    live.decode_seen = 0;
                 });
                 Ok(answer)
             }
@@ -1069,7 +1113,12 @@ impl Workers {
                     Reply::ClientConnected => reader.connected.store(true, Ordering::Relaxed),
                     Reply::ClientDisconnected => {
                         reader.connected.store(false, Ordering::Relaxed);
-                        reader.with_live(|live| live.client_stats = None);
+                        let mut measured = None;
+                        reader.with_live(|live| {
+                            live.client_stats = None;
+                            measured = live.flush();
+                        });
+                        tell_decoded(observer.as_ref(), measured);
                     }
                     Reply::Pipeline { pipeline } => {
                         reader.with_live(|live| live.pipeline = Some(pipeline));
@@ -1081,14 +1130,7 @@ impl Workers {
                             measured = live.measure(&stats);
                             live.client_stats = Some((stats, Instant::now()));
                         });
-                        if let Some((device, codec, mean_ms, samples)) = measured {
-                            observer.decode_measured(&crate::Decoded {
-                                device: &device,
-                                codec: &codec,
-                                mean_ms,
-                                samples,
-                            });
-                        }
+                        tell_decoded(observer.as_ref(), measured);
                     }
                     Reply::Answer { id, .. } | Reply::Done { id } | Reply::Error { id, .. } => {
                         let waiter =
@@ -1103,8 +1145,12 @@ impl Workers {
                     | Reply::Failed { .. } => {}
                 }
             }
-            // The worker is going (idle timeout, shutdown, a crash): nothing more will answer.
+            // The worker is going (idle timeout, shutdown, a crash): nothing more will answer,
+            // and what its client measured since the last told mean is told now.
             reader.pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            let mut measured = None;
+            reader.with_live(|live| measured = live.flush());
+            tell_decoded(observer.as_ref(), measured);
         });
         Ok(session)
     }
@@ -1621,9 +1667,17 @@ exit 2
         let mut live = Live { device: Some("family-1".into()), ..Live::default() };
         let video = sovemu_protocol::VideoPath { codec: "vp8".into(), ..Default::default() };
         live.pipeline = Some(Pipeline { video, ..Pipeline::default() });
-        // Reports with no decode time, or a senseless one, are not counted.
+        // Reports with no decode time, or a senseless one, are not counted; nor are the
+        // decoder's first, warming up, nor any from a paused game.
         assert_eq!(live.measure(&stats(None)), None);
         assert_eq!(live.measure(&stats(Some(f64::NAN))), None);
+        assert_eq!(live.measure(&stats(Some(0.0))), None);
+        for _ in 0..DECODE_WARMUP {
+            assert_eq!(live.measure(&stats(Some(40.0))), None);
+        }
+        let paused =
+            ClientStats { decode_ms: Some(40.0), fps: Some(0.0), ..ClientStats::default() };
+        assert_eq!(live.measure(&paused), None);
         let mut told = Vec::new();
         for n in 0..crate::DECODE_REPORT_SAMPLES * 2 {
             told.extend(live.measure(&stats(Some(if n % 2 == 0 { 6.0 } else { 8.0 }))));
@@ -1636,6 +1690,18 @@ exit 2
                 ("family-1".to_owned(), "vp8".to_owned(), 7.0, twenty * 2)
             ]
         );
+        // A client leaving with a few reports since the last mean has them told; with fewer,
+        // nothing. Either way its count starts over.
+        for _ in 0..DECODE_FLUSH_MIN {
+            live.measure(&stats(Some(9.0)));
+        }
+        let flushed = live.flush().unwrap();
+        assert_eq!(
+            (flushed.2 * 100.0).round() / 100.0,
+            ((7.0 * 40.0 + 9.0 * 5.0) / 45.0 * 100.0_f64).round() / 100.0
+        );
+        assert_eq!(flushed.3, twenty * 2 + DECODE_FLUSH_MIN);
+        assert_eq!(live.flush(), None);
         // Nothing is told of a client whose device is not known (it sent no capabilities).
         let mut unknown = Live { pipeline: live.pipeline.clone(), ..Live::default() };
         for _ in 0..twenty {
