@@ -15,6 +15,11 @@
 //! - **Audio:** 48 kHz at 60 fps, so exactly 800 stereo frames per video frame, of a 440 Hz
 //!   sine. All but the last arrive through the batch callback; the last through the single-
 //!   sample one.
+//! - **Skipped output:** each frame asks `GET_AUDIO_VIDEO_ENABLE`. A frame whose video is off
+//!   is not drawn (in GL mode, the framebuffer is not cleared) and one whose audio is off is not
+//!   synthesised, the sine's phase moving on all the same, so the state comes out as it would
+//!   have. Both are still presented, the stale picture and silence, as a core that ignores the
+//!   flag would: the frontend must drop them.
 //! - **Input:** read once per frame through `RETRO_DEVICE_ID_JOYPAD_MASK`.
 //! - **Save states:** 16 bytes, the frame counter and the sine phase.
 //! - **Content:** optional (`SET_SUPPORT_NO_GAME`). Loaded content's size is logged.
@@ -496,6 +501,10 @@ pub extern "C" fn retro_run() {
 
     let mut updated = false;
     env(ffi::RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, (&raw mut updated).cast());
+    let mut av: std::ffi::c_int = 0b11;
+    env(ffi::RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, (&raw mut av).cast());
+    let video_on = av & ffi::retro_av_enable_flags::RETRO_AV_ENABLE_VIDEO as std::ffi::c_int != 0;
+    let audio_on = av & ffi::retro_av_enable_flags::RETRO_AV_ENABLE_AUDIO as std::ffi::c_int != 0;
     let refresh_pattern = updated || STATE.lock().unwrap().frame == 0;
     let pattern = if refresh_pattern { Some(read_pattern()) } else { None };
 
@@ -507,7 +516,7 @@ pub extern "C" fn retro_run() {
 
     // Video.
     let dupe = buttons & (1 << ffi::RETRO_DEVICE_ID_JOYPAD_SELECT) != 0;
-    if !dupe {
+    if !dupe && video_on {
         let stride = PITCH / 4;
         let pattern = s.pattern;
         for y in 0..HEIGHT as usize {
@@ -533,7 +542,8 @@ pub extern "C" fn retro_run() {
     s.audio.clear();
     let step = TONE_HZ / SAMPLE_RATE;
     for _ in 0..SAMPLES_PER_FRAME {
-        let v = ((s.phase * std::f64::consts::TAU).sin() * 8000.0) as i16;
+        let v =
+            if audio_on { ((s.phase * std::f64::consts::TAU).sin() * 8000.0) as i16 } else { 0 };
         s.audio.extend_from_slice(&[v, v]);
         s.phase = (s.phase + step).fract();
     }
@@ -554,8 +564,11 @@ pub extern "C" fn retro_run() {
     let gl_mode = HW.lock().unwrap().callback.is_some();
     if gl_mode {
         if let Some(video) = cb.video {
-            let data =
-                if !dupe && draw_gl() { usize::MAX as *const c_void } else { std::ptr::null() };
+            let data = if !dupe && (!video_on || draw_gl()) {
+                usize::MAX as *const c_void
+            } else {
+                std::ptr::null()
+            };
             let (w, h) = *GL_SIZE.lock().unwrap();
             // SAFETY: RETRO_HW_FRAME_BUFFER_VALID (all bits set) or a dupe.
             unsafe { video(data, w, h, 0) };

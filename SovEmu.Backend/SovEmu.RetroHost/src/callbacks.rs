@@ -6,7 +6,7 @@
 //! `retro_run`, `retro_load_game` and friends, and holding the lock there would deadlock.
 
 use std::collections::{BTreeMap, HashSet};
-use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use std::ffi::{CStr, CString, c_char, c_uint, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -72,6 +72,8 @@ pub(crate) struct HostState {
     /// The core's disk control (`SET_DISK_CONTROL_[EXT_]INTERFACE`): a multi-disc game's
     /// tray and disc index.
     pub disk: Option<DiskControl>,
+    /// What of the running frame's output is wanted ([`crate::Keep`]).
+    pub keep: crate::Keep,
 }
 
 /// A core's disk-control functions: the part of `retro_disk_control_[ext_]callback` SovEmu
@@ -368,8 +370,7 @@ impl HostState {
                     (1u64 << ffi::RETRO_DEVICE_JOYPAD) | (1u64 << ffi::RETRO_DEVICE_ANALOG),
                 ),
                 ffi::RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE => {
-                    // Bit 0: video enabled, bit 1: audio enabled.
-                    write(data, 0b11 as c_int)
+                    write(data, self.keep.av_enable_flags())
                 }
                 ffi::RETRO_ENVIRONMENT_GET_FASTFORWARDING => write(data, false),
                 // Information the core offers that SovEmu does not use yet; accepting it is
@@ -646,8 +647,9 @@ pub(crate) unsafe extern "C" fn video_refresh(
     pitch: usize,
 ) {
     with(|s| {
-        // A null frame is a dupe (we answered GET_CAN_DUPE): the previous frame stands.
-        if data.is_null() {
+        // A null frame is a dupe (we answered GET_CAN_DUPE): the previous frame stands. A
+        // picture nobody will see is dropped, whether or not the core skipped drawing it.
+        if data.is_null() || !s.keep.video {
             return;
         }
         // A GPU core rendered into the framebuffer: `Core::run_frame` reads it back.
@@ -664,7 +666,11 @@ pub(crate) unsafe extern "C" fn video_refresh(
 }
 
 pub(crate) unsafe extern "C" fn audio_sample(left: i16, right: i16) {
-    with(|s| s.audio.extend_from_slice(&[left, right]));
+    with(|s| {
+        if s.keep.audio {
+            s.audio.extend_from_slice(&[left, right]);
+        }
+    });
 }
 
 pub(crate) unsafe extern "C" fn audio_sample_batch(data: *const i16, frames: usize) -> usize {
@@ -673,7 +679,11 @@ pub(crate) unsafe extern "C" fn audio_sample_batch(data: *const i16, frames: usi
     }
     // SAFETY: the core passes `frames` interleaved stereo frames.
     let samples = unsafe { std::slice::from_raw_parts(data, frames * 2) };
-    with(|s| s.audio.extend_from_slice(samples));
+    with(|s| {
+        if s.keep.audio {
+            s.audio.extend_from_slice(samples);
+        }
+    });
     frames
 }
 

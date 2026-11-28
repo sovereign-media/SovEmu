@@ -21,7 +21,7 @@ mod stdio;
 mod video;
 
 pub use crate::core::{
-    AvInfo, Core, CoreCategory, CoreOptions, CoreVariable, Discs, FrameOutput, FrameTiming,
+    AvInfo, Core, CoreCategory, CoreOptions, CoreVariable, Discs, FrameOutput, FrameTiming, Keep,
     SystemInfo,
 };
 pub use crate::error::Error;

@@ -199,7 +199,9 @@ frame or more after reading it; with run-ahead the worker runs each frame, saves
 runs N more frames with the same input, shows the last one's picture and puts the state back.
 A press then shows up N frames (about 17 ms each at 60 fps) sooner, while the game's real
 timeline and its sound are untouched. Most games need 1 or 2; too many and the game visibly
-skips ahead. Each frame costs N more emulated frames and a save state, so it is only for the
+skips ahead. Only the picture shown is drawn: the core is told it may skip drawing the real
+frame and every frame ahead but the last, and their sound. Each frame still costs N more
+emulated frames and a save state, so it is only for the
 systems that render in software (not N64, Dreamcast, GameCube or PS2), and a worker that
 cannot keep up runs fewer frames ahead by itself. It is on by default, 1 frame on every
 system that supports it; change it per system with `SovEmu__Systems__<id>__RunAhead` (0 to 4,

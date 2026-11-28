@@ -8,7 +8,9 @@ use std::sync::{Mutex, MutexGuard};
 mod locate;
 use locate::test_core;
 
-use sovemu_retro_host::{Core, CoreOptions, Discs, Error, GpuChoice, JoypadButtons, PixelFormat};
+use sovemu_retro_host::{
+    Core, CoreOptions, Discs, Error, GpuChoice, JoypadButtons, Keep, PixelFormat,
+};
 
 const WIDTH: u32 = 256;
 const HEIGHT: u32 = 224;
@@ -106,6 +108,56 @@ fn a_duped_frame_keeps_the_previous_one() {
     assert!(!out.video_updated);
     assert_eq!(*out.video, first);
     assert_eq!(out.audio.len(), SAMPLES_PER_FRAME * 2, "audio continues through a dupe");
+}
+
+/// The first left sample of frame `n`: the 440 Hz sine, 800 samples a frame from phase 0.
+fn first_sample(n: u64) -> i16 {
+    let phase = (n as f64 * SAMPLES_PER_FRAME as f64 * 440.0 / 48_000.0).fract();
+    ((phase * std::f64::consts::TAU).sin() * 8000.0) as i16
+}
+
+#[test]
+fn a_frame_run_without_its_picture_or_sound_leaves_the_game_where_it_would_be() {
+    let _guard = lock();
+    let mut core = load_running(options());
+    let first = core.run_frame(&[]).unwrap().video.clone();
+
+    // Nothing kept: no picture (the last one stands) and no sound.
+    let out = core.run_frame_keeping(&[], Keep::NOTHING).unwrap();
+    assert!(!out.video_updated, "the core presented a picture that was not wanted");
+    assert_eq!(*out.video, first);
+    assert!(out.audio.is_empty());
+
+    // Sound alone, then the picture alone.
+    let out = core.run_frame_keeping(&[], Keep::AUDIO).unwrap();
+    assert!(!out.video_updated);
+    assert_eq!(out.audio.len(), SAMPLES_PER_FRAME * 2);
+    assert_eq!(out.audio[0], first_sample(2));
+    let out = core.run_frame_keeping(&[], Keep::VIDEO).unwrap();
+    assert!(out.video_updated);
+    assert_eq!(pixel(&out.video.to_rgba8(), 7, 9), expected_pixel(7, 9, 3, 0));
+    assert!(out.audio.is_empty());
+
+    // And a whole frame again: frame 4, its picture and sound as if all were kept throughout.
+    let out = core.run_frame(&[]).unwrap();
+    assert_eq!(pixel(&out.video.to_rgba8(), 7, 9), expected_pixel(7, 9, 4, 0));
+    assert_eq!(out.audio[0], first_sample(4));
+}
+
+#[test]
+fn a_state_written_into_a_kept_buffer_reuses_it() {
+    let _guard = lock();
+    let mut core = load_running(options());
+    let mut state = vec![0xAA; 4096];
+    let capacity = state.capacity();
+    core.run_frame(&[]).unwrap();
+    core.serialize_into(&mut state).unwrap();
+    assert_eq!(state, core.serialize().unwrap(), "the same state, at the state's size");
+    assert_eq!(state.capacity(), capacity, "no new allocation");
+    let shown = core.run_frame(&[]).unwrap().video.clone();
+    core.run_frame(&[]).unwrap();
+    core.unserialize(&state).unwrap();
+    assert_eq!(*core.run_frame(&[]).unwrap().video, shown);
 }
 
 #[test]

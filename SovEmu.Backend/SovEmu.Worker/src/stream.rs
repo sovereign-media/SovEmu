@@ -25,7 +25,7 @@ use sovemu_protocol::{
     seq_is_newer,
 };
 use sovemu_retro_host::{
-    AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, PixelFormat, VideoFrame,
+    AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, Keep, PixelFormat, VideoFrame,
 };
 use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::SdpOffer;
@@ -1391,18 +1391,24 @@ impl Session {
             let core = &mut self.core;
             self.rewind.step_back(|state| core.unserialize(state));
         } else if hotkeys.fast_forward {
+            // Only the last frame of the tick is seen and heard: the others are run for their
+            // time alone.
             for _ in 1..self.fast_forward {
-                self.core.run_frame(&self.buttons)?;
+                self.core.run_frame_keeping(&self.buttons, Keep::NOTHING)?;
                 self.frame += 1;
                 let core = &mut self.core;
-                self.rewind.record(|| core.serialize());
+                self.rewind.record(|state| core.serialize_into(state));
             }
         }
 
         // A held state's boot is never seen, so it gets no input: a button pressed at the
         // loading screen must not reach a BIOS menu, or be held into the game.
         let input: &[JoypadButtons] = if self.pending_load.is_some() { &[] } else { &self.buttons };
-        let out = self.core.run_frame(input)?;
+        // Running ahead, the picture shown is a frame ahead's: the real frame's is not drawn.
+        let ahead = !hotkeys.rewind && !hotkeys.fast_forward && self.pending_load.is_none();
+        let keep =
+            if ahead && self.run_ahead.hides_real_picture() { Keep::AUDIO } else { Keep::ALL };
+        let out = self.core.run_frame_keeping(input, keep)?;
         let frame = self.frame;
         self.frame += 1;
         let tick = self.ticks;
@@ -1438,7 +1444,7 @@ impl Session {
                 // Still behind the loading screen: what costs time once is paid here, not
                 // on the first frames the player sees and plays.
                 let core = &mut self.core;
-                self.rewind.trial(|| core.serialize());
+                self.rewind.trial(|state| core.serialize_into(state));
                 self.start_continued_play(p);
                 tracing::info!(
                     slot,
@@ -1476,12 +1482,12 @@ impl Session {
 
         // The picture runs ahead of the real frame, hiding the game's own input lag; not while
         // rewinding or fast-forwarding, whose pictures are meant to be elsewhere in time.
-        if !hotkeys.rewind
-            && !hotkeys.fast_forward
-            && let Some(ahead) =
+        if ahead
+            && let Some(size) =
                 self.run_ahead.picture(&mut self.core, &self.buttons, &mut self.picture)?
         {
-            picture = Some(ahead);
+            self.drawn = true;
+            picture = Some(size);
         }
 
         if picture.is_some()
@@ -1537,8 +1543,16 @@ impl Session {
         }
 
         if !hotkeys.rewind {
-            let core = &mut self.core;
-            self.rewind.record(|| core.serialize());
+            // Run-ahead has just taken this very state: copied, it costs a memcpy.
+            let (core, taken) = (&mut self.core, self.run_ahead.take_state());
+            self.rewind.record(|state| match taken {
+                Some(taken) => {
+                    state.clear();
+                    state.extend_from_slice(taken);
+                    Ok(())
+                }
+                None => core.serialize_into(state),
+            });
         }
         self.persist.tick(&mut self.core, now);
         self.health.ticked(behind, now.elapsed());

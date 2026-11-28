@@ -630,6 +630,95 @@ fn a_leaking_core_is_stopped_by_its_memory_limit_and_its_saves_are_written() {
     assert!(auto_state.exists(), "no auto state at {}", auto_state.display());
 }
 
+/// With run-ahead, the picture sent is a frame ahead's and the real frame's is never drawn:
+/// the stream still sends a picture every tick, and it moves.
+#[test]
+fn run_ahead_streams_the_picture_of_a_frame_ahead() {
+    str0m::crypto::from_feature_flags().install_process_default();
+    let mut worker = Worker::start_with(&["--run-ahead".as_ref(), "2".as_ref()]);
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let mut client = VideoClient::connect(&mut worker, socket);
+    let mut h264 = H264Decoder::new().unwrap();
+    let mut lumas = Vec::new();
+    client.receive(Duration::from_secs(30), |data| {
+        if let Ok(Some(picture)) = h264.decode(&data.data) {
+            lumas.push(picture.luma);
+        }
+        lumas.len() < 30
+    });
+    assert_eq!(lumas.len(), 30, "decoded {} pictures in 30 s", lumas.len());
+    // The test core's gradient moves a step every frame: no two pictures in a row alike.
+    assert!(lumas.windows(2).all(|w| w[0] != w[1]), "a picture repeated");
+}
+
+/// A client that receives video alone, over a socket of its own.
+struct VideoClient {
+    rtc: str0m::Rtc,
+    socket: UdpSocket,
+    local: SocketAddr,
+}
+
+impl VideoClient {
+    /// Offers to receive video and applies the worker's answer.
+    fn connect(worker: &mut Worker, socket: UdpSocket) -> Self {
+        // Room for a burst, should the test fall behind the stream.
+        socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
+        let local = socket.local_addr().unwrap();
+        let mut rtc = RtcConfig::new().build(Instant::now());
+        rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
+        let mut api = rtc.sdp_api();
+        api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+        let (offer, pending) = api.apply().expect("an offer");
+        let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
+        let (status, body) =
+            worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
+        assert_eq!(status, 200, "{body}");
+        let answer: SessionDescription = serde_json::from_str(&body).unwrap();
+        let answer = SdpAnswer::from_sdp_string(&answer.sdp).unwrap();
+        rtc.sdp_api().accept_answer(pending, answer).unwrap();
+        Self { rtc, socket, local }
+    }
+
+    /// Runs the connection, handing each video frame to `frame`, until it returns false.
+    /// Fails if that takes longer than `limit`.
+    fn receive(
+        &mut self,
+        limit: Duration,
+        mut frame: impl FnMut(&str0m::media::MediaData) -> bool,
+    ) {
+        let started = Instant::now();
+        let mut buf = vec![0u8; 2048];
+        loop {
+            assert!(started.elapsed() < limit, "still receiving after {limit:?}");
+            let timeout = match self.rtc.poll_output().unwrap() {
+                Output::Transmit(t) => {
+                    self.socket.send_to(&t.contents, t.destination).unwrap();
+                    continue;
+                }
+                Output::Event(Event::MediaData(data)) => {
+                    if !frame(&data) {
+                        return;
+                    }
+                    continue;
+                }
+                Output::Event(_) => continue,
+                Output::Timeout(t) => t,
+            };
+            let wait = timeout
+                .saturating_duration_since(Instant::now())
+                .clamp(Duration::from_millis(1), Duration::from_millis(10));
+            self.socket.set_read_timeout(Some(wait)).unwrap();
+            if let Ok((n, source)) = self.socket.recv_from(&mut buf) {
+                let contents = buf[..n].try_into().unwrap();
+                let destination = self.local;
+                let receive = Receive { proto: Protocol::Udp, source, destination, contents };
+                self.rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
+            }
+            self.rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
+        }
+    }
+}
+
 /// A benchmark, not a check: how evenly frames reach a client. Streams the test core for
 /// `SOVEMU_BENCH_SECONDS` (20 by default), over IPv6 too with `SOVEMU_BENCH_IPV6=1` (the worker's
 /// two-socket path), and prints how late each frame arrived against its RTP timestamp, after the
@@ -654,52 +743,17 @@ fn frame_pacing() {
         return;
     };
     let mut worker = Worker::start_with(&extra);
-    socket2::SockRef::from(&socket).set_recv_buffer_size(4 << 20).ok();
-    let local = socket.local_addr().unwrap();
-    let mut rtc = RtcConfig::new().build(Instant::now());
-    rtc.add_local_candidate(Candidate::host(local, "udp").unwrap());
-    let mut api = rtc.sdp_api();
-    api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
-    let (offer, pending) = api.apply().expect("an offer");
-    let request = SessionDescription { kind: SdpKind::Offer, sdp: offer.to_sdp_string() };
-    let (status, body) =
-        worker.request("POST", "/api/offer", &serde_json::to_string(&request).unwrap());
-    assert_eq!(status, 200, "{body}");
-    let answer: SessionDescription = serde_json::from_str(&body).unwrap();
-    rtc.sdp_api().accept_answer(pending, SdpAnswer::from_sdp_string(&answer.sdp).unwrap()).unwrap();
+    let mut client = VideoClient::connect(&mut worker, socket);
 
     // (arrival, the frame's RTP time in seconds), from the first frame on.
     let mut frames: Vec<(Instant, f64)> = Vec::new();
-    let mut buf = vec![0u8; 2048];
-    let started = Instant::now();
     let mut first: Option<Instant> = None;
-    while first.is_none_or(|f| f.elapsed() < Duration::from_secs(seconds)) {
-        assert!(started.elapsed() < Duration::from_secs(seconds + 30), "no video");
-        let timeout = match rtc.poll_output().unwrap() {
-            Output::Transmit(t) => {
-                socket.send_to(&t.contents, t.destination).unwrap();
-                continue;
-            }
-            Output::Event(Event::MediaData(data)) => {
-                let now = Instant::now();
-                first.get_or_insert(now);
-                frames.push((now, data.time.as_seconds()));
-                continue;
-            }
-            Output::Event(_) => continue,
-            Output::Timeout(t) => t,
-        };
-        let wait = timeout
-            .saturating_duration_since(Instant::now())
-            .clamp(Duration::from_millis(1), Duration::from_millis(10));
-        socket.set_read_timeout(Some(wait)).unwrap();
-        if let Ok((n, source)) = socket.recv_from(&mut buf) {
-            let contents = buf[..n].try_into().unwrap();
-            let receive = Receive { proto: Protocol::Udp, source, destination: local, contents };
-            rtc.handle_input(Input::Receive(Instant::now(), receive)).unwrap();
-        }
-        rtc.handle_input(Input::Timeout(Instant::now())).unwrap();
-    }
+    client.receive(Duration::from_secs(seconds + 30), |data| {
+        let now = Instant::now();
+        first.get_or_insert(now);
+        frames.push((now, data.time.as_seconds()));
+        first.is_some_and(|f| f.elapsed() < Duration::from_secs(seconds))
+    });
 
     // The first two seconds start the stream (its keyframe, the encoder settling): left out.
     let steady: Vec<_> = frames

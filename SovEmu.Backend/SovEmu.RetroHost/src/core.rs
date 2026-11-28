@@ -119,6 +119,41 @@ pub struct CoreCategory {
     pub info: String,
 }
 
+/// What of a frame's output is wanted ([`Core::run_frame_keeping`]). What is not kept, the core
+/// is told it may skip (`GET_AUDIO_VIDEO_ENABLE`), and the frontend drops whatever comes anyway:
+/// no copy of the picture, no reading a GPU frame back. A frame whose picture is never shown (a
+/// run-ahead frame before the last, a fast-forward frame) costs only its emulation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Keep {
+    pub video: bool,
+    pub audio: bool,
+}
+
+impl Keep {
+    pub const ALL: Self = Self { video: true, audio: true };
+    pub const NOTHING: Self = Self { video: false, audio: false };
+    pub const VIDEO: Self = Self { video: true, audio: false };
+    pub const AUDIO: Self = Self { video: false, audio: true };
+
+    /// The `retro_av_enable_flags` a core is answered with.
+    pub(crate) fn av_enable_flags(self) -> std::ffi::c_int {
+        let mut flags = 0;
+        if self.video {
+            flags |= ffi::retro_av_enable_flags::RETRO_AV_ENABLE_VIDEO as std::ffi::c_int;
+        }
+        if self.audio {
+            flags |= ffi::retro_av_enable_flags::RETRO_AV_ENABLE_AUDIO as std::ffi::c_int;
+        }
+        flags
+    }
+}
+
+impl Default for Keep {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
 /// What one call to [`Core::run_frame`] produced.
 #[derive(Debug)]
 pub struct FrameOutput<'a> {
@@ -467,6 +502,17 @@ impl Core {
     /// Runs one frame with the given controller state (`input[n]` is port `n`; missing ports
     /// have nothing pressed).
     pub fn run_frame(&mut self, input: &[JoypadButtons]) -> Result<FrameOutput<'_>, Error> {
+        self.run_frame_keeping(input, Keep::ALL)
+    }
+
+    /// Runs one frame as [`Core::run_frame`] does, keeping only what `keep` says: a picture not
+    /// kept leaves `video_updated` false (the last picture kept stands), sound not kept leaves
+    /// `audio` empty. The game's state comes out the same either way.
+    pub fn run_frame_keeping(
+        &mut self,
+        input: &[JoypadButtons],
+        keep: Keep,
+    ) -> Result<FrameOutput<'_>, Error> {
         if self.content.is_none() {
             return Err(Error::NoGameLoaded);
         }
@@ -477,6 +523,7 @@ impl Core {
             }
             s.video_updated = false;
             s.audio.clear();
+            s.keep = keep;
         });
 
         if let Some((ctx, _)) = &self.hw {
@@ -494,6 +541,8 @@ impl Core {
         let mut video_updated = false;
         let mut hw_frame = None;
         callbacks::with(|s| {
+            // Outside `retro_run` (loading, a state), a core asking is told everything is kept.
+            s.keep = Keep::ALL;
             video_updated = s.video_updated;
             hw_frame = s.hw_frame.take();
             if video_updated && hw_frame.is_none() {
@@ -648,6 +697,15 @@ impl Core {
 
     /// Writes a save state of the running game.
     pub fn serialize(&mut self) -> Result<Vec<u8>, Error> {
+        let mut state = Vec::new();
+        self.serialize_into(&mut state)?;
+        Ok(state)
+    }
+
+    /// Writes a save state into `state`, replacing what it held. Its allocation is reused, so a
+    /// caller taking a state every frame (rewind, run-ahead) keeps a buffer and allocates and
+    /// clears nothing: at a few MiB a state, fresh pages cost more than the copy.
+    pub fn serialize_into(&mut self, state: &mut Vec<u8>) -> Result<(), Error> {
         if self.content.is_none() {
             return Err(Error::NoGameLoaded);
         }
@@ -657,10 +715,12 @@ impl Core {
         if size == 0 {
             return Err(Error::SerializeFailed);
         }
-        let mut state = vec![0u8; size];
+        // Bytes kept from the last state are overwritten, not cleared first: only growth is
+        // zeroed.
+        state.resize(size, 0);
         // SAFETY: `state` is a writable buffer of exactly the size the core asked for.
         if unsafe { (self.api.serialize)(state.as_mut_ptr().cast(), size) } {
-            Ok(state)
+            Ok(())
         } else {
             Err(Error::SerializeFailed)
         }

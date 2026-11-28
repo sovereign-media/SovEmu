@@ -9,11 +9,16 @@
 //!
 //! Each frame costs N + 1 emulated frames plus a save and a load, so it is for the systems that
 //! are cheap to emulate. If a tick keeps overrunning the frame period it runs fewer frames ahead.
+//! Only the last frame ahead draws a picture, and none of them makes sound: the core is told it
+//! may skip the rest (`Keep`), and whatever it draws anyway is neither copied nor, on a GPU,
+//! read back. The real frame's picture is not shown either, which the stream says when it runs
+//! it ([`RunAhead::hides_real_picture`]). The state is taken into one buffer kept between ticks,
+//! which rewind then copies rather than taking the same state again ([`RunAhead::take_state`]).
 
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use sovemu_retro_host::{Core, JoypadButtons, VideoFrame};
+use sovemu_retro_host::{Core, JoypadButtons, Keep, VideoFrame};
 
 use sovemu_protocol::ipc::MAX_RUN_AHEAD as MAX_FRAMES;
 
@@ -28,6 +33,9 @@ pub(crate) struct RunAhead {
     frames: u32,
     budget: Duration,
     slow_ticks: u32,
+    /// The real frame's state, taken this tick (when `fresh`) or an earlier one.
+    state: Vec<u8>,
+    fresh: bool,
 }
 
 impl RunAhead {
@@ -37,7 +45,19 @@ impl RunAhead {
         if frames > 0 {
             tracing::info!(frames, budget_ms = budget.as_secs_f64() * 1000.0, "run-ahead on");
         }
-        Self { frames, budget, slow_ticks: 0 }
+        Self { frames, budget, slow_ticks: 0, state: Vec::new(), fresh: false }
+    }
+
+    /// Whether a tick that runs ahead shows a frame ahead rather than the real one, whose
+    /// picture then need not be drawn. Off (and so false) once it cannot keep up at all.
+    pub(crate) fn hides_real_picture(&self) -> bool {
+        self.frames > 0
+    }
+
+    /// The real frame's state, if [`RunAhead::picture`] took it since this was last called: the
+    /// state the core is in now, which rewind keeps a copy of instead of taking it again.
+    pub(crate) fn take_state(&mut self) -> Option<&[u8]> {
+        std::mem::take(&mut self.fresh).then_some(self.state.as_slice())
     }
 
     /// Frames it is running ahead now (it runs fewer if it cannot keep up).
@@ -46,9 +66,9 @@ impl RunAhead {
     }
 
     /// From the real frame the core has just run, runs ahead with the same `input`, writes the
-    /// last picture drawn into `picture` and returns its size, and puts the core back. `None` when
-    /// it is off, or no frame ahead drew a picture (the real frame's then stands). Their sound
-    /// is dropped: what is heard is the real timeline's.
+    /// last frame's picture into `picture` and returns its size, and puts the core back. `None`
+    /// when it is off, or the last frame ahead drew nothing new (a dupe: the picture already
+    /// kept stands). Their sound is dropped: what is heard is the real timeline's.
     pub(crate) fn picture(
         &mut self,
         core: &mut Core,
@@ -59,23 +79,24 @@ impl RunAhead {
             return Ok(None);
         }
         let started = Instant::now();
-        let state = match core.serialize() {
-            Ok(state) => state,
-            Err(e) => {
-                tracing::warn!(error = %e, "run-ahead off: the core cannot save its state");
-                self.frames = 0;
-                return Ok(None);
-            }
-        };
+        self.fresh = false;
+        if let Err(e) = core.serialize_into(&mut self.state) {
+            tracing::warn!(error = %e, "run-ahead off: the core cannot save its state");
+            self.frames = 0;
+            return Ok(None);
+        }
         let mut shown = None;
-        for _ in 0..self.frames {
-            let out = core.run_frame(input)?;
-            if out.video_updated && out.video.width > 0 {
+        for ahead in 1..=self.frames {
+            let last = ahead == self.frames;
+            let out =
+                core.run_frame_keeping(input, if last { Keep::VIDEO } else { Keep::NOTHING })?;
+            if last && out.video_updated && out.video.width > 0 {
                 crate::video::keep_picture(out.video, picture);
                 shown = Some((out.video.width, out.video.height));
             }
         }
-        core.unserialize(&state).context("run-ahead: restoring the real frame")?;
+        core.unserialize(&self.state).context("run-ahead: restoring the real frame")?;
+        self.fresh = true;
         self.keep_up(started.elapsed());
         Ok(shown)
     }
@@ -105,7 +126,13 @@ mod tests {
     use super::*;
 
     fn run_ahead(frames: u32) -> RunAhead {
-        RunAhead { frames, budget: Duration::from_millis(10), slow_ticks: 0 }
+        RunAhead {
+            frames,
+            budget: Duration::from_millis(10),
+            slow_ticks: 0,
+            state: Vec::new(),
+            fresh: false,
+        }
     }
 
     #[test]
