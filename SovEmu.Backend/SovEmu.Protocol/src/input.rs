@@ -204,9 +204,15 @@ impl InputPacket {
 
     /// Whether this packet is newer than one with sequence number `last` (wrapping).
     pub fn is_newer_than(&self, last: u32) -> bool {
-        let diff = self.seq.wrapping_sub(last);
-        diff != 0 && diff < u32::MAX / 2
+        seq_is_newer(self.seq, last)
     }
+}
+
+/// Whether packet number `seq` comes after `last`: numbers wrap, so "after" is less than half
+/// the number space ahead.
+pub fn seq_is_newer(seq: u32, last: u32) -> bool {
+    let diff = seq.wrapping_sub(last);
+    diff != 0 && diff < u32::MAX / 2
 }
 
 /// Emulator hotkeys held on the client.
@@ -293,8 +299,7 @@ impl AnalogPacket {
 
     /// Whether this packet is newer than one with sequence number `last` (wrapping).
     pub fn is_newer_than(&self, last: u32) -> bool {
-        let diff = self.seq.wrapping_sub(last);
-        diff != 0 && diff < u32::MAX / 2
+        seq_is_newer(self.seq, last)
     }
 }
 

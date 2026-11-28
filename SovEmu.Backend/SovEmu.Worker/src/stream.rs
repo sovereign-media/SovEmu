@@ -22,6 +22,7 @@ use sovemu_protocol::ipc::{CoreCategory, CoreOption, LoadPhase};
 use sovemu_protocol::ipc::{ExitReason, Request};
 use sovemu_protocol::{
     ClientMessage, ClientStats, Hotkeys, INPUT_CHANNEL, InputAck, SdpKind, SessionDescription,
+    seq_is_newer,
 };
 use sovemu_retro_host::{
     AnalogSticks, AvInfo, Core, CoreOptions, JoypadButtons, PixelFormat, VideoFrame,
@@ -200,8 +201,9 @@ pub(crate) struct Session {
     frame: u64,
     audio_samples: u64,
     buttons: Vec<JoypadButtons>,
-    last_seq: Option<u32>,
-    last_analog_seq: Option<u32>,
+    /// The newest input (`0x01`) and stick (`0x03`) packets taken, from this client.
+    input_seq: Newest,
+    analog_seq: Newest,
     pending_ack: Option<(u32, u32)>,
     persist: Persist,
     rewind: Rewind,
@@ -365,7 +367,7 @@ impl Session {
             frame: 0,
             audio_samples: 0,
             buttons: vec![JoypadButtons::NONE; 2],
-            last_seq: None,
+            input_seq: Newest::default(),
             pending_ack: None,
             persist,
             // One snapshot every INTERVAL frames, so seconds × fps / INTERVAL of them.
@@ -415,7 +417,7 @@ impl Session {
             link_sent_at: None,
             audio_kbps: config.audio_kbps,
             hotkeys: Hotkeys::default(),
-            last_analog_seq: None,
+            analog_seq: Newest::default(),
             hotkeys_at: Instant::now(),
             input_lapse: Duration::from_millis(u64::from(config.input_lapse_ms)),
             buttons_at: Instant::now(),
@@ -1005,10 +1007,9 @@ impl Session {
                 return;
             }
             Ok(ClientMessage::Analog(a)) => {
-                if self.last_analog_seq.is_some_and(|last| !a.is_newer_than(last)) {
+                if !self.analog_seq.take(a.seq) {
                     return;
                 }
-                self.last_analog_seq = Some(a.seq);
                 let sticks: Vec<AnalogSticks> = a
                     .ports
                     .iter()
@@ -1077,10 +1078,9 @@ impl Session {
                 return;
             }
         };
-        if self.last_seq.is_some_and(|last| !packet.is_newer_than(last)) {
+        if !self.input_seq.take(packet.seq) {
             return;
         }
-        self.last_seq = Some(packet.seq);
         self.buttons = unheld(&mut self.held_at_start, &packet.ports);
         self.buttons_at = Instant::now();
         self.pending_ack = Some((packet.seq, packet.client_time_ms));
@@ -1345,6 +1345,11 @@ impl Session {
     /// A new client: its connection and its decoder are unknown, so the stream starts over
     /// at the starting rate.
     fn new_client(&mut self) {
+        // A new client numbers its packets from 1 again: kept, the last client's numbers would
+        // have every packet it sends dropped as old, and the game deaf after a reconnect.
+        self.input_seq = Newest::default();
+        self.analog_seq = Newest::default();
+        self.pending_ack = None;
         self.probe = None;
         self.probe_lost = None;
         self.probe_rtt = BestRtt::default();
@@ -1672,6 +1677,22 @@ fn unheld(held_at_start: &mut Vec<u16>, ports: &[u16]) -> Vec<JoypadButtons> {
         .collect()
 }
 
+/// The newest sequence number taken from a client's packets: the input channel is unordered,
+/// so a packet no newer than it arrived late and is dropped ([`seq_is_newer`]).
+#[derive(Debug, Default)]
+struct Newest(Option<u32>);
+
+impl Newest {
+    /// Whether `seq` is newer than any taken yet; if so it is now the newest.
+    fn take(&mut self, seq: u32) -> bool {
+        let newer = self.0.is_none_or(|last| seq_is_newer(seq, last));
+        if newer {
+            self.0 = Some(seq);
+        }
+        newer
+    }
+}
+
 /// The client's view of the stream, beside the worker's own `session health` lines.
 fn log_client_stats(s: &ClientStats) {
     tracing::info!(
@@ -1842,6 +1863,22 @@ mod tests {
         let mut held = vec![A, A];
         assert_eq!(bits(unheld(&mut held, &[A])), [0]);
         assert_eq!(bits(unheld(&mut held, &[A, A])), [0, A]);
+    }
+
+    #[test]
+    fn a_packet_is_taken_only_if_newer_and_a_new_client_starts_afresh() {
+        let mut seq = Newest::default();
+        assert!(seq.take(1));
+        assert!(seq.take(3));
+        assert!(!seq.take(2), "late");
+        assert!(!seq.take(3), "a duplicate");
+        // Numbers wrap.
+        let mut wrapping = Newest::default();
+        assert!(wrapping.take(u32::MAX));
+        assert!(wrapping.take(0));
+        // A reconnected client numbers from 1 again: what `new_client` starts it with takes it.
+        let mut reconnected = Newest::default();
+        assert!(reconnected.take(1));
     }
 
     #[test]
